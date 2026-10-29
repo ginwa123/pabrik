@@ -89,7 +89,7 @@ function rowSummary(agent: AgentRow): string {
           v-if="activeAgent"
           data-testid="active-pill"
           class="text-dense px-2 h-6 inline-flex items-center rounded-md font-mono"
-          style="background-color: var(--color-violet); color: #181616;"
+          style="background-color: var(--color-violet); color: var(--semantic-on-accent);"
         >{{ activeAgent }}</span>
         <span
           v-else
@@ -166,7 +166,7 @@ function rowSummary(agent: AgentRow): string {
               <span
                 v-if="activeAgent === agent.name"
                 class="text-micro px-1.5 h-5 inline-flex items-center rounded font-mono"
-                style="background-color: var(--color-violet); color: #181616;"
+                style="background-color: var(--color-violet); color: var(--semantic-on-accent);"
               >active</span>
               <span
                 v-if="!isEnabled(agent)"

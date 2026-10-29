@@ -14,6 +14,7 @@
 import SettingsShell from '../settings/SettingsShell.vue'
 import PabrikConfigEditor from '../pabrik/PabrikConfigEditor.vue'
 import AccountSecuritySection from '../pabrik/AccountSecuritySection.vue'
+import AppearanceSection from '../settings/AppearanceSection.vue'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 const emit = defineEmits<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
   <SettingsShell scope="user" workspace-id="">
     <template #default="{ section, notify }">
       <AccountSecuritySection v-if="section === 'security'" @notification="notify" />
+      <AppearanceSection v-else-if="section === 'appearance'" />
       <PabrikConfigEditor v-else :sections="['general']" @notification="notify" />
     </template>
   </SettingsShell>

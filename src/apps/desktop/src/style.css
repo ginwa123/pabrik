@@ -87,10 +87,130 @@
      and the same label in a dialog are the same number by construction
      and retuning one retunes both. Only geometry is a sidebar concern. */
 
+  /* ── Theme contract ────────────────────────────────────────────────
+     Every theme declares these; the `theme-tokens` spec fails on a gap.
+     `--color-scheme` feeds native controls and the JS-coloured surfaces
+     (xterm, mermaid, monaco) that cannot read a colour token. */
+  --color-scheme: dark;
+  --semantic-on-accent: #181616;
+  --hover-bg: rgba(255, 255, 255, 0.04);
+  --hover-bg-strong: #2e2d2a;
+
+  /* Kanban tag chips — one hue per slot, read by helpers/tagPalette.ts. */
+  --tag-violet-bg: rgba(139, 92, 246, 0.18);
+  --tag-violet-border: rgba(139, 92, 246, 0.45);
+  --tag-violet-text: #a78bfa;
+  --tag-blue-bg: rgba(59, 130, 246, 0.18);
+  --tag-blue-border: rgba(59, 130, 246, 0.45);
+  --tag-blue-text: #60a5fa;
+  --tag-green-bg: rgba(34, 197, 94, 0.18);
+  --tag-green-border: rgba(34, 197, 94, 0.45);
+  --tag-green-text: #4ade80;
+  --tag-yellow-bg: rgba(245, 158, 11, 0.18);
+  --tag-yellow-border: rgba(245, 158, 11, 0.45);
+  --tag-yellow-text: #fbbf24;
+  --tag-orange-bg: rgba(249, 115, 22, 0.18);
+  --tag-orange-border: rgba(249, 115, 22, 0.45);
+  --tag-orange-text: #fb923c;
+  --tag-red-bg: rgba(239, 68, 68, 0.18);
+  --tag-red-border: rgba(239, 68, 68, 0.45);
+  --tag-red-text: #f87171;
+
   /* Tailwind integration - extend theme */
   --color-primary: var(--color-violet);
   --color-secondary: var(--color-aqua);
   --color-accent: var(--color-yellow);
+}
+
+/* ── Kanagawa Lotus: the light counterpart of the Dragon palette above ──
+   Same hues, inverted lightness, so a violet chip is still violet.
+   ADDING A THEME is this block plus one entry in `src/theme/themes.ts`. */
+:root[data-theme='light'] {
+  --color-bg-dim: #e7dba0;
+  --color-bg-gutter: #d8d1a4;
+  --color-bg-m3: #ded5a8;
+  --color-bg-m2: #e7dba0;
+  --color-bg-m1: #eae3b7;
+  --color-bg: #f2ecbc;
+  --color-bg-p1: #e9e0b4;
+  --color-bg-p2: #d5cea3;
+
+  --color-fg: #545464;
+  --color-fg-dim: #716e61;
+  --color-fg-reverse: #d5cea3;
+
+  --color-gray: #5c5949;
+  --color-gray-2: #545464;
+  --color-gray-3: #6b6757;
+
+  --color-violet: #624c83;
+  --color-aqua: #40635c;
+  --color-yellow: #75652a;
+  --color-blue: #2f6f86;
+  --color-green: #54703a;
+  --color-green-2: #5b7a4a;
+  --color-pink: #a04a68;
+  --color-orange: #94520f;
+  --color-red: #bd3f52;
+  --color-ash: #6b6a5a;
+
+  --color-special: #7a7666;
+  --color-whitespace: #b4a97c;
+  --color-nontext: #b4a97c;
+
+  --color-blue-1: #d5cea3;
+  --color-blue-2: #b9ae82;
+
+  --color-border: #b9ae82;
+  --color-border-light: #d5cea3;
+
+  --semantic-sidebar-bg: #e9dfae;
+  --semantic-sidebar-border: #b9ae82;
+  --semantic-content-bg: #f2ecbc;
+  --semantic-card-bg: #faf5d3;
+
+  --semantic-text: #545464;
+  --semantic-text-muted: #625f52;
+  --semantic-text-dim: #6b6757;
+
+  --semantic-link: #45628f;
+  --semantic-link-hover: #5d57a3;
+  --semantic-accent: #624c83;
+  --semantic-accent-hover: #766b90;
+
+  --semantic-success: #54703a;
+  --semantic-warning: #6f6633;
+  --semantic-error: #b3404f;
+  --semantic-info: #3d6f85;
+
+  --semantic-active-bg: #d8d1a4;
+  --semantic-active-text: #43436c;
+  --semantic-hover-bg: #e9e0b4;
+  --semantic-hover-text: #43436c;
+
+  --color-scheme: light;
+  --semantic-on-accent: #f7f2cd;
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --hover-bg-strong: #ded5a8;
+
+  --tag-violet-bg: rgba(98, 76, 131, 0.14);
+  --tag-violet-border: rgba(98, 76, 131, 0.4);
+  --tag-violet-text: #624c83;
+  --tag-blue-bg: rgba(47, 111, 134, 0.14);
+  --tag-blue-border: rgba(47, 111, 134, 0.4);
+  --tag-blue-text: #2f6f86;
+  --tag-green-bg: rgba(84, 112, 58, 0.14);
+  --tag-green-border: rgba(84, 112, 58, 0.4);
+  --tag-green-text: #54703a;
+  --tag-yellow-bg: rgba(117, 101, 42, 0.14);
+  --tag-yellow-border: rgba(117, 101, 42, 0.4);
+  --tag-yellow-text: #75652a;
+  --tag-orange-bg: rgba(148, 82, 15, 0.14);
+  --tag-orange-border: rgba(148, 82, 15, 0.4);
+  --tag-orange-text: #94520f;
+  --tag-red-bg: rgba(189, 63, 82, 0.14);
+  --tag-red-border: rgba(189, 63, 82, 0.4);
+  --tag-red-text: #bd3f52;
 }
 
 /* Custom Tailwind theme */
@@ -157,22 +277,14 @@
     overflow-x: hidden;
   }
 
-  /* Native form controls: force dark rendering in WebView2/WebView.
-   * Without this, WebView2 defaults to a light color-scheme and paints
-   * <select> (closed button + popup) white even when an inline
-   * background-color is set — while desktop Chrome follows the OS
-   * dark theme and looks correct. App is dark-only (Kanagawa Dragon).
-   *
-   * NOTE: intentionally scoped to form controls only — do NOT hoist
-   * `color-scheme: dark` onto :root/html. A page-level dark scheme flips
-   * Chromium's UA defaults (notably the :focus-visible outline color to
-   * near-white), which paints white rings around focused sidebar rows
-   * (ChatsList / WorkspaceItem buttons). task_1788535488395_0. */
+  /* Native form controls follow the active theme's scheme, or WebView2 paints a
+   * closed <select> and its popup white. Scoped to form controls only: a scheme
+   * on :root/html also flips the UA :focus-visible outline off the theme ink. */
   select,
   input,
   textarea,
   option {
-    color-scheme: dark;
+    color-scheme: var(--color-scheme);
   }
 
   select {

@@ -2,6 +2,7 @@ import { mount, VueWrapper } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import LlmConfigForm from '../components/pabrik/LlmConfigForm.vue'
+import { activeScheme } from '../theme/runtime'
 
 /**  * Mount and open `Advanced`. Advanced is collapsed by default — that is the whole point of the
  * redesign — so a spec that wants to touch a field behind it has to open it first. The helper is
@@ -261,15 +262,15 @@ describe('LlmConfigForm', () => {
     }
   })
 
-  // Task task_1788535488395_0 (WebView2 white select): every select/input must carry an inline
-  // color-scheme:dark hint so WebView2 renders native controls dark even though it defaults to a
-  // light color-scheme. Global `color-scheme: dark` in style.css is the primary fix.
-  it('selects carry color-scheme:dark for WebView2', async () => {
+  // Task task_1788535488395_0 (WebView2 white select): every select/input carries an inline
+  // color-scheme hint so WebView2 renders native controls in the app's scheme. The global
+  // `color-scheme: var(--color-scheme)` rule in style.css is the primary fix.
+  it('selects carry the active theme scheme for WebView2', async () => {
     const wrapper = await mountOpen(LlmConfigForm, { props: { modelValue: { ...baseValue } } })
     const selects = wrapper.findAll('select')
     expect(selects.length).toBeGreaterThan(0)
     for (const s of selects) {
-      expect((s.element as HTMLElement).style.colorScheme).toBe('dark')
+      expect((s.element as HTMLElement).style.colorScheme).toBe(activeScheme())
     }
   })
 })

@@ -37,7 +37,9 @@ export interface SettingsSectionItem {
 const USER_SECTIONS: readonly SettingsSectionItem[] = [
   // Decision D4: General is the only CONFIG left at user level — the rest moved to Workspace
   // settings. Security sits here too because an account's password is not a workspace value.
+  // Appearance is a per-browser UI preference, which also belongs to the user, not a workspace.
   { id: 'general', label: 'General', icon: 'settings' },
+  { id: 'appearance', label: 'Appearance', icon: 'palette' },
   { id: 'security', label: 'Security', icon: 'lock' },
 ]
 

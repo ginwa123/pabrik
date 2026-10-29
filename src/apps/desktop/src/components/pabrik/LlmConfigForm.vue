@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { activeScheme } from '../../theme/runtime'
 
 import {
   getModelCatalog,
@@ -71,7 +72,7 @@ const inputStyle = (hasError?: boolean): Record<string, string> => ({
   color: 'var(--semantic-text)',
   borderColor: hasError ? 'var(--color-red)' : 'var(--color-border)',
   // WebView2 paints native <select> white without this hint.
-  colorScheme: 'dark',
+  colorScheme: activeScheme(),
 })
 const labelBase = 'block text-dense font-medium mb-1.5'
 const labelStyle = { color: 'var(--semantic-text-muted)' }

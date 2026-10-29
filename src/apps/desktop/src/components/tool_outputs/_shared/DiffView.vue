@@ -193,7 +193,7 @@ function renderSplitRow(row: SplitRow, idx: number, side: 'before' | 'after', la
   return h(
     'div',
     {
-      class: ['block whitespace-pre', bgColor ? '' : 'hover:bg-white/[0.03]'],
+      class: ['block whitespace-pre', bgColor ? '' : 'hover:bg-(--hover-bg)'],
       style: rowStyle,
       'data-row': idx,
       'data-side': side,

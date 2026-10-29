@@ -49,6 +49,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUpdated } from 'vue'
+import { tagStyle } from '../../helpers/tagPalette'
 
 const props = withDefaults(
   defineProps<{
@@ -87,37 +88,11 @@ const highlightedIndex = ref<number>(-1)
 const TAG_CHAR_WHITELIST = /^[a-zA-Z0-9_-]$/
 const TAG_LENGTH_CAP = 50
 
-// 6-color palette indexed by deterministic djb2 hash of the
-// lowercase tag. Same algorithm as WorkspaceItemTaskCard so the
-// dialog chips and card chips share colors.
-const TAG_PALETTE = [
-  { bg: 'rgba(139, 92, 246, 0.18)', border: 'rgba(139, 92, 246, 0.45)', text: '#a78bfa' },
-  { bg: 'rgba(59, 130, 246, 0.18)', border: 'rgba(59, 130, 246, 0.45)', text: '#60a5fa' },
-  { bg: 'rgba(34, 197, 94, 0.18)', border: 'rgba(34, 197, 94, 0.45)', text: '#4ade80' },
-  { bg: 'rgba(245, 158, 11, 0.18)', border: 'rgba(245, 158, 11, 0.45)', text: '#fbbf24' },
-  { bg: 'rgba(249, 115, 22, 0.18)', border: 'rgba(249, 115, 22, 0.45)', text: '#fb923c' },
-  { bg: 'rgba(239, 68, 68, 0.18)', border: 'rgba(239, 68, 68, 0.45)', text: '#f87171' },
-] as const
-
-function tagColor(tag: string): { bg: string; border: string; text: string } {
-  let hash = 5381
-  for (const c of tag.toLowerCase()) {
-    hash = ((hash << 5) + hash + c.charCodeAt(0)) >>> 0
-  }
-  // The `% TAG_PALETTE.length` keeps the index in range; the explicit fallback guards against the
-  // empty-palette case (which never happens because PALETTE is a const array, but TS's strict mode
-  // flags the indexed access as `T | undefined`).
-  const idx = hash % TAG_PALETTE.length
-  return TAG_PALETTE[idx] ?? TAG_PALETTE[0]
-}
-
+// Same djb2 → 6-hue cycle as the row and the card (helpers/tagPalette), so the dialog chips and the
+// card chips share colours.
 function tagChipStyle(tag: string): Record<string, string> {
-  const c = tagColor(tag)
-  return {
-    backgroundColor: c.bg,
-    border: `1px solid ${c.border}`,
-    color: c.text,
-  }
+  const style = tagStyle(tag)
+  return { backgroundColor: style.backgroundColor, border: style.border, color: style.color }
 }
 
 // Sanitize the draft: strip leading/trailing whitespace. Returns

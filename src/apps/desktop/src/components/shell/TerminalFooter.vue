@@ -14,6 +14,8 @@ import {
 } from '../../api'
 import type { TerminalSessionSummary } from '../../api'
 import { inputForBackend } from '../../helpers/terminalInput'
+import { applyXtermTheme, resolveXtermTheme } from '../../helpers/xtermTheme'
+import { onThemeApplied } from '../../theme/runtime'
 
 interface WorkspaceRef {
   id: string
@@ -57,6 +59,7 @@ let wsRetryTimer: ReturnType<typeof setTimeout> | null = null
 let resizeObserver: ResizeObserver | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let disposed = false
+let offThemeApplied: (() => void) | null = null
 let resizeStartY = 0
 let resizeStartHeight = DEFAULT_HEIGHT
 
@@ -322,7 +325,7 @@ const startTerminal = async (id: string) => {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
     cursorBlink: true,
     scrollback: 5000,
-    theme: { background: '#12120f', foreground: '#c5c9c5', cursor: '#c5c9c5' },
+    theme: resolveXtermTheme(),
   })
   fit = new FitAddon()
   term.loadAddon(fit)
@@ -515,6 +518,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', onWindowResize)
   document.addEventListener('mousedown', closeWorkspaceMenu)
+  offThemeApplied = onThemeApplied(() => applyXtermTheme(term))
   void refresh()
   refreshTimer = setInterval(() => {
     if (document.visibilityState === 'visible') void refresh()
@@ -525,6 +529,8 @@ onUpdated(followWorkspace)
 
 onUnmounted(() => {
   disposed = true
+  offThemeApplied?.()
+  offThemeApplied = null
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onWindowResize)
   document.removeEventListener('mousedown', closeWorkspaceMenu)

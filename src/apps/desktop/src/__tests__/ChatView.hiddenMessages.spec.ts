@@ -227,10 +227,11 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
   it('paints the frame with the app theme instead of a hardcoded white', async () => {
     const source = await readChatViewSource()
     expect(source).toMatch(/\.chat-html-frame \{[\s\S]*?background: var\(--semantic-card-bg/)
-    expect(source).toMatch(/\.chat-html-frame \{[\s\S]*?color-scheme: dark/)
+    expect(source).toMatch(/\.chat-html-frame \{[\s\S]*?color-scheme: var\(--color-scheme\)/)
     const frame = await readHtmlFrameSource()
     expect(frame).not.toMatch(/background:#fff/)
-    expect(frame).toMatch(/:root\{color-scheme:dark\}/)
+    expect(frame).toMatch(/:root\{color-scheme:/)
+    expect(frame).toMatch(/activeScheme\(\)/)
     expect(frame).toMatch(/resolveHtmlFramePalette/)
   })
 

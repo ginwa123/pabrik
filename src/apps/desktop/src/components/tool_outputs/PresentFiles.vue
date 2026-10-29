@@ -57,6 +57,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, onUpdated, ref } from 'vue'
+import { useThemeTick } from '../../composables/useThemeTick'
 import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import ToolParameters from './_shared/ToolParameters.vue'
 import ImagePreview from '../preview/ImagePreview.vue'
@@ -290,7 +291,11 @@ async function fetchHtmlFor(f: ParsedPresentFile): Promise<void> {
  * (same contract as PreviewContentRenderer's html branch). */
 const PRESENT_FILES_HTML_RESIZE_SOURCE = 'present-files-html-auto-resize'
 
+const themeTick = useThemeTick()
+
 function htmlSrcDoc(f: ParsedPresentFile): string {
+  // The shell carries literal colours, so it is rebuilt when the theme changes.
+  void themeTick.value
   const raw = htmlByPath.value[f.path]?.content ?? ''
   return `${autoResizeScript(PRESENT_FILES_HTML_RESIZE_SOURCE)}${frameDocumentStyle()}${raw}`
 }

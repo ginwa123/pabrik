@@ -44,12 +44,13 @@
     data-testid="properties-delete-button" on the delete button
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onUpdated, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import type { DesignElement } from '../../api'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import ListSkeleton from '../shell/ListSkeleton.vue'
 import { useDesignHistory } from '../../composables/useDesignHistory'
 import { useDesignHistoryStore } from '../../stores/designHistory'
+import { activeScheme, onThemeApplied } from '../../theme/runtime'
 
 const workspacesStore = useWorkspacesStore()
 
@@ -166,6 +167,15 @@ const htmlDraft = ref('')
 const monacoEditor = ref<any | null>(null)
 const monacoContainerRef = ref<HTMLDivElement | null>(null)
 const monacoLoadError = ref<string | null>(null)
+let monacoThemeSwitcher: ((theme: string) => void) | null = null
+let offThemeApplied: (() => void) | null = null
+
+/** Monaco cannot read a CSS variable, so its theme is chosen from the active scheme. */
+const monacoThemeName = (): string => (activeScheme() === 'light' ? 'vs' : 'vs-dark')
+
+onMounted(() => {
+  offThemeApplied = onThemeApplied(() => monacoThemeSwitcher?.(monacoThemeName()))
+})
 
 // When the user expands the editor and the element changes, seed the draft with the current HTML
 // body. We don't auto-pull on every element switch — that would clobber the user's in-progress
@@ -212,7 +222,7 @@ const handleExpandHtml = async (): Promise<void> => {
     const editor = monaco.editor.create(monacoContainerRef.value, {
       value: htmlDraft.value,
       language: 'html',
-      theme: 'vs-dark',
+      theme: monacoThemeName(),
       automaticLayout: true,
       minimap: { enabled: false },
       fontSize: 12,
@@ -223,6 +233,7 @@ const handleExpandHtml = async (): Promise<void> => {
       htmlDraft.value = editor.getValue()
     })
     monacoEditor.value = editor
+    monacoThemeSwitcher = (theme) => monaco.editor.setTheme(theme)
     monacoLoadError.value = null
   } catch (err) {
     // Monaco not installed or failed to load — fall back to textarea
@@ -289,6 +300,9 @@ const handleHtmlCancel = (): void => {
 // Tear down the Monaco editor on component unmount to release its
 // listeners and DOM references.
 onBeforeUnmount(() => {
+  offThemeApplied?.()
+  offThemeApplied = null
+  monacoThemeSwitcher = null
   if (monacoEditor.value) {
     monacoEditor.value.dispose()
     monacoEditor.value = null

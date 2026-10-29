@@ -745,7 +745,7 @@ const handlePinnedDrop = (event: DragEvent) => {
         <button
           type="button"
           @click="handleAddDesignPage"
-          class="w-full text-left px-[var(--sb-gutter)] py-1 rounded text-micro transition-colors hover:bg-[#2e2d2a]"
+          class="w-full text-left px-[var(--sb-gutter)] py-1 rounded text-micro transition-colors hover:bg-(--hover-bg-strong)"
           style="color: var(--semantic-text-dim); opacity: 0.7"
           data-testid="design-sidebar-add-page-button"
           :title="`Add a new page to ${item.name}`"

@@ -38,8 +38,7 @@ describe('ForgeIcon', () => {
   })
 
   it('fills with currentColor so it inherits a token, never a brand hex', () => {
-    // The app is dark-only and muted. GitLab's #FC6D26 beside the
-    // kanagawa palette reads as an error — see the AGENTS.md lesson.
+    // The palette is muted; GitLab's #FC6D26 beside it reads as an error.
     const wrapper = mount(ForgeIcon, { props: { provider: 'gitlab' } })
     expect(wrapper.attributes('fill')).toBe('currentColor')
     expect(wrapper.html()).not.toMatch(/#f[0-9a-f]{5}/i)

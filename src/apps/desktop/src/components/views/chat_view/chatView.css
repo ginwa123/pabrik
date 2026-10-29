@@ -87,7 +87,7 @@
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: var(--text-dense);
   line-height: 1.5;
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: var(--color-bg-p1);
   border-radius: 0.375rem;
   padding: 0.5rem 0;
   overflow-x: hidden;
@@ -208,16 +208,9 @@
   opacity: 1;
 }
 
-/* ─── <html> wrapper-tag sandboxed iframe (2026-08-23 html-tag-support) ──
-   Live HTML blocks from the LLM render inside a null-origin iframe
-   (sandbox="allow-scripts", no allow-same-origin). The frame paints the
-   app's CARD surface, NOT white: an LLM that answers in HTML mode (the
-   response-formatting prompt explicitly offers it) is still part of the
-   transcript, and a hardcoded #fff read as a bright slab in the dark
-   theme. `color-scheme: dark` keeps the frame's native scrollbars dark
-   too. Height is set inline by the frame's own auto-resize report
-   (helpers/iframeAutoResize.ts) to its FULL content height — no inner
-   scrollbar, the outer chat scroller owns scrolling. */
+/* ─── <html> wrapper-tag iframe (2026-08-23 html-tag-support) ───────────
+   A null-origin frame paints the app's card surface, never white, and takes its
+   height from its own auto-resize report so it has no inner scrollbar. */
 
 /* ─── Tool-output cards, de-bubbled (2026-08-23) ────────────────────────
    All 24 tool_output components used to carry an identical Tailwind card

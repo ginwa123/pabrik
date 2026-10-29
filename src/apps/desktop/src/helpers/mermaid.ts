@@ -1,4 +1,5 @@
 import type { MermaidConfig } from 'mermaid'
+import { activeScheme, activeTheme } from '../theme/runtime'
 
 /** The colours and type a diagram is drawn in. Every field is a CSS custom property of the app
  * theme, so the diagram cannot drift from the transcript it sits in. */
@@ -53,10 +54,13 @@ const readVar = (name: string, fallback: string): string => {
 }
 
 let palette: MermaidPalette | null = null
+let paletteTheme: string | null = null
 
-/** Memoized — the app theme is fixed for the app's lifetime, and this runs for every diagram. */
+/** Memoized PER THEME: a diagram is rendered for every mermaid block of every turn, but a flip to
+ * another theme must re-read the tokens rather than hand out the previous theme's palette. */
 export const resolveMermaidPalette = (): MermaidPalette => {
-  if (palette) return palette
+  const theme = activeTheme()
+  if (palette && paletteTheme === theme) return palette
   const f = MERMAID_PALETTE_FALLBACK
   palette = {
     canvas: readVar('--semantic-card-bg', f.canvas),
@@ -69,11 +73,13 @@ export const resolveMermaidPalette = (): MermaidPalette => {
     font: readVar('--font-sans', f.font),
     slices: SLICE_VARS.map((name, i) => readVar(name, f.slices[i] ?? f.accent)),
   }
+  paletteTheme = theme
   return palette
 }
 
-/**  * The theme is set once, at initialize: the diagram is authored by the model without colour
- * knowledge (`core.zig` forbids `%%{init}%%`), so the renderer owns every visual decision. */
+/**  * Initialized per theme: the diagram is authored by the model without colour knowledge
+ * (`core.zig` forbids `%%{init}%%`), so the renderer owns every visual decision, and a theme flip
+ * re-initializes rather than keeping the colours of the first diagram of the session. */
 const buildConfig = (p: MermaidPalette): MermaidConfig => ({
   startOnLoad: false,
   securityLevel: 'strict',
@@ -88,7 +94,7 @@ const buildConfig = (p: MermaidPalette): MermaidConfig => ({
   // `<foreignObject>` label is real HTML in the transcript's own document and inherits it.
   htmlLabels: false,
   themeVariables: {
-    darkMode: true,
+    darkMode: activeScheme() === 'dark',
     fontSize: '14px',
     background: p.canvas,
     primaryColor: p.node,
@@ -146,16 +152,15 @@ const buildConfig = (p: MermaidPalette): MermaidConfig => ({
 type MermaidApi = (typeof import('mermaid'))['default']
 
 let api: Promise<MermaidApi> | null = null
+let initializedTheme: string | null = null
 
-/** Lazily pull in Mermaid (a large dependency) and initialize it once, on the first diagram of the
- * session — a transcript with no diagrams never pays for it. */
+/** Lazily pull in Mermaid (a large dependency) and initialize it for the ACTIVE theme, on the first
+ * diagram of a session and again after a theme change — a transcript with no diagrams never pays
+ * for the first load. */
 export const loadMermaid = (): Promise<MermaidApi> => {
   if (api === null) {
     api = import('mermaid')
-      .then(({ default: mermaid }) => {
-        mermaid.initialize(buildConfig(resolveMermaidPalette()))
-        return mermaid
-      })
+      .then((module) => module.default)
       // A failed chunk load (offline, a stale deploy) must not poison every later diagram: drop the
       // cached promise so the next mount retries, and let the caller surface the reason.
       .catch((cause: unknown) => {
@@ -163,13 +168,22 @@ export const loadMermaid = (): Promise<MermaidApi> => {
         throw cause
       })
   }
-  return api
+  return api.then((mermaid) => {
+    const theme = activeTheme()
+    if (initializedTheme !== theme) {
+      mermaid.initialize(buildConfig(resolveMermaidPalette()))
+      initializedTheme = theme
+    }
+    return mermaid
+  })
 }
 
 /** Test-only reset — not exported through the helpers barrel (`helpers/index.ts`). */
 export const _resetMermaidLoader = (): void => {
   api = null
   palette = null
+  paletteTheme = null
+  initializedTheme = null
 }
 
 let renderSeq = 0

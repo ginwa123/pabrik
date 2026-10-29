@@ -4,6 +4,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import UiIcon from '../../ui/UiIcon.vue'
 import { inputForBackend } from '../../../helpers/terminalInput'
+import { applyXtermTheme, resolveXtermTheme } from '../../../helpers/xtermTheme'
+import { onThemeApplied } from '../../../theme/runtime'
 import '@xterm/xterm/css/xterm.css'
 import {
   ApiError,
@@ -59,6 +61,7 @@ let wsOpened = false
 let wsAttempt = 0
 let wsRetryTimer: ReturnType<typeof setTimeout> | null = null
 let sessionCounter = 0
+let offThemeApplied: (() => void) | null = null
 const mountedAt = Date.now()
 // Mount-time cwd resolution grace: with a git worktree the value resolves as '' -> session dir ->
 // worktree dir on every mount.
@@ -512,7 +515,7 @@ onMounted(() => {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
     cursorBlink: true,
     scrollback: 5000,
-    theme: { background: '#0f0e0c', foreground: '#c5c9c5', cursor: '#c5c9c5' },
+    theme: resolveXtermTheme(),
   })
   fit = new FitAddon()
   term.loadAddon(fit)
@@ -531,6 +534,7 @@ onMounted(() => {
     resizeObserver.observe(container.value)
   }
   void restoreSessions()
+  offThemeApplied = onThemeApplied(() => applyXtermTheme(term))
 })
 
 // Cwd scope sync (prev-value guard on update — same guards the watcher
@@ -576,6 +580,8 @@ onUpdated(() => {
 
 onUnmounted(() => {
   disposed = true
+  offThemeApplied?.()
+  offThemeApplied = null
   clearWsRetry()
   closeWs()
   resizeObserver?.disconnect()
