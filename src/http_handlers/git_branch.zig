@@ -39,6 +39,9 @@ pub fn resolve(allocator: std.mem.Allocator, io: std.Io, dir: []const u8) ?[]u8 
     return null;
 }
 
+/// One stat decides the shape, and neither branch ever opens a path *through*
+/// `.git`: on Windows a parent that is a file comes back as
+/// STATUS_OBJECT_PATH_INVALID, which Zig's Io turns into a process panic.
 fn probeDir(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -48,24 +51,27 @@ fn probeDir(
     var git_entry_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const git_entry = childPath(&git_entry_buf, dir, git_entry_name) orelse return .not_a_repo;
 
-    var head_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    if (childPath(&head_path_buf, git_entry, head_name)) |head_path| {
-        if (readSmall(io, head_path, head_buf)) |content| {
-            const branch = branchFromHead(allocator, content) orelse return .no_branch;
-            return .{ .branch = branch };
-        }
-    }
+    const entry_stat = std.Io.Dir.cwd().statFile(io, git_entry, .{}) catch return .not_a_repo;
+    if (entry_stat.kind == .directory) return headProbe(allocator, io, git_entry, head_buf);
 
-    const entry = readSmall(io, git_entry, head_buf) orelse return .not_a_repo;
+    const entry = readSmall(io, git_entry, head_buf) orelse return .no_branch;
     const git_dir = gitDirFromEntry(allocator, dir, entry) orelse return .no_branch;
     defer allocator.free(git_dir);
 
-    if (childPath(&head_path_buf, git_dir, head_name)) |head_path| {
-        const content = readSmall(io, head_path, head_buf) orelse return .no_branch;
-        const branch = branchFromHead(allocator, content) orelse return .no_branch;
-        return .{ .branch = branch };
-    }
-    return .no_branch;
+    return headProbe(allocator, io, git_dir, head_buf);
+}
+
+fn headProbe(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    git_dir: []const u8,
+    head_buf: *[max_head_bytes]u8,
+) DirProbe {
+    var head_path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const head_path = childPath(&head_path_buf, git_dir, head_name) orelse return .no_branch;
+    const content = readSmall(io, head_path, head_buf) orelse return .no_branch;
+    const branch = branchFromHead(allocator, content) orelse return .no_branch;
+    return .{ .branch = branch };
 }
 
 /// One separator, never two: a Windows `\\?\` path is rejected outright when a
