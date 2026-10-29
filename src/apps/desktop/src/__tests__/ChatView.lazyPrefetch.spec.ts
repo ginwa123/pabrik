@@ -18,7 +18,7 @@ function fnBody(source: string, startMarker: string, endMarker: string): string 
 describe('older-history prefetch — trigger wiring', () => {
   it('handleVirtualScroll evaluates the prefetch and commits from the band', async () => {
     const source = await readChatViewSource()
-    const body = fnBody(source, 'const handleVirtualScroll = (', '\n// ─── Send Message')
+    const body = fnBody(source, 'const handleVirtualScroll = (', '// ─── Send Message')
     // The decision runs on user gestures…
     expect(body).toContain('evaluateOlderPrefetch()')
     // …and a buffered page is committed as soon as the user is inside the
@@ -178,7 +178,7 @@ describe('older-history prefetch — commit invariants', () => {
     expect(body).toContain('MAX_PREFETCH_AUTO_CHAIN')
     expect(body).toContain("skip: 'auto-chain-budget'")
     // A real upward gesture resets the budget.
-    const scrollBody = fnBody(source, 'const handleVirtualScroll = (', '\n// ─── Send Message')
+    const scrollBody = fnBody(source, 'const handleVirtualScroll = (', '// ─── Send Message')
     expect(scrollBody).toContain('resetPrefetchAutoChain()')
   })
 })
@@ -196,7 +196,7 @@ describe('older-history prefetch — invalidation', () => {
     expect(entryBody).toContain("resetOlderPrefetch('session-change')")
     expect(source).toContain("resetOlderPrefetch('refresh')")
     expect(source).toContain("resetOlderPrefetch('unmount')")
-    const unmountBody = fnBody(source, 'onUnmounted(() => {', '\n// Load available agents')
+    const unmountBody = fnBody(source, 'onUnmounted(() => {', '// Load available agents')
     expect(unmountBody).toContain("resetOlderPrefetch('unmount')")
   })
 
