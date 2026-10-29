@@ -452,17 +452,8 @@ fn runPostHookOverride(ctx: ToolContext, tool_name: []const u8, arguments: []con
 /// Dispatch tool execution from registry entry
 /// Calls exec directly and handles auto-save via registry flags
 fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools_equipped.ToolExecFunc) !ToolResult {
-    // Stop has to reach a tool that BLOCKS this thread. The `command` tool's
-    // foreground wait loop is exactly that: until the child exits (or its own
-    // `timeout`, up to 600 s) nothing upstream — not the HTTP handler, not the
-    // workflow's between-iteration check — can interrupt it. So the loop polls
-    // this probe, and the probe reads the same `worker.cancelled` row the Stop
-    // endpoint writes.
-    //
-    // Stack-local, NOT a threadlocal: a nested dispatch (a sub-agent running
-    // its own tools on this thread) would otherwise clobber the outer probe on
-    // the way out. Nothing here allocates, so an unused hook costs a stack
-    // slot per dispatch.
+    // Stack-local, not a threadlocal: a nested sub-agent dispatch on this
+    // thread must not clobber the outer probe.
     var cancel_probe = session_cancel_probe.Probe.init(ctx.db, ctx.session_id, ctx.io);
 
     const ctx_local = tools.ToolExecContext{

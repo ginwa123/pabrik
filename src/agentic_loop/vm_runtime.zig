@@ -204,10 +204,8 @@ fn guestProbe(hook: ?shell.CancelHook) ?vmd.CancelProbe {
     return .{ .ctx = h.ctx, .is_cancelled = h.is_cancelled };
 }
 
-/// What a stopped guest run reports. `exit_code` is -1, not -9: nothing was
-/// signalled — the host stopped waiting, while the daemon still owns the
-/// command until its `timeout_ms`. Saying SIGKILL here would be a lie the
-/// transcript would carry.
+/// A stopped guest run: `exit_code` -1, not -9 — nothing was signalled, the
+/// daemon still owns the command until its `timeout_ms`.
 fn cancelledByUser(allocator: std.mem.Allocator, command: []const u8) !shell.ShellOutput {
     const stderr = "Cancelled by the user while waiting for the workspace VM. " ++
         "The guest command keeps running until its own timeout; nothing on the host is waiting for it.";

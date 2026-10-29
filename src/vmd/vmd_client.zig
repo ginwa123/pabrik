@@ -803,10 +803,8 @@ pub const Client = struct {
         return self.callCancelable(request, guard_ms, null);
     }
 
-    /// `call`, with the Stop button: `cancel_probe` is asked once per poll slice, and
-    /// a true answer closes the socket and returns `Error.Cancelled`. The
-    /// daemon keeps its own deadline for the guest work, so the host stops
-    /// waiting without leaking anything on this side.
+    /// `call`, with the Stop button: a true answer closes the socket and
+    /// returns `Error.Cancelled`; the daemon keeps its own deadline.
     fn callCancelable(self: *Client, request: rpc.Request, guard_ms: u32, cancel_probe: ?CancelProbe) !rpc.OwnedResponse {
         const fd = try connectUnix(self.socket_path);
         defer _ = linux.close(fd);

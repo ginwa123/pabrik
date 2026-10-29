@@ -49,10 +49,8 @@ pub fn execute_command_with(
     return execute_command_with_cancel(allocator, io, input, executor, null);
 }
 
-/// `execute_command_with` plus the Stop button: `cancel_hook` is polled by the
-/// foreground wait loop, which SIGKILLs the child's process group once the
-/// session has been cancelled. Detached modes ignore it — they outlive the
-/// call by design.
+/// `execute_command_with` plus the Stop button: the foreground wait loop polls
+/// it and SIGKILLs the child's process group. Detached modes ignore it.
 pub fn execute_command_with_cancel(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -541,10 +539,8 @@ pub fn runWithContext(
         executor,
         cancel_hook,
     );
-    // The shell output owns its three slices and this function is their last
-    // reader: it serialises them below and never exposes them. `execCommand`
-    // allocates on the per-iteration arena in production, so this only shows
-    // up as a leak when a test drives the tool with `testing.allocator`.
+    // Last reader of these slices: they are serialised below and never
+    // exposed, so their ownership ends here.
     defer {
         allocator.free(command_output.command);
         allocator.free(command_output.stdout);

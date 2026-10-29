@@ -3002,23 +3002,9 @@ pub fn isTaskRunning(
     return true;
 }
 
-/// Cancel a session (set cancelled flag) — and the sessions it spawned.
-///
-/// A session is not actually stopped while the sub-agents IT started keep
-/// running: each one is a separate session with its own `worker` row, and the
-/// parent is parked in the batch's `Group.await` until they all return. So the
-/// same Stop has to reach them, or the button appears to do nothing for as
-/// long as the slowest child keeps working.
-///
-/// The child link is `llm_history.parent_session_id` — the column
-/// `spawn_sub_agent` (and the skill-eval judge batch) writes on every message
-/// of a child session. One level is all there is: a sub-agent's tool list has
-/// `spawn_sub_agent` stripped, so it cannot spawn its own.
-///
-/// The child UPDATE is best-effort. A database whose `llm_history` predates
-/// migration 12 has no `parent_session_id` column, and failing the whole Stop
-/// because a descendant could not be flagged would leave the parent running —
-/// strictly worse than stopping the parent alone.
+/// Cancel a session (set cancelled flag) and the sessions it spawned: a
+/// sub-agent is its own session under `llm_history.parent_session_id`, and the
+/// parent is parked in `Group.await` until the children return. Best-effort.
 pub fn cancelSession(
     allocator: std.mem.Allocator,
     db: *database.Db,

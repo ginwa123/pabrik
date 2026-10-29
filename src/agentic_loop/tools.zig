@@ -140,11 +140,8 @@ pub const ToolExecContext = struct {
     /// tools — see `document_events.zig`). Null in tests and in any host that
     /// has no bus, which makes the emit a no-op.
     event_bus: ?*pabrikcore.event_bus.EventBus = null,
-    /// The Stop button, for a tool that BLOCKS its thread: `command` polled
-    /// this inside its foreground wait loop and SIGKILLs the child's process
-    /// group. `handle_tool` builds a fresh probe per dispatch (see
-    /// `session_cancel_probe.zig`); null everywhere else, including every test
-    /// that constructs a context directly, so nothing polls by accident.
+    /// The Stop button, for a tool that blocks its thread (`command`): null in
+    /// tests, so nothing polls a context that was built directly.
     cancel_hook: ?pabrikcore.shell_tool.CancelHook = null,
 };
 

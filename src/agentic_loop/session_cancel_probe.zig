@@ -1,21 +1,6 @@
-//! A per-dispatch probe for "has this session been cancelled?".
-//!
-//! The Stop button (`POST /api/llm/session/:session/stop`) only flips
-//! `worker.cancelled` in the database. Between iterations the workflow reads
-//! that flag itself, but a tool that blocks INSIDE one iteration — a
-//! foreground `command` waiting on a child process — has to ask, or the user
-//! waits out the tool's own `timeout` (up to 600 s).
-//!
-//! The probe is throttled (one SELECT per `poll_interval_ns`, 50 ms by
-//! default) because a waiting loop polls it every 10 ms, and it LATCHES: once
-//! the row says cancelled, every later call answers true without touching the
-//! database. That matters because `workflow` resets the column to 0 when the
-//! next iteration begins — a probe that re-read it would report "running"
-//! again after it had already seen the Stop.
-//!
-//! It is deliberately NOT a threadlocal: `handle_tool` creates one per
-//! dispatch on the stack, so a nested dispatch (a sub-agent's own tools, which
-//! run on the same thread) cannot clobber the outer probe.
+//! "Has this session been cancelled?" for a tool that blocks its thread: one
+//! throttled, LATCHING read of `worker.cancelled` — `workflow` resets that
+//! column each turn, so re-reading it would un-cancel a Stop already seen.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

@@ -48,13 +48,9 @@ pub const RunMode = enum {
     }
 };
 
-/// Cooperative cancellation, handed in by whoever is running the tool.
-///
-/// A foreground `command` blocks its thread waiting on the child, so nothing
-/// upstream can interrupt it: cancellation has to be POLLED from inside the
-/// wait loop. `ctx` is the probe's own state (the agentic loop passes a
-/// per-dispatch `session_cancel_probe.Probe`, which answers "has this session
-/// been stopped?" from the `worker.cancelled` row).
+/// Cooperative cancellation for a foreground run: the wait loop polls it, and
+/// a true answer kills the child's process group. `ctx` is the caller's probe
+/// (`session_cancel_probe.Probe` in the agentic loop).
 pub const CancelHook = struct {
     ctx: *const anyopaque,
     is_cancelled: *const fn (ctx: *const anyopaque) bool,
@@ -64,10 +60,8 @@ pub const CancelHook = struct {
     }
 };
 
-/// `ShellInput` stays a pure WIRE type — it is what the LLM's JSON arguments
-/// parse into (see the `parseFromSlice(ShellInput, …)` test below), so it can
-/// never carry a function pointer. The hook therefore travels as a separate
-/// argument, next to the `Executor`, which is injected the same way.
+/// A pure WIRE type — the LLM's JSON arguments parse into it, so it cannot
+/// carry a function pointer. Hooks travel beside the `Executor` instead.
 pub const ShellInput = struct {
     command: []const u8,
     timeout: ?u32 = null,
@@ -1252,10 +1246,8 @@ pub fn stopDetachedProcess(allocator: std.mem.Allocator, io: std.Io, pid: u32) b
     return signalled;
 }
 
-/// JSON serialiser — the same payload as the old `result_to_xml`
-/// (`command/stdout/stderr/exit_code/truncated/timeout/stdout_lines/
-/// stderr_lines`, plus `cancelled` so a Stop is visible in the transcript
-/// instead of looking like a mysterious SIGKILL), now a JSON object.
+/// JSON serialiser — the old `result_to_xml` payload plus `cancelled`, so a
+/// Stop is visible in the transcript instead of a bare SIGKILL exit.
 pub fn result_to_json(allocator: std.mem.Allocator, result: ShellOutput) ![]u8 {
     // Strip terminal escape sequences FIRST.
     const ansi_stdout = try helpers.ansi.stripAnsi(allocator, result.stdout);
