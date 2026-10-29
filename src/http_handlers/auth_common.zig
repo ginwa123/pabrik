@@ -29,6 +29,10 @@ pub fn isAuthExempt(path: []const u8) bool {
     if (std.mem.eql(u8, path, "/api/auth/logout")) return true;
     if (std.mem.eql(u8, path, "/health")) return true;
     if (std.mem.eql(u8, path, "/api/health")) return true;
+    // A scraper holds no session. /metrics carries route templates and
+    // counters, never bodies or ids, so a public tunnel must deny the path
+    // rather than this gate — otherwise every scrape reads 401.
+    if (std.mem.eql(u8, path, "/metrics")) return true;
     return false;
 }
 
@@ -211,14 +215,17 @@ pub fn requestWorkspaceConfig(
 // (in-memory SQLite via useCase-adjacent helpers is covered in
 // auth_login_test; here we test pure helpers with no DB).
 
-test "isAuthExempt allows login/logout/health only" {
+test "isAuthExempt allows login/logout/health and the scrape target only" {
     try std.testing.expect(isAuthExempt("/api/auth/login"));
     try std.testing.expect(isAuthExempt("/api/auth/logout"));
     try std.testing.expect(isAuthExempt("/health"));
     try std.testing.expect(isAuthExempt("/api/health"));
+    try std.testing.expect(isAuthExempt("/metrics"));
     try std.testing.expect(!isAuthExempt("/api/workspaces"));
     try std.testing.expect(!isAuthExempt("/api/auth/me"));
     try std.testing.expect(!isAuthExempt("/api/auth/loginX"));
+    try std.testing.expect(!isAuthExempt("/api/metrics/summary"));
+    try std.testing.expect(!isAuthExempt("/metrics/x"));
 }
 
 test "parseSessionToken handles empty as absent" {
