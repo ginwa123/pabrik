@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import VirtualScroller from '../VirtualScroller.vue'
+import { readChatViewSource } from '../../__tests__/helpers/chatViewSource'
 
 /** Mount a scroller with N items at the ChatView-like settings
  * (defaultItemHeight 64, buffer 30) and a fixed 800px viewport. */
@@ -192,12 +193,7 @@ describe('VirtualScroller programmatic-scroll signal', () => {
 
 describe('ChatView handleVirtualScroll programmatic guard (static contract)', () => {
   it('userScrolledUp must exclude programmatic scroll events', async () => {
-    const { readFileSync } = await import('node:fs')
-    const { resolve } = await import('node:path')
-    const { fileURLToPath } = await import('node:url')
-    const here = fileURLToPath(import.meta.url)
-    const path = resolve(here, '../../../components/views/ChatView.vue')
-    const src = readFileSync(path, 'utf8')
+    const src = readChatViewSource()
     // The guard must not treat a programmatic compensation write as a
     // real upward gesture — otherwise isAtBottom flips false and the
     // auto-stick disengages for the rest of the stream (the gap bug).
@@ -205,12 +201,7 @@ describe('ChatView handleVirtualScroll programmatic guard (static contract)', ()
   })
 
   it('handleVirtualScroll accepts the 4th isProgrammatic emit arg', async () => {
-    const { readFileSync } = await import('node:fs')
-    const { resolve } = await import('node:path')
-    const { fileURLToPath } = await import('node:url')
-    const here = fileURLToPath(import.meta.url)
-    const path = resolve(here, '../../../components/views/ChatView.vue')
-    const src = readFileSync(path, 'utf8')
+    const src = readChatViewSource()
     expect(src).toMatch(
       /handleVirtualScroll\s*=\s*\(\s*scrollTop:\s*number,\s*direction:\s*'up'\s*\|\s*'down',\s*target:\s*HTMLElement,\s*isProgrammatic/,
     )

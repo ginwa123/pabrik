@@ -332,12 +332,7 @@ describe('ChatView onContentShift restick (extracted)', () => {
     })
 
     it('T7e (red→green): production handleVirtualScroll retains the stick ONLY when it was previously engaged', async () => {
-      const { readFileSync } = await import('node:fs')
-      const { resolve } = await import('node:path')
-      const { fileURLToPath } = await import('node:url')
-      const here = fileURLToPath(import.meta.url)
-      const path = resolve(here, '../../../components/views/ChatView.vue')
-      const src = readFileSync(path, 'utf8')
+      const src = readChatViewSource()
       // The guard must reference previousIsAtBottom — without it the
       // stick re-engages for users who are already scrolled up.
       expect(src).toMatch(

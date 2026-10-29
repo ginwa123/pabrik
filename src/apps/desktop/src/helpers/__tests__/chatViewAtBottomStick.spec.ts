@@ -9,6 +9,7 @@ import {
   buildScrollContext,
 } from '../scrollLogger'
 import { useChatScrollRestore } from '@/composables/useChatScrollRestore'
+import { readChatViewSource } from '../../__tests__/helpers/chatViewSource'
 
 /** scrollLogger.ts — the at-bottom tolerance itself. Deliberately tiny. */
 const BOTTOM_THRESHOLD_PX = BOTTOM_THRESHOLD
@@ -635,8 +636,8 @@ describe('wiring — both sides really use the shared ruler', () => {
     expect(fn).not.toMatch(/scrollHeight\s*-\s*clientHeight/)
   })
 
-  it('ChatView measures at-bottom with bottomScrollTop, not the raw sizer', async () => {
-    const src = await readSource('../../components/views/ChatView.vue')
+  it('ChatView measures at-bottom with bottomScrollTop, not the raw sizer', () => {
+    const src = readChatViewSource()
     // The live read is still there — it is the fallback and the ceiling.
     expect(src).toMatch(
       /const liveEdge = virtualScrollerRef\.value\?\.bottomScrollTop\?\.\(\)\s*\?\?\s*scrollHeight - clientHeight/,
@@ -648,8 +649,8 @@ describe('wiring — both sides really use the shared ruler', () => {
     )
   })
 
-  it('ChatView prefers the stable anchor over the live read', async () => {
-    const src = await readSource('../../components/views/ChatView.vue')
+  it('ChatView prefers the stable anchor over the live read', () => {
+    const src = readChatViewSource()
     // The moving-target fix: `settledBottom` is read off the scroller and used
     // as the floor for the edge the decision measures against.
     expect(src).toMatch(/const settled = virtualScrollerRef\.value\?\.settledBottom/)
