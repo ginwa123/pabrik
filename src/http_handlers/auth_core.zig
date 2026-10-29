@@ -44,14 +44,9 @@ pub const SessionLookup = struct {
     role: []const u8,
 };
 
-/// A session is live while `expires_at` is still in the future and the account
-/// can still sign in. The comparison is spelled per backend (UTC on both), so
-/// it does not depend on migration 121's `datetime()` shim existing in the
-/// database being read.
-///
-/// This is `dialect.now_stamp_utc`, repeated because this file is compiled as
-/// its own module (`auth_core`) and `dialect.zig` already belongs to
-/// `pabrikcore` — a file may belong to one module only.
+/// A session is live while `expires_at` is future and the account can sign in.
+/// This is `dialect.now_stamp_utc`, respelled because this file is its own
+/// module (`auth_core`) and cannot import `dialect.zig`.
 const live_session = " AND s.expires_at > " ++
     (if (database.backend_is_postgres) "(now() AT TIME ZONE 'UTC')" else "datetime('now')") ++
     " AND u.is_active = 1";

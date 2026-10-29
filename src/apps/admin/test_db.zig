@@ -1,11 +1,6 @@
-//! A fresh database for the console's tests, on whichever backend `-Ddb_used`
-//! compiled in: `:memory:` on sqlite, a throwaway database on postgres the
-//! `databases` package creates and drops again.
-//!
-//! A postgres build needs a server to run its tests. `POSTGRES_TEST_CONNINFO`
-//! names the instance (`host=localhost port=5433 dbname=postgres`); without one
-//! the tests skip, unless `PABRIK_DB_TESTS_REQUIRE_SERVER=1` asks for a failure
-//! instead — the same contract `src/testing/test_db.zig` gives the server.
+//! A throwaway database for the console's tests: `:memory:` on sqlite, a temp
+//! database on postgres. A postgres build without `POSTGRES_TEST_CONNINFO`
+//! skips, unless `PABRIK_DB_TESTS_REQUIRE_SERVER=1` demands a failure.
 
 const std = @import("std");
 const databases = @import("databases");

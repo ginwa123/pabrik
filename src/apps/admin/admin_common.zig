@@ -129,11 +129,9 @@ pub fn revokeSessions(
     );
 }
 
-/// The current UTC time in the format SQLite's `datetime('now')` writes, moved
-/// by `offset_secs` (negative = in the past). The console stamps its own rows,
-/// so the value it reports back is the value it stored, not a second reading of
-/// a clock it does not control. Writing the stamp ourselves also keeps the
-/// tests free of `datetime('now', '-3 hours')`, which postgres does not have.
+/// The current UTC time in `datetime('now')`'s format, moved by
+/// `offset_secs` (negative = the past). Written here rather than by
+/// `datetime('now', ...)`, which postgres does not have.
 pub fn utcStamp(allocator: std.mem.Allocator, io: std.Io, offset_secs: i64) ![]u8 {
     const stamp = std.Io.Timestamp.now(io, .real);
     const now: i64 = @intCast(@divTrunc(stamp.nanoseconds, std.time.ns_per_s));

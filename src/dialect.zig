@@ -27,11 +27,9 @@ else
 /// and postgres compares it against its own `now()` rather than a parsed string.
 pub const now_stamp: []const u8 = "CURRENT_TIMESTAMP";
 
-/// "Now" as a UTC `TIMESTAMP`: sqlite's `datetime('now')` is UTC text, and
-/// postgres gets its `now()` made timezone-free so the value does not depend on
-/// the connection's `TimeZone`. Usable both as a value (`SET ad_at = …`) and on
-/// the right of a comparison against a `TIMESTAMP` column (`expires_at > …`),
-/// including on a database where migration 121's `datetime()` shim is absent.
+/// "Now" as a UTC `TIMESTAMP` on both engines, so the value does not depend on
+/// the connection's `TimeZone`. Usable as a value and on the right of a
+/// comparison against a `TIMESTAMP` column.
 pub const now_stamp_utc: []const u8 = if (is_postgres)
     "(now() AT TIME ZONE 'UTC')"
 else
@@ -60,10 +58,11 @@ pub fn epochToText(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
 }
 
 /// A `TIMESTAMP` column rendered as `YYYY-MM-DD HH24:MI:SS` text, so a read
-/// that returns it to Zig gets the same string from either engine.
-pub fn timestampText(buf: []u8, column: []const u8) error{NoSpaceLeft}![]const u8 {
-    if (is_postgres) return std.fmt.bufPrint(buf, "to_char({s}, 'YYYY-MM-DD HH24:MI:SS')", .{column});
-    return std.fmt.bufPrint(buf, "{s}", .{column});
+/// that returns it to Zig gets the same string from either engine. `column` is
+/// a column name, never a bind, so the fragment is fixed at compile time.
+pub fn timestampText(comptime column: []const u8) []const u8 {
+    if (is_postgres) return std.fmt.comptimePrint("to_char({s}, 'YYYY-MM-DD HH24:MI:SS')", .{column});
+    return column;
 }
 
 /// Columns a table's metadata can be read from: sqlite's `sqlite_master` and

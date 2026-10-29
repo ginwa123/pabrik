@@ -1,7 +1,6 @@
-//! Which backend the console opens. The server keeps the same policy in
-//! `src/boot/db_target.zig`; this is the console's own copy so that it keeps
-//! linking nothing but `databases`. The flag and variable names are the
-//! server's on purpose: an operator's shell works for both.
+//! Which backend the console opens: the server's policy from
+//! `src/boot/db_target.zig`, copied so the console links nothing but
+//! `databases`. The flag and variable names are the server's on purpose.
 
 const std = @import("std");
 const dialect = @import("dialect");
@@ -36,11 +35,8 @@ pub const Error = error{
     BackendNotCompiled,
 };
 
-/// The backend to open: what the operator asked for (a flag, then the
-/// environment), else the one this build compiled in. Naming the backend the
-/// build left out is a refusal, not a fallback — a console that silently
-/// administered a different database than the one named would be worse than one
-/// that stops.
+/// The backend to open: the request, else the one this build compiled in.
+/// Naming a backend the build left out is a refusal, not a fallback.
 pub fn resolve(requested: ?[]const u8) Error!Backend {
     const asked: ?[]const u8 = if (requested) |raw| blk: {
         const trimmed = std.mem.trim(u8, raw, " \t");
