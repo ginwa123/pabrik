@@ -163,6 +163,7 @@ fn registerStreamRoutes(authed: *Group, router: *gserverz.router.Router) !void {
     // Benchmark seeding (bench_seed.zig) — gated by PABRIK_BENCH_SEED=1, 404
     // when off. `benchmark/run.sh` uses it to give the list routes rows to read.
     try authed.post("/api/bench/seed/sessions", ai_mod.http_handlers.benchSeedSessionsHandler);
+    try authed.post("/api/bench/seed/documents", ai_mod.http_handlers.benchSeedDocumentsHandler);
 }
 
 fn registerSystemRoutes(authed: *Group, instrumented: *Group) !void {
@@ -378,6 +379,7 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     // Workspace-scoped documents (Migration 098).
     try authed.get("/api/workspaces/:workspace_id/documents", ai_mod.http_handlers.documentsListHandler);
     try authed.post("/api/workspaces/:workspace_id/documents", ai_mod.http_handlers.documentsCreateHandler);
+    try authed.patch("/api/workspaces/:workspace_id/documents/reorder", ai_mod.http_handlers.documentsReorderHandler);
     try authed.get("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsDeleteHandler);
@@ -650,7 +652,7 @@ test "route table: no POST /api/workspaces/:workspace_id/:param sibling exists" 
     }
 }
 
-test "route table: all five documents verbs resolve to their handlers" {
+test "route table: the documents verbs resolve, and the /reorder literal beats :document_id" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -666,6 +668,11 @@ test "route table: all five documents verbs resolve to their handlers" {
             .method = "POST",
             .path = "/api/workspaces/ws_1/documents",
             .handler = ai_mod.http_handlers.documentsCreateHandler,
+        },
+        .{
+            .method = "PATCH",
+            .path = "/api/workspaces/ws_1/documents/reorder",
+            .handler = ai_mod.http_handlers.documentsReorderHandler,
         },
         .{
             .method = "GET",

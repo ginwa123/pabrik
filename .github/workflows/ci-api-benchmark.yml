@@ -10,7 +10,7 @@ on:
         description: 'concurrency of the cN phase'
         default: '8'
       scenarios:
-        description: 'comma list: health, messages, sessions, or all'
+        description: 'comma list: health, messages, sessions, documents, documents-reorder, or all'
         default: 'all'
       min_scaling:
         description: 'gate: throughput at cN divided by throughput at c1'
@@ -32,6 +32,9 @@ on:
       - 'src/http_handlers/session_list.zig'
       - 'src/http_handlers/git_branch.zig'
       - 'src/http_handlers/bench_seed.zig'
+      - 'src/http_handlers/documents_*.zig'
+      - 'src/agentic_loop/documents_store.zig'
+      - 'src/migrations/migration_122.zig'
       - 'src/agentic_loop/llm_history.zig'
       - 'src/http_routes.zig'
       - 'src/main.zig'
@@ -50,6 +53,9 @@ on:
       - 'src/http_handlers/session_list.zig'
       - 'src/http_handlers/git_branch.zig'
       - 'src/http_handlers/bench_seed.zig'
+      - 'src/http_handlers/documents_*.zig'
+      - 'src/agentic_loop/documents_store.zig'
+      - 'src/migrations/migration_122.zig'
       - 'src/agentic_loop/llm_history.zig'
       - 'src/http_routes.zig'
       - 'src/main.zig'
@@ -135,7 +141,7 @@ jobs:
           strict="${strict:-false}"
           case "$requests" in ''|*[!0-9]*) echo "::error::requests must be a positive integer"; exit 1 ;; esac
           case "$concurrency" in ''|*[!0-9]*) echo "::error::concurrency must be a positive integer"; exit 1 ;; esac
-          case "$scenarios" in ''|*[!a-z,]*) echo "::error::scenarios must be a comma list of scenario names"; exit 1 ;; esac
+          case "$scenarios" in ''|*[!a-z,-]*) echo "::error::scenarios must be a comma list of scenario names"; exit 1 ;; esac
           case "$strict" in true|1) strict=1 ;; *) strict=0 ;; esac
           {
             echo "requests=$requests"

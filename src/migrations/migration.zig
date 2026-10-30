@@ -134,6 +134,7 @@ const migration_118 = @import("migration_118.zig");
 const migration_119 = @import("migration_119.zig");
 const migration_120 = @import("migration_120.zig");
 const migration_121 = @import("migration_121.zig");
+const migration_122 = @import("migration_122.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -257,6 +258,7 @@ pub const Migration118AddWorkerRunToken = migration_118.Migration118AddWorkerRun
 pub const Migration119CreateSkillMetadata = migration_119.Migration119CreateSkillMetadata;
 pub const Migration120GrantSetSkillMetadata = migration_120.Migration120GrantSetSkillMetadata;
 pub const Migration121AddSqliteTimeFunctions = migration_121.Migration121AddSqliteTimeFunctions;
+pub const Migration122AddDocumentPosition = migration_122.Migration122AddDocumentPosition;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -490,6 +492,7 @@ pub const allMigrations: []const Migration = &.{
     // Migration 121 — `datetime(...)` / `strftime(...)` as postgres functions, so the ~260 statements
     // that already spell them stay identical on both engines (a no-op on sqlite).
     .{ .version = Migration121AddSqliteTimeFunctions.version, .name = Migration121AddSqliteTimeFunctions.name, .up = Migration121AddSqliteTimeFunctions.up },
+    .{ .version = Migration122AddDocumentPosition.version, .name = Migration122AddDocumentPosition.name, .up = Migration122AddDocumentPosition.up },
 };
 
 /// Register all migrations with a MigrationManager

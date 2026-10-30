@@ -33,6 +33,7 @@ pub const DocumentRow = struct {
     format: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
+    position: i64,
 };
 
 /// Fields for a new document. `workspace_id` is required and has no
@@ -94,11 +95,23 @@ pub const DeleteDocumentError = error{
     DeleteFailed,
 };
 
+pub const ReorderDocumentsError = error{
+    WorkspaceIdRequired,
+    EmptyOrder,
+    DocumentNotFound,
+    DuplicateDocumentId,
+    QueryFailed,
+    TransactionFailed,
+    UpdateFailed,
+    OutOfMemory,
+};
+
 /// The SELECT list, shared by every read so no call site can accidentally
 /// return a different shape.
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, title, content, format, " ++
-    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') " ++
+    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
+    "COALESCE(CAST(position AS TEXT), '0') " ++
     "FROM documents";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !DocumentRow {
@@ -110,12 +123,10 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Docu
         .format = try allocator.dupe(u8, values[4]),
         .created_at = try allocator.dupe(u8, values[5]),
         .updated_at = try allocator.dupe(u8, values[6]),
+        .position = std.fmt.parseInt(i64, values[7], 10) catch 0,
     };
 }
 
-/// Every document in one workspace, most-recently-updated first. The
-/// ordering matches `idx_documents_workspace_updated` and the sidebar's
-/// `DocumentsList` render order.
 pub fn listDocuments(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -125,7 +136,7 @@ pub fn listDocuments(
 
     var q = db.query(
         allocator,
-        SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC",
+        SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY position ASC, updated_at DESC, id DESC",
         &[_][]const u8{workspace_id},
     ) catch return error.QueryFailed;
     defer q.deinit();
@@ -259,9 +270,9 @@ pub fn createDocument(
     // `Backend.exec` binds a zero-length slice as SQL NULL, which would
     // violate the constraint outright.
     db.exec(allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content, format, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    , &[_][]const u8{ document_id, args.workspace_id, title, args.content, format }) catch
+        \\INSERT INTO documents (id, workspace_id, title, content, format, position, created_at, updated_at)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), COALESCE((SELECT MIN(position) FROM documents WHERE workspace_id = ?), 0) - 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    , &[_][]const u8{ document_id, args.workspace_id, title, args.content, format, args.workspace_id }) catch
         return error.InsertFailed;
 
     // The re-read uses a wider error set than this function declares, so map
@@ -273,8 +284,8 @@ pub fn createDocument(
     };
 }
 
-/// Patch a document. Absent fields keep their current value; `updated_at`
-/// always advances so the sidebar's recency ordering reflects the edit.
+/// Patch a document. Absent fields keep their current value and `updated_at`
+/// always advances.
 pub fn updateDocument(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -341,6 +352,61 @@ pub fn deleteDocument(
     ) catch return error.DeleteFailed;
 }
 
+fn containsDocumentId(ids: []const []const u8, needle: []const u8) bool {
+    for (ids) |id| {
+        if (std.mem.eql(u8, id, needle)) return true;
+    }
+    return false;
+}
+
+pub fn reorderDocuments(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+    ordered_ids: []const []const u8,
+) ReorderDocumentsError!void {
+    if (workspace_id.len == 0) return error.WorkspaceIdRequired;
+    if (ordered_ids.len == 0) return error.EmptyOrder;
+
+    var q = db.query(
+        allocator,
+        "SELECT id FROM documents WHERE workspace_id = ?",
+        &[_][]const u8{workspace_id},
+    ) catch return error.QueryFailed;
+    defer q.deinit();
+
+    var known: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (known.items) |id| allocator.free(id);
+        known.deinit(allocator);
+    }
+    while (q.next() catch return error.QueryFailed) |r| {
+        defer r.deinit(allocator);
+        known.append(allocator, allocator.dupe(u8, r.values[0]) catch return error.OutOfMemory) catch
+            return error.OutOfMemory;
+    }
+
+    for (ordered_ids, 0..) |id, i| {
+        if (!containsDocumentId(known.items, id)) return error.DocumentNotFound;
+        if (containsDocumentId(ordered_ids[0..i], id)) return error.DuplicateDocumentId;
+    }
+
+    var tx = db.begin() catch return error.TransactionFailed;
+    defer tx.commitOrRollback() catch {};
+    errdefer tx.rollback() catch {};
+
+    var pos_buf: [32]u8 = undefined;
+    for (ordered_ids, 0..) |id, i| {
+        const position = std.fmt.bufPrint(&pos_buf, "{d}", .{i}) catch return error.UpdateFailed;
+        tx.exec(
+            allocator,
+            "UPDATE documents SET position = ? WHERE id = ? AND workspace_id = ?",
+            &[_][]const u8{ position, id, workspace_id },
+        ) catch return error.UpdateFailed;
+    }
+    tx.commit() catch return error.UpdateFailed;
+}
+
 /// Free a single row's owned strings.
 pub fn freeDocumentRow(allocator: std.mem.Allocator, row: DocumentRow) void {
     allocator.free(row.id);
@@ -356,4 +422,196 @@ pub fn freeDocumentRow(allocator: std.mem.Allocator, row: DocumentRow) void {
 pub fn freeDocumentRows(allocator: std.mem.Allocator, rows: []DocumentRow) void {
     for (rows) |row| freeDocumentRow(allocator, row);
     allocator.free(rows);
+}
+
+const testing = std.testing;
+const test_db = @import("pabrikcore").test_db;
+const migration = @import("../migrations/migration.zig");
+
+const TestCtx = struct {
+    db: database.Db,
+    threaded: std.Io.Threaded,
+};
+
+fn setupDb() !TestCtx {
+    var threaded = std.Io.Threaded.init(testing.allocator, .{});
+    errdefer threaded.deinit();
+    var db: database.Db = .{};
+    errdefer db.deinit();
+    try test_db.openMemory(&db, threaded.io());
+    try migration.Migration098CreateDocuments.up(&db, testing.allocator);
+    try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    return .{ .db = db, .threaded = threaded };
+}
+
+fn seedDocument(alloc: std.mem.Allocator, db: *database.Db, id: []const u8, workspace_id: []const u8, updated_at: []const u8) !void {
+    try db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, content, updated_at)
+        \\VALUES (?, ?, ?, 'body', ?)
+    , &[_][]const u8{ id, workspace_id, id, updated_at });
+}
+
+fn titlesInOrder(alloc: std.mem.Allocator, rows: []const DocumentRow) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+    for (rows, 0..) |row, i| {
+        if (i > 0) try out.append(alloc, ',');
+        try out.appendSlice(alloc, row.id);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+test "listDocuments: never-reordered documents keep the newest-updated-first order" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDocument(alloc, &ctx.db, "doc_oldest", "ws_1", "2026-09-01 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_middle", "ws_1", "2026-09-02 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_newest", "ws_1", "2026-09-03 10:00:00");
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+
+    const order = try titlesInOrder(alloc, rows);
+    defer alloc.free(order);
+    try testing.expectEqualStrings("doc_newest,doc_middle,doc_oldest", order);
+}
+
+test "reorderDocuments: the given order becomes the list order and survives a re-read" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDocument(alloc, &ctx.db, "doc_a", "ws_1", "2026-09-01 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_b", "ws_1", "2026-09-02 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_c", "ws_1", "2026-09-03 10:00:00");
+
+    try reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_c", "doc_a", "doc_b" });
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+
+    const order = try titlesInOrder(alloc, rows);
+    defer alloc.free(order);
+    try testing.expectEqualStrings("doc_c,doc_a,doc_b", order);
+    try testing.expectEqual(@as(i64, 0), rows[0].position);
+    try testing.expectEqual(@as(i64, 1), rows[1].position);
+    try testing.expectEqual(@as(i64, 2), rows[2].position);
+}
+
+test "reorderDocuments: another workspace's order is untouched by a reorder" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDocument(alloc, &ctx.db, "doc_a", "ws_1", "2026-09-01 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_b", "ws_1", "2026-09-02 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_x", "ws_2", "2026-09-01 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_y", "ws_2", "2026-09-02 10:00:00");
+
+    try reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_b", "doc_a" });
+
+    const theirs = try listDocuments(alloc, &ctx.db, "ws_2");
+    defer freeDocumentRows(alloc, theirs);
+    const order = try titlesInOrder(alloc, theirs);
+    defer alloc.free(order);
+    try testing.expectEqualStrings("doc_y,doc_x", order);
+}
+
+test "reorderDocuments: an id from another workspace is rejected and nothing is written" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDocument(alloc, &ctx.db, "doc_a", "ws_1", "2026-09-01 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_b", "ws_1", "2026-09-02 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_x", "ws_2", "2026-09-01 10:00:00");
+
+    try testing.expectError(
+        error.DocumentNotFound,
+        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_b", "doc_x" }),
+    );
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+    const order = try titlesInOrder(alloc, rows);
+    defer alloc.free(order);
+    try testing.expectEqualStrings("doc_b,doc_a", order);
+    try testing.expectEqual(@as(i64, 0), rows[0].position);
+    try testing.expectEqual(@as(i64, 0), rows[1].position);
+}
+
+test "reorderDocuments: an unknown id is rejected" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDocument(alloc, &ctx.db, "doc_a", "ws_1", "2026-09-01 10:00:00");
+
+    try testing.expectError(
+        error.DocumentNotFound,
+        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{"doc_missing"}),
+    );
+}
+
+test "reorderDocuments: a repeated id is rejected" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDocument(alloc, &ctx.db, "doc_a", "ws_1", "2026-09-01 10:00:00");
+    try seedDocument(alloc, &ctx.db, "doc_b", "ws_1", "2026-09-02 10:00:00");
+
+    try testing.expectError(
+        error.DuplicateDocumentId,
+        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_a", "doc_a", "doc_b" }),
+    );
+}
+
+test "reorderDocuments: an empty order and an empty workspace are rejected" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.EmptyOrder,
+        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{}),
+    );
+    try testing.expectError(
+        error.WorkspaceIdRequired,
+        reorderDocuments(alloc, &ctx.db, "", &[_][]const u8{"doc_a"}),
+    );
+}
+
+test "createDocument: a new document lands above every existing one" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "First" });
+    defer freeDocumentRow(alloc, first);
+    const second = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "Second" });
+    defer freeDocumentRow(alloc, second);
+
+    try reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ first.id, second.id });
+
+    const third = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "Third" });
+    defer freeDocumentRow(alloc, third);
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+
+    try testing.expectEqual(@as(usize, 3), rows.len);
+    try testing.expectEqualStrings("Third", rows[0].title);
+    try testing.expectEqualStrings("First", rows[1].title);
+    try testing.expectEqualStrings("Second", rows[2].title);
 }

@@ -13,6 +13,7 @@ import { useDocumentsStore } from '../stores/documents'
 
 const listDocuments = vi.hoisted(() => vi.fn())
 const createDocument = vi.hoisted(() => vi.fn())
+const reorderDocuments = vi.hoisted(() => vi.fn())
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
@@ -20,6 +21,7 @@ vi.mock('../api', async () => {
     ...actual,
     listDocuments,
     createDocument,
+    reorderDocuments,
     deleteDocument: vi.fn(),
     getDocument: vi.fn(),
     updateDocument: vi.fn(),
@@ -304,6 +306,130 @@ describe('DocumentsList — failure is not emptiness', () => {
     expect(store.error).toContain('boom')
     expect(store.documents).toHaveLength(2)
     expect(wrapper.find('[data-testid="document-row-doc_1"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('DocumentsList — drag to reorder', () => {
+  const THREE = [
+    { ...DOCS[0]!, id: 'doc_1', title: 'Release plan', position: 0, updated_at: '2026-09-03 10:00:00' },
+    { ...DOCS[1]!, id: 'doc_2', title: 'Meeting notes', position: 1, updated_at: '2026-09-02 10:00:00' },
+    { ...DOCS[0]!, id: 'doc_3', title: 'Invoice draft', position: 2, updated_at: '2026-09-01 10:00:00' },
+  ]
+
+  beforeEach(async () => {
+    await clearDocumentsCache()
+    setActivePinia(createPinia())
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: makeLocalStorageStub(),
+      writable: true,
+      configurable: true,
+    })
+    listDocuments.mockReset()
+    createDocument.mockReset()
+    reorderDocuments.mockReset()
+    listDocuments.mockResolvedValue({ documents: THREE, count: THREE.length })
+    reorderDocuments.mockImplementation(async (_ws: string, orderedIds: string[]) => ({
+      documents: orderedIds.map((id, position) => ({ ...THREE.find((d) => d.id === id)!, position })),
+      count: orderedIds.length,
+    }))
+  })
+
+  /** JSDOM has no `DataTransfer`, so the drag carries a stub with just the surface the component
+   * touches. `getBoundingClientRect()` is zeroed there, so clientY 0 is the TOP half of a row and
+   * anything above 0 is the BOTTOM half. */
+  function makeDragStore() {
+    const store = new Map<string, string>()
+    return {
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      setData(type: string, value: string) {
+        store.set(type, value)
+      },
+      getData(type: string): string {
+        return store.get(type) ?? ''
+      },
+    }
+  }
+
+  function dispatchDrag(type: string, el: Element, dt: unknown, clientY = 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const event = new Event(type, { bubbles: true, cancelable: true }) as any
+    event.dataTransfer = dt
+    event.clientY = clientY
+    el.dispatchEvent(event)
+  }
+
+  function rowOrder(wrapper: ReturnType<typeof mount>) {
+    return wrapper.findAll('[data-doc-id]').map((r) => r.attributes('data-doc-id'))
+  }
+
+  it('dropping the last row on the top half of the first saves it above that row', async () => {
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await settle()
+
+    const rows = wrapper.findAll('[data-doc-id]')
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', rows[2]!.element, dt)
+    dispatchDrag('dragover', rows[0]!.element, dt, 0)
+    dispatchDrag('drop', rows[0]!.element, dt, 0)
+    await settle()
+
+    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', ['doc_3', 'doc_1', 'doc_2'])
+    expect(rowOrder(wrapper)).toEqual(['doc_3', 'doc_1', 'doc_2'])
+    wrapper.unmount()
+  })
+
+  it('dropping on the bottom half of a row saves it below that row', async () => {
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await settle()
+
+    const rows = wrapper.findAll('[data-doc-id]')
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', rows[0]!.element, dt)
+    dispatchDrag('dragover', rows[1]!.element, dt, 5)
+    dispatchDrag('drop', rows[1]!.element, dt, 5)
+    await settle()
+
+    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', ['doc_2', 'doc_1', 'doc_3'])
+    expect(rowOrder(wrapper)).toEqual(['doc_2', 'doc_1', 'doc_3'])
+    wrapper.unmount()
+  })
+
+  it('a rejected save puts the rows back in the order the user had before the drag', async () => {
+    reorderDocuments.mockRejectedValue(new Error('HTTP 404 Not Found'))
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await settle()
+
+    const rows = wrapper.findAll('[data-doc-id]')
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', rows[2]!.element, dt)
+    dispatchDrag('dragover', rows[0]!.element, dt, 0)
+    dispatchDrag('drop', rows[0]!.element, dt, 0)
+    await settle()
+
+    expect(reorderDocuments).toHaveBeenCalledTimes(1)
+    expect(rowOrder(wrapper)).toEqual(['doc_1', 'doc_2', 'doc_3'])
+    wrapper.unmount()
+  })
+
+  it('dropping a row on itself saves nothing', async () => {
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await settle()
+
+    const rows = wrapper.findAll('[data-doc-id]')
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', rows[0]!.element, dt)
+    dispatchDrag('dragover', rows[0]!.element, dt, 5)
+    dispatchDrag('drop', rows[0]!.element, dt, 5)
+    await settle()
+
+    expect(reorderDocuments).not.toHaveBeenCalled()
+    expect(rowOrder(wrapper)).toEqual(['doc_1', 'doc_2', 'doc_3'])
     wrapper.unmount()
   })
 })

@@ -110,6 +110,93 @@ pub fn benchSeedSessionsHandler(
     });
 }
 
+pub const documents_workspace_id = "bench-docs";
+pub const documents_workspace_name = "Bench documents";
+
+fn ensureDocumentsWorkspace(allocator: std.mem.Allocator, db: *pabrikcore.database.Db) !void {
+    var q = db.query(allocator, "SELECT id FROM workspaces WHERE id = ?", &.{documents_workspace_id}) catch
+        return error.QueryFailed;
+    defer q.deinit();
+    if (q.next() catch return error.QueryFailed) |row| {
+        row.deinit(allocator);
+        return;
+    }
+    try db.exec(
+        allocator,
+        "INSERT INTO workspaces (id, name) VALUES (?, ?)",
+        &.{ documents_workspace_id, documents_workspace_name },
+    );
+}
+
+fn seedDocumentId(buf: []u8, row: u32) ![]const u8 {
+    return std.fmt.bufPrint(buf, "bench-doc-{d:0>4}", .{row});
+}
+
+pub fn seedDocuments(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, rows: u32) !void {
+    const bounded = @min(rows, max_rows);
+    try ensureDocumentsWorkspace(allocator, db);
+    try db.exec(
+        allocator,
+        "DELETE FROM documents WHERE workspace_id = ?",
+        &.{documents_workspace_id},
+    );
+
+    var n: u32 = 1;
+    while (n <= bounded) : (n += 1) {
+        var id_buf: [32]u8 = undefined;
+        const id = try seedDocumentId(&id_buf, n);
+        var title_buf: [48]u8 = undefined;
+        const title = try std.fmt.bufPrint(&title_buf, "Bench document {d:0>4}", .{n});
+        var created_buf: [24]u8 = undefined;
+        const created = try seedTimestamp(&created_buf, n);
+        var updated_buf: [24]u8 = undefined;
+        const updated = try seedTimestamp(&updated_buf, n);
+        var position_buf: [16]u8 = undefined;
+        const position = try std.fmt.bufPrint(&position_buf, "{d}", .{n - 1});
+
+        try db.exec(
+            allocator,
+            \\INSERT INTO documents (id, workspace_id, title, content, format, created_at, updated_at, position)
+            \\VALUES (?, ?, ?, '', 'markdown', ?, ?, ?)
+        , &.{ id, documents_workspace_id, title, created, updated, position });
+    }
+}
+
+pub fn benchSeedDocumentsHandler(
+    ctx: gserverz.HttpContext,
+    req: gserverz.HttpRequest,
+    res: gserverz.HttpResponse,
+) !gserverz.HttpResponse {
+    const allocator = ctx.allocator;
+
+    if (!gateEnabled()) {
+        return res.jsonResponse(.{
+            .status_code = 404,
+            .data = try std.fmt.allocPrint(allocator, "{{\"error\":\"not found\"}}", .{}),
+        });
+    }
+
+    const rows = parseRows(req.query.get("rows"));
+    const di = pabrikcore.getSingleton() catch {
+        return res.jsonResponse(.{
+            .status_code = 500,
+            .data = try std.fmt.allocPrint(allocator, "{{\"error\":\"singleton unavailable\"}}", .{}),
+        });
+    };
+
+    seedDocuments(allocator, di.db, rows) catch |err| {
+        return res.jsonResponse(.{
+            .status_code = 500,
+            .data = try std.fmt.allocPrint(allocator, "{{\"error\":\"seed failed: {s}\"}}", .{@errorName(err)}),
+        });
+    };
+
+    return res.jsonResponse(.{
+        .status_code = 200,
+        .data = try std.fmt.allocPrint(allocator, "{{\"inserted\":{d},\"workspace_id\":\"{s}\"}}", .{ rows, documents_workspace_id }),
+    });
+}
+
 // ===================================================================== Tests
 
 const testing = std.testing;
@@ -207,4 +294,105 @@ test "rows defaults to fifty and is clamped to the ceiling" {
     try testing.expectEqual(default_rows, parseRows("not a number"));
     try testing.expectEqual(@as(u32, 7), parseRows("7"));
     try testing.expectEqual(max_rows, parseRows("999999"));
+}
+
+fn setupDocumentsDb() !SeedCtx {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    var db: pabrikcore.database.Db = .{};
+    errdefer db.deinit();
+    try test_db.openMemory(&db, threaded.io());
+    try db.exec(alloc,
+        \\CREATE TABLE workspaces (
+        \\  id TEXT PRIMARY KEY,
+        \\  name TEXT NOT NULL DEFAULT ''
+        \\)
+    , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE documents (
+        \\  id TEXT PRIMARY KEY,
+        \\  workspace_id TEXT NOT NULL,
+        \\  title TEXT NOT NULL DEFAULT '',
+        \\  content TEXT NOT NULL DEFAULT '',
+        \\  format TEXT NOT NULL DEFAULT 'markdown',
+        \\  created_at TIMESTAMP DEFAULT NULL,
+        \\  updated_at TIMESTAMP DEFAULT NULL,
+        \\  position INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+    return .{ .db = db, .threaded = threaded };
+}
+
+test "seeding documents creates the bench workspace and the rows the list route reads" {
+    var ctx = try setupDocumentsDb();
+    defer teardown(&ctx);
+
+    try seedDocuments(testing.allocator, &ctx.db, 50);
+
+    try testing.expectEqual(@as(u32, 1), try countRows(&ctx, "SELECT COUNT(*) FROM workspaces WHERE id = 'bench-docs'"));
+    try testing.expectEqual(@as(u32, 50), try countRows(&ctx, "SELECT COUNT(*) FROM documents WHERE workspace_id = 'bench-docs'"));
+}
+
+test "seeded documents order by position, not by updated_at" {
+    var ctx = try setupDocumentsDb();
+    defer teardown(&ctx);
+
+    try seedDocuments(testing.allocator, &ctx.db, 3);
+
+    var by_position = try ctx.db.query(
+        testing.allocator,
+        "SELECT id FROM documents WHERE workspace_id = 'bench-docs' ORDER BY position ASC, updated_at DESC, id DESC",
+        &.{},
+    );
+    defer by_position.deinit();
+    const first = (try by_position.next()).?;
+    defer first.deinit(testing.allocator);
+    try testing.expectEqualStrings("bench-doc-0001", first.values[0]);
+
+    var by_recency = try ctx.db.query(
+        testing.allocator,
+        "SELECT id FROM documents WHERE workspace_id = 'bench-docs' ORDER BY updated_at DESC, id DESC",
+        &.{},
+    );
+    defer by_recency.deinit();
+    const newest = (try by_recency.next()).?;
+    defer newest.deinit(testing.allocator);
+    try testing.expectEqualStrings("bench-doc-0003", newest.values[0]);
+}
+
+test "seeding documents twice replaces instead of duplicating" {
+    var ctx = try setupDocumentsDb();
+    defer teardown(&ctx);
+
+    try seedDocuments(testing.allocator, &ctx.db, 50);
+    try seedDocuments(testing.allocator, &ctx.db, 50);
+
+    try testing.expectEqual(@as(u32, 50), try countRows(&ctx, "SELECT COUNT(*) FROM documents WHERE workspace_id = 'bench-docs'"));
+}
+
+test "a seeded document carries the same id, title and position every run" {
+    var ctx = try setupDocumentsDb();
+    defer teardown(&ctx);
+
+    try seedDocuments(testing.allocator, &ctx.db, 2);
+
+    var rows = try ctx.db.query(
+        testing.allocator,
+        "SELECT id, title, position, created_at FROM documents WHERE workspace_id = 'bench-docs' ORDER BY id",
+        &.{},
+    );
+    defer rows.deinit();
+
+    const first = (try rows.next()).?;
+    defer first.deinit(testing.allocator);
+    try testing.expectEqualStrings("bench-doc-0001", first.values[0]);
+    try testing.expectEqualStrings("Bench document 0001", first.values[1]);
+    try testing.expectEqualStrings("0", first.values[2]);
+    try testing.expect(std.mem.indexOf(u8, first.values[3], "2026-01-01") != null);
+
+    const second = (try rows.next()).?;
+    defer second.deinit(testing.allocator);
+    try testing.expectEqualStrings("bench-doc-0002", second.values[0]);
+    try testing.expectEqualStrings("1", second.values[2]);
 }

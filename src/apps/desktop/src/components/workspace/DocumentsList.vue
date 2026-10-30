@@ -2,7 +2,7 @@
 // The "Documents" sidebar section (Migration 095) — a collapsible list rendered directly BELOW the
 // Projects section, not inside it. Three deliberate choices, each for a reason that is easy to get
 // wrong: 1. Header markup is copied from `ProjectsList.vue`, not re-invented.
-import { computed, onMounted, onUpdated } from 'vue'
+import { computed, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidebarStore } from '../../stores/sidebar'
 import { useDocumentsStore } from '../../stores/documents'
@@ -64,6 +64,82 @@ const selectDocument = (id: string) => {
   workspacesStore.setActiveWorkspaceItem(null)
   workspacesStore.setActiveTask(null)
   navigationStore.clearActiveChat()
+}
+
+const draggingId = ref<string | null>(null)
+const dragOverId = ref<string | null>(null)
+const dragOverInsertAfter = ref(false)
+
+const rowUnder = (event: DragEvent): HTMLElement | null => {
+  const target = event.target as HTMLElement | null
+  return target?.closest('[data-doc-id]') ?? null
+}
+
+const startDrag = (event: DragEvent, id: string) => {
+  draggingId.value = id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-document-id', id)
+  }
+}
+
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault()
+  const row = rowUnder(event)
+  const id = row?.dataset.docId ?? null
+  if (!id || id === draggingId.value) {
+    dragOverId.value = null
+    dragOverInsertAfter.value = false
+    return
+  }
+  dragOverId.value = id
+  const rect = row!.getBoundingClientRect()
+  dragOverInsertAfter.value = event.clientY > rect.top + rect.height / 2
+}
+
+const handleDragLeave = (event: DragEvent) => {
+  const row = rowUnder(event)
+  if (!row) return
+  const related = event.relatedTarget as Node | null
+  if (related && row.contains(related)) return
+  if (dragOverId.value === row.dataset.docId) {
+    dragOverId.value = null
+    dragOverInsertAfter.value = false
+  }
+}
+
+const endDrag = () => {
+  draggingId.value = null
+  dragOverId.value = null
+  dragOverInsertAfter.value = false
+}
+
+const dropOrder = (sourceId: string, targetId: string, insertAfter: boolean): string[] | null => {
+  const ids = documents.value.map((d) => d.id)
+  const fromIdx = ids.indexOf(sourceId)
+  const toIdx = ids.indexOf(targetId)
+  if (fromIdx === -1 || toIdx === -1) return null
+  const removed = ids.splice(fromIdx, 1)
+  const moved = removed[0]
+  if (!moved) return null
+  const targetIdxInModified = toIdx > fromIdx ? toIdx - 1 : toIdx
+  ids.splice(targetIdxInModified + (insertAfter ? 1 : 0), 0, moved)
+  return ids
+}
+
+const handleDrop = (event: DragEvent) => {
+  event.preventDefault()
+  const row = rowUnder(event)
+  const targetId = row?.dataset.docId ?? null
+  const sourceId = draggingId.value
+  const insertAfter = dragOverInsertAfter.value
+  endDrag()
+  if (!targetId || !sourceId || targetId === sourceId) return
+  const wsId = props.workspaceId ?? workspacesStore.activeWorkspace?.id ?? null
+  if (!wsId) return
+  const orderedIds = dropOrder(sourceId, targetId, insertAfter)
+  if (!orderedIds) return
+  void documentsStore.reorderDocuments(wsId, orderedIds)
 }
 
 const createDocument = () => {
@@ -201,7 +277,25 @@ onUpdated(() => {
       </p>
 
       <ul v-else class="space-y-0">
-        <li v-for="doc in documents" :key="doc.id">
+        <li
+          v-for="doc in documents"
+          :key="doc.id"
+          draggable="true"
+          :data-doc-id="doc.id"
+          :class="draggingId === doc.id ? 'opacity-50' : ''"
+          :style="
+            dragOverId === doc.id && draggingId !== doc.id
+              ? dragOverInsertAfter
+                ? 'box-shadow: 0 2px 0 0 var(--color-violet);'
+                : 'box-shadow: 0 -2px 0 0 var(--color-violet);'
+              : ''
+          "
+          @dragstart="startDrag($event, doc.id)"
+          @dragover="handleDragOver"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop"
+          @dragend="endDrag"
+        >
           <button
             class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
             :data-testid="`document-row-${doc.id}`"

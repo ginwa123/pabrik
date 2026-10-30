@@ -11,10 +11,19 @@ const createDocument = vi.hoisted(() => vi.fn())
 const updateDocument = vi.hoisted(() => vi.fn())
 const deleteDocument = vi.hoisted(() => vi.fn())
 const getDocument = vi.hoisted(() => vi.fn())
+const reorderDocuments = vi.hoisted(() => vi.fn())
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  return { ...actual, listDocuments, createDocument, updateDocument, deleteDocument, getDocument }
+  return {
+    ...actual,
+    listDocuments,
+    createDocument,
+    updateDocument,
+    deleteDocument,
+    getDocument,
+    reorderDocuments,
+  }
 })
 
 const doc = (id: string, overrides: Partial<api.Document> = {}): api.Document => ({
@@ -25,6 +34,7 @@ const doc = (id: string, overrides: Partial<api.Document> = {}): api.Document =>
   format: 'markdown',
   created_at: '2026-09-01 10:00:00',
   updated_at: '2026-09-01 10:00:00',
+  position: 0,
   ...overrides,
 })
 
@@ -44,6 +54,7 @@ beforeEach(async () => {
   updateDocument.mockReset()
   deleteDocument.mockReset()
   getDocument.mockReset()
+  reorderDocuments.mockReset()
 })
 
 describe('documents store — load', () => {
@@ -276,5 +287,64 @@ describe('documents store — workspace switch', () => {
     const store = useDocumentsStore()
     await store.fetchDocuments('ws_1')
     expect(store.documents).toHaveLength(1)
+  })
+})
+
+describe('documents store — reorder', () => {
+  const three = () => [
+    doc('doc_a', { position: 0, updated_at: '2026-09-03 10:00:00' }),
+    doc('doc_b', { position: 1, updated_at: '2026-09-02 10:00:00' }),
+    doc('doc_c', { position: 2, updated_at: '2026-09-01 10:00:00' }),
+  ]
+
+  it('saves the dropped order and repaints the rows the server returned', async () => {
+    listDocuments.mockResolvedValue({ documents: three(), count: 3 })
+    reorderDocuments.mockResolvedValue({
+      documents: [
+        doc('doc_c', { position: 0 }),
+        doc('doc_a', { position: 1 }),
+        doc('doc_b', { position: 2 }),
+      ],
+      count: 3,
+    })
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const saved = await store.reorderDocuments('ws_1', ['doc_c', 'doc_a', 'doc_b'])
+
+    expect(saved).toBe(true)
+    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', ['doc_c', 'doc_a', 'doc_b'])
+    expect(store.documents.map((d) => d.id)).toEqual(['doc_c', 'doc_a', 'doc_b'])
+    expect(store.documents.map((d) => d.position)).toEqual([0, 1, 2])
+    expect(store.error).toBe(null)
+  })
+
+  it('the new order is on screen before the save answers', async () => {
+    listDocuments.mockResolvedValue({ documents: three(), count: 3 })
+    let release: (v: unknown) => void = () => {}
+    reorderDocuments.mockImplementation(
+      () => new Promise((resolve) => (release = resolve)),
+    )
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const pending = store.reorderDocuments('ws_1', ['doc_b', 'doc_a', 'doc_c'])
+
+    expect(store.documents.map((d) => d.id)).toEqual(['doc_b', 'doc_a', 'doc_c'])
+    release({ documents: three(), count: 3 })
+    await pending
+  })
+
+  it('a rejected save restores the previous order and reports why', async () => {
+    listDocuments.mockResolvedValue({ documents: three(), count: 3 })
+    reorderDocuments.mockRejectedValue(new Error('HTTP 404 Not Found'))
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const saved = await store.reorderDocuments('ws_1', ['doc_c', 'doc_a', 'doc_x'])
+
+    expect(saved).toBe(false)
+    expect(store.documents.map((d) => d.id)).toEqual(['doc_a', 'doc_b', 'doc_c'])
+    expect(store.error).toContain('404')
   })
 })

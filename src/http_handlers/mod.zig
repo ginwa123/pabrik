@@ -105,6 +105,7 @@ pub const agentKnowledgeReorderHandler = @import("agent_knowledge_reorder.zig").
 // the chatview's SSE streaming path without a real LLM.
 pub const devSseEmitLlmHandler = @import("dev_sse_emit.zig").emitLlmHandler;
 pub const benchSeedSessionsHandler = @import("bench_seed.zig").benchSeedSessionsHandler;
+pub const benchSeedDocumentsHandler = @import("bench_seed.zig").benchSeedDocumentsHandler;
 // MCP server "Test" probe — fires a tools/list request against a candidate
 // config (without persisting anything) so the user can verify their command /
 // args / env / cwd (or URL + headers) before clicking Save in the MCP server
@@ -166,6 +167,7 @@ pub const documentsCreateHandler = @import("documents_create.zig").documentsCrea
 pub const documentsGetHandler = @import("documents_get.zig").documentsGetHandler;
 pub const documentsUpdateHandler = @import("documents_update.zig").documentsUpdateHandler;
 pub const documentsDeleteHandler = @import("documents_delete.zig").documentsDeleteHandler;
+pub const documentsReorderHandler = @import("documents_reorder.zig").documentsReorderHandler;
 
 // Workspace-scoped secrets (Migration 103). Same house shape as the documents
 // block above: one file per HTTP verb, each carrying its own private

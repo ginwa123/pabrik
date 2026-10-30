@@ -1304,6 +1304,7 @@ pub const DocumentResponse = struct {
     format: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
+    position: i64,
 };
 
 /// Map a `documents_store.DocumentRow` (or any struct with the same fields)
@@ -1317,6 +1318,7 @@ pub fn makeDocumentResponse(doc: anytype) DocumentResponse {
         .format = doc.format,
         .created_at = doc.created_at,
         .updated_at = doc.updated_at,
+        .position = doc.position,
     };
 }
 

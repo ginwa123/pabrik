@@ -14,10 +14,11 @@ export interface Document {
   format: string
   created_at: string
   updated_at: string
+  position: number
 }
 
-/**  * GET /api/workspaces/:workspaceId/documents All documents in one workspace, most-recently-updated
- * first. Backs the sidebar's Documents section, so it runs on every sidebar load. */
+/**  * GET /api/workspaces/:workspaceId/documents All documents in one workspace in the saved sidebar
+ * order. Backs the sidebar's Documents section, so it runs on every sidebar load. */
 export async function listDocuments(
   workspaceId: string,
 ): Promise<{ documents: Document[]; count: number }> {
@@ -65,6 +66,16 @@ export async function updateDocument(
   return await apiFetch<{ document: Document }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
     { method: 'PATCH', body: patch },
+  )
+}
+
+export async function reorderDocuments(
+  workspaceId: string,
+  orderedIds: string[],
+): Promise<{ documents: Document[]; count: number }> {
+  return await apiFetch<{ documents: Document[]; count: number }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/documents/reorder`,
+    { method: 'PATCH', body: { ordered_ids: orderedIds } },
   )
 }
 
