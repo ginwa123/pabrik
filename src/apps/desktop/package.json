@@ -14,6 +14,8 @@
     "lint": "run-s lint:*",
     "lint:check": "oxlint . && eslint . --cache",
     "lint:banned-baseline": "eslint . --suppress-rule local/no-derived-state-watch --suppress-rule local/no-silent-fallback-catch --suppress-rule local/no-watch",
+    "size-baseline": "eslint . --suppress-rule max-lines",
+    "prune-suppressions": "eslint . --prune-suppressions",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "prettier --write --experimental-cli src/",

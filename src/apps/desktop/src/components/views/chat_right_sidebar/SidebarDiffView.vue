@@ -12,6 +12,7 @@ import { pairSplitRows, splitRowIndexBySourceIndex, type SplitRow } from './pair
 import { fetchWholeFileDiff, type WholeFileDiff } from './wholeFileDiff'
 import SplitDiffTable from './SplitDiffTable.vue'
 import DiffThreads from './DiffThreads.vue'
+import { useDiffMiniChat } from './useDiffMiniChat'
 
 /** Shared full diff view: file header (collapse toggle, back/filename/stats, scope + mode, Open),
  * loading/error/empty states, the unified OR split render of the hunks, and the review mini-chat
@@ -133,75 +134,17 @@ const splitRows = computed<SplitRow[]>(() => pairSplitRows(displayLines.value))
  * mode keeps its position when the user flips to split. */
 const splitRowBySource = computed(() => splitRowIndexBySourceIndex(splitRows.value))
 
-// Mini chat popup state (moved verbatim from SidebarDiffPanel).
-const showMiniChat = ref(false)
-const miniChatPosition = ref({ x: 0, y: 0 })
-const miniChatContent = ref('')
-const miniChatFilePath = ref('')
-const miniChatStartLine = ref(0)
-const miniChatEndLine = ref(0)
-
-const miniChatStyle = computed(() => {
-  const vw = typeof globalThis.window !== 'undefined' ? globalThis.window.innerWidth : 1280
-  const vh = typeof globalThis.window !== 'undefined' ? globalThis.window.innerHeight : 800
-  return {
-    left: Math.min(miniChatPosition.value.x, vw - 420) + 'px',
-    top: Math.min(miniChatPosition.value.y, vh - 300) + 'px',
-    width: '400px',
-    backgroundColor: 'var(--semantic-card-bg)',
-    border: '1px solid var(--color-border)',
-  }
-})
-
-const openBoxAtRange = (start: number, end: number, context: string) => {
-  miniChatFilePath.value = props.path
-  miniChatStartLine.value = start
-  miniChatEndLine.value = end
-  miniChatContent.value = context
-  showMiniChat.value = true
-}
-
-/** Open the review box for the line at `lineIdx` in the rendered lines. */
-const openMiniChatAt = (event: MouseEvent, lineIdx: number) => {
-  const lines = displayLines.value
-  const line = lines[lineIdx]
-  if (!line) return
-  if (line.type !== 'add' && line.type !== 'remove') return
-  event.preventDefault()
-  event.stopPropagation()
-  miniChatPosition.value = { x: event.clientX, y: event.clientY }
-  const startIdx = Math.max(0, lineIdx - 3)
-  const endIdx = Math.min(lines.length, lineIdx + 4)
-  const contextLines = lines.slice(startIdx, endIdx)
-  if (contextLines.length === 0) return
-  const start = contextLines[0]!.newLineNum || contextLines[0]!.oldLineNum || 0
-  const last = contextLines[contextLines.length - 1]!
-  const end = last.newLineNum || last.oldLineNum || 0
-  const content = contextLines
-    .map((l) => {
-      const prefix = l.type === 'add' ? '+' : l.type === 'remove' ? '-' : ' '
-      const lineNum = l.newLineNum || l.oldLineNum || ''
-      return `${lineNum} ${prefix}${l.content}`
-    })
-    .join('\n')
-  openBoxAtRange(start, end, content)
-}
-
-const openMiniChat = (event: MouseEvent, line: ParsedDiffLine) => {
-  openMiniChatAt(event, displayLines.value.indexOf(line))
-}
-
-const onSplitComment = (payload: { event: MouseEvent; sourceIndex: number }) => {
-  openMiniChatAt(payload.event, payload.sourceIndex)
-}
-
-const closeMiniChat = () => {
-  showMiniChat.value = false
-  miniChatContent.value = ''
-  miniChatFilePath.value = ''
-  miniChatStartLine.value = 0
-  miniChatEndLine.value = 0
-}
+const {
+  showMiniChat,
+  miniChatContent,
+  miniChatFilePath,
+  miniChatStartLine,
+  miniChatEndLine,
+  miniChatStyle,
+  openMiniChat,
+  onSplitComment,
+  closeMiniChat,
+} = useDiffMiniChat(props, displayLines)
 
 const reviewedVersion = ref(0)
 // A new file resets the review progress (prev-path guard on update).

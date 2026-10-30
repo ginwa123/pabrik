@@ -15,7 +15,6 @@ import {
   sameRouteQuery,
   sameTabTarget,
   shouldTabify,
-  stripTabParam,
   tabKeyOf,
   tabKeyVariants,
   withTabParam,
@@ -25,12 +24,17 @@ import {
   type TabQuery,
 } from '../helpers/tabTarget'
 import { getWindowId } from '../helpers/windowId'
-import { userScopedKey } from '../helpers/userScope'
 import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
 import { useSseBus } from '../helpers/sseBus'
-
-const ENABLED_KEY = 'pabrik-tabs-enabled'
-const LIST_PREFIX = 'pabrik-tabs:v1:'
+import {
+  ENABLED_KEY,
+  listKey,
+  readEnabled,
+  readStorage,
+  removeStorage,
+  tabQueryOf,
+  writeStorage,
+} from './tabsStorage'
 
 export interface OpenTabInput {
   path?: string
@@ -47,45 +51,6 @@ export interface SyncResult {
   query: TabQuery
   /** True when the current URL differs from `path`/`query` (apply with replace). */
   changed: boolean
-}
-
-function listKey(windowId: string): string {
-  return userScopedKey(`${LIST_PREFIX}${windowId}`)
-}
-
-function readStorage(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function writeStorage(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    /* quota / private mode / no storage — the strip still works in memory */
-  }
-}
-
-function removeStorage(key: string): void {
-  try {
-    localStorage.removeItem(key)
-  } catch {
-    /* see writeStorage */
-  }
-}
-
-function readEnabled(): boolean {
-  const raw = readStorage(ENABLED_KEY)
-  // Tab mode defaults to OFF — users found the strip confusing.
-  // Opt-in via Settings → General → "Browser-style tabs".
-  return raw === null ? false : raw === 'true'
-}
-
-function tabQueryOf(query: Record<string, unknown>): TabQuery {
-  return stripTabParam(query)
 }
 
 export const useTabsStore = defineStore('tabs', () => {

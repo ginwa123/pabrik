@@ -1,39 +1,30 @@
 <script setup lang="ts">
-import { ref, onUnmounted, nextTick, computed, inject, type Ref } from 'vue'
+import { computed, ref } from 'vue'
 import * as api from '../../api'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
 import { VirtualScroller, formatCompactTokens } from '@/helpers'
-import { useChatComposerAgents } from './chat_view/useChatComposerAgents'
-import { useChatDiffView } from './chat_view/useChatDiffView'
-import { useChatWorktree } from './chat_view/useChatWorktree'
-import { useChatPagination } from './chat_view/useChatPagination'
-import { useChatTranscriptView } from './chat_view/useChatTranscriptView'
-import { useChatSessionRuntime } from './chat_view/useChatSessionRuntime'
+import { useChatViewWiring } from './chat_view/useChatViewWiring'
+import { useChatCodeCopy } from './chat_view/useChatCodeCopy'
+import { useChatComposerInset } from './chat_view/useChatComposerInset'
+import { useChatReviewComments } from './chat_view/useChatReviewComments'
+import type { SavedReviewComment } from './chat_view/useChatReviewComments'
 import type { VirtualScrollerExposed } from './chat_view/chatViewTypes'
+import type { Message } from './chat_view/useChatMessagePresentation'
 import ChatMessageRow from './chat_view/ChatMessageRow.vue'
 import ChatTranscriptStates from './chat_view/ChatTranscriptStates.vue'
-import type { Message } from './chat_view/useChatMessagePresentation'
-import { buildScrollContext, createScrollLogger, type ScrollLogger } from '@/helpers'
 import FileInput from '../file/FileInput.vue'
-import { resolveWorkspaceId } from '../../helpers/workspaceScope'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
 import Bash from '../preview/Bash.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
-import { copyTextToClipboard } from './chat_right_sidebar/DiffCommentBox.vue'
 import { centerDiffSectionId } from './chat_right_sidebar/parseUnifiedDiff'
 import type { DiffSelection } from './chat_right_sidebar/parseUnifiedDiff'
 import { useChatRightSidebar } from './chat_right_sidebar/useChatRightSidebar'
-import { useNavigationStore } from '../../stores/navigation'
-import { chatViewModeFrom } from '../../stores/chatView'
 import { useInjectOpenInCodeEditor } from '@/composables/useCodeEditor'
 import CodeViewerStage from './CodeViewerStage.vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useWorkspacesStore } from '../../stores/workspaces'
-import { buildAppUrl } from '../../helpers/appUrl'
 import AgentErrorCard from '../chat/AgentErrorCard.vue'
 import UserPillRail from '../chat/UserPillRail.vue'
 import ChatScrollSlider from '../chat/ChatScrollSlider.vue'
@@ -43,7 +34,6 @@ import ImagePreview from '../preview/ImagePreview.vue'
 import WorktreeMenu from '../workspace/WorktreeMenu.vue'
 import CreatePrDialog from '../dialogs/CreatePrDialog.vue'
 import CreateWorktreeDialog from '../dialogs/CreateWorktreeDialog.vue'
-import { ICON_PATHS } from '../ui/icons'
 
 const props = defineProps<{
   chatId: string
@@ -71,8 +61,6 @@ const emit = defineEmits<{
   close: []
 }>()
 
-// Check if session is pending (needs creation on first message)
-const isPendingSession = computed(() => props.chatId.startsWith('pending-'))
 const { presetClass: chatWidthClass } = useChatContentWidth()
 
 // Copy code content to clipboard
@@ -84,79 +72,9 @@ const copyCodeContent = async (codeContent: string) => {
   }
 }
 
-// Setup copy buttons on code blocks after render
-const setupCodeBlockCopyButtons = () => {
-  nextTick(() => {
-    const container = virtualScrollerRef.value?.containerRef
-    if (!container) return
-    const codeBlocks = container.querySelectorAll('.markdown-content pre')
-    codeBlocks.forEach((block) => {
-      if (block.querySelector('.code-copy-btn')) return
-      const code = block.querySelector('code')
-      if (!code) return
-      const content = code.textContent || ''
-      const btn = document.createElement('button')
-      btn.className = 'code-copy-btn'
-      // Built imperatively (post-render decoration), so it cannot mount a
-      // <UiIcon>; it renders the registry's own `clipboard` paths instead of
-      // a hand-copied <path>, so the copy button stays on the one geometry.
-      btn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS.clipboard.map((d) => `<path d="${d}"/>`).join('')}</svg>`
-      btn.title = 'Copy code'
-      btn.style.cssText =
-        'position: absolute; top: 8px; right: 8px; padding: 4px 8px; font-size: 12px; cursor: pointer; border: none; background: var(--semantic-active-bg); border-radius: 4px; opacity: 0.7; transition: opacity 0.2s;'
-      btn.onmouseover = () => (btn.style.opacity = '1')
-      btn.onmouseout = () => (btn.style.opacity = '0.7')
-      btn.onclick = (e) => {
-        e.stopPropagation()
-        copyCodeContent(content)
-      }
-      ;(block as HTMLElement).style.position = 'relative'
-      block.appendChild(btn)
-    })
-  })
-}
-
-// Session ID extracted from props on mount
-const sessionId = ref('')
-
-// Inject processingState from App.vue (driven by SSE - always up-to-date)
-const processingState = inject<Ref<Record<string, boolean>>>('processingState', ref({}))
-
-// LLM processing state - derived reactively from App.vue's processingState
-const isLLMProcessing = computed(() => !!processingState.value[sessionId.value])
-
-// Pagination state
-const messageCursor = ref<string | null>(null)
-const PAGE_SIZE = 1000
-
-// ── Sub-agent peek ──────────────────────────────────────────────── Owns the slide-over panel for
-// watching a single sub-agent's progress. The composable is only mounted when `peekPanel` is
-// non-null (lazy) so we don't open SSE channels speculatively.
-const nav = useNavigationStore()
-const router = useRouter()
-const route = useRoute()
-
-// Chat-owned git-diff sidebar (git-diff-only scope). ChatView passes its already-owned effectiveCwd
-// + sessionId down, so each chat shows its own working tree without AppLayout-level cwd plumbing.
-// Hidden in embedded/peek mode — the peek panel owns the right edge there.
-const chatSidebar = useChatRightSidebar(props.type ?? 'chat')
-const chatSidebarRef = ref<InstanceType<typeof ChatRightSidebar> | null>(null)
-// Attached PR URL for the sidebar's PR-changes mode (set_pull_request
-// tool). Empty = worktree-changes mode. Re-synced with the worktree
-// binding so a mid-chat attach/clear flips the panel without reload.
-const chatPrUrl = ref('')
-const chatPrProvider = ref('')
-
 // Persisted review comments (agnostic comment-box path). Saved to localStorage instead of sent to
 // the LLM — the diff comment box owns per-line draft persistence; ChatView keeps the appended list
 // (capped at 200 entries).
-interface SavedReviewComment {
-  filePath: string
-  message: string
-  formatted: string
-  savedAt: number
-}
-
 const REVIEW_COMMENTS_KEY = 'diff-review-comments'
 
 function loadSavedReviewComments(): SavedReviewComment[] {
@@ -171,71 +89,50 @@ function loadSavedReviewComments(): SavedReviewComment[] {
   }
 }
 
-const savedReviewComments = ref<SavedReviewComment[]>(loadSavedReviewComments())
-
-function persistSavedReviewComments(): void {
+function persistSavedReviewComments(comments: SavedReviewComment[]): void {
   try {
     if (typeof localStorage === 'undefined') return
-    localStorage.setItem(REVIEW_COMMENTS_KEY, JSON.stringify(savedReviewComments.value.slice(-200)))
+    localStorage.setItem(REVIEW_COMMENTS_KEY, JSON.stringify(comments.slice(-200)))
   } catch {
     // Best effort — comments stay in memory for the session.
   }
 }
 
-function appendSavedReviewComment(entry: SavedReviewComment): void {
-  savedReviewComments.value = [...savedReviewComments.value, entry].slice(-200)
-  persistSavedReviewComments()
-}
+// Session ID extracted from props on mount
+const sessionId = ref('')
 
-// Legacy compat: the old mini-chat emitted raw markdown for the LLM.
-// Now it only persists — never calls api.sendChatMessage.
-function onChatSidebarSubmitReview(message: string) {
-  appendSavedReviewComment({ filePath: '', message, formatted: message, savedAt: Date.now() })
-}
+// State
+const messages = ref<Message[]>([])
 
-function onChatSidebarCommentSaved(payload: {
-  filePath: string
-  startLine: number
-  endLine: number
-  message: string
-  formatted: string
-}) {
-  appendSavedReviewComment({
-    filePath: payload.filePath,
-    message: payload.message,
-    formatted: payload.formatted,
-    savedAt: Date.now(),
-  })
-}
+const virtualScrollerRef = ref<VirtualScrollerExposed | null>(null)
 
-const reviewCommentsForDiff = computed(() => {
-  const order = new Map(centerFiles.value.map((f, i) => [f.path, i]))
-  return savedReviewComments.value
-    .filter((e) => order.has(e.filePath))
-    .sort((a, b) => (order.get(a.filePath) ?? 0) - (order.get(b.filePath) ?? 0))
-})
+// Composer input ref — re-focus after the async mount chain (history + stream snapshot + queued
+// messages) so the cursor lands in the box on every session switch, even if the child's own
+// mount-focus raced the history render.
+const fileInputRef = ref<{ focusInput?: () => void } | null>(null)
 
-const copiedAllReviews = ref(false)
-let copiedAllTimer: ReturnType<typeof setTimeout> | null = null
+// Persist chat scroll position per-task across mount/unmount. The composable attaches its own
+// scroll/scrollend listeners to the VirtualScroller's container ref (via the computed
+// `scrollerContainerRef` below) and flushes pending writes on unmount.
+const scrollerContainerRef = computed<HTMLElement | null>(
+  () => virtualScrollerRef.value?.containerRef ?? null,
+)
+// Stable accessor for ChatScrollSlider: the scroller's containerRef
+// resolves after mount and swaps on chat switch, so the slider takes
+// a function (re-resolved on its interval) instead of a raw element.
+const getChatScrollContainer = (): HTMLElement | null => scrollerContainerRef.value
+const chatScrollStorageKey = computed(() => `chat-scroll-${sessionId.value || props.chatId}`)
+// The restore composable's "is the saved position still at the bottom?" test has to use the SAME
+// bottom edge the auto-stick uses, or a position saved while the reader sat on the last message
+// (which lives at the real content bottom, up to `maxTailGap` above the DOM edge) reads as.
+const chatScrollRestore = useChatScrollRestore(
+  scrollerContainerRef,
+  chatScrollStorageKey,
+  (el) => virtualScrollerRef.value?.bottomScrollTop?.() ?? el.scrollHeight - el.clientHeight,
+)
 
-async function copyAllReviewComments() {
-  const body = reviewCommentsForDiff.value.map((e) => e.formatted).join('\n\n---\n\n')
-  if (!body) return
-  await copyTextToClipboard(body)
-  copiedAllReviews.value = true
-  if (copiedAllTimer) clearTimeout(copiedAllTimer)
-  copiedAllTimer = setTimeout(() => {
-    copiedAllReviews.value = false
-  }, 2000)
-}
-
-// Sidebar file-row click (or header Open button): open the file in the in-app code browser, which
-// also updates the app URL (view=code-editor).
-const openInEditor = useInjectOpenInCodeEditor()
-function onChatSidebarOpenFile(payload: { path: string; line?: number }) {
-  if (!openInEditor || !effectiveCwd.value) return
-  void openInEditor({ filePath: payload.path, cwd: effectiveCwd.value, line: payload.line })
-}
+// Ref to the outer flex wrapper around the VirtualScroller.
+const messagesWrapperRef = ref<HTMLElement | null>(null)
 
 // Stacked center diff: every changed file renders as its own lazily-mounted section so long lists
 // scroll fast. centerDiff stays as the compat "current selection" (back-button + single-file
@@ -247,36 +144,125 @@ const centerDiffScrollRef = ref<HTMLElement | null>(null)
 
 const showCenterDiff = computed(() => centerDiff.value !== null)
 
+// "The server has answered, and the answer was: zero messages." The empty state must be gated on
+// this, not on `messageGroups.length === 0` alone.
+const historyConfirmed = ref(false)
+
+// Chat-owned git-diff sidebar (git-diff-only scope). ChatView passes its already-owned effectiveCwd
+// + sessionId down, so each chat shows its own working tree without AppLayout-level cwd plumbing.
+// Hidden in embedded/peek mode — the peek panel owns the right edge there.
+const chatSidebar = useChatRightSidebar(props.type ?? 'chat')
+const chatSidebarRef = ref<InstanceType<typeof ChatRightSidebar> | null>(null)
+
+const { setChatColumnEl, setComposerDockEl } = useChatComposerInset()
+
+const { setupCodeBlockCopyButtons } = useChatCodeCopy({ virtualScrollerRef, copyCodeContent })
+
 const {
+  activeAgent,
+  activePillGroupIndex,
+  agentChipTooltip,
+  agentError,
+  agentPickerRef,
+  availableAgents,
+  chatPrProvider,
+  chatPrUrl,
+  chatWorkspaceId,
+  closeImagePreview,
   codeViewerModel,
   collapsedCount,
   collapsedPaths,
   diffMode,
+  effectiveAgent,
+  effectiveCwd,
+  gitStatus,
+  gitWorktreeCwd,
+  groupKey,
+  handleFileInputSubmit,
+  handleLoadMore,
+  handleLoadMoreSuppressed,
+  handleStopSession,
+  handleVirtualScroll,
+  isAtBottom,
+  isInitializing,
+  isLLMProcessing,
+  isLoading,
+  isPendingSession,
+  isSendingAttachments,
+  isUpdatingAgent,
+  jumpToUserGroup,
+  loadChatHistory,
+  maxCapacityTotalTokens,
+  maxTotalTokens,
+  messageGroups,
+  nav,
+  noteCwdMutation,
   onCenterDiffBack,
   onCenterDiffRetry,
+  onCreateWorktree,
+  onPeekOpenFull,
+  onPrCreated,
+  onPrError,
+  onWorktreeMenuClear,
+  onWorktreeMenuCreatePr,
+  onWorktreeMenuCreateWorktree,
+  onWorktreeMenuRefresh,
+  onWorktreeMenuViewFolder,
   onChatSidebarShowDiff,
   onChatSidebarShowDiffList,
+  onContentShift,
+  previewImageUrl,
+  queuedMessages,
+  rowProps,
+  scrollToBottom,
+  scrollerIsScrollable,
+  selectAgent,
+  selectedAgent,
+  sessionCwd,
+  sessionSkills,
   setAllCollapsed,
   setDiffMode,
+  showAgentPicker,
   showCenterStage,
   showCodeViewer,
-  stopCenterSpy,
-  syncCenterSpy,
-  syncDiffParam,
+  showCreatePrDialog,
+  showCreateWorktreeDialog,
+  showSkillsPopup,
+  showWorktreeMenu,
+  sidebarBranch,
+  statesProps,
   toggleCollapse,
   toggleWholeFile,
+  userPills,
   wholeFilePaths,
-} = useChatDiffView({
-  router,
-  route,
+  worktreeMenuRef,
+} = useChatViewWiring({
+  props,
   sessionId,
-  chatSidebarRef,
+  messages,
   centerDiff,
   centerFiles,
   currentPath,
   centerDiffScrollRef,
   showCenterDiff,
+  historyConfirmed,
+  virtualScrollerRef,
+  scrollerContainerRef,
+  messagesWrapperRef,
+  fileInputRef,
+  chatScrollRestore,
+  setupCodeBlockCopyButtons,
+  maybeRefreshWorktreeBinding,
+  chatSidebarRef,
 })
+
+// Sidebar file-row click (or header Open button): open the file in the in-app code browser, which
+// also updates the app URL (view=code-editor).
+const openInEditor = useInjectOpenInCodeEditor()
+function onChatSidebarOpenFile(payload: { path: string; line?: number }) {
+  if (!openInEditor || !effectiveCwd.value) return
+  void openInEditor({ filePath: payload.path, cwd: effectiveCwd.value, line: payload.line })
+}
 
 // Re-read the session's worktree binding from the backend.
 async function refreshWorktreeBinding() {
@@ -312,470 +298,16 @@ async function onChatSidebarRefresh() {
   chatSidebarRef.value?.refresh()
 }
 
-function onPeekOpenFull(sessionId: string) {
-  nav.closePeek()
-  router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
-}
-
-/**  * A `read_workspace_session` search hit pointed at a different conversation. The card is
- * presentation-only, so the navigation decision lives here. Mirrors `ChatsList.setActive`:
- * canonical path URL when a workspace is in scope, legacy query form only as a fallback. */
-const workspacesStore = useWorkspacesStore()
-
-function onOpenWorkspaceSession(sessionId: string): void {
-  if (!sessionId) return
-  const wsId = workspacesStore.activeWorkspace?.id
-  if (wsId) {
-    router.replace(buildAppUrl({ workspaceId: wsId, chatSessionId: sessionId }))
-    return
-  }
-  router.replace({ path: '/app', query: { view: 'chat', session: sessionId } })
-}
-
-// SSE connection. Both the `llm` and `queue` channels now flow through the global `sseBus` (opened
-// once by App.vue). The bus's single global SseClient carries ALL 5 channels (including bare 'llm'
-// and bare 'queue').
-const isStreaming = ref(false)
-const streamingContent = ref('')
-let streamContentVersion = 0
-const getStreamContentVersion = (): number => streamContentVersion
-
-function bumpStreamContentVersion(): void {
-  streamContentVersion += 1
-}
-
-// Queue state
-const queuedMessages = ref<api.QueuedMessage[]>([])
-
-const virtualScrollerRef = ref<VirtualScrollerExposed | null>(null)
-
-// Composer input ref — re-focus after the async mount chain (history + stream snapshot + queued
-// messages) so the cursor lands in the box on every session switch, even if the child's own
-// mount-focus raced the history render.
-const fileInputRef = ref<{ focusInput?: () => void } | null>(null)
-
-// Persist chat scroll position per-task across mount/unmount. The composable attaches its own
-// scroll/scrollend listeners to the VirtualScroller's container ref (via the computed
-// `scrollerContainerRef` below) and flushes pending writes on unmount.
-const scrollerContainerRef = computed<HTMLElement | null>(
-  () => virtualScrollerRef.value?.containerRef ?? null,
-)
-// Stable accessor for ChatScrollSlider: the scroller's containerRef
-// resolves after mount and swaps on chat switch, so the slider takes
-// a function (re-resolved on its interval) instead of a raw element.
-const getChatScrollContainer = (): HTMLElement | null => scrollerContainerRef.value
-const chatScrollStorageKey = computed(() => `chat-scroll-${sessionId.value || props.chatId}`)
-// The restore composable's "is the saved position still at the bottom?" test has to use the SAME
-// bottom edge the auto-stick uses, or a position saved while the reader sat on the last message
-// (which lives at the real content bottom, up to `maxTailGap` above the DOM edge) reads as.
-const chatScrollRestore = useChatScrollRestore(
-  scrollerContainerRef,
-  chatScrollStorageKey,
-  (el) => virtualScrollerRef.value?.bottomScrollTop?.() ?? el.scrollHeight - el.clientHeight,
-)
-
-// Ref to the outer flex wrapper around the VirtualScroller.
-const messagesWrapperRef = ref<HTMLElement | null>(null)
-
-// ─── Floating composer: the `--chat-composer-inset` contract ──────────────── The composer dock is
-// `position: absolute` on the chat column, so the transcript scrolls *under* it.
-let chatColumnEl: HTMLElement | null = null
-const setChatColumnEl = (el: unknown) => {
-  chatColumnEl = (el as HTMLElement | null) ?? null
-}
-
-let composerDockObserver: ResizeObserver | null = null
-const syncComposerInset = (height: number) => {
-  // Ignore the 0×0 report a display:none dock emits (v-show hides it when
-  // the centre diff opens) — zeroing the inset there would make the last
-  // row lose its clearance for the whole time the diff is open.
-  if (height <= 0 || !chatColumnEl) return
-  const px = `${Math.ceil(height)}px`
-  if (chatColumnEl.style.getPropertyValue('--chat-composer-inset') === px) return
-  chatColumnEl.style.setProperty('--chat-composer-inset', px)
-}
-const setComposerDockEl = (el: unknown) => {
-  composerDockObserver?.disconnect()
-  composerDockObserver = null
-  const dockEl = (el as HTMLElement | null) ?? null
-  if (!dockEl) return
-  composerDockObserver = new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      syncComposerInset(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height)
-    }
-  })
-  composerDockObserver.observe(dockEl)
-}
-onUnmounted(() => {
-  composerDockObserver?.disconnect()
-  composerDockObserver = null
-  chatColumnEl = null
-})
-
-// True for the newest transcript group only. Pads that ONE row so the final message scrolls clear
-// of the floating composer.
-const isLastGroup = (index: number) => index === messageGroups.value.length - 1
-
-// Timestamp (ms since epoch) of the most recent auto-stick assignment. See
-// `helpers/autoStickGate.ts` for the gating math.
-const lastAutoStickAt = ref(0)
-
-let spacerRafId: number | null = null
-const onContentShift = (shift: { topSpacer: number; bottomSpacer: number; total: number }) => {
-  if (getSuppressContentShiftStick()) return
-  if (spacerRafId !== null) cancelAnimationFrame(spacerRafId)
-  spacerRafId = requestAnimationFrame(() => {
-    spacerRafId = null
-    const container = virtualScrollerRef.value?.containerRef
-    if (!container) return
-    const newScrollHeight = container.scrollHeight
-    // Only re-stick if the scrollHeight actually changed (a measurement
-    // update). Positioning-only shifts (pure window moves at constant
-    // total height) won't trigger a re-scroll.
-    if (newScrollHeight === getLastObservedScrollHeight()) return
-    const delta = newScrollHeight - getLastObservedScrollHeight()
-    if (delta <= 0 || delta < 10) {
-      setLastObservedScrollHeight(newScrollHeight)
-      return
-    }
-    setLastObservedScrollHeight(newScrollHeight)
-    void shift
-    // Build a context with the *pre-stick* geometry (scrollTop before
-    // we touch it), so the log answers "what was the world like when
-    // this re-stick fired?".
-    const ctx = buildScrollContext(container, {
-      chatId: sessionId.value || props.chatId,
-      messages: messages.value.length,
-      isAtBottom: isAtBottom.value,
-      virtualScrollerRef,
-      wrapperRef: messagesWrapperRef,
-    })
-    if (!isAtBottom.value) {
-      scrollLogger.debug({
-        ...ctx,
-        caller: 'onContentShift',
-        origin: 'programmatic',
-        extra: {
-          delta,
-          lastObservedScrollHeight: newScrollHeight,
-          skipped: 'user-scrolled-up',
-          isAtBottom: isAtBottom.value,
-          distanceFromBottom: ctx.distanceFromBottom,
-          scrollTop: ctx.scrollTop,
-        },
-      })
-      scrollLogger.info({
-        ...ctx,
-        caller: 'onContentShift',
-        reason: 'spacer-resize-skip',
-        extra: {
-          delta,
-          lastObservedScrollHeight: newScrollHeight,
-          isAtBottom: isAtBottom.value,
-          distanceFromBottom: ctx.distanceFromBottom,
-          scrollTop: ctx.scrollTop,
-          shift,
-        },
-      })
-      return
-    }
-    // We are going to assign scrollTop. Mark the next scroll event as programmatic BEFORE the
-    // assignment so the browser-fired scroll reads origin='programmatic' in handleVirtualScroll.
-    scrollLogger.markProgrammatic()
-    // Record the auto-stick timestamp so the loadMore gate knows the
-    // stick is actively engaged right now (not just that the LLM is
-    // busy — those are different things, see autoStickGate.ts).
-    lastAutoStickAt.value = Date.now()
-    // Explicit bottom computation.
-    virtualScrollerRef.value?.scrollToBottom('auto')
-    scrollLogger.info({
-      ...ctx,
-      caller: 'onContentShift',
-      reason: 'spacer-resize-stick',
-      extra: {
-        delta,
-        lastObservedScrollHeight: newScrollHeight,
-        isAtBottom: isAtBottom.value,
-        distanceFromBottom: ctx.distanceFromBottom,
-        scrollTop: ctx.scrollTop,
-        shift,
-        willStick: true,
-      },
-    })
-  })
-}
-
-const teardownContentShiftRaf = () => {
-  if (spacerRafId !== null) {
-    cancelAnimationFrame(spacerRafId)
-    spacerRafId = null
-  }
-}
-
-// State
-const messages = ref<Message[]>([])
-const isLoading = ref(false)
-const isSendingAttachments = ref(false)
-const isLoadingMore = ref(false)
-const error = ref<string | null>(null)
-// True while the REMOTE half of the transcript load is still outstanding. The load has two halves:
-// the cache prime (IndexedDB, fast) and the network page/delta (slow — bound by
-// `INITIAL_HISTORY_TIMEOUT_MS`, currently 45 s, plus the retry schedule).
-const isRemoteLoadPending = ref(false)
-const hasMoreMessages = ref(true)
-const isAtBottom = ref(true)
-// "The server has answered, and the answer was: zero messages." The empty state must be gated on
-// this, not on `messageGroups.length === 0` alone.
-const historyConfirmed = ref(false)
-
-// File previews render inline inside the chat bubble (see PresentFiles.vue +
-// PreviewContentRenderer.vue). There is no side panel — wide HTML content offers an "Open in new
-// tab" action instead.
-const scrollerIsScrollable = ref(false)
-const sessionCwd = ref('')
-// Bound git worktree path (empty string when no worktree is bound).
-// Updated by loadChatHistory() from the API response and by the
-// sessions SSE stream when the LLM calls set_git_worktree.
-const gitWorktreeCwd = ref('')
-// The cwd we run git status against. Prefers the worktree when set
-// (so the branch display reflects the worktree's branch, not the
-// session's original cwd). Falls back to the session's original cwd.
-const effectiveCwd = computed(() => gitWorktreeCwd.value || sessionCwd.value)
-// Branch for the right sidebar.
-const sidebarBranch = computed(() =>
-  gitStatus.value ? gitStatus.value.branch || 'detached' : undefined,
-)
-const maxTotalTokens = ref(0)
-const maxCapacityTotalTokens = ref(200000)
-
 const {
-  availableAgents,
-  selectedAgent,
-  activeAgent,
-  showAgentPicker,
-  isUpdatingAgent,
-  agentPickerRef,
-  chatWorkspaceId,
-  loadAgents,
-  effectiveAgent,
-  effectiveProfileUrlStyle,
-  agentChipTooltip,
-  selectAgent,
-  closeOnOutsideClick,
-} = useChatComposerAgents({
-  sessionId,
-  workspaceId: () =>
-    resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
-  applyChatViewMode: (config) => chatView.setMode(chatViewModeFrom(config)),
-})
-
-const {
-  onCreateWorktree,
-  onPrCreated,
-  onPrError,
-  onWorktreeMenuClear,
-  onWorktreeMenuCreatePr,
-  onWorktreeMenuCreateWorktree,
-  onWorktreeMenuRefresh,
-  onWorktreeMenuViewFolder,
-  showCreatePrDialog,
-  showCreateWorktreeDialog,
-  showWorktreeMenu,
-  worktreeMenuRef,
-} = useChatWorktree({
-  sessionId,
-  sessionCwd,
-  gitWorktreeCwd,
-  selectedAgent,
-  workspacesStore,
-  checkGitStatus: () => checkGitStatus(),
-})
-
-// ─── Scroll logger ──────────────────────────────────────────────────────────── A dedicated logger
-// for the scroll subsystem. Bound to the active chat so every line is tagged with chatId. See
-// helpers/scrollLogger.ts for what fields every line carries and why.
-let scrollLogger: ScrollLogger = createScrollLogger(props.chatId)
-const refreshScrollLogger = () => {
-  scrollLogger = createScrollLogger(sessionId.value || props.chatId)
-}
-
-const {
-  activePillGroupIndex,
-  agentError,
-  agentErrorStore,
-  CHAT_SCROLL_BUFFER,
-  chatView,
-  checkGitStatus,
-  closeImagePreview,
-  gitStatus,
-  setGitStatusCwd,
-  groupKey,
-  groupKeyForMessageId,
-  isInitializing,
-  jumpToUserGroup,
-  messageGroups,
-  previewImageUrl,
-  rehydrateSubAgentProgress,
-  rowProps,
-  sessionSkills,
-  showSkillsPopup,
-  startGitStatusPoll,
-  statesProps,
-  stopGitStatusPoll,
-  subAgentProgressMap,
-  userPills,
-} = useChatTranscriptView({
-  props,
-  sessionId,
-  messages,
-  isPendingSession,
-  isRemoteLoadPending,
-  isLoading,
-  isLoadingMore,
-  error,
-  hasMoreMessages,
-  historyConfirmed,
-  scrollerIsScrollable,
-  scrollerContainerRef,
-  virtualScrollerRef,
-  sessionCwd,
-  effectiveCwd,
-  isLastGroup,
-  nav,
-  onOpenWorkspaceSession,
-  PAGE_SIZE,
-  loadChatHistory: () => loadChatHistory(),
-  maybeLoadOlder: (trigger) => maybeLoadOlder(trigger),
-  logger: () => scrollLogger,
-})
-
-const {
-  applyDeltaExtra,
-  claimLiveMessageSession,
-  currentLiveMessages,
-  evaluateOlderPrefetch,
-  getIsInitialLoad,
-  getLastObservedScrollHeight,
-  getSuppressContentShiftStick,
-  hasBufferedOlderPage,
-  liveMessageIds,
-  loadChatHistory,
-  maybeLoadOlder,
-  mergeMessagesById,
-  rememberLiveMessage,
-  resetOlderPrefetch,
-  resetPrefetchAutoChain,
-  scrollToBottom,
-  setLastObservedScrollHeight,
-  toChatMessages,
-} = useChatPagination({
-  props,
-  sessionId,
-  messages,
-  messagesWrapperRef,
-  virtualScrollerRef,
-  sessionCwd,
-  gitWorktreeCwd,
-  effectiveCwd,
-  error,
-  isLoading,
-  isLoadingMore,
-  isRemoteLoadPending,
-  historyConfirmed,
-  hasMoreMessages,
-  messageCursor,
-  isAtBottom,
-  isPendingSession,
-  isLLMProcessing,
-  maxTotalTokens,
-  maxCapacityTotalTokens,
-  lastAutoStickAt,
-  sessionSkills,
-  selectedAgent,
-  messageGroups,
-  chatPrUrl,
-  chatPrProvider,
-  chatScrollRestore,
-  logger: () => scrollLogger,
-  noteCwdMutation: (prevCwd: string) => noteCwdMutation(prevCwd),
-  rehydrateSubAgentProgress,
-  setupCodeBlockCopyButtons,
-  PAGE_SIZE,
-})
-
-const {
-  handleFileInputSubmit,
-  handleLoadMore,
-  handleLoadMoreSuppressed,
-  handleStopSession,
-  handleVirtualScroll,
-  noteCwdMutation,
-} = useChatSessionRuntime({
-  activePillGroupIndex,
-  agentErrorStore,
-  applyDeltaExtra,
-  bumpStreamContentVersion,
-  centerDiff,
+  copiedAllReviews,
+  copyAllReviewComments,
+  onChatSidebarCommentSaved,
+  onChatSidebarSubmitReview,
+  reviewCommentsForDiff,
+} = useChatReviewComments({
   centerFiles,
-  CHAT_SCROLL_BUFFER,
-  checkGitStatus,
-  claimLiveMessageSession,
-  closeOnOutsideClick,
-  currentLiveMessages,
-  currentPath,
-  effectiveCwd,
-  effectiveProfileUrlStyle,
-  evaluateOlderPrefetch,
-  fileInputRef,
-  getIsInitialLoad,
-  getStreamContentVersion,
-  gitStatus,
-  groupKeyForMessageId,
-  hasBufferedOlderPage,
-  isAtBottom,
-  isSendingAttachments,
-  isStreaming,
-  lastAutoStickAt,
-  liveMessageIds,
-  loadAgents,
-  loadChatHistory,
-  logger: () => scrollLogger,
-  maxTotalTokens,
-  maybeLoadOlder,
-  maybeRefreshWorktreeBinding,
-  mergeMessagesById,
-  messageGroups,
-  messages,
-  messagesWrapperRef,
-  PAGE_SIZE,
-  props,
-  queuedMessages,
-  refreshScrollLogger,
-  rememberLiveMessage,
-  resetOlderPrefetch,
-  resetPrefetchAutoChain,
-  route,
-  scrollToBottom,
-  selectedAgent,
-  sessionCwd,
-  sessionId,
-  sessionSkills,
-  setGitStatusCwd,
-  setLastObservedScrollHeight,
-  setupCodeBlockCopyButtons,
-  showCenterDiff,
-  startGitStatusPoll,
-  stopCenterSpy,
-  stopGitStatusPoll,
-  streamingContent,
-  subAgentProgressMap,
-  syncCenterSpy,
-  syncDiffParam,
-  teardownContentShiftRaf,
-  toChatMessages,
-  userPills,
-  virtualScrollerRef,
-  workspacesStore,
+  initial: loadSavedReviewComments(),
+  persist: persistSavedReviewComments,
 })
 
 // ─── Compact ──────────────────────────────────────────────────────────────────
