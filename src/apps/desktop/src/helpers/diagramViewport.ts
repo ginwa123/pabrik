@@ -33,6 +33,10 @@ export const MAX_ZOOM = 8
 
 export const ZOOM_STEP = 1.25
 
+/** How much the viewer may ENLARGE a small drawing on open. SVG is lossless, but past 2x the line
+ * weights read as fat rather than as a bigger diagram. */
+export const MAX_OPEN_UPSCALE = 2
+
 export const KEYBOARD_PAN_PX = 96
 
 /** Used when the stage has no measurable box (jsdom, or the first frame after mount). */
@@ -85,6 +89,16 @@ export function fitZoom(natural: DiagramSize | null, stage: DiagramSize): number
   if (stage.width <= 0 || stage.height <= 0) return 1
   const fit = Math.min(stage.width / natural.width, stage.height / natural.height)
   return Math.min(1, Math.max(floorZoom(), fit))
+}
+
+/** The zoom a viewer OPENS at (and returns to with "Fit"): the whole drawing, floating between the
+ * inline legibility floor and `MAX_OPEN_UPSCALE` — a fitted 5% view is as unreadable as the column
+ * was, and a fitted 600% view of a two-node sketch is a joke. */
+export function openZoom(natural: DiagramSize | null, stage: DiagramSize): number {
+  if (!natural || natural.width <= 0 || natural.height <= 0) return 1
+  if (stage.width <= 0 || stage.height <= 0) return 1
+  const contain = Math.min(stage.width / natural.width, stage.height / natural.height)
+  return Math.min(MAX_OPEN_UPSCALE, Math.max(MIN_INLINE_SCALE, contain))
 }
 
 export function clampZoom(zoom: number, min: number = floorZoom(), max: number = MAX_ZOOM): number {
@@ -146,7 +160,7 @@ export function panBy(
 
 /** The state a viewer opens in: the whole drawing, centred. */
 export function fittedViewport(natural: DiagramSize | null, stage: DiagramSize): DiagramViewport {
-  return { zoom: fitZoom(natural, stage), x: 0, y: 0 }
+  return { zoom: openZoom(natural, stage), x: 0, y: 0 }
 }
 
 export function formatZoom(zoom: number): string {

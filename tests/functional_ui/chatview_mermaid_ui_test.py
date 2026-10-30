@@ -252,12 +252,33 @@ CLIPBOARD_SPY = """
 """
 
 
-def test_diagram_previews_on_click_and_copies_its_source(ui_harness: UIHarness, page) -> None:
-    """The reader's two moves: enlarge the diagram, or take the source away.
+#: Everything the viewer's contract is judged on, read in the page: the drawing
+#: it holds, the scroll lock behind it, and the zoom it opened at.
+VIEWER_METRICS = """
+() => {
+  const svg = document.querySelector('[data-testid="diagram-viewer-content"] svg');
+  const r = svg.getBoundingClientRect();
+  return {
+    width: r.width,
+    height: r.height,
+    overflow: getComputedStyle(document.body).overflow,
+    zoom: document.querySelector('[data-testid="diagram-viewer-zoom"]').textContent,
+  };
+}
+"""
 
-    The preview must actually be BIGGER than the inline drawing (that is the
-    whole point of clicking), Escape must close it, and the copy button must
-    hand the exact Mermaid source to the clipboard.
+
+def _viewer_metrics(page) -> dict:
+    return page.evaluate(VIEWER_METRICS)
+
+
+def test_diagram_opens_the_viewer_and_copies_its_source(ui_harness: UIHarness, page) -> None:
+    """The reader's moves: open the diagram, zoom it, or take the source away.
+
+    Opening must show the drawing BIGGER than it was inline (that is the whole
+    point of clicking), the zoom controls must actually move it and Fit must
+    return to the whole drawing; Escape must close it and release the scroll
+    lock. The copy button must hand the exact Mermaid source to the clipboard.
     """
     h = ui_harness
     session_id = "sess_mermaid_preview_001"
@@ -282,28 +303,32 @@ def test_diagram_previews_on_click_and_copies_its_source(ui_harness: UIHarness, 
     assert copied == [MERMAID_SOURCE], f"copied {copied!r}, expected the block source"
 
     page.click('[data-testid="chat-mermaid-enlarge"]')
-    page.wait_for_selector('[data-testid="mermaid-preview"]', timeout=10000)
-    enlarged = page.evaluate(
-        """() => {
-            const svg = document.querySelector('[data-testid="mermaid-preview-svg"] svg');
-            const r = svg.getBoundingClientRect();
-            return {
-                width: r.width,
-                height: r.height,
-                overflow: getComputedStyle(document.body).overflow,
-            };
-        }"""
-    )
-    print("inline:", inline, "preview:", enlarged)
+    page.wait_for_selector('[data-testid="diagram-viewer"]', timeout=10000)
+    viewer = _viewer_metrics(page)
+    print("inline:", inline, "viewer:", viewer)
 
-    assert enlarged["width"] > inline["width"], (
-        f"the preview must enlarge the diagram: {inline['width']}px -> {enlarged['width']}px"
+    assert viewer["width"] > inline["width"], (
+        f"opening the viewer must enlarge the diagram: {inline['width']}px -> {viewer['width']}px"
     )
-    assert enlarged["height"] > 40, f"preview svg not laid out: {enlarged}"
-    assert enlarged["overflow"] == "hidden", "the transcript must not scroll under the overlay"
+    assert viewer["height"] > 40, f"viewer svg not laid out: {viewer}"
+    assert viewer["overflow"] == "hidden", "the transcript must not scroll under the viewer"
+    assert viewer["zoom"].endswith("%"), f"no zoom readout: {viewer}"
+
+    # Zoom in: the drawing must actually grow, and say so.
+    page.click('[data-testid="diagram-viewer-zoom-in"]')
+    zoomed = _viewer_metrics(page)
+    assert zoomed["width"] > viewer["width"], f"zoom in did nothing: {viewer} -> {zoomed}"
+    assert zoomed["zoom"] != viewer["zoom"], f"zoom readout did not follow: {zoomed}"
+    assert zoomed["overflow"] == "hidden", "zooming must not release the scroll lock"
+
+    # Fit: back to the whole drawing.
+    page.click('[data-testid="diagram-viewer-fit"]')
+    fitted = _viewer_metrics(page)
+    assert abs(fitted["width"] - viewer["width"]) < 2, f"Fit did not return: {fitted}"
+    assert fitted["zoom"] == viewer["zoom"], f"Fit readout: {fitted}"
 
     page.keyboard.press("Escape")
-    page.wait_for_selector('[data-testid="mermaid-preview"]', state="detached", timeout=5000)
+    page.wait_for_selector('[data-testid="diagram-viewer"]', state="detached", timeout=5000)
     assert page.evaluate("() => getComputedStyle(document.body).overflow") != "hidden", (
-        "closing the preview must release the scroll lock"
+        "closing the viewer must release the scroll lock"
     )

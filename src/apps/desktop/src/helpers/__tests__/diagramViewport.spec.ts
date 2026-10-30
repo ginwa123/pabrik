@@ -3,6 +3,7 @@
  * pointer is while zooming and panning. */
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_OPEN_UPSCALE,
   MAX_ZOOM,
   MIN_INLINE_SCALE,
   clampZoom,
@@ -10,6 +11,7 @@ import {
   fittedViewport,
   formatZoom,
   inlineDiagramLayout,
+  openZoom,
   panBy,
   parseDiagramSize,
   zoomAround,
@@ -72,6 +74,24 @@ describe('fitZoom', () => {
   it('zooms from 100% when the drawing size is unknown', () => {
     expect(fitZoom(null, { width: 1000, height: 800 })).toBe(1)
     expect(fittedViewport(null, { width: 1000, height: 800 })).toEqual({ zoom: 1, x: 0, y: 0 })
+  })
+})
+
+describe('openZoom', () => {
+  const stage = { width: 1246, height: 800 }
+
+  it('enlarges a small drawing, but no further than the upscale cap', () => {
+    expect(openZoom({ width: 200, height: 120 }, stage)).toBe(MAX_OPEN_UPSCALE)
+    expect(openZoom({ width: 900, height: 300 }, stage)).toBeCloseTo(1.384, 3)
+  })
+
+  it('opens a drawing that is already smaller than the stage at 100%', () => {
+    expect(openZoom({ width: 1246, height: 400 }, stage)).toBe(1)
+  })
+
+  it('never opens a wide drawing below the legible floor, even though fitting would go lower', () => {
+    expect(fitZoom({ width: 3000, height: 600 }, stage)).toBeCloseTo(0.415, 2)
+    expect(openZoom({ width: 3000, height: 600 }, stage)).toBe(MIN_INLINE_SCALE)
   })
 })
 
