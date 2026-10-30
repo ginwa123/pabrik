@@ -70,12 +70,8 @@ pub fn routeFor(allocator: std.mem.Allocator, abs_path: []const u8) workspace_fs
 }
 
 /// `git <args>` with `abs_dir` as its working directory, on whichever side owns
-/// the tree. `args` never carries the program or `-C`: the guest names neither,
-/// and a tenant path must not cross the boundary.
-///
-/// A patch-producing subcommand is handed `--no-ext-diff --no-textconv` first,
-/// on BOTH arms: `diff.external` and `diff.<driver>.textconv` name a command the
-/// repository chose, and the engine git would otherwise use prints nothing.
+/// the tree; `args` never carries the program or `-C`. A patch-producing
+/// subcommand gets `--no-ext-diff --no-textconv` on BOTH arms.
 pub fn run(
     allocator: std.mem.Allocator,
     io: std.Io,

@@ -1,7 +1,6 @@
-//! Repository config can make `git` execute code: `core.fsmonitor` (`status`),
-//! hooks (`checkout`, `worktree add`) and `diff.external` / `diff.<driver>.textconv`
-//! (`diff`). A command-line `-c` outranks every config file, so the argv prefix
-//! is policy.
+//! Repository config can make `git` execute code: `core.fsmonitor`, hooks, and
+//! `diff.external` / `diff.<driver>.textconv`. A command-line `-c` outranks every
+//! config file, so the argv prefix is policy.
 
 const std = @import("std");
 
@@ -24,12 +23,9 @@ pub const git_prefix = .{"git"} ++ args_tuple;
 
 pub const program = "git";
 
-/// Options that keep `diff`, `log` and `show` on git's own diff engine.
-/// `diff.external` and `diff.<driver>.textconv` each name a command, and both
-/// are read from the repository. These two flags are per-invocation opt-outs
-/// and cannot be expressed as `-c <key>=`: `-c diff.external=` sets the key to
-/// the EMPTY STRING, which git runs as a program named "" — every diff then
-/// dies with `fatal: external diff died` and an EMPTY stdout.
+/// Per-invocation opt-outs that keep `diff`, `log` and `show` on git's own
+/// engine. They cannot be `-c <key>=`: `-c diff.external=` sets the EMPTY
+/// string, which git runs as a program named "" — every diff then dies.
 pub const diff_no_exec = [_][]const u8{ "--no-ext-diff", "--no-textconv" };
 
 /// Subcommands that can print a patch, and so consult those settings.

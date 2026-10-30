@@ -227,9 +227,8 @@ fn readHostFile(io: std.Io, allocator: std.mem.Allocator, abs: []const u8) ?[]u8
 }
 
 /// Bytes of a file the diff never mentioned: an untracked file has no diff, so
-/// its `new file` hunk is built from the file itself. The read is ROUTED — under
-/// `--saas` the bytes live in the guest and this host holds no copy, so a new
-/// file used to reach the panel as "no changes" while `git status` listed it.
+/// its `new file` hunk is built from the file itself — ROUTED, because under
+/// `--saas` the bytes live in the guest and this host holds no copy.
 fn readNewFile(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8) ?[]u8 {
     const full = std.fs.path.join(allocator, &.{ repo_path, file }) catch return null;
     defer allocator.free(full);
