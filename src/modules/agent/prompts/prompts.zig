@@ -34,6 +34,7 @@ pub const ReadWorkspaceSessionToolRule = core.ReadWorkspaceSessionToolRule;
 // never-echo-the-value rule.
 pub const SecretsToolRule = core.SecretsToolRule;
 pub const MemoryToolRule = core.MemoryToolRule;
+pub const AskUserRule = core.AskUserRule;
 pub const CrossProjectCwdRule = core.CrossProjectCwdRule;
 
 pub const Agent = agent.Agent;

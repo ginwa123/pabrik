@@ -548,11 +548,17 @@ def test_the_narration_lives_inside_the_card(ui_harness: UIHarness, page) -> Non
 
 
 def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> None:
-    """`ask_user` ends the turn by asking, so the question it wrote must stay on screen."""
+    """A turn that ends by asking keeps the question on screen and draws the card under it."""
     h = ui_harness
     session_id = "sess_compact_view_question_001"
     workspace_id = create_workspace(h)
     _write_config(h, "compact")
+
+    ask_block = (
+        "<ask_user>"
+        + json.dumps({"question": QUESTION, "options": ["billing", "archive"]})
+        + "</ask_user>"
+    )
 
     seed = DbSeed(_seed_db_path(h))
     with seed.connect() as conn:
@@ -562,36 +568,9 @@ def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> 
         seed.seed_assistant_message(
             conn,
             session_id,
-            text=QUESTION,
-            finish_reason="tool_calls",
-            tool_calls=[
-                {
-                    "id": "tc_ask",
-                    "type": "function",
-                    "function": {
-                        "name": "ask_user",
-                        "arguments": json.dumps(
-                            {"question": QUESTION, "options": ["billing", "archive"]}
-                        ),
-                    },
-                }
-            ],
-        )
-        seed.seed_tool_result(
-            conn,
-            session_id,
-            tool_call_id="tc_ask",
-            tool_name="ask_user",
-            content=_envelope(
-                "ask_user",
-                {"question": QUESTION},
-                {
-                    "status": "pending",
-                    "question_id": "q_ui_compact_1",
-                    "question": QUESTION,
-                    "options": ["billing", "archive"],
-                },
-            ),
+            text=f"One thing first.\n{ask_block}",
+            finish_reason="awaiting_user",
+            message_id="msg_ask_1",
         )
 
     open_chatview(page, h, workspace_id, session_id)
@@ -600,6 +579,9 @@ def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> 
     body = page.locator("body").inner_text()
     assert QUESTION in body, (
         f"the question the turn ended by asking must stay in the transcript, got {body!r}"
+    )
+    assert "<ask_user>" not in body, (
+        f"the block itself must never be rendered as text, got {body!r}"
     )
 
 

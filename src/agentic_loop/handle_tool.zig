@@ -480,7 +480,6 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         .allowed_tools = ctx.allowed_tools,
         .is_sub_agent = ctx.is_sub_agent,
         // The Phase-1 placeholder row this result will be written into.
-        // Tools that rewrite their own result later (ask_user) need it.
         .llm_history_id = ctx.llm_history_id,
         // The document tools broadcast their mutations over SSE on this bus.
         // A host without one (unit tests) leaves it null and the emit no-ops.
@@ -910,8 +909,7 @@ pub fn handle_tool(
         for (tc) |tool_call| {
             const id_llm_history = list_id_that_was_loaded.items[idx];
             idx += 1;
-            // Let the tool see its own result row — `ask_user` stores this id
-            // so the answer endpoint can rewrite it in place later.
+            // Let the tool see its own result row.
             ctx.llm_history_id = id_llm_history;
             var tool_result: []const u8 = undefined;
             var toolAgentTemp: f32 = agent_temperature.*;

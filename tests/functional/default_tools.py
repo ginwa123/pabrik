@@ -24,7 +24,7 @@ A stale entry here is a red build that names the one file to edit.
 
 from __future__ import annotations
 
-# Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the
+# Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the
 # wire order of `GET /api/agents/:agent_id/tools`.
 #
 # `delete_document` is deliberately ABSENT. It is irreversible, so it is
@@ -36,7 +36,6 @@ from __future__ import annotations
 DEFAULT_AGENT_TOOLS: list[str] = [
     "add_document",
     "add_skill",
-    "ask_user",
     "command",
     "edit_document",
     "edit_skill",

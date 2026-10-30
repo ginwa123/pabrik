@@ -387,26 +387,14 @@ function seedQuestionTurn(): void {
     created_at: 1,
   })
   historyRows.push({
-    id: 'msg_said_question',
+    id: 'msg_asked',
     role: 'assistant',
-    content: QUESTION,
+    content:
+      'One thing first.\n' +
+      `<ask_user>${JSON.stringify({ question: QUESTION, options: ['billing', 'archive'] })}</ask_user>`,
     created_at: 2,
-    finish_reason: 'tool_calls',
+    finish_reason: 'awaiting_user',
   })
-  historyRows.push(
-    toolRow(
-      'msg_tool_ask',
-      'ask_user',
-      '<question>which database?</question>',
-      {
-        status: 'pending',
-        question_id: 'q_1',
-        question: QUESTION,
-        options: ['billing', 'archive'],
-      },
-      3,
-    ),
-  )
   historyRows.reverse()
 }
 
@@ -442,6 +430,7 @@ describe('the compact view of a turn that narrated on the way to its calls', () 
 
     expect(wrapper.text()).toContain(QUESTION)
     expect(wrapper.find('[data-testid="ask-user-card"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('<ask_user>')
   })
 
   it('keeps the dev view drawing every line the agent wrote', async () => {

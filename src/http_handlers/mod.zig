@@ -37,7 +37,7 @@ pub const sessionGetHandler = @import("session_get.zig").sessionGetHandler;
 // stores no token column).
 pub const sessionUsageHandler = @import("session_usage_get.zig").sessionUsageHandler;
 pub const sessionStopHandler = @import("session_stop.zig").sessionStopHandler;
-// POST /api/llm/session/:session_id/answer — resolve a pending `ask_user`
+// POST /api/llm/session/:session_id/answer — resolve a pending question
 // question (Migration 087), rewrite its tool-result row and resume the run.
 pub const askUserAnswerHandler = @import("ask_user_answer.zig").askUserAnswerHandler;
 pub const sessionExistHandler = @import("session_exist.zig").sessionExistHandler;

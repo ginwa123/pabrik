@@ -39,7 +39,7 @@ pub const view_session_tool = AgentTool{
         \\
         \\Fields: `session_id`, `name`, `status`; `workspace` (`id`, `name`); `task` (`id`, `name`, `cwd`, `item_id`, `item_type`, `item_name`) or null when it is a plain chat; `cwd`; `git_worktree_cwd` (empty when none is bound); `selected_profile_model`; `is_auto_retry_until_stop`; `last_finish_reason`; `pr` (`url`, `provider`) or null; `parent_session_id`; `sub_agent_name`; `is_pinned`; `user_id`; `created_at`; `updated_at`; `last_human_touched_at_nano`; `is_running`; `worker` (`working_directory`, `last_activity`, `last_activity_description`) or null; `queued_messages`; `has_pending_question`; `message_count`; `last_message_at`; `is_current_session`.
         \\
-        \\`is_running` and `worker` come from the same row, so they cannot disagree. Use them to follow a run you started with `run_session`: still going, finished (`last_finish_reason`), waiting behind another turn (`queued_messages`), or blocked on `ask_user` (`has_pending_question`).
+        \\`is_running` and `worker` come from the same row, so they cannot disagree. Use them to follow a run you started with `run_session`: still going, finished (`last_finish_reason`), waiting behind another turn (`queued_messages`), or blocked on a question it asked (`has_pending_question`).
         \\
         \\A `session_id` outside your workspace answers `denied: true` with no other field; an unknown id returns `session_not_found`.
         ,

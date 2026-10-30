@@ -198,6 +198,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     isBgOnlyGroup,
     hasVisibleContent,
     hasBubbleContent,
+    askUserFor,
   } = useChatMessagePresentation({
     messages,
     expandedToolIds,
@@ -235,6 +236,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     isLastGroup,
     isBgOnlyGroup,
     hasBubbleContent,
+    asked: askUserFor(group),
     isCompactionMessage,
     bgShellData,
     isBgUserMsg,

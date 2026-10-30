@@ -1,5 +1,5 @@
-//! `ask_user` state + the answer round-trip. The `ask_user` tool does NOT
-//! block the agentic loop.
+//! Pending-question state + the answer round-trip. Asking never blocks the
+//! agentic loop: the turn ends and the answer resumes a run.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -8,7 +8,7 @@ const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const llm_history = pabrikcore.llm_history;
-const ask_user_mod = pabrikcore.ask_user;
+const ask_user_mod = pabrikcore.ask_user_message;
 const wrapToolOutput = @import("../modules/agent/tools/tools_wrap_output.zig").wrapToolOutput;
 const on_event_sent = @import("on_event_sent.zig");
 const is_worker_running = @import("is_worker_running.zig");
@@ -284,7 +284,7 @@ pub fn abandonPendingQuestions(
         });
         defer allocator.free(inner);
 
-        try rewriteToolResultRow(.{
+        try rewriteAnchorRow(.{
             .allocator = allocator,
             .io = io,
             .db = db,
@@ -332,16 +332,12 @@ pub fn listRecentQuestions(
 // The answer round-trip
 // ============================================================================
 
-pub const RewriteToolResultInput = struct {
+pub const RewriteAnchorInput = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     db: *database.Db,
     session_id: []const u8,
-    /// The `llm_history` row to overwrite (the `ask_user` tool result).
     llm_history_id: []const u8,
-    /// The JSON `data` payload for the resolved status. The outer JSON
-    /// envelope is built here via the shared `wrapToolOutput` so callers
-    /// cannot get the envelope shape wrong.
     inner: []const u8,
 };
 
@@ -379,23 +375,45 @@ fn extractParametersJson(allocator: std.mem.Allocator, content: []const u8) ![]u
     return std.json.Stringify.valueAlloc(allocator, params, .{});
 }
 
-/// Step 2 of the answer round-trip: overwrite the tool-result row in place
-/// with the resolved envelope and push the row's SSE update so an open
-/// `ChatView` flips the card without a reload.
-pub fn rewriteToolResultRow(input: RewriteToolResultInput) !void {
+/// The resolved block replaces the one the model wrote, in the row it wrote
+/// it in. A row that predates the block protocol still carries a tool
+/// envelope, so it keeps the envelope rewrite.
+fn resolvedContent(
+    allocator: std.mem.Allocator,
+    previous: []const u8,
+    inner: []const u8,
+) ![]u8 {
+    const block = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
+        ask_user_mod.MARKER_OPEN,
+        inner,
+        ask_user_mod.MARKER_CLOSE,
+    });
+    defer allocator.free(block);
+
+    if (ask_user_mod.findSpan(previous)) |span| {
+        const out = try allocator.alloc(u8, span.start + block.len + (previous.len - span.end));
+        @memcpy(out[0..span.start], previous[0..span.start]);
+        @memcpy(out[span.start..][0..block.len], block);
+        @memcpy(out[span.start + block.len ..], previous[span.end..]);
+        return out;
+    }
+
+    const params = try extractParametersJson(allocator, previous);
+    defer allocator.free(params);
+    return wrapToolOutput(allocator, ask_user_mod.NAME, params, true, null, inner);
+}
+
+pub fn rewriteAnchorRow(input: RewriteAnchorInput) !void {
     const allocator = input.allocator;
 
     const previous = try readRowContent(allocator, input.db, input.llm_history_id);
     defer if (previous) |p| allocator.free(p);
 
-    const params = try extractParametersJson(allocator, previous orelse "");
-    defer allocator.free(params);
-
-    const envelope = try wrapToolOutput(allocator, ask_user_mod.ASK_USER_TOOL_NAME, params, true, null, input.inner);
-    defer allocator.free(envelope);
+    const content = try resolvedContent(allocator, previous orelse "", input.inner);
+    defer allocator.free(content);
 
     try llm_history.updateToolResultById(allocator, input.io, input.db, input.llm_history_id, .{
-        .content = envelope,
+        .content = content,
         .diffview_before = null,
         .diffview_after = null,
     });
@@ -834,15 +852,12 @@ test "ask_user_pending: extractParametersJson returns a JSON string" {
     }
 }
 
-test "ask_user_pending: a rewrite preserves parameters so the card can parse it" {
+test "ask_user_pending: resolving a question rewrites the block it came from" {
     const a = testing.allocator;
     var s = try setupDb();
     defer s.db.deinit();
     defer s.threaded.deinit();
 
-    // Only the columns this test touches; the real table comes from Migration
-    // 001+. `diffview_*` + `is_loading` are needed because
-    // `updateToolResultById` names them in its UPDATE.
     try s.db.exec(a,
         \\CREATE TABLE llm_history (
         \\    id TEXT PRIMARY KEY,
@@ -857,15 +872,13 @@ test "ask_user_pending: a rewrite preserves parameters so the card can parse it"
         \\)
     , &.{});
 
-    // The row handle_tool would have written, then the rewrite the answer
-    // endpoint performs.
-    const placeholder =
-        "{\"tool\":\"ask_user\",\"parameters\":{\"header\":\"Deploy target\"}," ++
-        "\"success\":true,\"data\":{\"status\":\"pending\"},\"error\":null,\"v\":1}";
+    const asked =
+        "I need one thing first.\n" ++
+        "<ask_user>{\"question\":\"Which environment?\",\"options\":[\"staging\",\"production\"]}</ask_user>";
     try s.db.exec(a,
         \\INSERT INTO llm_history (id, session_id, model, response_content, role, tool_name)
-        \\VALUES ('row_1', 'sess_1', 'm', ?, 'tool', 'ask_user')
-    , &.{placeholder});
+        \\VALUES ('row_1', 'sess_1', 'm', ?, 'assistant', NULL)
+    , &.{asked});
 
     const inner = try ask_user_mod.buildAskUserJson(a, .{
         .status = .skipped,
@@ -874,7 +887,7 @@ test "ask_user_pending: a rewrite preserves parameters so the card can parse it"
     });
     defer a.free(inner);
 
-    try rewriteToolResultRow(.{
+    try rewriteAnchorRow(.{
         .allocator = a,
         .io = s.threaded.io(),
         .db = &s.db,
@@ -885,12 +898,61 @@ test "ask_user_pending: a rewrite preserves parameters so the card can parse it"
 
     const after = (try readRowContent(a, &s.db, "row_1")).?;
     defer a.free(after);
+    try testing.expect(std.mem.startsWith(u8, after, "I need one thing first.\n<ask_user>"));
     try testing.expect(std.mem.indexOf(u8, after, "\"status\":\"skipped\"") != null);
     try testing.expect(std.mem.indexOf(u8, after, "\"question\":\"Which environment?\"") != null);
-    // The contract the frontend's unwrapToolOutput enforces. Without this the
-    // card falls back to an empty pending render and never shows the outcome.
-    // Parameters survive as a JSON object.
-    try testing.expect(std.mem.indexOf(u8, after, "\"parameters\":{\"header\":\"Deploy target\"}") != null);
-    try testing.expect(std.mem.indexOf(u8, after, "\"tool\":\"ask_user\"") != null);
-    try testing.expect(std.mem.indexOf(u8, after, "\"success\":true") != null);
+    try testing.expect(std.mem.endsWith(u8, after, "</ask_user>"));
+    try testing.expect(std.mem.indexOf(u8, after, "<ask_user>{") != null);
+}
+
+test "ask_user_pending: a legacy tool row keeps its envelope on resolve" {
+    const a = testing.allocator;
+    var s = try setupDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    try s.db.exec(a,
+        \\CREATE TABLE llm_history (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT NOT NULL,
+        \\    model TEXT NOT NULL,
+        \\    response_content TEXT,
+        \\    role TEXT,
+        \\    tool_name TEXT,
+        \\    diffview_before TEXT,
+        \\    diffview_after TEXT,
+        \\    is_loading INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+
+    const placeholder =
+        "{\"tool\":\"ask_user\",\"parameters\":{\"header\":\"Deploy target\"}," ++
+        "\"success\":true,\"data\":{\"status\":\"pending\"},\"error\":null,\"v\":1}";
+    try s.db.exec(a,
+        \\INSERT INTO llm_history (id, session_id, model, response_content, role, tool_name)
+        \\VALUES ('row_2', 'sess_1', 'm', ?, 'tool', 'ask_user')
+    , &.{placeholder});
+
+    const inner = try ask_user_mod.buildAskUserJson(a, .{
+        .status = .answered,
+        .question_id = "q_2",
+        .question = "Which environment?",
+        .answer = "staging",
+        .answers_count = 1,
+    });
+    defer a.free(inner);
+
+    try rewriteAnchorRow(.{
+        .allocator = a,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .session_id = "sess_1",
+        .llm_history_id = "row_2",
+        .inner = inner,
+    });
+
+    const after = (try readRowContent(a, &s.db, "row_2")).?;
+    defer a.free(after);
+    try testing.expect(std.mem.indexOf(u8, after, "\"status\":\"answered\"") != null);
+    try testing.expect(std.mem.indexOf(u8, after, "\"answer\":\"staging\"") != null);
 }

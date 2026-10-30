@@ -75,9 +75,6 @@ pub const execUpdatePlan = @import("../modules/agent/tools/update_plan.zig").exe
 pub const execGetPlan = @import("../modules/agent/tools/get_plan.zig").execGetPlan;
 pub const execListAgents = @import("../modules/agent/tools/list_agents.zig").execListAgents;
 pub const execUsedTools = @import("../modules/agent/tools/used_tools.zig").execUsedTools;
-// 2026-09-16 — ask_user: ends the turn so the human can answer in their own
-// time; the answer rewrites this call's tool-result row and resumes a run.
-pub const execAskUser = @import("../modules/agent/tools/ask_user.zig").execAskUser;
 // 2026-08-28 — add_mcp_server agent tool (Step 3 of
 // 2026-08-28-add-mcp-server-agent-tool.md).
 pub const execAddMcpServer = @import("../modules/agent/tools/add_mcp_server.zig").execAddMcpServer;

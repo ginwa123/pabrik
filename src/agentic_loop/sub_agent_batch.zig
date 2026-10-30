@@ -11,9 +11,9 @@ const logger_mod = pabrikcore.loggermod;
 const llm_history = pabrikcore.llm_history;
 const ai_workflow = @import("workflow.zig");
 const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
-// The main-agent-only membership list lives with `ask_user` so the parse-time
-// check here and `tool_eligibility.zig`'s strip can never disagree.
-const main_agent_only = @import("../modules/agent/tools/ask_user.zig");
+// The main-agent-only membership list is shared with `tool_eligibility.zig`'s
+// strip so the parse-time check here and the strip can never disagree.
+const main_agent_only = @import("main_agent_only.zig");
 const subagent_progress = @import("subagent_progress.zig");
 
 /// Hard ceiling on one batch.
@@ -106,8 +106,8 @@ pub fn validateJobs(jobs: []const BatchJob) !void {
             // includes the tools the allowlist exists to withhold.
             if (std.ascii.eqlIgnoreCase(trimmed, "all")) return error.AllToolsNotAllowed;
             // Main-agent-only tools are a hard error, not a silent strip:
-            // `ask_user` would leave the child's question unanswerable and
-            // `run_skill_eval` would recurse eval-of-eval without bound.
+            // `run_session` starts a whole new run with no human in the chain
+            // and `run_skill_eval` would recurse eval-of-eval without bound.
             if (main_agent_only.isMainAgentOnly(trimmed)) return error.MainAgentOnlyToolNotAllowed;
         }
     }
@@ -538,7 +538,7 @@ test "validateJobs refuses more than MaxBatch jobs" {
 
 test "validateJobs refuses a main-agent-only tool in the allowlist" {
     const jobs = [_]BatchJob{
-        .{ .name = "judge", .instruction = "judge it", .tools = &.{ "read_file", "ask_user" } },
+        .{ .name = "judge", .instruction = "judge it", .tools = &.{ "read_file", "run_session" } },
     };
     try testing.expectError(error.MainAgentOnlyToolNotAllowed, validateJobs(&jobs));
 

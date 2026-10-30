@@ -232,3 +232,35 @@ pub const CrossProjectCwdRule =
     \\- Prefer read-only tools (`read_file`, `search`, `glob`, `list_directory`) for
     \\  discovery; use `command` only when you need something those tools cannot do.
 ;
+
+pub const AskUserRule =
+    \\## Asking the Human — the `ask_user` block
+    \\
+    \\Some decisions are genuinely blocked on the human: two or more reasonable
+    \\paths exist, the code and the conversation do not settle which one is
+    \\wanted, and guessing wrong would waste real work. For those, write an
+    \\`ask_user` block as the LAST thing in your message and end the turn there.
+    \\
+    \\- The block is one line of JSON between `<ask_user>` and `</ask_user>`.
+    \\- Use it only at the end of a normal message — never in a message that also
+    \\  calls a tool, and never more than once per message.
+    \\- Ask ONE question. Put the context in `question` (Markdown allowed), not in
+    \\  a second block.
+    \\- Prefer `options` (2–6 short strings) with `recommended` set to the option
+    \\  you would pick; `recommended` must exactly match one of them. Omit
+    \\  `options` for a free-text-only question.
+    \\- `header` is the card title, 40 characters or fewer.
+    \\- Writing the block ENDS the turn. You are resumed with the same block
+    \\  rewritten to carry `"status":"answered"` and the human's `"answer"`, or
+    \\  `"status":"skipped"` / `"status":"abandoned"` plus an `instruction`. On
+    \\  skipped or abandoned, do not guess — say what you are blocked on.
+    \\- Do NOT ask what you can verify yourself (read the file, run the command,
+    \\  check the plan), and do NOT ask for permission you already have.
+    \\
+    \\Example — the block is the last thing in the message:
+    \\
+    \\```json
+    \\<ask_user>{"header":"Deploy target","question":"Which environment should I deploy to?","options":["staging","production"],"recommended":"staging"}</ask_user>
+    \\```
+    \\
+;

@@ -1,5 +1,6 @@
-// Functional wire tests for the `ask_user` agent tool (Migration 088). Zig
-// port of `tests/functional/ask_user_test.py` (same test names, same order).
+// Functional wire tests for the pending-question round trip (Migration 088):
+// both anchors the answer endpoint accepts — an assistant row carrying an
+// `<ask_user>` block, and a tool-result row left behind by the deleted tool.
 
 const std = @import("std");
 const testing = std.testing;
@@ -286,6 +287,7 @@ pub fn createSession(h: *Harness, name: []const u8) ![]u8 {
 /// `POST /api/llm/session/:sid/answer`.
 pub const AnswerBody = struct {
     question_id: ?[]const u8 = null,
+    message_id: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
     answer: ?[]const u8 = null,
     skip: ?bool = null,
@@ -339,6 +341,79 @@ pub fn wantAbsent(content: []const u8, needle: []const u8) !void {
         std.debug.print("did not expect {s} in the stored row, got:\n{s}\n", .{ needle, content });
         return error.TestUnexpectedResult;
     }
+}
+
+// ============================================================================
+// Helpers — the block anchor
+// ============================================================================
+
+pub const BlockSeed = struct {
+    question_id: []u8,
+    message_id: []u8,
+
+    pub fn deinit(self: *BlockSeed) void {
+        gpa.free(self.question_id);
+        gpa.free(self.message_id);
+        self.* = undefined;
+    }
+};
+
+/// What the loop writes when an assistant message ends with an `ask_user`
+/// block: the prose, the block, and one pending row anchored at the message.
+pub fn seedBlockQuestion(
+    h: *Harness,
+    session_id: []const u8,
+    question_id: []const u8,
+    message_id: []const u8,
+    question: []const u8,
+) !BlockSeed {
+    const now_ns = nowNs();
+
+    const content = try std.fmt.allocPrint(
+        gpa,
+        "One thing first.\n<ask_user>{{\"question\":\"{s}\",\"options\":[\"staging\",\"production\"]}}</ask_user>",
+        .{question},
+    );
+    defer gpa.free(content);
+    const content_lit = try sqlLit(content);
+    defer gpa.free(content_lit);
+    const msg_lit = try sqlLit(message_id);
+    defer gpa.free(msg_lit);
+    const sid_lit = try sqlLit(session_id);
+    defer gpa.free(sid_lit);
+
+    {
+        const sql = try std.fmt.allocPrint(gpa,
+            \\INSERT INTO llm_history (id, session_id, model, response_content, role,
+            \\    finish_reason, tool_calls_json, tool_call_id, created_at_nano,
+            \\    is_feed_to_llm, agent, loop_index, temperature, is_thinking,
+            \\    is_input, is_output)
+            \\VALUES ({s}, {s}, 'test-model', {s}, 'assistant', 'awaiting_user', '', NULL, {d},
+            \\    1, 'Agent', 0, 0.2, 0, 0, 1)
+        , .{ msg_lit, sid_lit, content_lit, now_ns });
+        defer gpa.free(sql);
+        try execSql(h.temp_dir, sql);
+    }
+
+    {
+        const qid_lit = try sqlLit(question_id);
+        defer gpa.free(qid_lit);
+        const q_lit = try sqlLit(question);
+        defer gpa.free(q_lit);
+        const sql = try std.fmt.allocPrint(gpa,
+            \\INSERT INTO session_pending_question
+            \\    (id, session_id, tool_call_id, llm_history_id, question,
+            \\     multi_select, status, answer, created_at, resolved_at)
+            \\VALUES ({s}, {s}, {s}, {s}, {s}, 0, 'pending', NULL, {d}, NULL)
+        , .{ qid_lit, sid_lit, msg_lit, msg_lit, q_lit, now_ns });
+        defer gpa.free(sql);
+        try execSql(h.temp_dir, sql);
+    }
+
+    return .{
+        .question_id = try gpa.dupe(u8, question_id),
+        .message_id = try gpa.dupe(u8, message_id),
+    };
 }
 
 // ============================================================================
@@ -1037,6 +1112,101 @@ test "a_new_message_instead_of_an_answer_settles_it_as_abandoned" {
 }
 
 // Route-order regression guard: `/answer` must resolve to its OWN handler.
+// The contract the UI reads: the answer replaces the block the model wrote,
+// under the same row id the card is drawn under.
+test "a question written as a block is answered in place" {
+    try harness.requirePabrikBin(io, gpa);
+    const sqlite = try requireSqlite3Cli();
+    defer gpa.free(sqlite);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
+
+    const session_id = try createSession(&h, "ask-user-block-probe");
+    defer gpa.free(session_id);
+    var seeded = try seedBlockQuestion(
+        &h,
+        session_id,
+        "q_block_1",
+        "msg_block_1",
+        "Which environment should I deploy to?",
+    );
+    defer seeded.deinit();
+
+    var r = try postAnswer(&h, session_id, .{
+        .message_id = seeded.message_id,
+        .answer = "staging",
+    }, &.{200});
+    defer r.deinit();
+    var body = try r.json();
+    defer body.deinit();
+    if (!std.mem.eql(u8, try wantStr(&body, "status"), "answered")) {
+        std.debug.print("expected status=answered, got {s}\n", .{try wantStr(&body, "status")});
+        return error.TestUnexpectedResult;
+    }
+
+    const content = try toolRowContent(h.temp_dir, seeded.message_id);
+    defer gpa.free(content);
+    try wantContains(content, "\"status\":\"answered\"");
+    try wantContains(content, "\"answer\":\"staging\"");
+    try wantAbsent(content, "\"status\":\"pending\"");
+
+    try expectQuestionStatus(h.temp_dir, seeded.question_id, "answered");
+    try expectQuestionAnswer(h.temp_dir, seeded.question_id, "staging");
+
+    if (!try waitForWorker(h.temp_dir, session_id, 8_000)) {
+        std.debug.print("no worker row after answering a block question\n", .{});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "the block rewrite keeps the prose around it and stays a single block" {
+    try harness.requirePabrikBin(io, gpa);
+    const sqlite = try requireSqlite3Cli();
+    defer gpa.free(sqlite);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
+
+    const session_id = try createSession(&h, "ask-user-block-prose");
+    defer gpa.free(session_id);
+    var seeded = try seedBlockQuestion(
+        &h,
+        session_id,
+        "q_block_2",
+        "msg_block_2",
+        "Which environment should I deploy to?",
+    );
+    defer seeded.deinit();
+
+    {
+        var r = try postAnswer(&h, session_id, .{
+            .message_id = seeded.message_id,
+            .skip = true,
+        }, &.{200});
+        defer r.deinit();
+    }
+
+    const content = try toolRowContent(h.temp_dir, seeded.message_id);
+    defer gpa.free(content);
+    if (!std.mem.startsWith(u8, content, "One thing first.\n<ask_user>{")) {
+        std.debug.print("the prose before the block was lost: {s}\n", .{content});
+        return error.TestUnexpectedResult;
+    }
+    const trimmed = std.mem.trimEnd(u8, content, " \t\r\n");
+    if (!std.mem.endsWith(u8, trimmed, "</ask_user>")) {
+        std.debug.print("the block no longer closes the message: {s}\n", .{content});
+        return error.TestUnexpectedResult;
+    }
+    if (std.mem.count(u8, trimmed, "<ask_user>") != 1) {
+        std.debug.print("expected exactly one block, got: {s}\n", .{content});
+        return error.TestUnexpectedResult;
+    }
+    try wantContains(content, "\"status\":\"skipped\"");
+}
+
 test "answer_route_is_not_shadowed_by_sibling_routes" {
     try harness.requirePabrikBin(io, gpa);
     const sqlite = try requireSqlite3Cli();

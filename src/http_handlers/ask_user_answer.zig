@@ -1,13 +1,13 @@
-//! `POST /api/llm/session/:session_id/answer` — resolve a pending `ask_user`
-//! question and resume the conversation. resolved JSON payload, and push its
-//! `llm_full` frame so an open `ChatView` flips the card without a reload;
+//! `POST /api/llm/session/:session_id/answer` — resolve a pending question and
+//! resume the conversation. The answer rewrites the block the model wrote, and
+//! its `llm_full` frame flips the card without a reload.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const http_response = @import("http_response.zig");
 const gserverz = pabrikcore.gserverz;
-const ask_user_mod = pabrikcore.ask_user;
+const ask_user_mod = pabrikcore.ask_user_message;
 const ask_user_pending = pabrikcore.ask_user_pending;
 const wrapToolOutput = @import("../modules/agent/tools/tools_wrap_output.zig").wrapToolOutput;
 
@@ -29,10 +29,11 @@ pub const AnswerError = error{
     OutOfMemory,
 };
 
-/// Request body. `question_id` is preferred; `tool_call_id` is the fallback
-/// for a client that only has the tool row in hand (the card always has it).
+/// Request body. `question_id` is preferred; `message_id` names the assistant
+/// row the card is drawn under.
 pub const AnswerBody = struct {
     question_id: []const u8 = "",
+    message_id: []const u8 = "",
     tool_call_id: []const u8 = "",
     answer: []const u8 = "",
     skip: bool = false,
@@ -132,7 +133,7 @@ pub fn resolveQuestion(input: ResolveInput) AnswerError!AnswerOutcome {
     }) catch return error.RewriteFailed;
     defer allocator.free(inner);
 
-    ask_user_pending.rewriteToolResultRow(.{
+    ask_user_pending.rewriteAnchorRow(.{
         .allocator = allocator,
         .io = input.io,
         .db = input.db,
@@ -182,14 +183,14 @@ pub fn askUserAnswerHandler(
         });
     };
 
-    // Resolve the question id, preferring the explicit one.
     var question_id: []const u8 = body.question_id;
-    if (question_id.len == 0 and body.tool_call_id.len > 0) {
+    const anchor: []const u8 = if (body.message_id.len > 0) body.message_id else body.tool_call_id;
+    if (question_id.len == 0 and anchor.len > 0) {
         const by_call = ask_user_pending.getPendingQuestionByToolCall(
             allocator,
             di.db,
             session_id,
-            body.tool_call_id,
+            anchor,
         ) catch {
             return res.jsonResponse(.{
                 .status_code = 500,
@@ -204,7 +205,7 @@ pub fn askUserAnswerHandler(
     if (question_id.len == 0) {
         return res.jsonResponse(.{
             .status_code = 400,
-            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "question_id or tool_call_id is required" }),
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "question_id or message_id is required" }),
         });
     }
 
@@ -241,7 +242,7 @@ pub fn askUserAnswerHandler(
             error.RewriteFailed => "failed to record the answer; the question is still pending, retry is safe",
             error.LookupFailed => "DB error",
             error.ResumeFailed => "the answer was recorded but the session could not be resumed",
-            error.MissingQuestionKey => "question_id or tool_call_id is required",
+            error.MissingQuestionKey => "question_id or message_id is required",
             error.MissingSessionId => "Missing session_id path parameter",
             error.BodyRequired => "Request body required",
             error.InvalidJsonBody => "Invalid JSON body",
@@ -445,7 +446,7 @@ test "ask_user_answer: the resolved envelope satisfies the frontend's contract" 
     });
     defer a.free(inner);
 
-    const envelope = try wrapToolOutput(a, ask_user_mod.ASK_USER_TOOL_NAME, "{\"header\":\"Deploy target\"}", true, null, inner);
+    const envelope = try wrapToolOutput(a, ask_user_mod.NAME, "{\"header\":\"Deploy target\"}", true, null, inner);
     defer a.free(envelope);
 
     // Shaped like every other tool result so `unwrapToolOutput` parses it…
@@ -470,7 +471,7 @@ test "ask_user_answer: parameters is mandatory in the envelope" {
     const inner = try ask_user_mod.buildAskUserJson(a, .{ .status = .skipped, .question_id = "q_2" });
     defer a.free(inner);
 
-    const envelope = try wrapToolOutput(a, ask_user_mod.ASK_USER_TOOL_NAME, "{}", true, null, inner);
+    const envelope = try wrapToolOutput(a, ask_user_mod.NAME, "{}", true, null, inner);
     defer a.free(envelope);
 
     // The frontend's `unwrapToolOutput` throws unless tool AND parameters AND

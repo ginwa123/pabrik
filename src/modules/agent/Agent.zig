@@ -218,8 +218,8 @@ pub const FinishReason = enum {
     tool,
     null,
     assistant,
-    /// Not a provider value: persisted by the agentic loop when a batch
-    /// contained `ask_user`.
+    /// Not a provider value: persisted by the agentic loop when the
+    /// assistant message ended with an `ask_user` block.
     awaiting_user,
 
     pub fn from_str(s: ?[]const u8) ?FinishReason {

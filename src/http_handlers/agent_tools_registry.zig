@@ -171,7 +171,7 @@ test "useCase: every path-taking tool REQUIRES an absolute cwd" {
     // Controls, so the loop above cannot pass vacuously: a tool with no
     // filesystem parameter must not carry a `cwd`, and the two tools whose
     // `cwd` was dropped the same day must not have kept one.
-    const cwd_free = [_][]const u8{ "ask_user", "create_kanban_task", "add_mcp_server" };
+    const cwd_free = [_][]const u8{ "create_kanban_task", "add_mcp_server" };
     for (cwd_free) |tool_name| {
         const entry = findEntry(output, tool_name) orelse {
             std.debug.print("registry is missing '{s}'\n", .{tool_name});

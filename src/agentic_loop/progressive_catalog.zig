@@ -7,8 +7,8 @@ const AgentTool = agent.AgentTool;
 const tool_eligibility = @import("tool_eligibility.zig");
 const progressive_regex = @import("progressive_regex.zig");
 // `MAIN_AGENT_ONLY_NAMES` — the tools a sub-agent must never discover its
-// way back to (spawn_sub_agent, ask_user). Same list the strip uses.
-const ask_user_mod = pabrikcore.ask_user;
+// way back to. Same list the strip uses.
+const main_agent_only = pabrikcore.main_agent_only;
 
 pub const Kind = enum { builtin, mcp };
 
@@ -109,7 +109,7 @@ pub fn buildCatalog(
         const name = tool.function.name;
         // Anti-recursion invariant: a sub-agent must not be able to
         // discover its way back to spawn_sub_agent.
-        if (is_sub_agent and ask_user_mod.isMainAgentOnly(name)) continue;
+        if (is_sub_agent and main_agent_only.isMainAgentOnly(name)) continue;
         // Never offer the browsing meta-tools as things to browse.
         if (isProgressiveMetaTool(name)) continue;
         if (containsName(equipped_names, name)) continue;
@@ -125,7 +125,7 @@ pub fn buildCatalog(
     if (mcp) |mcp_tools| {
         for (mcp_tools) |tool| {
             const name = tool.function.name;
-            if (is_sub_agent and ask_user_mod.isMainAgentOnly(name)) continue;
+            if (is_sub_agent and main_agent_only.isMainAgentOnly(name)) continue;
             if (containsName(equipped_names, name)) continue;
             try out.append(allocator, .{
                 .name = name,

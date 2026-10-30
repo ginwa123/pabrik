@@ -108,7 +108,7 @@ fn registerWorkerRoutes(authed: *Group) !void {
     // uses /api/llm/*). Same no-shadowing argument as above.
     try authed.post("/api/llm/session/:session_id/touched", ai_mod.http_handlers.sessionMarkTouchedHandler);
     try authed.post("/api/llm/session/:session/stop", ai_mod.http_handlers.sessionStopHandler);
-    // `ask_user` answer route.
+    // The pending-question answer route.
     try authed.post("/api/llm/session/:session_id/answer", ai_mod.http_handlers.askUserAnswerHandler);
 
     try authed.get("/api/llm/session", ai_mod.http_handlers.sessionListHandler);

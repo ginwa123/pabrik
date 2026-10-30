@@ -242,7 +242,7 @@ pub const workspace_config = @import("agentic_loop/workspace_config.zig");
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
 // Storage layer for the per-session markdown task plan (savePlan / getPlan / getPlanOpt).
 pub const session_plan = @import("agentic_loop/session_plan.zig");
-// `ask_user` state + answer round-trip (Migration 087's
+// Pending-question state + answer round-trip (Migration 087's
 // session_pending_question). Re-exported so the HTTP handler can reach it
 // without importing an agentic_loop file directly.
 pub const ask_user_pending = @import("agentic_loop/ask_user_pending.zig");
@@ -262,9 +262,8 @@ pub const workspace_items = @import("agentic_loop/llm_history.zig");
 pub const workspace_item_tasks = @import("agentic_loop/llm_history.zig");
 pub const http_response = @import("http_handlers/http_response.zig");
 pub const spawn_sub_agent = @import("modules/agent/tools/spawn_sub_agent.zig");
-// `ask_user` — the interactive tool that ends the turn to ask the human a
-// question.
-pub const ask_user = @import("modules/agent/tools/ask_user.zig");
+pub const ask_user_message = @import("agentic_loop/ask_user_message.zig");
+pub const main_agent_only = @import("agentic_loop/main_agent_only.zig");
 pub const http_handlers = @import("http_handlers/mod.zig");
 // kabelweb — external web-framework library (pure-Zig HTTP server +
 // libcurl-backed HTTP client, pinned by URL in build.zig.zon). `gserverz`

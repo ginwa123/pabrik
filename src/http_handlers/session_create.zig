@@ -320,7 +320,7 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
     var is_auto_retry_until_stop: []const u8 = "";
     if (parsed.is_auto_retry_until_stop.len > 0) is_auto_retry_until_stop = parsed.is_auto_retry_until_stop;
 
-    // An unanswered `ask_user` question blocks the turn: `handle_tool`
+    // An unanswered question blocks the turn: the loop breaks and
     // recorded it and the workflow broke instead of looping back.
     if (ai_workflow.ask_user_pending.hasPendingQuestion(alloc, di.db, session_id)) {
         const abandoned = ai_workflow.ask_user_pending.abandonPendingQuestions(
@@ -331,14 +331,14 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
         ) catch |abandon_err| blk: {
             // Best-effort: a failed settle must not drop the user's message.
             std.log.warn(
-                "[session_create] failed to abandon pending ask_user question for {s}: {s}",
+                "[session_create] failed to abandon the pending question for {s}: {s}",
                 .{ session_id, @errorName(abandon_err) },
             );
             break :blk @as(usize, 0);
         };
         if (abandoned > 0) {
             std.log.info(
-                "[session_create] abandoned {d} pending ask_user question(s) for {s} — the human moved on",
+                "[session_create] abandoned {d} pending question(s) for {s} — the human moved on",
                 .{ abandoned, session_id },
             );
         }

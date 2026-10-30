@@ -813,7 +813,7 @@ test "explain: JSON errors name the likely cause, not just the Zig name" {
 }
 
 test "explain: every mapped error produces a non-empty, non-bare message" {
-    // The ask_user precedent: walk the errors this module claims to
+    // The precedent: walk the errors this module claims to
     // explain and prove none of them falls through to a bare name.
     const errs = [_]anyerror{
         error.TimeoutMissing,
