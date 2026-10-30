@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // ─── Documents (Migration 095) ─────────────────────────────────────────── Workspace-scoped
 // markdown documents. A document belongs to a workspace directly — it is NOT a `workspace_items`

@@ -1,4 +1,4 @@
-import { ApiError, apiFetch } from './core'
+import { ApiError, apiFetch } from './client'
 
 export interface Task {
   id: string

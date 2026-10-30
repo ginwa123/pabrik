@@ -1,4 +1,4 @@
-import { ApiError, apiFetch } from './core'
+import { ApiError, apiFetch } from './client'
 
 // ─── Agent-Routines Mirror (Migration 088) ───────────────────────────── Mirrors the Agent-Kanbans
 // block above onto routine items.

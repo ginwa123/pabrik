@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // Git File Diff API
 export interface GitFileDiff {

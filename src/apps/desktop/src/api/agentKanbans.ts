@@ -1,4 +1,4 @@
-import { ApiError, apiFetch } from './core'
+import { ApiError, apiFetch } from './client'
 
 // ─── Agent-Kanbans Mirror (Migration 081) ─────────────────────────────── Mirrors the Agent Mode
 // block above onto kanban boards. The config row (`agent_kanbans`) is OPT-IN — `getAgentKanban`

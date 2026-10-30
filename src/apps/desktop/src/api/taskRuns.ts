@@ -1,5 +1,5 @@
 import { joinMediaUrlsWire } from '../helpers/mediaUrls'
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 import { type Task, splitMediaUrls } from './tasks'
 
 /** Kanban-specific task create endpoint. */

@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 import type { FolderEntry } from './files'
 import type { KanbanColumn } from './kanban'
 import type { Task } from './tasks'

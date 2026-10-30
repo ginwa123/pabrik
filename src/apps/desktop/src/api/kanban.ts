@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 import type { Task } from './tasks'
 import type { WorkspaceItem } from './workspaces'
 

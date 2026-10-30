@@ -1,6 +1,6 @@
 import { Cause, Data, Effect } from 'effect'
 import { describeCause } from '../helpers/effectRuntime'
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // Chat API - Zig Backend Integration (Zig backend calls LLM backend internally)
 export interface Chat {

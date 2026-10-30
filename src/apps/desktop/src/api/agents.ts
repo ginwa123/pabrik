@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 import type { WorkspaceItem } from './workspaces'
 
 // `uploadTaskAttachment` REMOVED 2026-08-06 (kanban-image-urls-column plan).

@@ -1,5 +1,5 @@
 import { joinMediaUrlsWire } from '../helpers/mediaUrls'
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 import { type Task, splitMediaUrls } from './tasks'
 
 /** Create a task under a workspace item. The third arg is a single params object: for a standard

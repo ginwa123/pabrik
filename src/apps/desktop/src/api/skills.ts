@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 import type { SkillEvalsRunsResponse, SkillEvalsSummaryResponse } from './sseEvents'
 
 // Skills API A skill is a ROW scoped to one workspace, and that scope is its whole identity: no

@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // ─── Right-sidebar terminal (PTY over REST + poll) ─────────────────────────── Backend:
 // terminal_create/input/output/resize/delete.zig (in-memory PTY registry, no migration).

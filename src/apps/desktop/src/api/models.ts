@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // ─── models.dev catalog (Migration 106) ───────────────────────────────── The catalog is a
 // machine-wide snapshot, cached in the DB and synced hourly in the background.

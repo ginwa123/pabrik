@@ -1,6 +1,6 @@
 import { joinMediaUrlsWire } from '../helpers/mediaUrls'
 import { encodeFileAttachmentsWire, type FileAttachment } from '../helpers/fileAttachments'
-import { ApiError, apiFetch } from './core'
+import { ApiError, apiFetch } from './client'
 import { splitMediaUrls } from './tasks'
 
 // Send a message to LLM Migration 063 — adds the optional `isAutoRetryUntilStop` flag. "1" opts

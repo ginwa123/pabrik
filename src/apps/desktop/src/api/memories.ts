@@ -1,4 +1,4 @@
-import { ApiError, apiFetch } from './core'
+import { ApiError, apiFetch } from './client'
 
 // Memories API
 export interface Memory {

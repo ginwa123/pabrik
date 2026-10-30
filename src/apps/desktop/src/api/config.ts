@@ -1,4 +1,4 @@
-import { API_BASE, apiFetch } from './core'
+import { API_BASE, apiFetch } from './client'
 
 // Pabrik Config API
 export interface PabrikAgent {

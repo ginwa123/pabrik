@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // Open a PR/MR in the worktree path via the forge CLI (`gh pr create` or
 // `glab mr create`). The backend runs the command and returns the URL.

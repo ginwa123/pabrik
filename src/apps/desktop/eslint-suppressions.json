@@ -62,17 +62,17 @@
       "count": 1
     }
   },
+  "src/api/client.ts": {
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
   "src/api/config.ts": {
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
       "count": 4
-    }
-  },
-  "src/api/core.ts": {
-    "local/no-try-catch": {
-      "count": 1
     }
   },
   "src/api/files.ts": {

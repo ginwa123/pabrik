@@ -1,5 +1,5 @@
 import { getCurrentWorkspaceId } from '../helpers/workspaceScope'
-import { API_BASE, apiFetch } from './core'
+import { API_BASE, apiFetch } from './client'
 
 // Types matching backend responses
 export interface FolderEntry {

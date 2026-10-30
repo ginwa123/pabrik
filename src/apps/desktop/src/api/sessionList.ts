@@ -1,5 +1,5 @@
 import type { Chat } from './chatHistory'
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 /** The session list is the one call whose cost grows with the page it returns, so it gets more
  * than `apiFetch`'s 15s default before a slow-but-healthy backend reads as "no chats". */

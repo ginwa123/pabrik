@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // ─── Session background processes (bg-completion) ──────────────────────────── Backend:
 // background_processes_list.zig + background_process_log_get.zig (commit b69111f7). `running` is

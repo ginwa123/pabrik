@@ -1,4 +1,4 @@
-import { ApiError, apiFetch } from './core'
+import { ApiError, apiFetch } from './client'
 import { tryParseJsonErrorField } from './internal'
 
 // ─── Account: change your own password ──────────────────────────────────────

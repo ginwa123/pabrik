@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // Update an existing session (selectedAgent, name, isAutoRetryUntilStop). Migration 063 — extends
 // the update shape to carry the unattended- mode flag. Pass `isAutoRetryUntilStop: '0'` to disable,

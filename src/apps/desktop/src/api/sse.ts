@@ -2,7 +2,7 @@ import { createSseClient, type SseClient } from '../helpers/sseClient'
 import { Cause, Effect, Exit, Option } from 'effect'
 import { describeCause } from '../helpers/effectRuntime'
 import { SseFrameError } from './chatHistory'
-import { API_BASE } from './core'
+import { API_BASE } from './client'
 import type { DesignElementEvent } from './designElements'
 import type {
   SseEvent,

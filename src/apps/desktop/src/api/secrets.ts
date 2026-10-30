@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // ─── Workspace secrets (Migration 101) ─────────────────────────────────── Named credentials
 // scoped to one workspace: an API key the agent's tools can substitute into a request, never

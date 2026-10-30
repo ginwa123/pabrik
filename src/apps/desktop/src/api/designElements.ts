@@ -1,4 +1,4 @@
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 /**  * Wire shape for `GET .../design/pages` (list envelope) and `POST .../design/pages` (single page).
  * Numeric fields are `number`, not `i64` — JSON has no integer/float distinction on the wire. */

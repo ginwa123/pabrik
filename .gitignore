@@ -159,6 +159,12 @@ zig-cache/
 core
 core.*
 *.core
+# A core dump is never source. A source file that happens to be named `core.ts`
+# (or `core.vue`) is, and `core.*` used to swallow it silently: the file exists
+# on the author's disk, `git add -A` skips it, and CI fails on a missing module
+# nobody touched. Re-include source files so that cannot happen again.
+!src/apps/desktop/src/**/*.ts
+!src/apps/desktop/src/**/*.vue
 
 
 

@@ -2,7 +2,7 @@ import { readGitStatusCache, writeGitStatusCache } from '../helpers/gitStatusCac
 import { gitProbeAnswer, mayProbeGit, recordGitAnswer, recordGitFailure } from '../helpers/gitProbeGate'
 import { Cause, Data, Effect } from 'effect'
 import { describeCause } from '../helpers/effectRuntime'
-import { apiFetch } from './core'
+import { apiFetch } from './client'
 
 // Git Status API
 export interface GitStatus {
