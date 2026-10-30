@@ -163,6 +163,7 @@ fn registerStreamRoutes(authed: *Group, router: *gserverz.router.Router) !void {
     // Benchmark seeding (bench_seed.zig) — gated by PABRIK_BENCH_SEED=1, 404
     // when off. `benchmark/run.sh` uses it to give the list routes rows to read.
     try authed.post("/api/bench/seed/sessions", ai_mod.http_handlers.benchSeedSessionsHandler);
+    try authed.post("/api/bench/seed/documents", ai_mod.http_handlers.benchSeedDocumentsHandler);
 }
 
 fn registerSystemRoutes(authed: *Group, instrumented: *Group) !void {

@@ -7,11 +7,26 @@ pub const max_response_bytes = 64 * 1024;
 pub const phase_names = [2][]const u8{ "c1", "cN" };
 const zero_digest: [32]u8 = [_]u8{0} ** 32;
 
-pub const Method = enum { get, post };
+pub const Method = enum {
+    get,
+    post,
+    patch,
+
+    pub fn name(self: Method) []const u8 {
+        return switch (self) {
+            .get => "GET",
+            .post => "POST",
+            .patch => "PATCH",
+        };
+    }
+};
 
 pub const Scenario = struct {
     name: []const u8,
+    method: Method = .get,
     route: []const u8,
+    /// A documents reorder of this many seeded rows, reversed: `bench-doc-00NN` … `bench-doc-0001`.
+    reorder_rows: u32 = 0,
     mask_timestamp: bool,
     expected: []const u8,
     min_scaling: f64 = 0,
@@ -61,12 +76,38 @@ pub const scenarios = [_]Scenario{
         .min_rps = 1000.0,
         .enforced_performance = true,
     },
+    .{
+        .name = "documents",
+        .route = "/api/workspaces/bench-docs/documents",
+        .mask_timestamp = false,
+        .expected = "",
+        .seed_route = "/api/bench/seed/documents?rows=50",
+        .probe_contract = true,
+        .max_p99_ms = 20.0,
+        .min_scaling = 1.0,
+        .min_rps = 1000.0,
+    },
+    .{
+        .name = "documents-reorder",
+        .method = .patch,
+        .route = "/api/workspaces/bench-docs/documents/reorder",
+        .reorder_rows = 50,
+        .mask_timestamp = false,
+        .expected = "",
+        .seed_route = "/api/bench/seed/documents?rows=50",
+        .probe_contract = true,
+        .max_p99_ms = 25.0,
+        .min_scaling = 1.0,
+        .min_rps = 300.0,
+    },
 };
 
 pub const scenario_pointers = [scenarios.len]*const Scenario{
     &scenarios[0],
     &scenarios[1],
     &scenarios[2],
+    &scenarios[3],
+    &scenarios[4],
 };
 
 pub fn findScenario(name: []const u8) ?*const Scenario {
@@ -900,15 +941,40 @@ fn calibrate() f64 {
     return round1(@as(f64, @floatFromInt(32)) * 1e9 / @as(f64, @floatFromInt(elapsed)));
 }
 
-fn buildRequest(gpa: std.mem.Allocator, cfg: *const Config, method: Method, route: []const u8) ![]u8 {
-    return switch (method) {
-        .get => std.fmt.allocPrint(gpa, "GET {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nConnection: keep-alive\r\n\r\n", .{ route, cfg.port }),
-        .post => std.fmt.allocPrint(gpa, "POST {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n", .{ route, cfg.port }),
-    };
+fn buildRequest(gpa: std.mem.Allocator, cfg: *const Config, method: Method, route: []const u8, body: ?[]const u8) ![]u8 {
+    const payload = body orelse "";
+    if (method == .get) {
+        return std.fmt.allocPrint(gpa, "GET {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nConnection: keep-alive\r\n\r\n", .{ route, cfg.port });
+    }
+    if (payload.len == 0) {
+        return std.fmt.allocPrint(gpa, "{s} {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n", .{ method.name(), route, cfg.port });
+    }
+    return std.fmt.allocPrint(gpa, "{s} {s} HTTP/1.1\r\nHost: 127.0.0.1:{d}\r\nUser-Agent: pabrik-api-bench/1\r\nAccept: application/json\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: keep-alive\r\n\r\n{s}", .{ method.name(), route, cfg.port, payload.len, payload });
+}
+
+/// The ordered_ids body a reorder scenario sends: every seeded row, reversed.
+pub fn reorderBody(gpa: std.mem.Allocator, rows: u32) ![]u8 {
+    var body = std.ArrayList(u8).empty;
+    errdefer body.deinit(gpa);
+    try body.appendSlice(gpa, "{\"ordered_ids\":[");
+    var row = rows;
+    while (row > 0) : (row -= 1) {
+        if (row != rows) try body.append(gpa, ',');
+        var quoted: [32]u8 = undefined;
+        const id = try std.fmt.bufPrint(&quoted, "\"bench-doc-{d:0>4}\"", .{row});
+        try body.appendSlice(gpa, id);
+    }
+    try body.appendSlice(gpa, "]}");
+    return body.toOwnedSlice(gpa);
 }
 
 fn buildPayload(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scenario) ![]u8 {
-    return buildRequest(gpa, cfg, .get, scenario.route);
+    if (scenario.reorder_rows == 0) {
+        return buildRequest(gpa, cfg, scenario.method, scenario.route, null);
+    }
+    const body = try reorderBody(gpa, scenario.reorder_rows);
+    defer gpa.free(body);
+    return buildRequest(gpa, cfg, scenario.method, scenario.route, body);
 }
 
 const OneShot = struct {
@@ -918,9 +984,7 @@ const OneShot = struct {
 
 /// One request on its own connection: the seed a list scenario needs, and the
 /// probe whose body becomes the contract.
-fn requestOnce(gpa: std.mem.Allocator, cfg: *const Config, method: Method, route: []const u8) !OneShot {
-    const payload = try buildRequest(gpa, cfg, method, route);
-    defer gpa.free(payload);
+fn requestOnce(gpa: std.mem.Allocator, cfg: *const Config, payload: []const u8) !OneShot {
     const scratch = try gpa.alloc(u8, max_response_bytes);
     defer gpa.free(scratch);
 
@@ -951,7 +1015,9 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
     waitReady(gpa, cfg, payload) catch return error.NotReady;
 
     if (scenario.seed_route) |seed_route| {
-        const seeded = try requestOnce(gpa, cfg, scenario.seed_method, seed_route);
+        const seed_payload = try buildRequest(gpa, cfg, scenario.seed_method, seed_route, null);
+        defer gpa.free(seed_payload);
+        const seeded = try requestOnce(gpa, cfg, seed_payload);
         defer gpa.free(seeded.body);
         if (seeded.status != 200) {
             std.log.err("{s}: seed {s} answered {d}: {s}", .{ scenario.name, seed_route, seeded.status, seeded.body });
@@ -963,7 +1029,7 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
     var contract_owned: ?[]u8 = null;
     defer if (contract_owned) |body| gpa.free(body);
     if (scenario.probe_contract) {
-        const probe = try requestOnce(gpa, cfg, .get, scenario.route);
+        const probe = try requestOnce(gpa, cfg, payload);
         defer gpa.free(probe.body);
         if (probe.status != 200) {
             std.log.err("{s}: probe {s} answered {d}", .{ scenario.name, scenario.route, probe.status });
@@ -994,7 +1060,7 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
     result.phases[1] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, cfg.concurrency, contract);
 
     if (scenario.reference_route) |reference_route| {
-        const reference_payload = try buildRequest(gpa, cfg, .get, reference_route);
+        const reference_payload = try buildRequest(gpa, cfg, .get, reference_route, null);
         defer gpa.free(reference_payload);
 
         var reference = try runPhase(gpa, cfg, scenario, reference_payload, cfg.requests, 1, "");
@@ -1018,7 +1084,7 @@ fn renderMarkdown(gpa: std.mem.Allocator, cfg: *const Config, results: []const S
 
     try text.appendSlice(gpa, "## api benchmark\n\n");
     for (results) |result| {
-        try appendPrint(&text, gpa, "`GET {s}` (`{s}`)\n", .{ result.scenario.route, result.scenario.name });
+        try appendPrint(&text, gpa, "`{s} {s}` (`{s}`)\n", .{ result.scenario.method.name(), result.scenario.route, result.scenario.name });
     }
     try appendPrint(&text, gpa, "\nprofile `{s}` — {d} requests per phase, concurrency 1 and {d}, warmup {d}\n", .{
         cfg.profile, cfg.requests, cfg.concurrency, cfg.warmup,
@@ -1217,6 +1283,8 @@ fn usage(io: std.Io) !void {
         \\                 [--server-binary-sha256 hex] [--json path] [--markdown path]
         \\scenarios: health (/health), messages (/api/session/bench/messages),
         \\           sessions (/api/llm/session?limit=50, seeded)
+        \\           documents (GET /api/workspaces/bench-docs/documents, seeded),
+        \\           documents-reorder (PATCH .../documents/reorder, seeded)
         \\
     ;
     try std.Io.File.writeStreamingAll(std.Io.File.stdout(), io, text);
@@ -1933,4 +2001,59 @@ test "the sessions scenario keeps its seed, probe and both ceilings" {
     try std.testing.expect(sessions.max_p99_ms > 0);
     try std.testing.expect(sessions.max_cost_ratio > 0);
     try std.testing.expect(sessions.enforced_performance);
+}
+
+test "a request with a body declares its length and content type" {
+    var config: Config = .{ .port = 1234 };
+    const payload = try buildRequest(std.testing.allocator, &config, .patch, "/x", "{\"a\":1}");
+    defer std.testing.allocator.free(payload);
+
+    try std.testing.expect(std.mem.startsWith(u8, payload, "PATCH /x HTTP/1.1\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, payload, "Content-Type: application/json\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, payload, "Content-Length: 7\r\n") != null);
+    try std.testing.expect(std.mem.endsWith(u8, payload, "\r\n\r\n{\"a\":1}"));
+}
+
+test "a GET request still carries no body framing" {
+    var config: Config = .{ .port = 1234 };
+    const payload = try buildRequest(std.testing.allocator, &config, .get, "/health", null);
+    defer std.testing.allocator.free(payload);
+
+    try std.testing.expect(std.mem.startsWith(u8, payload, "GET /health HTTP/1.1\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, payload, "Content-Length") == null);
+    try std.testing.expect(std.mem.endsWith(u8, payload, "\r\n\r\n"));
+}
+
+test "the reorder body names every seeded document, highest id first" {
+    const body = try reorderBody(std.testing.allocator, 3);
+    defer std.testing.allocator.free(body);
+
+    try std.testing.expectEqualStrings("{\"ordered_ids\":[\"bench-doc-0003\",\"bench-doc-0002\",\"bench-doc-0001\"]}", body);
+}
+
+test "the documents scenarios are seeded, probe their contract and sit on their own route" {
+    const list = findScenario("documents").?;
+    try std.testing.expectEqualStrings("/api/workspaces/bench-docs/documents", list.route);
+    try std.testing.expectEqual(Method.get, list.method);
+    try std.testing.expect(list.probe_contract);
+    try std.testing.expectEqualStrings("/api/bench/seed/documents?rows=50", list.seed_route.?);
+    try std.testing.expectEqual(@as(u32, 0), list.reorder_rows);
+
+    const reorder = findScenario("documents-reorder").?;
+    try std.testing.expectEqualStrings("/api/workspaces/bench-docs/documents/reorder", reorder.route);
+    try std.testing.expectEqual(Method.patch, reorder.method);
+    try std.testing.expect(reorder.probe_contract);
+    try std.testing.expectEqual(@as(u32, 50), reorder.reorder_rows);
+    try std.testing.expectEqualStrings("/api/bench/seed/documents?rows=50", reorder.seed_route.?);
+    try std.testing.expect(reorder.min_rps < findScenario("documents").?.min_rps);
+}
+
+test "the measured documents-reorder payload is the PATCH the seed prepared" {
+    var config: Config = .{ .port = 1234 };
+    const payload = try buildPayload(std.testing.allocator, &config, findScenario("documents-reorder").?);
+    defer std.testing.allocator.free(payload);
+
+    try std.testing.expect(std.mem.startsWith(u8, payload, "PATCH /api/workspaces/bench-docs/documents/reorder HTTP/1.1\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, payload, "\"bench-doc-0050\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, payload, "\"bench-doc-0001\"") != null);
 }

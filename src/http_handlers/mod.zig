@@ -105,6 +105,7 @@ pub const agentKnowledgeReorderHandler = @import("agent_knowledge_reorder.zig").
 // the chatview's SSE streaming path without a real LLM.
 pub const devSseEmitLlmHandler = @import("dev_sse_emit.zig").emitLlmHandler;
 pub const benchSeedSessionsHandler = @import("bench_seed.zig").benchSeedSessionsHandler;
+pub const benchSeedDocumentsHandler = @import("bench_seed.zig").benchSeedDocumentsHandler;
 // MCP server "Test" probe — fires a tools/list request against a candidate
 // config (without persisting anything) so the user can verify their command /
 // args / env / cwd (or URL + headers) before clicking Save in the MCP server

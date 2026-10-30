@@ -1,7 +1,7 @@
 # benchmark
 
 A GET benchmark whose **verdict is determined** and whose timing is honest about being timing.
-Two scenarios by default: `health` (in memory) and `messages` (a SQLite read).
+Five scenarios by default: `health` (in memory), `messages` (a SQLite read), `sessions` (a seeded list read), and the documents pair — `documents` (the seeded sidebar list) and `documents-reorder` (the `PATCH .../documents/reorder` write that persists a drag).
 
 ```sh
 zig build install:linux -Doptimize=ReleaseFast -Dno-webapp-rebuild   # produces zig-out/bin/pabrikcore-linux-x86_64
@@ -20,6 +20,8 @@ CONTAINER_ENGINE=podman benchmark/run.sh run                         # same thin
 | `health` | `GET /health` | the HTTP path with no storage at all | `{"status":"ok","timestamp":<ts>}` after the timestamp is masked |
 | `messages` | `GET /api/session/bench/messages` | a SQLite read: the message query, the session row, the profile lookup | the whole body, byte for byte |
 | `sessions` | `GET /api/llm/session?limit=50` | a SQLite list read plus the per-row work behind it: 50 rows, 3 directories | the probed body, byte for byte |
+| `documents` | `GET /api/workspaces/bench-docs/documents` | the sidebar read: 50 documents ordered by `position`, each with its body | the probed body, byte for byte |
+| `documents-reorder` | `PATCH /api/workspaces/bench-docs/documents/reorder` | the drag's write: validate 50 ids, renumber their positions in one transaction, re-read the list | the probed body, byte for byte |
 
 `/api/session/bench/messages` on a fresh `HOME` is an empty inbox, and its body carries no id and
 no timestamp, so nothing needs masking — the entire response is the contract:
@@ -34,7 +36,14 @@ no timestamp, so nothing needs masking — the entire response is the contract:
 Both are reproducible only because the server starts on a **fresh empty HOME every run** (the
 container's `/pabrik-home` is a tmpfs), so "an empty inbox" is the state, not an accident.
 
-Pick scenarios with `API_BENCH_SCENARIOS=health` or `--scenario messages`; `all` is the default.
+Pick scenarios with `API_BENCH_SCENARIOS=health` or `--scenario documents,documents-reorder`; `all` is the default.
+
+The documents pair is seeded through `POST /api/bench/seed/documents?rows=50` (`bench_seed.zig`, behind
+`PABRIK_BENCH_SEED=1`): 50 rows in the fixed `bench-docs` workspace, ids `bench-doc-0001`…`0050`, each
+`position` ascending with its id while `updated_at` runs the other way — so a list ordered by recency
+is the reverse of the contract, and a regression that drops the `position` ordering fails the gate
+instead of passing quietly. `documents-reorder` sends every one of those ids reversed, which is the
+shape a real drag of the last row to the top produces.
 
 ## `sessions`: the one ceiling that blocks
 
