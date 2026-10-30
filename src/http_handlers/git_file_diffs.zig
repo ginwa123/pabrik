@@ -218,18 +218,39 @@ fn buildNewFileDiff(allocator: std.mem.Allocator, file_path: []const u8, content
     return try buf.toOwnedSlice(allocator);
 }
 
-fn syntheticFallback(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8) ![]const u8 {
-    const full = try std.fs.path.join(allocator, &.{ repo_path, file });
+fn readHostFile(io: std.Io, allocator: std.mem.Allocator, abs: []const u8) ?[]u8 {
+    const f = std.Io.Dir.openFileAbsolute(io, abs, .{}) catch return null;
+    defer f.close(io);
+    var read_buf: [8192]u8 = undefined;
+    var reader = f.reader(io, &read_buf);
+    return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
+}
+
+/// Bytes of a file the diff never mentioned: an untracked file has no diff, so
+/// its `new file` hunk is built from the file itself. The read is ROUTED — under
+/// `--saas` the bytes live in the guest and this host holds no copy, so a new
+/// file used to reach the panel as "no changes" while `git status` listed it.
+fn readNewFile(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8) ?[]u8 {
+    const full = std.fs.path.join(allocator, &.{ repo_path, file }) catch return null;
     defer allocator.free(full);
     // `openFileAbsolute` ASSERTS the path is absolute and ABORTS the whole
     // process (Debug/ReleaseSafe) instead of returning an error, so never
     // hand it a relative path — `repo_path` is validated at the handler
-    if (!std.fs.path.isAbsolute(full)) return try allocator.dupe(u8, "");
-    const f = std.Io.Dir.openFileAbsolute(io, full, .{}) catch return try allocator.dupe(u8, "");
-    defer f.close(io);
-    var read_buf: [8192]u8 = undefined;
-    var reader = f.reader(io, &read_buf);
-    const content = reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch return try allocator.dupe(u8, "");
+    if (!std.fs.path.isAbsolute(full)) return null;
+    var route = git_route.routeFor(allocator, repo_path);
+    defer route.deinit();
+    return switch (route) {
+        .unavailable => null,
+        // `file` is relative to `repo_path` and the guest refuses `.`/`..`
+        // segments when it resolves the path inside the workspace, so the
+        // joined form cannot climb out (`fs.readAll` -> `policy.relativeWorkspace`).
+        .guest => |*fs| fs.readAll(full) catch null,
+        .host => readHostFile(io, allocator, full),
+    };
+}
+
+fn syntheticFallback(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8) ![]const u8 {
+    const content = readNewFile(allocator, io, repo_path, file) orelse return try allocator.dupe(u8, "");
     defer allocator.free(content);
     if (content.len == 0) return try allocator.dupe(u8, "");
     return try buildNewFileDiff(allocator, file, content);
@@ -422,6 +443,32 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
 
 // ─── Tests ──────────────────────────────────────────────────────────────
 // Splitter is pure (no IO) so it is unit-testable here.
+
+/// A file at `rel` under the repository root, creating parents as needed.
+fn writeRepoFile(dir: std.Io.Dir, rel: []const u8, body: []const u8) !void {
+    if (std.fs.path.dirname(rel)) |parent| try dir.createDirPath(std.testing.io, parent);
+    var f = try dir.createFile(std.testing.io, rel, .{});
+    defer f.close(std.testing.io);
+    try f.writeStreamingAll(std.testing.io, body);
+}
+
+test "an untracked file's diff is built from the bytes its tree holds" {
+    const allocator = std.testing.allocator;
+    var repo = std.testing.tmpDir(.{});
+    defer repo.cleanup();
+    try writeRepoFile(repo.dir, "docs/note.md", "hello\nworld\n");
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try repo.dir.realPath(std.testing.io, &buf);
+    const abs = try allocator.dupe(u8, buf[0..n]);
+    defer allocator.free(abs);
+
+    const diff = try syntheticFallback(allocator, std.testing.io, abs, "docs/note.md");
+    defer allocator.free(diff);
+
+    try std.testing.expect(std.mem.indexOf(u8, diff, "+++ b/docs/note.md") != null);
+    try std.testing.expect(std.mem.indexOf(u8, diff, "+hello") != null);
+    try std.testing.expect(std.mem.indexOf(u8, diff, "+world") != null);
+}
 
 test "capWholeFile passes a body under the cap through unmarked" {
     const allocator = std.testing.allocator;

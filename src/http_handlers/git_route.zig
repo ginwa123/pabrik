@@ -5,6 +5,7 @@
 const std = @import("std");
 const pabrik_core = @import("pabrikcore");
 const run_captured = @import("helpers").run_captured;
+const git_hardening = @import("helpers").git_hardening;
 const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
 
 /// The program every arm runs. One name, so a stray literal cannot reintroduce
@@ -71,6 +72,10 @@ pub fn routeFor(allocator: std.mem.Allocator, abs_path: []const u8) workspace_fs
 /// `git <args>` with `abs_dir` as its working directory, on whichever side owns
 /// the tree. `args` never carries the program or `-C`: the guest names neither,
 /// and a tenant path must not cross the boundary.
+///
+/// A patch-producing subcommand is handed `--no-ext-diff --no-textconv` first,
+/// on BOTH arms: `diff.external` and `diff.<driver>.textconv` name a command the
+/// repository chose, and the engine git would otherwise use prints nothing.
 pub fn run(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -81,13 +86,16 @@ pub fn run(
     var route = routeFor(allocator, abs_dir);
     defer route.deinit();
 
+    const hardened = try git_hardening.hardenArgs(allocator, args);
+    defer allocator.free(hardened);
+
     switch (route) {
         // FIRST, and before the guest arm: a `--saas` route that could not
         // reach the workspace is an error the caller must report, never a
         // quiet "let the host's git look".
         .unavailable => |err| return err,
         .guest => |*fs| {
-            const exec = try fs.runGit(abs_dir, args, opts.timeout_ms, opts.max_output_bytes);
+            const exec = try fs.runGit(abs_dir, hardened, opts.timeout_ms, opts.max_output_bytes);
             return .{
                 .term = termFor(exec.code, exec.timed_out),
                 .stdout = exec.stdout,
@@ -100,7 +108,7 @@ pub fn run(
 
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
-    try appendHostArgv(&argv, allocator, abs_dir, args);
+    try appendHostArgv(&argv, allocator, abs_dir, hardened);
 
     const res = try run_captured.run(allocator, io, argv.items, .{
         .max_output_bytes = opts.max_output_bytes,
@@ -304,4 +312,39 @@ test "repeated runs cost no descriptors" {
         res.deinit(allocator);
     }
     try testing.expectEqual(before, try open_descriptors.count());
+}
+
+/// `git -C <repo> <args>`, for arranging a fixture.
+fn fixtureGit(allocator: std.mem.Allocator, repo_abs: []const u8, args: []const []const u8) !void {
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(allocator);
+    try argv.append(allocator, program);
+    try argv.appendSlice(allocator, &.{ "-C", repo_abs });
+    try argv.appendSlice(allocator, args);
+    var res = try run_captured.run(allocator, testing.io, argv.items, .{ .timeout_ms = 30_000 });
+    defer res.deinit(allocator);
+    if (res.term.exited != 0) return error.FixtureGitFailed;
+}
+
+test "a diff through the seam reports the change even when the repository names an external diff" {
+    const allocator = testing.allocator;
+    var repo = try Repo.init(allocator);
+    defer repo.deinit(allocator);
+
+    try repo.dir.dir.writeFile(testing.io, .{ .sub_path = "a.txt", .data = "one\n" });
+    try fixtureGit(allocator, repo.abs, &.{ "config", "user.email", "harness@example.com" });
+    try fixtureGit(allocator, repo.abs, &.{ "config", "user.name", "harness" });
+    try fixtureGit(allocator, repo.abs, &.{ "config", "commit.gpgsign", "false" });
+    try fixtureGit(allocator, repo.abs, &.{ "add", "a.txt" });
+    try fixtureGit(allocator, repo.abs, &.{ "commit", "-qm", "first" });
+    try repo.dir.dir.writeFile(testing.io, .{ .sub_path = "a.txt", .data = "two\n" });
+    // A repository is free to name a command here; answering its diff must not
+    // run it — that is the whole point of the flags the seam adds.
+    try fixtureGit(allocator, repo.abs, &.{ "config", "diff.external", "/bin/false" });
+
+    var res = try run(allocator, testing.io, repo.abs, &.{"diff"}, .{});
+    defer res.deinit(allocator);
+
+    try testing.expect(res.ok());
+    try testing.expect(std.mem.indexOf(u8, res.stdout, "+two") != null);
 }
