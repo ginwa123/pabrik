@@ -10,6 +10,8 @@ const test_db = pabrik.test_db;
 const sqlite = pabrik.sqlite;
 const database = pabrik.database;
 const git_hardening = @import("helpers").git_hardening;
+const run_captured = @import("helpers").run_captured;
+const loggermod = @import("../../logger/Logger.zig");
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const runtime_mode = @import("../../../runtime_mode.zig");
 
@@ -20,8 +22,8 @@ const git_output_bytes: usize = 4 * 1024 * 1024;
 
 /// Input structure for set_git_worktree tool
 pub const SetGitWorktreeInput = struct {
-    /// Absolute path to the worktree directory. The directory must NOT
-    /// already exist (git worktree add will create it).
+    /// Absolute path to the worktree directory. An existing worktree at this
+    /// path is reused (the session is bound to it) instead of failing.
     path: []const u8 = "",
     /// REQUIRED. Absolute path to the REPOSITORY the worktree is created from
     /// — the directory `git worktree add` runs in.
@@ -73,7 +75,9 @@ pub const set_git_worktree_tool = AgentTool{
         .description =
         \\Create a git worktree at an absolute path and bind it as this session's working directory — command/read_file/write_file/text_replace/glob/search then run inside it instead of the session's original cwd. The kanban dialog prefills the path under `$HOME/.config/pabrik/.worktrees/<task-slug>` after `#Notes UseGitWorktree`. Calling again with a different path switches the binding.
         \\
-        \\On error: (1) "path already exists" means an existing worktree occupies the path — pass `branch=<existing-branch>` to auto-bind, or pick a different path; (2) on a branch conflict pass `branch=''` for the auto-derived name; (3) NEVER `rm -rf` a conflicting path — it may hold uncommitted work; inspect with `git -C <repo> worktree list --porcelain`.
+        \\On error: (1) a path that already holds a worktree is ATTACHED to — no error, no branch argument needed; (2) on a branch conflict pass `branch=''` for the auto-derived name; (3) NEVER `rm -rf` a conflicting path — it may hold uncommitted work; inspect with `git -C <repo> worktree list --porcelain`.
+        \\
+        \\An existing empty directory is reused as the worktree. A directory that is not a worktree and is not empty is reported with advice — nothing is ever deleted.
         ,
         .parameters = .{
             .type = "object",
@@ -230,8 +234,7 @@ pub const PathState = union(enum) {
 };
 
 /// Classify the state of `target` relative to the git worktree system rooted
-/// at `repo_root`. A non-null `guest` sends the worktree listing to the
-/// workspace's VM; the disk probes around it stay on the host.
+/// at `repo_root`.
 pub fn classifyPath(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -239,35 +242,18 @@ pub fn classifyPath(
     repo_root: []const u8,
     target: []const u8,
 ) !PathState {
-    // ── 1. Does `target` exist on disk? ──────────────────────────────
-    std.Io.Dir.cwd().access(io, target, .{}) catch |err| switch (err) {
-        error.FileNotFound => return .not_found,
-        else => {
-            // Permission denied, etc. — treat as "exists but unreadable".
-            // We can't classify further without disk access.
-            return .{
-                .plain_directory = try std.fmt.allocPrint(
-                    allocator,
-                    "path exists but is unreadable: {s}",
-                    .{@errorName(err)},
-                ),
-            };
-        },
-    };
+    const probes = Probes{ .io = io, .guest = guest };
 
-    // ── 2. Read the `.git` file — the worktree's own claim about itself ──
+    // Absent, or a path no probe could answer for: git decides, and
+    // `git worktree add` is the one that creates the directory.
+    if (!(probes.exists(target) orelse false)) return .not_found;
+
     const git_path = std.fs.path.joinZ(allocator, &.{ target, ".git" }) catch {
         return .{ .plain_directory = try allocator.dupe(u8, "unclassifiable") };
     };
     defer allocator.free(git_path);
 
-    const git_contents = std.Io.Dir.cwd().readFileAlloc(
-        io,
-        git_path,
-        allocator,
-        .limited(std.Io.Dir.max_path_bytes),
-    ) catch {
-        // No .git file → plain directory.
+    const git_contents = probes.read(allocator, git_path, std.Io.Dir.max_path_bytes) orelse {
         return .{ .plain_directory = try std.fmt.allocPrint(
             allocator,
             "plain directory at {s}",
@@ -285,13 +271,12 @@ pub fn classifyPath(
         ) };
     };
 
-    // ── 3.
     if (worktreeAdminDir(gitdir)) |admin_dir| {
-        const admin_exists = directoryExists(io, admin_dir);
+        const admin_exists = probes.exists(admin_dir);
         if (admin_exists == true) {
             return .{ .registered_worktree = try registeredFromAdminDir(
                 allocator,
-                io,
+                probes,
                 admin_dir,
                 target,
             ) };
@@ -344,16 +329,32 @@ pub fn classifyPath(
     } };
 }
 
-/// Does `path` exist? `null` means "could not tell" (e.g. permission
-/// denied) — deliberately NOT "does not exist", because an admin
-/// directory we cannot read must not be reported as a missing one.
-fn directoryExists(io: std.Io, path: []const u8) ?bool {
-    std.Io.Dir.cwd().access(io, path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return false,
-        else => return null,
-    };
-    return true;
-}
+/// The filesystem a classification asks about. `--saas` puts the tenant's
+/// tree in its VM, where a host probe answers about a path that is not there.
+const Probes = struct {
+    io: std.Io,
+    guest: ?*const workspace_fs.Fs,
+
+    /// `null` means "could not tell" — deliberately not "does not exist",
+    /// because a live worktree we failed to see must not be called absent.
+    fn exists(self: Probes, path: []const u8) ?bool {
+        if (self.guest) |fs| {
+            const stat = fs.stat(path) catch return null;
+            return !stat.missing;
+        }
+        std.Io.Dir.cwd().access(self.io, path, .{}) catch |err| switch (err) {
+            error.FileNotFound => return false,
+            else => return null,
+        };
+        return true;
+    }
+
+    /// The file's bytes, or `null` when it is absent or unreadable.
+    fn read(self: Probes, allocator: std.mem.Allocator, path: []const u8, max_bytes: usize) ?[]u8 {
+        if (self.guest) |fs| return fs.readUpTo(allocator, path, max_bytes) catch null;
+        return std.Io.Dir.cwd().readFileAlloc(self.io, path, allocator, .limited(max_bytes)) catch null;
+    }
+};
 
 /// Parse the payload of a `.git` FILE (as opposed to a `.git` directory).
 pub fn parseGitdirPointer(contents: []const u8) ?[]const u8 {
@@ -388,7 +389,7 @@ pub fn worktreeAdminDir(gitdir: []const u8) ?[]const u8 {
 /// `<admin>/HEAD` for the branch.
 fn registeredFromAdminDir(
     allocator: std.mem.Allocator,
-    io: std.Io,
+    probes: Probes,
     admin_dir: []const u8,
     worktree_path: []const u8,
 ) !PathState.RegisteredWorktree {
@@ -396,7 +397,7 @@ fn registeredFromAdminDir(
         return emptyRegistered(allocator, worktree_path);
     defer allocator.free(head_path);
 
-    const head = std.Io.Dir.cwd().readFileAlloc(io, head_path, allocator, .limited(4096)) catch
+    const head = probes.read(allocator, head_path, 4096) orelse
         return emptyRegistered(allocator, worktree_path);
     defer allocator.free(head);
 
@@ -603,16 +604,11 @@ fn runGitWorktreeList(
         );
     }
 
-    var child = std.process.spawn(io, .{
-        .argv = &.{
-            "git", "worktree", "list", "--porcelain",
-        },
-        .cwd = .{ .path = repo_root },
-        .stdin = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
+    var result = run_captured.run(allocator, io, &.{ "git", "worktree", "list", "--porcelain" }, .{
+        .cwd = repo_root,
+        .max_output_bytes = max_worktree_list_bytes,
+        .timeout_ms = git_timeout_ms,
     }) catch |err| {
-        std.debug.print("git worktree list spawn failed: {s}\n", .{@errorName(err)});
         return unavailable(
             allocator,
             try std.fmt.allocPrint(
@@ -622,61 +618,25 @@ fn runGitWorktreeList(
             ),
         );
     };
+    defer result.deinit(allocator);
 
-    const stdout_pipe = child.stdout orelse {
-        const term = child.wait(io) catch {
-            return unavailable(allocator, "git worktree list: wait failed (no stdout pipe)");
-        };
-        return switch (term) {
-            .exited => |code| if (code == 0)
-                .{ .health = .complete, .stdout = try allocator.dupe(u8, ""), .reason = try allocator.dupe(u8, "") }
-            else
-                try failed(allocator, "git worktree list exited with code {d} (no stdout captured)", .{code}),
-            .signal => try failed(allocator, "git worktree list killed by signal (no stdout)", .{}),
-            else => try failed(allocator, "git worktree list terminated abnormally (no stdout)", .{}),
-        };
-    };
-
-    var stdout_buf: std.ArrayList(u8) = .empty;
-    errdefer stdout_buf.deinit(allocator);
-    var truncated = false;
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.Io.File.readStreaming(stdout_pipe, io, &.{&read_buf}) catch break;
-        if (n == 0) break;
-        if (stdout_buf.items.len < max_worktree_list_bytes) {
-            const take = @min(n, max_worktree_list_bytes - stdout_buf.items.len);
-            stdout_buf.appendSlice(allocator, read_buf[0..take]) catch break;
-            if (take < n) truncated = true;
-        } else {
-            // Keep draining so git never blocks on a full pipe, but stop
-            // accumulating — and remember that we did.
-            truncated = true;
-        }
+    if (result.timed_out) {
+        return try failed(
+            allocator,
+            "git worktree list was still running after {d} ms and was killed, so the listing is incomplete",
+            .{git_timeout_ms},
+        );
+    }
+    switch (result.term) {
+        .exited => |code| if (code != 0)
+            return try failed(allocator, "git worktree list exited with code {d}", .{code}),
+        .signal => return try failed(allocator, "git worktree list was killed by a signal", .{}),
+        else => return try failed(allocator, "git worktree list terminated abnormally", .{}),
     }
 
-    const term = child.wait(io) catch {
-        return try failed(allocator, "git worktree list: failed to wait for child process", .{});
-    };
-    const stdout = try allocator.dupe(u8, stdout_buf.items);
+    const stdout = try allocator.dupe(u8, result.stdout);
     errdefer allocator.free(stdout);
-
-    switch (term) {
-        .exited => |code| {
-            if (code != 0) {
-                std.debug.print("git worktree list failed (exit={d})\n", .{code});
-                return try failed(allocator, "git worktree list exited with code {d}", .{code});
-            }
-        },
-        .signal => {
-            return try failed(allocator, "git worktree list was killed by a signal", .{});
-        },
-        else => {
-            return try failed(allocator, "git worktree list terminated abnormally", .{});
-        },
-    }
-
+    const truncated = stdout.len >= max_worktree_list_bytes;
     const health: ListHealth = if (truncated) .truncated else .complete;
     const reason = if (truncated)
         try std.fmt.allocPrint(
@@ -750,19 +710,6 @@ fn failed(
     };
 }
 
-/// "Are these two branches the same logical work?" Returns true if both
-/// branches share a known project-prefix family (`refactor/`, `feature/`,
-/// `fix/`, `feat/`).
-pub fn isCompatibleBranchFamily(a: []const u8, b: []const u8) bool {
-    if (a.len == 0 or b.len == 0) return false;
-    const families = [_][]const u8{ "refactor/", "feature/", "fix/", "feat/" };
-    for (families) |prefix| {
-        if (std.mem.startsWith(u8, a, prefix) and
-            std.mem.startsWith(u8, b, prefix)) return true;
-    }
-    return false;
-}
-
 /// Rewrite a raw git stderr string into a tool-friendly error message that
 /// points the LLM at a recovery path.
 pub fn rewriteGitStderr(
@@ -774,14 +721,13 @@ pub fn rewriteGitStderr(
 ) ![]u8 {
     if (raw_stderr.len == 0) return try allocator.dupe(u8, "");
 
-    // 1. "fatal: 'X' already exists" — precheck should have caught this,
-    //    but if a race or precheck failure let it through, give actionable
-    //    advice here.
+    // 1. "fatal: 'X' already exists" — the classification could not read the
+    //    path (a race, or a guest that did not answer), so git refused first.
     if (std.mem.indexOf(u8, raw_stderr, "already exists") != null) {
-        return try std.fmt.allocPrint(allocator, "the directory '{s}' already exists on disk and could not be auto-bound. " ++
-            "Either pick a different path, or run `git -C <repo> worktree list --porcelain` " ++
-            "to see which branch currently occupies it, then re-call set_git_worktree with " ++
-            "`branch=<existing-branch>` to bind to it.", .{worktree_path});
+        return try std.fmt.allocPrint(allocator, "the directory '{s}' already exists and git would not create a worktree in it. " ++
+            "Nothing was deleted — move it aside (for example `mv '{s}' '{s}.bak'`) and retry, " ++
+            "or pick a different path. If the directory holds a worktree of another repository, " ++
+            "`git -C <repo> worktree list --porcelain` names it.", .{ worktree_path, worktree_path, worktree_path });
     }
     // 2. "fatal: 'X' is already checked out at 'Y'" — branch conflict,
     //    not a path conflict. The fix is to pick a different branch
@@ -919,69 +865,32 @@ fn runGitWorktreeAdd(
     const argv = try buildWorktreeAddArgv(allocator, branch, worktree_path, base);
     defer allocator.free(argv);
 
-    var child = std.process.spawn(io, .{
-        .argv = argv,
-        .cwd = if (repo_root) |r| .{ .path = r } else .inherit,
-        .stdin = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
+    var result = run_captured.run(allocator, io, argv, .{
+        .cwd = repo_root,
+        .max_output_bytes = git_output_bytes,
+        .timeout_ms = git_timeout_ms,
     }) catch |err| {
-        std.debug.print("git worktree add spawn failed: {s}\n", .{@errorName(err)});
+        loggermod.debugPrint("git worktree add spawn failed: {s}\n", .{@errorName(err)});
         return try std.fmt.allocPrint(
             allocator,
             "failed to spawn git worktree add: {s}",
             .{@errorName(err)},
         );
     };
+    defer result.deinit(allocator);
 
-    // Short-lived command (worktree add is sub-second); use a bounded
-    // blocking read rather than the threaded + timeout pattern that bash.zig
-    // uses for arbitrary user commands.
-    const stderr_pipe = child.stderr orelse {
-        // No stderr pipe (shouldn't happen with .pipe above); just wait
-        // and return based on exit code.
-        const term = child.wait(io) catch {
-            return try allocator.dupe(
-                u8,
-                "git worktree add: child process wait failed (no stderr pipe)",
-            );
-        };
-        return switch (term) {
-            .exited => |code| if (code == 0)
-                try allocator.dupe(u8, "")
-            else
-                try std.fmt.allocPrint(
-                    allocator,
-                    "git worktree add exited with code {d} (no stderr captured)",
-                    .{code},
-                ),
-            .signal => try allocator.dupe(u8, "git worktree add was killed by a signal (no stderr captured)"),
-            else => try allocator.dupe(u8, "git worktree add terminated abnormally (no stderr captured)"),
-        };
-    };
-
-    var stderr_buf: std.ArrayList(u8) = .empty;
-    defer stderr_buf.deinit(allocator);
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.Io.File.readStreaming(stderr_pipe, io, &.{&read_buf}) catch break;
-        if (n == 0) break;
-        if (stderr_buf.items.len < 64 * 1024) {
-            const take = @min(n, 64 * 1024 - stderr_buf.items.len);
-            stderr_buf.appendSlice(allocator, read_buf[0..take]) catch break;
-        }
+    if (result.timed_out) {
+        return try std.fmt.allocPrint(
+            allocator,
+            "git worktree add was still running after {d} ms and was killed, so the worktree at '{s}' may be half-created",
+            .{ git_timeout_ms, worktree_path },
+        );
     }
-
-    const term = child.wait(io) catch {
-        return try allocator.dupe(u8, "git worktree add: failed to wait for child process");
-    };
-    switch (term) {
+    switch (result.term) {
         .exited => |code| {
             if (code == 0) return try allocator.dupe(u8, "");
-            const stderr_text = stderr_buf.items;
-            std.debug.print("git worktree add failed (exit={d}): {s}\n", .{ code, stderr_text });
-            // Surface git's own stderr to the user.
+            const stderr_text = std.mem.trim(u8, result.stderr, " \t\r\n");
+            loggermod.debugPrint("git worktree add failed (exit={d}): {s}\n", .{ code, stderr_text });
             return if (stderr_text.len == 0)
                 try std.fmt.allocPrint(
                     allocator,
@@ -992,7 +901,7 @@ fn runGitWorktreeAdd(
                 try allocator.dupe(u8, stderr_text);
         },
         .signal => {
-            std.debug.print("git worktree add killed by signal\n", .{});
+            loggermod.debugPrint("git worktree add killed by signal\n", .{});
             return try allocator.dupe(u8, "git worktree add was killed by a signal");
         },
         else => return try allocator.dupe(u8, "git worktree add terminated abnormally"),
@@ -1010,52 +919,38 @@ fn runGitWorktreeRemove(
     worktree_path: []const u8,
 ) !void {
     if (guest) |fs| return guestWorktreeRemove(allocator, fs, repo_root, worktree_path);
-    var child = std.process.spawn(io, .{
-        .argv = &.{
-            "git", "worktree", "remove", "--force", worktree_path,
-        },
-        .cwd = .inherit, // use the pabrik process's cwd (the session cwd is inside the original repo)
-        .stdin = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
-    }) catch |err| return err;
+    var result = run_captured.run(
+        allocator,
+        io,
+        &.{ "git", "worktree", "remove", "--force", worktree_path },
+        // The pabrik process's own cwd is the session's repo, which is what
+        // `worktree remove` has to be run from.
+        .{ .timeout_ms = git_timeout_ms },
+    ) catch return error.GitRemoveFailed;
+    defer result.deinit(allocator);
 
-    const stderr_pipe = child.stderr orelse {
-        const term = child.wait(io) catch return error.GitWaitFailed;
-        return switch (term) {
-            .exited => |code| if (code == 0) return else return error.GitRemoveFailed,
-            else => error.GitRemoveFailed,
-        };
-    };
-
-    var stderr_buf: std.ArrayList(u8) = .empty;
-    defer stderr_buf.deinit(allocator);
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.Io.File.readStreaming(stderr_pipe, io, &.{&read_buf}) catch break;
-        if (n == 0) break;
-        if (stderr_buf.items.len < 64 * 1024) {
-            const take = @min(n, 64 * 1024 - stderr_buf.items.len);
-            stderr_buf.appendSlice(allocator, read_buf[0..take]) catch break;
-        }
+    if (result.timed_out) {
+        loggermod.debugPrint(
+            "git worktree remove outlived {d} ms and was killed\n",
+            .{git_timeout_ms},
+        );
+        return error.GitRemoveFailed;
     }
-
-    const term = child.wait(io) catch return error.GitWaitFailed;
-    switch (term) {
+    switch (result.term) {
         .exited => |code| {
             if (code == 0) return;
-            // It's not an error if the directory was already gone (the user
-            // may have `rm -rf`d it manually between sessions). git returns
-            // 128 with "fatal: not a working tree" in that case — treat that
-            const stderr_text = stderr_buf.items;
-            if (std.mem.indexOf(u8, stderr_text, "not a working tree") != null) return;
-            if (std.mem.indexOf(u8, stderr_text, "No such file or directory") != null) return;
-            std.debug.print("git worktree remove failed (exit={d}): {s}\n", .{ code, stderr_text });
+            // A worktree the user already deleted by hand is not a failure:
+            // git answers "not a working tree" for a path that is gone.
+            if (std.mem.indexOf(u8, result.stderr, "not a working tree") != null) return;
+            if (std.mem.indexOf(u8, result.stderr, "No such file or directory") != null) return;
+            loggermod.debugPrint(
+                "git worktree remove failed (exit={d}): {s}\n",
+                .{ code, result.stderr },
+            );
             return error.GitRemoveFailed;
         },
         .signal => {
-            std.debug.print("git worktree remove killed by signal\n", .{});
+            loggermod.debugPrint("git worktree remove killed by signal\n", .{});
             return error.GitRemoveFailed;
         },
         else => return error.GitRemoveFailed,
@@ -1098,7 +993,9 @@ pub fn executeSetGitWorktreeToString(
             defer if (repo) |r| allocator.free(r);
             runGitWorktreeRemove(allocator, io, guest, repo, existing) catch |err| {
                 const msg = @errorName(err);
-                std.debug.print("set_git_worktree clear: remove failed: {s}\n", .{msg});
+                if (loggermod.getGlobal()) |logger| {
+                    logger.warnFmt("set_git_worktree clear: removing '{s}' failed: {s}", .{ existing, msg });
+                }
                 return xmlError(allocator, session_id, "failed to remove existing worktree");
             };
         }
@@ -1133,57 +1030,47 @@ pub fn executeSetGitWorktreeToString(
     }
 
     // ── Precheck: classify the path before invoking git ──────────────────
-    // Avoids the "fatal: '...' already exists" raw stderr the LLM has to
-    // guess about.
+    // A path that already holds a worktree is ATTACHED to, never refused.
+    var plain_dir: ?[]u8 = null;
+    defer if (plain_dir) |desc| allocator.free(desc);
     {
         const state = classifyPath(allocator, io, guest, cwd, worktree_path) catch |err| blk: {
             // classifyPath only fails on alloc; fall through to git and
             // let it produce a normal error.
-            std.debug.print("set_git_worktree: classifyPath failed: {s}\n", .{@errorName(err)});
+            loggermod.debugPrint("set_git_worktree: classifyPath failed: {s}\n", .{@errorName(err)});
             break :blk PathState{ .not_found = {} };
         };
-        // Free the state when we leave this scope (any variant with owned slices).
         defer freePathState(allocator, state);
         switch (state) {
             .not_found => {
                 // Normal path: fall through to git worktree add.
             },
             .registered_worktree => |rwt| {
-                // Path is already a worktree. Is the requested branch the same
-                // (or a compatible family member)? If so, auto-bind; if not,
-                // surface a structured error so the LLM can decide.
-                const branch_matches = std.mem.eql(u8, rwt.branch, branch) or
-                    std.mem.eql(u8, rwt.branch_ref, branch);
-                const branch_compatible = isCompatibleBranchFamily(rwt.branch, branch);
-                if (branch_matches or branch_compatible) {
-                    std.debug.print(
-                        "set_git_worktree: auto-bound session {s} to existing worktree on branch {s}\n",
-                        .{ session_id, rwt.branch },
-                    );
-                    return successSetToXml(allocator, session_id, worktree_path, rwt.branch, "");
-                }
-                return xmlError(allocator, session_id, try std.fmt.allocPrint(allocator, "path '{s}' is already a worktree on branch '{s}' (you requested '{s}'). " ++
-                    "Either pick a different path, or pass branch='{s}' to bind to the existing worktree, " ++
-                    "or ask the user how to resolve the conflict (merge, rename, or remove the existing branch).", .{ worktree_path, rwt.branch, branch, rwt.branch }));
+                loggermod.debugPrint(
+                    "set_git_worktree: attached session {s} to the worktree already at {s} (branch {s})\n",
+                    .{ session_id, worktree_path, rwt.branch },
+                );
+                return jsonAttached(allocator, session_id, worktree_path, rwt.branch, branch);
             },
             .orphaned_worktree => |gitdir| {
-                return xmlError(allocator, session_id, try orphanedWorktreeMessage(
-                    allocator,
-                    worktree_path,
-                    gitdir,
-                ));
+                const message = try orphanedWorktreeMessage(allocator, worktree_path, gitdir);
+                defer allocator.free(message);
+                return xmlError(allocator, session_id, message);
             },
             .unverified_worktree => |uv| {
-                return xmlError(allocator, session_id, try unverifiedWorktreeMessage(
+                const message = try unverifiedWorktreeMessage(
                     allocator,
                     worktree_path,
                     uv.gitdir,
                     uv.reason,
-                ));
+                );
+                defer allocator.free(message);
+                return xmlError(allocator, session_id, message);
             },
             .plain_directory => |desc| {
-                return xmlError(allocator, session_id, try std.fmt.allocPrint(allocator, "path '{s}' already exists but is not a worktree directory ({s}). " ++
-                    "Remove it manually (after backing up any important content) or pick a different path.", .{ worktree_path, desc }));
+                // `git worktree add` accepts an EMPTY directory, so whether
+                // this one is reusable is git's call, not ours.
+                plain_dir = try allocator.dupe(u8, desc);
             },
         }
     }
@@ -1196,16 +1083,25 @@ pub fn executeSetGitWorktreeToString(
     // descriptive fallback including the exit code). Empty string = success.
     const git_detail = runGitWorktreeAdd(allocator, io, guest, resolved_repo_root, worktree_path, branch, base) catch |err| {
         // Alloc failure inside runGitWorktreeAdd — extremely rare.
-        std.debug.print("set_git_worktree add dispatch failed: {s}\n", .{@errorName(err)});
+        loggermod.debugPrint("set_git_worktree add dispatch failed: {s}\n", .{@errorName(err)});
         return xmlError(allocator, session_id, @errorName(err));
     };
     defer allocator.free(git_detail);
     if (git_detail.len > 0) {
-        // Precheck may have let git run (race or precheck failure); rewrite
-        // the raw stderr to add recovery guidance for the common cases (path
-        // collision, branch conflict, non-repo cwd, invalid branch name,
+        if (plain_dir) |desc| {
+            const message = try std.fmt.allocPrint(
+                allocator,
+                "path '{s}' already exists and is not a git worktree ({s}), so git would not create one there. " ++
+                    "Nothing was deleted — move it aside (for example `mv '{s}' '{s}.bak'`) or pick a different path. git said: {s}",
+                .{ worktree_path, desc, worktree_path, worktree_path, git_detail },
+            );
+            defer allocator.free(message);
+            return xmlError(allocator, session_id, message);
+        }
+        // git may still hit a case the precheck could not classify (a race, or
+        // a probe the guest could not answer); rewrite its stderr into advice.
         const rewritten = rewriteGitStderr(allocator, git_detail, worktree_path, branch, base) catch |err| blk: {
-            std.debug.print("set_git_worktree: rewriteGitStderr failed: {s}\n", .{@errorName(err)});
+            loggermod.debugPrint("set_git_worktree: rewriteGitStderr failed: {s}\n", .{@errorName(err)});
             break :blk git_detail;
         };
         defer if (rewritten.ptr != git_detail.ptr) allocator.free(rewritten);
@@ -1304,6 +1200,45 @@ pub fn jsonClear(allocator: std.mem.Allocator, session_id: []const u8) []const u
         .session_id = session_id,
         .cleared = true,
     }, .{}) catch "";
+}
+
+/// The answer for an ATTACH: the path already held a worktree, so nothing was
+/// created and `branch` is the branch that worktree carries.
+pub fn jsonAttached(
+    allocator: std.mem.Allocator,
+    session_id: []const u8,
+    path: []const u8,
+    branch: []const u8,
+    requested_branch: []const u8,
+) []const u8 {
+    const note = attachNote(allocator, branch, requested_branch) orelse return "";
+    defer allocator.free(note);
+    return std.json.Stringify.valueAlloc(allocator, SetGitWorktreeJSON{
+        .session_id = session_id,
+        .created = true,
+        .path = path,
+        .branch = branch,
+        .note = note,
+    }, .{}) catch "";
+}
+
+fn attachNote(
+    allocator: std.mem.Allocator,
+    branch: []const u8,
+    requested_branch: []const u8,
+) ?[]u8 {
+    if (std.mem.eql(u8, branch, requested_branch)) {
+        return std.fmt.allocPrint(
+            allocator,
+            "Attached to the worktree that already occupied this path; nothing was created. {s}",
+            .{worktree_pr_note},
+        ) catch null;
+    }
+    return std.fmt.allocPrint(
+        allocator,
+        "Attached to the worktree that already occupied this path, on branch '{s}'; the requested branch '{s}' was not created. {s}",
+        .{ branch, requested_branch, worktree_pr_note },
+    ) catch null;
 }
 
 /// Generate error JSON response (session_id is present).
@@ -1420,44 +1355,6 @@ test "deriveBranchFromPath returns worktree/<basename>" {
     const b3 = try deriveBranchFromPath(allocator, "/Users/me/proj/.worktrees/fix-bug-123");
     defer allocator.free(b3);
     try testing.expectEqualStrings("worktree/fix-bug-123", b3);
-}
-
-// ─── Behavioral tests for isCompatibleBranchFamily (pure) ──────────────
-
-test "isCompatibleBranchFamily matches same-family branches" {
-    // refactor/x ↔ refactor/y  →  same family
-    try testing.expect(isCompatibleBranchFamily("refactor/x", "refactor/y"));
-    // feature/x ↔ feature/y  →  same family
-    try testing.expect(isCompatibleBranchFamily("feature/auth", "feature/routines"));
-    // fix/x ↔ fix/y  →  same family
-    try testing.expect(isCompatibleBranchFamily("fix/typo", "fix/bug-42"));
-    // feat/x ↔ feat/y  →  same family
-    try testing.expect(isCompatibleBranchFamily("feat/ui-redesign", "feat/api-rename"));
-    // main ↔ main  →  no family, but the question is "compatible?" — same
-    //   exact branch name is the strongest compatibility, but this helper
-    //   only tests family prefixes (used as a tie-breaker, not a final answer).
-    try testing.expect(!isCompatibleBranchFamily("main", "main"));
-    // worktree/x ↔ refactor/x  →  different family
-    try testing.expect(!isCompatibleBranchFamily("worktree/x", "refactor/x"));
-    // Empty strings are never compatible.
-    try testing.expect(!isCompatibleBranchFamily("", "refactor/x"));
-    try testing.expect(!isCompatibleBranchFamily("refactor/x", ""));
-    try testing.expect(!isCompatibleBranchFamily("", ""));
-    // One branch in a known family, the other in a non-family prefix.
-    try testing.expect(!isCompatibleBranchFamily("refactor/x", "main"));
-    try testing.expect(!isCompatibleBranchFamily("main", "refactor/x"));
-}
-
-test "isCompatibleBranchFamily rejects cross-family combinations" {
-    const cases = [_][2][]const u8{
-        .{ "refactor/x", "feature/y" },
-        .{ "feature/x", "fix/y" },
-        .{ "fix/x", "feat/y" },
-        .{ "feat/x", "refactor/y" },
-    };
-    for (cases) |pair| {
-        try testing.expect(!isCompatibleBranchFamily(pair[0], pair[1]));
-    }
 }
 
 // ─── Chunk 3: rewriteGitStderr ─────────────────────────────────────────
@@ -2405,7 +2302,6 @@ fn extractJsonPath(allocator: std.mem.Allocator, inner: []const u8) ?[]u8 {
     }
 }
 
-
 // ─── Criterion 9: the worktree, and the tenant's post-checkout hook ────────
 
 /// A database whose session `s1` resolves to `root`'s workspace, so the route
@@ -2546,4 +2442,145 @@ test "set_git_worktree: a path whose parents do not exist is created, not refuse
     defer parsed.deinit();
     try testing.expect(parsed.value.object.get("created").?.bool);
     try testing.expect(pathExists(nested));
+}
+
+test "set_git_worktree: a path that already holds a worktree is attached to, whatever branch was requested" {
+    try requireGit();
+    const allocator = testing.allocator;
+    var fx = try GitFixture.init(allocator);
+    defer fx.deinit();
+    var db = try sessionDb(allocator, fx.repo);
+    defer db.deinit();
+
+    const occupied = try fx.addWorktree("wt-busy");
+    defer allocator.free(occupied);
+
+    const out = try executeSetGitWorktreeToString(
+        allocator,
+        testing.io,
+        &db.db,
+        fx.repo,
+        "s1",
+        .{ .path = occupied, .cwd = fx.repo, .branch = "fix/unrelated" },
+    );
+    defer allocator.free(out);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    if (obj.get("error")) |err| {
+        if (err != .null) {
+            std.debug.print("!! an existing worktree was refused: {s} !!\n", .{err.string});
+            return error.ExistingWorktreeRefused;
+        }
+    }
+    try testing.expect(obj.get("created").?.bool);
+    try testing.expectEqualStrings(occupied, obj.get("path").?.string);
+    // The branch the worktree HAS, not the one this call asked for.
+    try testing.expectEqualStrings("worktree/wt-busy", obj.get("branch").?.string);
+    try testing.expect(obj.get("note").?.string.len > 0);
+}
+
+test "set_git_worktree: an existing EMPTY directory becomes the worktree instead of being refused" {
+    try requireGit();
+    const allocator = testing.allocator;
+    var fx = try GitFixture.init(allocator);
+    defer fx.deinit();
+    var db = try sessionDb(allocator, fx.repo);
+    defer db.deinit();
+
+    const empty = try fx.join(&.{ fx.root, "wt-empty" });
+    defer allocator.free(empty);
+    try std.Io.Dir.cwd().createDirPath(testing.io, empty);
+
+    const out = try executeSetGitWorktreeToString(
+        allocator,
+        testing.io,
+        &db.db,
+        fx.repo,
+        "s1",
+        .{ .path = empty, .cwd = fx.repo },
+    );
+    defer allocator.free(out);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    if (obj.get("error")) |err| {
+        if (err != .null) {
+            std.debug.print("!! an empty existing directory was refused: {s} !!\n", .{err.string});
+            return error.EmptyDirectoryRefused;
+        }
+    }
+    try testing.expect(obj.get("created").?.bool);
+    try testing.expectEqualStrings("worktree/wt-empty", obj.get("branch").?.string);
+
+    const dot_git = try fx.join(&.{ empty, ".git" });
+    defer allocator.free(dot_git);
+    try testing.expect(pathExists(dot_git));
+}
+
+test "set_git_worktree: a non-empty directory that is not a worktree is reported and left untouched" {
+    try requireGit();
+    const allocator = testing.allocator;
+    var fx = try GitFixture.init(allocator);
+    defer fx.deinit();
+    var db = try sessionDb(allocator, fx.repo);
+    defer db.deinit();
+
+    const blocked = try fx.join(&.{ fx.root, "wt-blocked" });
+    defer allocator.free(blocked);
+    try std.Io.Dir.cwd().createDirPath(testing.io, blocked);
+    const keep = try fx.join(&.{ blocked, "notes.txt" });
+    defer allocator.free(keep);
+    std.Io.Dir.cwd().writeFile(testing.io, .{ .sub_path = keep, .data = "keep me" }) catch
+        return error.WriteFailed;
+
+    const out = try executeSetGitWorktreeToString(
+        allocator,
+        testing.io,
+        &db.db,
+        fx.repo,
+        "s1",
+        .{ .path = blocked, .cwd = fx.repo },
+    );
+    defer allocator.free(out);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, out, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+
+    try testing.expect(!obj.get("created").?.bool);
+    const message = obj.get("error").?.string;
+    try testing.expect(std.mem.indexOf(u8, message, "already exists") != null);
+    try testing.expect(std.mem.indexOf(u8, message, "Nothing was deleted") != null);
+    // The refusal must not be a licence to delete: the content survives.
+    try testing.expect(pathExists(keep));
+}
+
+test "classifyPath: a guest that cannot answer leaves the verdict to git" {
+    const allocator = testing.allocator;
+    var fs = workspace_fs.Fs{
+        .allocator = allocator,
+        .workspace_id = try allocator.dupe(u8, "w1"),
+        .root = try allocator.dupe(u8, "/workspace"),
+        .socket = try allocator.dupe(u8, "/nonexistent-vmd-for-classify.sock"),
+        .guest_paths = true,
+    };
+    defer fs.deinit();
+
+    const state = try classifyPath(
+        allocator,
+        testing.io,
+        &fs,
+        "",
+        "/workspace/.config/pabrik/.worktrees/wt",
+    );
+    defer freePathState(allocator, state);
+
+    // A probe that cannot answer must not invent a verdict — least of all
+    // "not_found" turning into git's "already exists" refusal.
+    try testing.expectEqual(
+        @as(std.meta.Tag(PathState), .not_found),
+        std.meta.activeTag(state),
+    );
 }
