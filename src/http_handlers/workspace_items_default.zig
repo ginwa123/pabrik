@@ -11,6 +11,8 @@ const helpers = @import("helpers");
 const agent_db = @import("../models/agent.db.zig");
 const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const SystemFolder = pabrikcore.system_folder.SystemFolder;
+const vmd_policy = @import("../vmd/policy.zig");
+const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
 
 /// The display name of an auto-created default project. Cosmetic only —
 /// both clients follow the `is_default` flag, never the name, so a user is
@@ -31,7 +33,8 @@ pub const DefaultProject = struct {
     id: []const u8,
     workspace_id: []const u8,
     name: []const u8,
-    /// The server user's home directory.
+    /// The directory the project's files live in: the guest root for a
+    /// workspace that runs in a VM, else the server user's home directory.
     path: []const u8,
     position: i64,
     /// True when THIS call created the row. The wire layer uses it to pick
@@ -57,16 +60,14 @@ pub fn ensureDefaultProject(
 ) EnsureDefaultProjectError!DefaultProject {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
 
-    // Fast path: found. One indexed read, no writes. This is the case that
-    // runs on every sidebar load once the default exists.
-    if (readDefault(allocator, db, workspace_id)) |found| return found;
+    // Fast path: found. One indexed read, plus a write only when the stored
+    // path names a directory the workspace's substrate does not have.
+    if (readDefault(allocator, db, workspace_id)) |found| return healHostPath(allocator, db, workspace_id, found);
 
-    // Miss. Resolve the home directory BEFORE opening a transaction so a bad
-    // home leaves nothing half-written (the test for this asserts zero rows).
-    const home = SystemFolder.getHomeDirectory(allocator, environment) catch return error.HomeNotFound;
-    defer allocator.free(home);
-
-    if (home.len == 0 or !std.fs.path.isAbsolute(home)) return error.HomeNotFound;
+    // Miss. Resolve the root BEFORE opening a transaction so a bad home leaves
+    // nothing half-written (the test for this asserts zero rows).
+    const root = try defaultProjectRoot(allocator, db, workspace_id, environment);
+    defer allocator.free(root);
 
     const timestamp_ns = helpers.unixTimestampNanos();
     const item_id = try std.fmt.allocPrint(allocator, "item_{d}", .{timestamp_ns});
@@ -88,7 +89,7 @@ pub fn ensureDefaultProject(
         \\VALUES (?, ?, 'agent', ?, ?,
         \\  COALESCE((SELECT MAX(position) FROM workspace_items WHERE workspace_id = ?), -1) + 1,
         \\  1, datetime('now'), datetime('now'))
-    , &[_][]const u8{ item_id, workspace_id, DEFAULT_PROJECT_NAME, home, workspace_id }) catch |err| switch (err) {
+    , &[_][]const u8{ item_id, workspace_id, DEFAULT_PROJECT_NAME, root, workspace_id }) catch |err| switch (err) {
         // The partial UNIQUE index rejected us: another caller created the
         // default between our read and our write.
         error.ExecuteFailed => {
@@ -121,9 +122,70 @@ pub fn ensureDefaultProject(
         .workspace_id = try allocator.dupe(u8, workspace_id),
         // DUPE, not the constant.
         .name = try allocator.dupe(u8, DEFAULT_PROJECT_NAME),
-        .path = try allocator.dupe(u8, home),
+        .path = try allocator.dupe(u8, root),
         .position = readPosition(allocator, db, item_id),
         .created = true,
+    };
+}
+
+/// Where the default project's files live: the guest root when this workspace
+/// runs in a VM, else the server user's home. Each is a tree the other
+/// substrate does not have, so the substrate decides the vocabulary.
+fn defaultProjectRoot(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.database.Db,
+    workspace_id: []const u8,
+    environment: ?*const std.process.Environ.Map,
+) EnsureDefaultProjectError![]u8 {
+    if (workspace_vm.isVmWorkspace(allocator, db, workspace_id)) {
+        return allocator.dupe(u8, vmd_policy.guest_root) catch error.OutOfMemory;
+    }
+    const home = SystemFolder.getHomeDirectory(allocator, environment) catch return error.HomeNotFound;
+    errdefer allocator.free(home);
+    if (home.len == 0 or !std.fs.path.isAbsolute(home)) return error.HomeNotFound;
+    return home;
+}
+
+/// True when `path` is the guest root or a directory inside it.
+fn insideGuest(path: []const u8) bool {
+    return vmd_policy.relativeToRoot(vmd_policy.guest_root, path) != null;
+}
+
+/// A VM workspace's default must name the guest root: a row written before the
+/// substrate was consulted stores the host's home, which the VM cannot open, so
+/// the read moves it to the tree the workspace actually has.
+fn healHostPath(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.database.Db,
+    workspace_id: []const u8,
+    project: DefaultProject,
+) EnsureDefaultProjectError!DefaultProject {
+    if (insideGuest(project.path)) return project;
+    if (!workspace_vm.isVmWorkspace(allocator, db, workspace_id)) return project;
+
+    const guest_path = allocator.dupe(u8, vmd_policy.guest_root) catch {
+        project.deinit(allocator);
+        return error.OutOfMemory;
+    };
+    db.exec(
+        allocator,
+        "UPDATE workspace_items SET path = ? WHERE id = ?",
+        &[_][]const u8{ guest_path, project.id },
+    ) catch |err| {
+        // The caller still gets a usable path; the next read repairs the row.
+        std.log.warn(
+            "ensureDefaultProject: could not repair a host path on the default project (non-fatal): {s}",
+            .{@errorName(err)},
+        );
+    };
+    allocator.free(project.path);
+    return .{
+        .id = project.id,
+        .workspace_id = project.workspace_id,
+        .name = project.name,
+        .path = guest_path,
+        .position = project.position,
+        .created = project.created,
     };
 }
 
@@ -378,6 +440,7 @@ pub fn workspaceDefaultProjectHandler(
 
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
+const runtime_mode = @import("../runtime_mode.zig");
 const testing = std.testing;
 
 const TestCtx = struct {
@@ -442,7 +505,7 @@ fn setupDb(alloc: std.mem.Allocator) !TestCtx {
         \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
     , &[_][]const u8{});
-    try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, user_id TEXT)", &[_][]const u8{});
+    try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, user_id TEXT, is_vm INTEGER NOT NULL DEFAULT 0)", &[_][]const u8{});
 
     // A real environment map with HOME set, because getHomeDirectory takes
     // one and the whole feature is defined by where HOME lands.
@@ -754,6 +817,110 @@ test "a user rename of the default project is never clobbered" {
     // A name a person chose survives the heal, and the row is not rewritten.
     try testing.expectEqualStrings("Work stuff", p.name);
     try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND name = 'Work stuff'", .{p.id}));
+}
+
+// ─── The default project's root follows the substrate ────────────────────
+
+/// A workspace row that says its work runs in a VM (Migration 115).
+fn insertVmWorkspace(alloc: std.mem.Allocator, db: *database.Db, workspace_id: []const u8) !void {
+    var buf: [256]u8 = undefined;
+    const sql = try std.fmt.bufPrint(&buf, "INSERT INTO workspaces (id, name, is_vm) VALUES ('{s}', 'VM', 1)", .{workspace_id});
+    try db.exec(alloc, sql, &[_][]const u8{});
+}
+
+/// Seed a default project whose stored path is `path`.
+fn insertDefaultAtPath(alloc: std.mem.Allocator, db: *database.Db, workspace_id: []const u8, path: []const u8) !void {
+    try db.exec(alloc,
+        \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position, is_default)
+        \\VALUES ('item_seeded', ?, 'agent', 'Project Default', ?, 0, 1)
+    , &[_][]const u8{ workspace_id, path });
+}
+
+test "a VM workspace's default project is rooted at the guest root, not the host home" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb(alloc);
+    defer ctx.deinit();
+    try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+
+    const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
+    defer p.deinit(alloc);
+
+    // The host's home (`/home/tester`) is no directory inside the VM, so a
+    // client handed it can only fail to list it.
+    try testing.expect(p.created);
+    try testing.expectEqualStrings(vmd_policy.guest_root, p.path);
+    try testing.expectEqual(@as(u32, 1), try countWhereFmt(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = '{s}' AND path = '/workspace'", .{p.id}));
+}
+
+test "a default project that stores the host home is moved to the guest root on read" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb(alloc);
+    defer ctx.deinit();
+    try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
+    // The row this fix inherits: written while the substrate was not consulted.
+    try insertDefaultAtPath(alloc, &ctx.db, "ws_vm", "/home/tester");
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+
+    const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
+    defer p.deinit(alloc);
+
+    try testing.expect(!p.created);
+    try testing.expectEqualStrings(vmd_policy.guest_root, p.path);
+    // The ROW moved too, so every later reader (the items list, the picker)
+    // sees the path the VM actually has rather than this one call.
+    try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "id = 'item_seeded' AND path = '/workspace'"));
+}
+
+test "a default project already inside the guest root is left exactly as stored" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb(alloc);
+    defer ctx.deinit();
+    try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
+    // A project a user pointed at a directory inside the VM. Moving it to the
+    // root would silently relocate their files.
+    try insertDefaultAtPath(alloc, &ctx.db, "ws_vm", "/workspace/pabrik");
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+
+    const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
+    defer p.deinit(alloc);
+
+    try testing.expectEqualStrings("/workspace/pabrik", p.path);
+    try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "id = 'item_seeded' AND path = '/workspace/pabrik'"));
+}
+
+test "a local server keeps the host home for the same VM-backed workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb(alloc);
+    defer ctx.deinit();
+    try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
+
+    // No mode switch: this process is local, so the workspace's work runs on
+    // the host and the host home is the only tree its tools can open.
+    const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
+    defer p.deinit(alloc);
+
+    try testing.expectEqualStrings("/home/tester", p.path);
+}
+
+test "a local server never rewrites a default project's host path" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb(alloc);
+    defer ctx.deinit();
+    try insertVmWorkspace(alloc, &ctx.db, "ws_vm");
+    try insertDefaultAtPath(alloc, &ctx.db, "ws_vm", "/home/tester");
+
+    const p = try ensureDefaultProject(alloc, &ctx.db, "ws_vm", &ctx.env, null);
+    defer p.deinit(alloc);
+
+    try testing.expectEqualStrings("/home/tester", p.path);
+    try testing.expectEqual(@as(u32, 1), try countWhere(&ctx.db, alloc, "workspace_items", "id = 'item_seeded' AND path = '/home/tester'"));
 }
 
 // ===== Tests merged from workspace_items_default_test.zig (2026-09-29

@@ -9,6 +9,8 @@ const auth_common = @import("auth_common.zig");
 const process = @import("helpers").process;
 const getCurrentProcessId = process.getCurrentProcessId;
 const workspace_default = @import("workspace_items_default.zig");
+const vmd_policy = @import("../vmd/policy.zig");
+const runtime_mode = @import("../runtime_mode.zig");
 
 /// The name every automatically provisioned workspace gets. Cosmetic — clients
 /// select by id and a user may rename it — but it is what a brand-new account
@@ -391,6 +393,30 @@ test "createWorkspaceRow: a saas server's workspace is VM-backed, a local one's 
         @as(i64, 0),
         try scalarI64Fmt(&ctx.db, alloc, "SELECT is_vm FROM workspaces WHERE id = '{s}'", .{host_workspace.id}),
     );
+}
+
+test "createWorkspaceRow: a VM workspace's default project is rooted in its guest, not the host" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb(alloc);
+    defer ctx.deinit();
+    const io = ctx.threaded.io();
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+
+    const vm_workspace = try createWorkspaceRow(alloc, &ctx.db, io, "VM", "user_a", &ctx.env, true);
+    defer vm_workspace.deinit(alloc);
+
+    // `is_vm` is written before the default project is attached, so the very
+    // first paint of a new workspace shows a tree its VM has — not the host's.
+    const default_path = try scalarTextFmt(
+        &ctx.db,
+        alloc,
+        "SELECT path FROM workspace_items WHERE workspace_id = '{s}' AND is_default = 1",
+        .{vm_workspace.id},
+    );
+    defer alloc.free(default_path);
+    try testing.expectEqualStrings(vmd_policy.guest_root, default_path);
 }
 
 test "ensureDefaultWorkspace: the legacy shared bucket is not a workspace of the user's own" {
