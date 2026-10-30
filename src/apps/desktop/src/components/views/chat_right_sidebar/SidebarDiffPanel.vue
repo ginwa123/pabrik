@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ApiError, type GitFileChange, type GitFileStageEvent } from '../../../api'
 import { openInNewTab } from '../../../helpers/openInNewTab'
 import { forgeWording } from '../../../helpers/forgeWording'
+import { forgetGitProbe } from '../../../helpers/gitProbeGate'
 import { isBackgroundOpenEvent } from '../../../helpers/tabTarget'
 import { useSseBus } from '../../../helpers/sseBus'
 import { useContextMenu } from '../../../composables/useContextMenu'
@@ -315,6 +316,7 @@ const onRefreshClick = () => {
   // Tell ChatView to re-sync the worktree binding first (it may have changed since mount); then
   // reload this panel. ChatView also calls back into loadGitStatus via the exposed refresh() when
   // the binding changed, so a stale-cwd click self-heals instead of re-showing the old branch.
+  forgetGitProbe(props.cwd)
   emit('refresh')
   void refreshCurrentTab()
 }

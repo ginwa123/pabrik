@@ -7,6 +7,7 @@ import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 import type { FolderEntry } from '../../api'
 import * as api from '../../api'
+import { forgetGitProbe } from '../../helpers/gitProbeGate'
 
 const props = defineProps<{
   cwd?: string
@@ -217,6 +218,7 @@ onUpdated(() => {
 
 // Refresh git status
 const refreshGitStatus = () => {
+  forgetGitProbe(props.cwd ?? '')
   loadGitStatus()
 }
 

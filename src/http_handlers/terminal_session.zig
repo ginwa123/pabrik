@@ -75,6 +75,7 @@ const POLLIN: c_short = 1;
 const POLLOUT: c_short = 4;
 const WNOHANG: c_int = 1;
 const SIGKILL: c_int = 9;
+const SIGINT: c_int = 2;
 
 // TIOCSWINSZ: Linux 0x5414, macOS 0x80087467 (_IOW('t', 103, winsize)).
 const TIOCSWINSZ: c_ulong = switch (builtin.os.tag) {
@@ -98,6 +99,8 @@ extern "c" fn getcwd(buf: [*]u8, size: usize) ?[*:0]u8;
 /// for idle aging — coarse seconds are plenty.
 extern "c" fn time(t: ?*i64) i64;
 extern "c" fn kill(pid: c_int, sig: c_int) c_int;
+extern "c" fn tcgetattr(fd: c_int, termios: *anyopaque) c_int;
+extern "c" fn tcgetpgrp(fd: c_int) c_int;
 extern "c" fn waitpid(pid: c_int, status: *c_int, options: c_int) c_int;
 extern "c" fn nanosleep(req: *const Timespec, rem: ?*Timespec) c_int;
 /// `VOID Sleep(DWORD dwMilliseconds);` (Win32 kernel32) — the only sleep a
@@ -108,6 +111,34 @@ const Timespec = extern struct {
     tv_sec: isize,
     tv_nsec: isize,
 };
+
+/// `struct termios`: only `c_lflag` and `c_cc[VINTR]` are read, but libc fills
+/// the whole struct, so `c_cc` is spelled out to the size each OS uses
+/// (`NCCS`) instead of to the one byte that matters.
+const Termios = switch (builtin.os.tag) {
+    .macos => extern struct {
+        iflag: u64,
+        oflag: u64,
+        cflag: u64,
+        lflag: u64,
+        cc: [20]u8,
+        ispeed: u64,
+        ospeed: u64,
+    },
+    else => extern struct {
+        iflag: u32,
+        oflag: u32,
+        cflag: u32,
+        lflag: u32,
+        line: u8,
+        cc: [32]u8,
+        ispeed: u32,
+        ospeed: u32,
+    },
+};
+
+/// `ISIG` in `c_lflag`: the bit differs per OS, the meaning does not.
+const termios_isig = if (builtin.os.tag == .macos) 0x80 else 0x1;
 
 // ---------------------------------------------------------------------
 // Win32 ConPTY surface (extern "kernel32" / "ws2_32" — no @cImport)
@@ -1747,8 +1778,60 @@ fn writeRawAll(h: HANDLE, data: []const u8) SessionError!usize {
 }
 
 fn writeInputPosix(s: *Session, data: []const u8) SessionError!usize {
+    const signal_interrupt = ldiscRaisesInterrupt(s.master_fd);
     var off: usize = 0;
+    while (true) {
+        const run = splitInputAtInterrupt(data, off);
+        if (run.text.len > 0) try writeAllPosix(s, run.text);
+        off += run.text.len;
+        var raised: usize = 0;
+        while (raised < run.interrupts) : (raised += 1) {
+            if (signal_interrupt) raiseInterruptPosix(s) else try writeAllPosix(s, "\x03");
+        }
+        off += run.interrupts;
+        if (run.interrupts == 0 or off >= data.len) break;
+    }
+    return data.len;
+}
+
+pub const InputRun = struct { text: []const u8, interrupts: usize };
+
+/// Splits a chunk so the pty never receives a Ctrl-C byte — it is raised.
+pub fn splitInputAtInterrupt(data: []const u8, from: usize) InputRun {
+    var end = from;
+    while (end < data.len and data[end] != 0x03) end += 1;
+    var interrupts: usize = 0;
+    while (end + interrupts < data.len and data[end + interrupts] == 0x03) interrupts += 1;
+    return .{ .text = data[from..end], .interrupts = interrupts };
+}
+
+/// Ctrl-C on a pty is a SIGNAL, not a byte: with `ISIG` the discipline turns the
+/// byte into SIGINT and flushes the input queue on the way. Raising the signal
+/// here leaves the queue alone and aims it where a real ^C lands.
+fn raiseInterruptPosix(s: *Session) void {
+    const target: c_int = if (foregroundPgrp(s)) |pgrp| -pgrp else if (s.child_pid > 0) -s.child_pid else return;
+    _ = kill(target, SIGINT);
+}
+
+/// The terminal's foreground process group: where a real Ctrl-C lands.
+pub fn foregroundPgrp(s: *Session) ?i32 {
+    const pgrp = tcgetpgrp(s.master_fd);
+    return if (pgrp > 0) pgrp else null;
+}
+
+/// Would this terminal's discipline turn the byte into a signal — the same
+/// question the kernel asks (`ISIG` on, `VINTR` still `^C`)? A `-isig` program
+/// reads the byte itself and must keep it.
+fn ldiscRaisesInterrupt(master_fd: c_int) bool {
+    if (master_fd < 0) return false;
+    var t: Termios = std.mem.zeroes(Termios);
+    if (tcgetattr(master_fd, &t) != 0) return false;
+    return (t.lflag & termios_isig) != 0 and t.cc[0] == 0x03;
+}
+
+fn writeAllPosix(s: *Session, data: []const u8) SessionError!void {
     var pfds = [_]PollFd{.{ .fd = s.master_fd, .events = POLLOUT, .revents = 0 }};
+    var off: usize = 0;
     while (off < data.len) {
         if (poll(&pfds, 1, 1000) <= 0) return error.WriteFailed;
         if (pfds[0].revents & POLLOUT == 0) return error.WriteFailed;
@@ -1756,7 +1839,6 @@ fn writeInputPosix(s: *Session, data: []const u8) SessionError!usize {
         if (n <= 0) return error.WriteFailed;
         off += @intCast(n);
     }
-    return off;
 }
 
 pub const OutputSlice = struct {
@@ -2235,9 +2317,41 @@ fn expectMarker(s: *Session, marker: []const u8, ticks: usize) !void {
         sleepMillis(100);
     }
     if (!found) {
-        std.debug.print("marker {s} never appeared\n", .{marker});
+        const dump = readOutput(s, 0);
+        std.debug.print("marker {s} never appeared; session ring:\n[{s}]\n--- end ring ---\n", .{ marker, dump.data });
         return error.TestUnexpectedResult;
     }
+}
+
+/// Wait until the terminal has been handed to a foreground job: an interrupt
+/// sent before the shell gives the terminal away reaches the SHELL, which is
+/// waiting for that job and (correctly) keeps it running.
+fn expectForegroundJob(s: *Session, shell_pid: i32, ticks: usize) !void {
+    var i: usize = 0;
+    while (i < ticks) : (i += 1) {
+        if (foregroundPgrp(s)) |pgrp| {
+            if (pgrp != shell_pid) return;
+        }
+        sleepMillis(100);
+    }
+    std.debug.print("the terminal was never handed to a foreground job\n", .{});
+    return error.TestUnexpectedResult;
+}
+
+/// Wait for output past `cursor`: the shell prints its prompt once it is done
+/// with the interrupt, and writing into its recovery races it.
+fn expectOutput(s: *Session, cursor: *u64, ticks: usize) !void {
+    var i: usize = 0;
+    while (i < ticks) : (i += 1) {
+        const out = readOutput(s, cursor.*);
+        cursor.* = out.cursor;
+        if (out.data.len > 0) return;
+        if (out.exited) break;
+        sleepMillis(100);
+    }
+    const dump = readOutput(s, 0);
+    std.debug.print("no output past the cursor; session ring:\n[{s}]\n--- end ring ---\n", .{dump.data});
+    return error.TestUnexpectedResult;
 }
 
 test "spawned shell echoes input" {
@@ -2700,12 +2814,15 @@ test "ctrl-c stops a full-screen program and leaves the shell running" {
             const info = try createSession(testing.io, "/tmp", "ws_test", "/bin/sh", 80, 24, "user_test");
             defer destroySession(info.id) catch {};
             const s = getSession(info.id) orelse return error.SessionNotFound;
-            sleepMillis(500);
-            _ = try writeInput(s, "sleep 30\r");
-            sleepMillis(300);
+            // `%s` keeps the echo of this line from matching the marker it prints.
+            _ = try writeInput(s, "sh -c 'printf \"READY-%s\\n\" 7; exec sleep 30'\r");
+            try expectMarker(s, "READY-7", 100);
+            try expectForegroundJob(s, info.pid, 300);
+            var cursor = readOutput(s, std.math.maxInt(u64)).cursor;
             _ = try writeInput(s, "\x03");
+            try expectOutput(s, &cursor, 300);
             _ = try writeInput(s, "printf \"ALIVE-%s\\n\" 7\r");
-            try expectMarker(s, "ALIVE-7", 100);
+            try expectMarker(s, "ALIVE-7", 300);
         },
         .conpty => {
             const info = try createSession(testing.io, "", "ws_test", null, 80, 24, "user_test");
@@ -2728,6 +2845,52 @@ test "ctrl-c clears the pending line and asks for a signal, not for text" {
     try testing.expectEqual(@as(usize, 1), run.interrupts);
     try testing.expectEqualStrings("ls\r\n", run.shell);
     try testing.expectEqualStrings("rm -rf build^C\r\nls\r\n", run.view);
+}
+
+const PtyWritePlan = struct { bytes: []u8, interrupts: usize };
+
+fn planPtyWrite(allocator: std.mem.Allocator, chunk: []const u8) !PtyWritePlan {
+    var bytes = std.ArrayList(u8).empty;
+    errdefer bytes.deinit(allocator);
+    var interrupts: usize = 0;
+    var off: usize = 0;
+    while (true) {
+        const run = splitInputAtInterrupt(chunk, off);
+        try bytes.appendSlice(allocator, run.text);
+        off += run.text.len + run.interrupts;
+        interrupts += run.interrupts;
+        if (run.interrupts == 0 or off >= chunk.len) break;
+    }
+    return .{ .bytes = try bytes.toOwnedSlice(allocator), .interrupts = interrupts };
+}
+
+test "a command pasted after ctrl-c reaches the pty whole" {
+    const plan = try planPtyWrite(testing.allocator, "\x03printf \"ALIVE-%s\\n\" 7\r");
+    defer testing.allocator.free(plan.bytes);
+    try testing.expectEqual(@as(usize, 1), plan.interrupts);
+    try testing.expectEqualStrings("printf \"ALIVE-%s\\n\" 7\r", plan.bytes);
+}
+
+test "the ctrl-c byte never reaches the pty as text" {
+    const plan = try planPtyWrite(testing.allocator, "rm -rf build\x03\x03ls\r");
+    defer testing.allocator.free(plan.bytes);
+    try testing.expectEqual(@as(usize, 2), plan.interrupts);
+    try testing.expectEqualStrings("rm -rf buildls\r", plan.bytes);
+    try testing.expect(std.mem.indexOfScalar(u8, plan.bytes, 0x03) == null);
+}
+
+test "input without a ctrl-c reaches the pty unchanged" {
+    const plan = try planPtyWrite(testing.allocator, "ls -la\r");
+    defer testing.allocator.free(plan.bytes);
+    try testing.expectEqual(@as(usize, 0), plan.interrupts);
+    try testing.expectEqualStrings("ls -la\r", plan.bytes);
+}
+
+test "an empty chunk writes nothing and raises nothing" {
+    const plan = try planPtyWrite(testing.allocator, "");
+    defer testing.allocator.free(plan.bytes);
+    try testing.expectEqual(@as(usize, 0), plan.interrupts);
+    try testing.expectEqual(@as(usize, 0), plan.bytes.len);
 }
 
 test "a pipe shell refuses to echo the committed line a second time" {

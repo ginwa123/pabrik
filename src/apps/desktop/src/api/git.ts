@@ -1,4 +1,5 @@
 import { readGitStatusCache, writeGitStatusCache } from '../helpers/gitStatusCache'
+import { gitProbeAnswer, mayProbeGit, recordGitAnswer, recordGitFailure } from '../helpers/gitProbeGate'
 import { Cause, Data, Effect } from 'effect'
 import { describeCause } from '../helpers/effectRuntime'
 import { apiFetch } from './core'
@@ -29,42 +30,63 @@ export interface GitChangesResponse {
 }
 
 export async function getGitStatus(cwd: string): Promise<GitStatus> {
+  if (!mayProbeGit(cwd)) {
+    return gitProbeAnswer(cwd) === 'no-repo'
+      ? notAGitRepoStatus()
+      : (readGitStatusCache(cwd) ?? gitUnavailableStatus())
+  }
   try {
     const status = await apiFetch<GitStatus>(`/git/status?path=${encodeURIComponent(cwd)}`)
     writeGitStatusCache(cwd, status)
+    recordGitAnswer(cwd, status.is_git_repo)
     return status
   } catch {
+    recordGitFailure(cwd)
     // Stale-while-revalidate: a failed refresh falls back to the last-known status for this cwd so
     // the branch chip keeps showing something real instead of blanking on a transient backend
     // error.
-    return (
-      readGitStatusCache(cwd) ?? {
-        is_git_repo: false,
-        branch: '',
-        has_changes: false,
-        is_clean: true,
-        current: '',
-        status: 'error',
-      }
-    )
+    return readGitStatusCache(cwd) ?? gitUnavailableStatus()
+  }
+}
+
+function notAGitRepoStatus(): GitStatus {
+  return { is_git_repo: false, branch: '', has_changes: false, is_clean: true, current: '', status: '' }
+}
+
+function gitUnavailableStatus(): GitStatus {
+  return {
+    is_git_repo: false,
+    branch: '',
+    has_changes: false,
+    is_clean: true,
+    current: '',
+    status: 'error',
+  }
+}
+
+function noGitChanges(): GitChangesResponse {
+  return {
+    is_git_repo: false,
+    branch: null,
+    has_changes: false,
+    staged_files: [],
+    modified_files: [],
+    untracked_files: [],
   }
 }
 
 export async function getGitChanges(cwd: string): Promise<GitChangesResponse> {
+  if (!mayProbeGit(cwd)) return noGitChanges()
   try {
-    return await apiFetch<GitChangesResponse>(`/git/changes?path=${encodeURIComponent(cwd)}`)
+    const changes = await apiFetch<GitChangesResponse>(`/git/changes?path=${encodeURIComponent(cwd)}`)
+    recordGitAnswer(cwd, changes.is_git_repo)
+    return changes
   } catch {
+    recordGitFailure(cwd)
     // Return non-repo status on error (apiFetch also fires a toast
     // notification on non-2xx; the empty status fallback ensures the
     // UI doesn't crash while the user sees the error).
-    return {
-      is_git_repo: false,
-      branch: null,
-      has_changes: false,
-      staged_files: [],
-      modified_files: [],
-      untracked_files: [],
-    }
+    return noGitChanges()
   }
 }
 

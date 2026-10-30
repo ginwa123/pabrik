@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUpdated } from 'vue'
 import * as api from '../../api'
+import { forgetGitProbe } from '../../helpers/gitProbeGate'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
@@ -155,6 +156,7 @@ onUpdated(() => {
 
 // Refresh git status
 const refreshGitStatus = () => {
+  forgetGitProbe(props.cwd ?? '')
   loadGitStatus()
 }
 
