@@ -151,7 +151,7 @@ that needed more than that is a server behaviour change worth looking at, not a 
 
 | file | what it is |
 | --- | --- |
-| `api_bench.zig` | the load generator, the statistics, the gate, the scenario table, and 49 `zig test` behaviour checks |
+| `api_bench.zig` | the load generator, the statistics, the gate, the scenario table, and 59 `zig test` behaviour checks |
 | `run.sh` | the orchestration: load generator build, image build, both containers, artifacts, exit code |
 | `Containerfile` | the image both containers run |
 

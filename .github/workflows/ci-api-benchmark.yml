@@ -141,7 +141,7 @@ jobs:
           strict="${strict:-false}"
           case "$requests" in ''|*[!0-9]*) echo "::error::requests must be a positive integer"; exit 1 ;; esac
           case "$concurrency" in ''|*[!0-9]*) echo "::error::concurrency must be a positive integer"; exit 1 ;; esac
-          case "$scenarios" in ''|*[!a-z,]*) echo "::error::scenarios must be a comma list of scenario names"; exit 1 ;; esac
+          case "$scenarios" in ''|*[!a-z,-]*) echo "::error::scenarios must be a comma list of scenario names"; exit 1 ;; esac
           case "$strict" in true|1) strict=1 ;; *) strict=0 ;; esac
           {
             echo "requests=$requests"
