@@ -286,6 +286,13 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
     // (item_type='agent', path=$HOME) when there is none. This is the
     // COLD-START FALLBACK.
     try authed.post("/api/workspaces/:workspace_id/default-project", ai_mod.http_handlers.workspaceDefaultProjectHandler);
+
+    // Membership (Migration 100). Reading needs a member row, writing needs
+    // owner/admin — see workspace_members_gate.zig.
+    try authed.get("/api/workspaces/:workspace_id/members", ai_mod.http_handlers.workspaceMembersListHandler);
+    try authed.post("/api/workspaces/:workspace_id/members", ai_mod.http_handlers.workspaceMembersInviteHandler);
+    try authed.patch("/api/workspaces/:workspace_id/members/:user_id", ai_mod.http_handlers.workspaceMembersUpdateHandler);
+    try authed.delete("/api/workspaces/:workspace_id/members/:user_id", ai_mod.http_handlers.workspaceMembersRemoveHandler);
     try authed.post("/api/workspaces/:workspace_id/items", ai_mod.http_handlers.workspaceItemsCreateHandler);
     try authed.get("/api/workspaces/:workspace_id/items", ai_mod.http_handlers.workspaceItemsListHandler);
     try authed.post("/api/workspaces/:workspace_id/items/reorder", ai_mod.http_handlers.workspaceItemsReorderHandler);

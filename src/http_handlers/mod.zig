@@ -80,6 +80,11 @@ pub const workspacesReorderHandler = @import("workspaces_reorder.zig").workspace
 pub const workspaceGetHandler = @import("workspace_get.zig").workspaceGetHandler;
 pub const workspaceUpdateHandler = @import("workspace_update.zig").workspaceUpdateHandler;
 pub const workspaceDeleteHandler = @import("workspace_delete.zig").workspaceDeleteHandler;
+// Membership of a workspace (Migration 100): who is in, with which role.
+pub const workspaceMembersListHandler = @import("workspace_members_list.zig").workspaceMembersListHandler;
+pub const workspaceMembersInviteHandler = @import("workspace_members_invite.zig").workspaceMembersInviteHandler;
+pub const workspaceMembersUpdateHandler = @import("workspace_members_update.zig").workspaceMembersUpdateHandler;
+pub const workspaceMembersRemoveHandler = @import("workspace_members_remove.zig").workspaceMembersRemoveHandler;
 pub const workspaceItemsCreateHandler = @import("workspace_items_create.zig").workspaceItemsCreateHandler;
 pub const workspaceItemsListHandler = @import("workspace_items_get.zig").workspaceItemsListHandler;
 pub const workspaceItemsGetHandler = @import("workspace_items_get.zig").workspaceItemsGetHandler;

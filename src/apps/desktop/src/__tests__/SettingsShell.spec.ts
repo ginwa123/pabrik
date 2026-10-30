@@ -65,13 +65,13 @@ describe('SettingsShell', () => {
     expect(wrapper.find('[data-testid="settings-nav-general"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-nav-appearance"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-nav-security"]').exists()).toBe(true)
-    for (const id of ['pabrik', 'agents', 'mcp', 'tools', 'evals', 'skills', 'memories']) {
+    for (const id of ['pabrik', 'agents', 'mcp', 'tools', 'evals', 'skills', 'memories', 'members']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(false)
     }
     expect(wrapper.find('[data-testid="settings-scope-label"]').text()).toContain('User')
   })
 
-  it('workspace scope shows Overview/Secrets/Skills/Memories for the route workspace', async () => {
+  it('workspace scope shows Overview/Members/Secrets/Skills/Memories for the route workspace', async () => {
     const router = await makeRouter('/app/ws_1/settings')
     wrapper = mountShell(router, { scope: 'workspace', workspaceId: 'ws_1' })
     await flushPromises()
@@ -79,14 +79,14 @@ describe('SettingsShell', () => {
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe(
       'workspace',
     )
-    for (const id of ['overview', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
+    for (const id of ['overview', 'members', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
     // The workspace comes from the URL, so nav items carry no per-item workspace
     // suffix — and no name box: the URL is the context, the Overview section
     // shows name + ID.
     expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).not.toContain('Acme')
-    for (const id of ['overview', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
+    for (const id of ['overview', 'members', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}-workspace"]`).exists()).toBe(false)
     }
 
@@ -115,6 +115,7 @@ describe('SettingsShell', () => {
     const labels = wrapper.findAll('nav [role="tab"]').map((b) => b.text().trim())
     expect(labels).toEqual([
       'Overview',
+      'Members',
       'Secrets',
       'Skills',
       'Memories',

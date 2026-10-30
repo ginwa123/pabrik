@@ -1451,3 +1451,48 @@ pub fn makeSkillDetailResponse(skill: anytype) SkillDetailResponse {
         .metadata = skill.metadata,
     };
 }
+
+// ─── Workspace member response types ────────────────────────────────
+// Wire shapes for `/api/workspaces/:wsId/members[/:userId]`.
+pub const WorkspaceMemberResponse = struct {
+    user_id: []const u8,
+    email: []const u8,
+    name: []const u8,
+    role: []const u8,
+    joined_at: []const u8,
+    invited_by: []const u8,
+};
+
+/// Map a `workspace_members_store.MemberRow` (or any struct with the same
+/// fields) into the wire shape, for the same reason as
+/// `makeSecretResponse`: the data layer and the wire must move independently.
+pub fn makeWorkspaceMemberResponse(member: anytype) WorkspaceMemberResponse {
+    return .{
+        .user_id = member.user_id,
+        .email = member.email,
+        .name = member.name,
+        .role = member.role,
+        .joined_at = member.joined_at,
+        .invited_by = member.invited_by,
+    };
+}
+
+pub const WorkspaceMemberListResponse = struct {
+    members: []const WorkspaceMemberResponse,
+    count: u32,
+};
+
+pub fn makeWorkspaceMemberListResponse(allocator: std.mem.Allocator, members: anytype) ![]u8 {
+    const mapped = try allocator.alloc(WorkspaceMemberResponse, members.len);
+    defer allocator.free(mapped);
+    for (members, 0..) |m, i| mapped[i] = makeWorkspaceMemberResponse(m);
+
+    return std.json.Stringify.valueAlloc(
+        allocator,
+        WorkspaceMemberListResponse{
+            .members = mapped,
+            .count = @intCast(members.len),
+        },
+        .{},
+    );
+}
