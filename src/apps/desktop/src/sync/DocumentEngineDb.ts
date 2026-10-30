@@ -15,7 +15,8 @@ export type DocumentRawRow = Document
 
 export interface DocumentRow {
   id: string
-  /** `updated_at` wall-clock string — matches the backend's updated_at DESC order. */
+  /** `updated_at` wall-clock string; the documents list does not paginate, so this is only the
+   * engine's cursor and never the paint order (`compareFn` owns that). */
   sortKey: string
   /** Complete server object, so cached paints match the network shape. */
   raw: DocumentRawRow
@@ -26,6 +27,18 @@ export type DocumentCtx = string
 
 export function documentSortKey(d: Document): string {
   return d.updated_at || ''
+}
+
+/** The backend's list order — `position ASC, updated_at DESC, id DESC` — so a cached paint shows
+ * the order the user dragged, not the recency order the cache would otherwise restore. A row
+ * cached before the position column existed has no `position` and sorts with the untouched rows. */
+export function bySidebarOrder(a: Document, b: Document): number {
+  const aPosition = a.position ?? 0
+  const bPosition = b.position ?? 0
+  if (aPosition !== bPosition) return aPosition - bPosition
+  if (a.updated_at !== b.updated_at) return a.updated_at < b.updated_at ? 1 : -1
+  if (a.id === b.id) return 0
+  return a.id < b.id ? 1 : -1
 }
 
 export function toDocumentRow(d: Document): DocumentRow {
@@ -52,10 +65,8 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
     super(storeName, store)
   }
 
-  /** Newest-first: larger `updated_at` sorts earlier (ISO strings compare lexicographically). */
   compareFn(a: DocumentRow, b: DocumentRow): number {
-    if (a.sortKey === b.sortKey) return 0
-    return a.sortKey < b.sortKey ? 1 : -1
+    return bySidebarOrder(a.raw, b.raw)
   }
 
   cursorOf(item: DocumentRow): string | null {

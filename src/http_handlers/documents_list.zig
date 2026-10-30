@@ -1,5 +1,5 @@
 //! `GET /api/workspaces/:workspace_id/documents`. Returns `{documents,
-//! count}` for one workspace, most-recently-updated first.
+//! count}` for one workspace in saved sidebar order.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -95,6 +95,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
+    try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

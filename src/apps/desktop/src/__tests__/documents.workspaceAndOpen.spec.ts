@@ -76,6 +76,7 @@ const DOC = {
   format: 'markdown',
   created_at: '2026-09-01 10:00:00',
   updated_at: '2026-09-01 10:00:00',
+  position: 0,
 }
 
 /** One workspace owning one project — the shape in the user's screenshot. */

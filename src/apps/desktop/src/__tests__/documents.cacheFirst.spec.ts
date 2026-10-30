@@ -23,6 +23,7 @@ const doc = (over: Partial<Document> = {}): Document => ({
   format: 'markdown',
   created_at: '2026-09-01 10:00:00',
   updated_at: '2026-09-01 10:00:00',
+  position: 0,
   ...over,
 })
 
@@ -44,6 +45,19 @@ describe('DocumentEngineDb — cache contents', () => {
     // The BODY is cached, not just the title — that is the whole point of
     // using IndexedDB rather than a localStorage metadata cache.
     expect(cached[0]!.raw.content).toBe('# heading')
+  })
+
+  it('a cached paint keeps the dragged order instead of falling back to newest-updated', async () => {
+    const saved = [
+      doc({ id: 'doc_old', position: 0, updated_at: '2026-09-01 10:00:00' }),
+      doc({ id: 'doc_new', position: 1, updated_at: '2026-09-09 10:00:00' }),
+    ]
+    const eng = engineWith(async () => ({ documents: saved, count: 2 }))
+
+    await run(eng.loadDelta(WS))
+    const cached = await run(eng.primeFromCache(WS, 50))
+
+    expect(cached.map((r) => r.id)).toEqual(['doc_old', 'doc_new'])
   })
 
   it('REPLACES rather than merges, so a server-side delete actually disappears', async () => {

@@ -140,6 +140,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
+    try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO documents (id, workspace_id, title, content) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),

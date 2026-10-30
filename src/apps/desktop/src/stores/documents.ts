@@ -1,11 +1,25 @@
 // Pinia store for workspace-scoped documents (Migration 095). Two things this store deliberately
 // does NOT do: 1. No client-side workspace filter.
 import { defineStore } from 'pinia'
+import { Effect } from 'effect'
 import { computed, ref } from 'vue'
 import * as api from '../api'
 import type { Document } from '../api'
 import { documentEngineDb } from '../sync/DocumentEngineDb'
+import { SyncRemoteError } from '../sync/SyncError'
 import { runSyncEffectOr, runSyncResult, runSyncVoid } from '../sync/runtime'
+
+export function applyReorder(docs: Document[], orderedIds: string[]): Document[] {
+  const remaining = new Map(docs.map((d) => [d.id, d]))
+  const ordered: Document[] = []
+  orderedIds.forEach((id, index) => {
+    const doc = remaining.get(id)
+    if (!doc) return
+    remaining.delete(id)
+    ordered.push({ ...doc, position: index })
+  })
+  return ordered.concat([...remaining.values()])
+}
 
 export const useDocumentsStore = defineStore('documents', () => {
   const documents = ref<Document[]>([])
@@ -80,9 +94,8 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null
     try {
       const { document } = await api.createDocument(workspaceId, title, content)
-      // Prepend rather than refetch: the list is ordered by
-      // updated_at DESC and a brand-new document is the most recent.
-      // Saves a round-trip on the click that created it.
+      // Prepend rather than refetch: the backend positions a new document above
+      // every existing one, so the prepend IS the saved order.
       documents.value = [document, ...documents.value]
       loaded.value = true
       // Write through so the next cold boot paints this document without
@@ -145,6 +158,40 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
+  async function reorderDocuments(workspaceId: string, orderedIds: string[]): Promise<boolean> {
+    if (!workspaceId || orderedIds.length === 0) return false
+    const previous = documents.value
+    documents.value = applyReorder(previous, orderedIds)
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        Effect.tryPromise({
+          try: () => api.reorderDocuments(workspaceId, orderedIds),
+          catch: (cause) =>
+            new SyncRemoteError({
+              op: 'documents.reorder',
+              reason: cause instanceof Error ? cause.message : String(cause),
+            }),
+        }),
+        'documents.reorder',
+      )
+      if (!result.ok) {
+        documents.value = previous
+        error.value = result.reason
+        return false
+      }
+      documents.value = result.value.documents
+      loaded.value = true
+      for (const doc of result.value.documents) {
+        await runSyncVoid(documentEngineDb.putDocument(workspaceId, doc), 'documents.put')
+      }
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
   /**    * Fetch a single document for the editor. The list response already carries every body, so this
    * is a no-op when the row is cached and only reaches the network for a deep link opened before
    * the sidebar list loaded. */
@@ -183,6 +230,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     createDocument,
     updateDocument,
     deleteDocument,
+    reorderDocuments,
     loadDocument,
     reset,
   }

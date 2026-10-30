@@ -131,6 +131,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
+    try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
