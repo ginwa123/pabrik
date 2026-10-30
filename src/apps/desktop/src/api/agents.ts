@@ -41,12 +41,18 @@ export interface AgentRegistryParameter {
   required: boolean
 }
 
+/** Where a registry entry comes from: the compiled-in registry, or an MCP server. */
+export type AgentRegistryKind = 'builtin' | 'mcp'
+
 export interface AgentRegistryEntry {
   name: string
   description: string
   /**    * The tool's full parameter list, in declaration order. Optional on the type only so older mocks
    * in specs keep compiling; the backend always sends it (`GET /api/agent-tools/registry`). */
   parameters?: AgentRegistryParameter[]
+  /**    * `mcp` when a configured MCP server advertised the tool, `builtin` for one compiled into the
+   * runtime. Optional for the same reason as `parameters`: older mocks predate it. */
+  kind?: AgentRegistryKind
 }
 
 /**  * Create a new agent workspace item. The backend seeds the agent with an empty knowledge list AND
@@ -273,11 +279,19 @@ export async function reorderAgentSystemPrompts(
   })
 }
 
-/**  * Get the canonical tool registry. The Tools panel renders checkboxes from this list. Sourced from
- * the runtime's UNIFIED_TOOL_REGISTRY (single source of truth per spec D4). GET
- * /api/agent-tools/registry */
-export async function getAgentToolsRegistry(): Promise<{ tools: AgentRegistryEntry[] }> {
-  return await apiFetch<{ tools: AgentRegistryEntry[] }>(`/agent-tools/registry`)
+/**  * Get the canonical tool registry (UNIFIED_TOOL_REGISTRY, single source of truth per spec D4).
+ * `includeMcp` also lists the workspace's MCP tools (`mcp_<server>_<tool>`) for the composer
+ * picker; the other callers leave it off and pay no server roundtrip. GET /api/agent-tools/registry */
+export async function getAgentToolsRegistry(
+  opts: { includeMcp?: boolean; workspaceId?: string | null } = {},
+): Promise<{ tools: AgentRegistryEntry[] }> {
+  const params = new URLSearchParams()
+  if (opts.includeMcp) params.set('include_mcp', '1')
+  if (opts.workspaceId) params.set('workspace_id', opts.workspaceId)
+  const query = params.toString()
+  return await apiFetch<{ tools: AgentRegistryEntry[] }>(
+    `/agent-tools/registry${query ? `?${query}` : ''}`,
+  )
 }
 
 /** Get the enabled tool names for an agent. Empty array = secure-by-default.
