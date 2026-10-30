@@ -10,6 +10,8 @@ const test_db = pabrik.test_db;
 const sqlite = pabrik.sqlite;
 const database = pabrik.database;
 const git_hardening = @import("helpers").git_hardening;
+const run_captured = @import("helpers").run_captured;
+const loggermod = @import("../../logger/Logger.zig");
 const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
 const runtime_mode = @import("../../../runtime_mode.zig");
 
@@ -602,16 +604,11 @@ fn runGitWorktreeList(
         );
     }
 
-    var child = std.process.spawn(io, .{
-        .argv = &.{
-            "git", "worktree", "list", "--porcelain",
-        },
-        .cwd = .{ .path = repo_root },
-        .stdin = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
+    var result = run_captured.run(allocator, io, &.{ "git", "worktree", "list", "--porcelain" }, .{
+        .cwd = repo_root,
+        .max_output_bytes = max_worktree_list_bytes,
+        .timeout_ms = git_timeout_ms,
     }) catch |err| {
-        std.debug.print("git worktree list spawn failed: {s}\n", .{@errorName(err)});
         return unavailable(
             allocator,
             try std.fmt.allocPrint(
@@ -621,61 +618,25 @@ fn runGitWorktreeList(
             ),
         );
     };
+    defer result.deinit(allocator);
 
-    const stdout_pipe = child.stdout orelse {
-        const term = child.wait(io) catch {
-            return unavailable(allocator, "git worktree list: wait failed (no stdout pipe)");
-        };
-        return switch (term) {
-            .exited => |code| if (code == 0)
-                .{ .health = .complete, .stdout = try allocator.dupe(u8, ""), .reason = try allocator.dupe(u8, "") }
-            else
-                try failed(allocator, "git worktree list exited with code {d} (no stdout captured)", .{code}),
-            .signal => try failed(allocator, "git worktree list killed by signal (no stdout)", .{}),
-            else => try failed(allocator, "git worktree list terminated abnormally (no stdout)", .{}),
-        };
-    };
-
-    var stdout_buf: std.ArrayList(u8) = .empty;
-    errdefer stdout_buf.deinit(allocator);
-    var truncated = false;
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.Io.File.readStreaming(stdout_pipe, io, &.{&read_buf}) catch break;
-        if (n == 0) break;
-        if (stdout_buf.items.len < max_worktree_list_bytes) {
-            const take = @min(n, max_worktree_list_bytes - stdout_buf.items.len);
-            stdout_buf.appendSlice(allocator, read_buf[0..take]) catch break;
-            if (take < n) truncated = true;
-        } else {
-            // Keep draining so git never blocks on a full pipe, but stop
-            // accumulating — and remember that we did.
-            truncated = true;
-        }
+    if (result.timed_out) {
+        return try failed(
+            allocator,
+            "git worktree list was still running after {d} ms and was killed, so the listing is incomplete",
+            .{git_timeout_ms},
+        );
+    }
+    switch (result.term) {
+        .exited => |code| if (code != 0)
+            return try failed(allocator, "git worktree list exited with code {d}", .{code}),
+        .signal => return try failed(allocator, "git worktree list was killed by a signal", .{}),
+        else => return try failed(allocator, "git worktree list terminated abnormally", .{}),
     }
 
-    const term = child.wait(io) catch {
-        return try failed(allocator, "git worktree list: failed to wait for child process", .{});
-    };
-    const stdout = try allocator.dupe(u8, stdout_buf.items);
+    const stdout = try allocator.dupe(u8, result.stdout);
     errdefer allocator.free(stdout);
-
-    switch (term) {
-        .exited => |code| {
-            if (code != 0) {
-                std.debug.print("git worktree list failed (exit={d})\n", .{code});
-                return try failed(allocator, "git worktree list exited with code {d}", .{code});
-            }
-        },
-        .signal => {
-            return try failed(allocator, "git worktree list was killed by a signal", .{});
-        },
-        else => {
-            return try failed(allocator, "git worktree list terminated abnormally", .{});
-        },
-    }
-
+    const truncated = stdout.len >= max_worktree_list_bytes;
     const health: ListHealth = if (truncated) .truncated else .complete;
     const reason = if (truncated)
         try std.fmt.allocPrint(
@@ -904,69 +865,32 @@ fn runGitWorktreeAdd(
     const argv = try buildWorktreeAddArgv(allocator, branch, worktree_path, base);
     defer allocator.free(argv);
 
-    var child = std.process.spawn(io, .{
-        .argv = argv,
-        .cwd = if (repo_root) |r| .{ .path = r } else .inherit,
-        .stdin = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
+    var result = run_captured.run(allocator, io, argv, .{
+        .cwd = repo_root,
+        .max_output_bytes = git_output_bytes,
+        .timeout_ms = git_timeout_ms,
     }) catch |err| {
-        std.debug.print("git worktree add spawn failed: {s}\n", .{@errorName(err)});
+        loggermod.debugPrint("git worktree add spawn failed: {s}\n", .{@errorName(err)});
         return try std.fmt.allocPrint(
             allocator,
             "failed to spawn git worktree add: {s}",
             .{@errorName(err)},
         );
     };
+    defer result.deinit(allocator);
 
-    // Short-lived command (worktree add is sub-second); use a bounded
-    // blocking read rather than the threaded + timeout pattern that bash.zig
-    // uses for arbitrary user commands.
-    const stderr_pipe = child.stderr orelse {
-        // No stderr pipe (shouldn't happen with .pipe above); just wait
-        // and return based on exit code.
-        const term = child.wait(io) catch {
-            return try allocator.dupe(
-                u8,
-                "git worktree add: child process wait failed (no stderr pipe)",
-            );
-        };
-        return switch (term) {
-            .exited => |code| if (code == 0)
-                try allocator.dupe(u8, "")
-            else
-                try std.fmt.allocPrint(
-                    allocator,
-                    "git worktree add exited with code {d} (no stderr captured)",
-                    .{code},
-                ),
-            .signal => try allocator.dupe(u8, "git worktree add was killed by a signal (no stderr captured)"),
-            else => try allocator.dupe(u8, "git worktree add terminated abnormally (no stderr captured)"),
-        };
-    };
-
-    var stderr_buf: std.ArrayList(u8) = .empty;
-    defer stderr_buf.deinit(allocator);
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.Io.File.readStreaming(stderr_pipe, io, &.{&read_buf}) catch break;
-        if (n == 0) break;
-        if (stderr_buf.items.len < 64 * 1024) {
-            const take = @min(n, 64 * 1024 - stderr_buf.items.len);
-            stderr_buf.appendSlice(allocator, read_buf[0..take]) catch break;
-        }
+    if (result.timed_out) {
+        return try std.fmt.allocPrint(
+            allocator,
+            "git worktree add was still running after {d} ms and was killed, so the worktree at '{s}' may be half-created",
+            .{ git_timeout_ms, worktree_path },
+        );
     }
-
-    const term = child.wait(io) catch {
-        return try allocator.dupe(u8, "git worktree add: failed to wait for child process");
-    };
-    switch (term) {
+    switch (result.term) {
         .exited => |code| {
             if (code == 0) return try allocator.dupe(u8, "");
-            const stderr_text = stderr_buf.items;
-            std.debug.print("git worktree add failed (exit={d}): {s}\n", .{ code, stderr_text });
-            // Surface git's own stderr to the user.
+            const stderr_text = std.mem.trim(u8, result.stderr, " \t\r\n");
+            loggermod.debugPrint("git worktree add failed (exit={d}): {s}\n", .{ code, stderr_text });
             return if (stderr_text.len == 0)
                 try std.fmt.allocPrint(
                     allocator,
@@ -977,7 +901,7 @@ fn runGitWorktreeAdd(
                 try allocator.dupe(u8, stderr_text);
         },
         .signal => {
-            std.debug.print("git worktree add killed by signal\n", .{});
+            loggermod.debugPrint("git worktree add killed by signal\n", .{});
             return try allocator.dupe(u8, "git worktree add was killed by a signal");
         },
         else => return try allocator.dupe(u8, "git worktree add terminated abnormally"),
@@ -995,52 +919,38 @@ fn runGitWorktreeRemove(
     worktree_path: []const u8,
 ) !void {
     if (guest) |fs| return guestWorktreeRemove(allocator, fs, repo_root, worktree_path);
-    var child = std.process.spawn(io, .{
-        .argv = &.{
-            "git", "worktree", "remove", "--force", worktree_path,
-        },
-        .cwd = .inherit, // use the pabrik process's cwd (the session cwd is inside the original repo)
-        .stdin = .ignore,
-        .stdout = .pipe,
-        .stderr = .pipe,
-    }) catch |err| return err;
+    var result = run_captured.run(
+        allocator,
+        io,
+        &.{ "git", "worktree", "remove", "--force", worktree_path },
+        // The pabrik process's own cwd is the session's repo, which is what
+        // `worktree remove` has to be run from.
+        .{ .timeout_ms = git_timeout_ms },
+    ) catch return error.GitRemoveFailed;
+    defer result.deinit(allocator);
 
-    const stderr_pipe = child.stderr orelse {
-        const term = child.wait(io) catch return error.GitWaitFailed;
-        return switch (term) {
-            .exited => |code| if (code == 0) return else return error.GitRemoveFailed,
-            else => error.GitRemoveFailed,
-        };
-    };
-
-    var stderr_buf: std.ArrayList(u8) = .empty;
-    defer stderr_buf.deinit(allocator);
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.Io.File.readStreaming(stderr_pipe, io, &.{&read_buf}) catch break;
-        if (n == 0) break;
-        if (stderr_buf.items.len < 64 * 1024) {
-            const take = @min(n, 64 * 1024 - stderr_buf.items.len);
-            stderr_buf.appendSlice(allocator, read_buf[0..take]) catch break;
-        }
+    if (result.timed_out) {
+        loggermod.debugPrint(
+            "git worktree remove outlived {d} ms and was killed\n",
+            .{git_timeout_ms},
+        );
+        return error.GitRemoveFailed;
     }
-
-    const term = child.wait(io) catch return error.GitWaitFailed;
-    switch (term) {
+    switch (result.term) {
         .exited => |code| {
             if (code == 0) return;
-            // It's not an error if the directory was already gone (the user
-            // may have `rm -rf`d it manually between sessions). git returns
-            // 128 with "fatal: not a working tree" in that case — treat that
-            const stderr_text = stderr_buf.items;
-            if (std.mem.indexOf(u8, stderr_text, "not a working tree") != null) return;
-            if (std.mem.indexOf(u8, stderr_text, "No such file or directory") != null) return;
-            std.debug.print("git worktree remove failed (exit={d}): {s}\n", .{ code, stderr_text });
+            // A worktree the user already deleted by hand is not a failure:
+            // git answers "not a working tree" for a path that is gone.
+            if (std.mem.indexOf(u8, result.stderr, "not a working tree") != null) return;
+            if (std.mem.indexOf(u8, result.stderr, "No such file or directory") != null) return;
+            loggermod.debugPrint(
+                "git worktree remove failed (exit={d}): {s}\n",
+                .{ code, result.stderr },
+            );
             return error.GitRemoveFailed;
         },
         .signal => {
-            std.debug.print("git worktree remove killed by signal\n", .{});
+            loggermod.debugPrint("git worktree remove killed by signal\n", .{});
             return error.GitRemoveFailed;
         },
         else => return error.GitRemoveFailed,
@@ -1083,7 +993,9 @@ pub fn executeSetGitWorktreeToString(
             defer if (repo) |r| allocator.free(r);
             runGitWorktreeRemove(allocator, io, guest, repo, existing) catch |err| {
                 const msg = @errorName(err);
-                std.debug.print("set_git_worktree clear: remove failed: {s}\n", .{msg});
+                if (loggermod.getGlobal()) |logger| {
+                    logger.warnFmt("set_git_worktree clear: removing '{s}' failed: {s}", .{ existing, msg });
+                }
                 return xmlError(allocator, session_id, "failed to remove existing worktree");
             };
         }
@@ -1125,7 +1037,7 @@ pub fn executeSetGitWorktreeToString(
         const state = classifyPath(allocator, io, guest, cwd, worktree_path) catch |err| blk: {
             // classifyPath only fails on alloc; fall through to git and
             // let it produce a normal error.
-            std.debug.print("set_git_worktree: classifyPath failed: {s}\n", .{@errorName(err)});
+            loggermod.debugPrint("set_git_worktree: classifyPath failed: {s}\n", .{@errorName(err)});
             break :blk PathState{ .not_found = {} };
         };
         defer freePathState(allocator, state);
@@ -1134,7 +1046,7 @@ pub fn executeSetGitWorktreeToString(
                 // Normal path: fall through to git worktree add.
             },
             .registered_worktree => |rwt| {
-                std.debug.print(
+                loggermod.debugPrint(
                     "set_git_worktree: attached session {s} to the worktree already at {s} (branch {s})\n",
                     .{ session_id, worktree_path, rwt.branch },
                 );
@@ -1171,7 +1083,7 @@ pub fn executeSetGitWorktreeToString(
     // descriptive fallback including the exit code). Empty string = success.
     const git_detail = runGitWorktreeAdd(allocator, io, guest, resolved_repo_root, worktree_path, branch, base) catch |err| {
         // Alloc failure inside runGitWorktreeAdd — extremely rare.
-        std.debug.print("set_git_worktree add dispatch failed: {s}\n", .{@errorName(err)});
+        loggermod.debugPrint("set_git_worktree add dispatch failed: {s}\n", .{@errorName(err)});
         return xmlError(allocator, session_id, @errorName(err));
     };
     defer allocator.free(git_detail);
@@ -1189,7 +1101,7 @@ pub fn executeSetGitWorktreeToString(
         // git may still hit a case the precheck could not classify (a race, or
         // a probe the guest could not answer); rewrite its stderr into advice.
         const rewritten = rewriteGitStderr(allocator, git_detail, worktree_path, branch, base) catch |err| blk: {
-            std.debug.print("set_git_worktree: rewriteGitStderr failed: {s}\n", .{@errorName(err)});
+            loggermod.debugPrint("set_git_worktree: rewriteGitStderr failed: {s}\n", .{@errorName(err)});
             break :blk git_detail;
         };
         defer if (rewritten.ptr != git_detail.ptr) allocator.free(rewritten);
