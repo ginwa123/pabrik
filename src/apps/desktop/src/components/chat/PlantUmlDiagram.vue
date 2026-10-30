@@ -2,13 +2,20 @@
 /** PlantUmlDiagram — one `<plantuml>…</plantuml>` block of an assistant turn. The SVG comes from a
  * PlantUML server (see `helpers/plantuml.ts`); there is no local renderer to fail, only a request
  * that can fail, so a refusal shows the source rather than an empty frame. */
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
+import DiagramViewer from './DiagramViewer.vue'
+import { inlineDiagramLayout } from '../../helpers/diagramViewport'
+import type { DiagramSize } from '../../helpers/diagramViewport'
 import { plantumlSvgUrl, resolvePlantumlServer } from '../../helpers/plantuml'
 
 const props = defineProps<{ source: string }>()
 
 const copied = ref(false)
+const preview = ref(false)
+const frame = ref<HTMLElement | null>(null)
+const available = ref(0)
+const natural = ref<DiagramSize | null>(null)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 /** Both outcomes are keyed on the source they belong to, so new source is a new request without a
@@ -26,6 +33,35 @@ const serverHost = computed(() => {
   return withoutScheme.split('/')[0] ?? server
 })
 
+/** The column the drawing has to live in; `available` only re-renders on a real change. */
+const measure = (): void => {
+  available.value = frame.value?.clientWidth ?? 0
+}
+
+onMounted(measure)
+onUpdated(measure)
+
+const layout = computed(() =>
+  failed.value ? null : inlineDiagramLayout(natural.value, available.value),
+)
+const zoomStyle = computed(() =>
+  layout.value ? { width: `${layout.value.width}px`, maxWidth: 'none' } : undefined,
+)
+
+const onImageLoad = (event: Event): void => {
+  loadedFor.value = props.source
+  const image = event.target
+  if (!(image instanceof HTMLImageElement)) return
+  if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+    natural.value = { width: image.naturalWidth, height: image.naturalHeight }
+  }
+}
+
+const onImageError = (): void => {
+  failedFor.value = props.source
+  natural.value = null
+}
+
 const copySource = (event?: MouseEvent): void => {
   event?.stopPropagation()
   void navigator.clipboard
@@ -42,29 +78,31 @@ const copySource = (event?: MouseEvent): void => {
       copied.value = false
     })
 }
+
 </script>
 
 <template>
-  <figure class="chat-plantuml" data-testid="chat-plantuml">
+  <figure ref="frame" class="chat-plantuml" data-testid="chat-plantuml">
     <div v-if="!failed" class="chat-plantuml-canvas">
-      <a
+      <button
+        type="button"
         class="chat-plantuml-zoom"
-        :href="url"
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Open the diagram"
-        data-testid="chat-plantuml-open"
+        title="Click to enlarge"
+        aria-label="Enlarge diagram"
+        data-testid="chat-plantuml-zoom"
+        @click="preview = true"
       >
         <img
           class="chat-plantuml-img"
           :class="{ 'chat-plantuml-img--ready': loaded }"
+          :style="zoomStyle"
           :src="url"
           alt="PlantUML diagram"
           data-testid="chat-plantuml-img"
-          @load="loadedFor = props.source"
-          @error="failedFor = props.source"
+          @load="onImageLoad"
+          @error="onImageError"
         />
-      </a>
+      </button>
       <button
         type="button"
         class="chat-plantuml-copy"
@@ -83,6 +121,20 @@ const copySource = (event?: MouseEvent): void => {
       </figcaption>
       <pre class="chat-plantuml-source"><code>{{ source }}</code></pre>
     </template>
+
+    <figcaption v-if="layout?.overflow" class="chat-plantuml-wide" data-testid="chat-plantuml-wide">
+      Wider than this column — scroll across, or open it to zoom.
+    </figcaption>
+
+    <DiagramViewer
+      :open="preview"
+      label="PlantUML diagram"
+      :natural="natural"
+      :original="failed ? undefined : url"
+      @close="preview = false"
+    >
+      <img class="chat-plantuml-viewer-img" :src="url" alt="PlantUML diagram" />
+    </DiagramViewer>
   </figure>
 </template>
 
@@ -97,18 +149,35 @@ const copySource = (event?: MouseEvent): void => {
   border: 1px solid var(--color-border, #282727);
   border-radius: 8px;
   background: var(--semantic-card-bg, #1d1c19);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.chat-plantuml::-webkit-scrollbar {
-  display: none;
+/* A drawing wider than the column keeps its legible width and scrolls here, with a visible thin
+   scrollbar so the overflow is discoverable. */
+.chat-plantuml-canvas {
+  max-height: 70vh;
+  overflow: auto;
+  scrollbar-color: var(--color-gray-3, #7a8382) transparent;
+  scrollbar-width: thin;
+}
+
+.chat-plantuml-canvas::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.chat-plantuml-canvas::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--color-gray-3, #7a8382);
 }
 
 /* The SVG arrives with its own canvas from `skinparam backgroundColor`; the frame stays the frame. */
 .chat-plantuml-zoom {
   display: block;
-  width: 100%;
+  min-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   text-align: center;
   cursor: zoom-in;
 }
@@ -130,6 +199,12 @@ const copySource = (event?: MouseEvent): void => {
 
 .chat-plantuml-img--ready {
   display: block;
+}
+
+.chat-plantuml-wide {
+  margin-top: 8px;
+  color: var(--semantic-text-muted, #a6a69c);
+  font-size: 0.75rem;
 }
 
 .chat-plantuml-copy {
@@ -185,6 +260,11 @@ const copySource = (event?: MouseEvent): void => {
   color: var(--semantic-text, #c5c9c5);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 0.8125rem;
+}
+
+.chat-plantuml-viewer-img {
+  display: block;
+  height: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

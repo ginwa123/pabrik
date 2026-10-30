@@ -23,12 +23,24 @@ describe('PlantUmlDiagram', () => {
     expect(img.attributes('src')).toBe(plantumlSvgUrl(SOURCE))
   })
 
-  it('links the diagram out so it can be enlarged without a lightbox', () => {
+  it('opens the in-app viewer, which keeps the original svg url', async () => {
     const wrapper = mountDiagram(SOURCE)
-    const link = wrapper.find('[data-testid="chat-plantuml-open"]')
-    expect(link.attributes('href')).toBe(plantumlSvgUrl(SOURCE))
-    expect(link.attributes('target')).toBe('_blank')
-    expect(link.attributes('rel')).toContain('noopener')
+    await wrapper.find('[data-testid="chat-plantuml-zoom"]').trigger('click')
+
+    const viewer = document.querySelector('[data-testid="diagram-viewer"]')
+    expect(viewer).not.toBeNull()
+    expect(viewer?.querySelector('img')).not.toBeNull()
+    const original = document.querySelector('[data-testid="diagram-viewer-original"]')
+    expect(original?.getAttribute('href')).toBe(plantumlSvgUrl(SOURCE))
+    expect(original?.getAttribute('target')).toBe('_blank')
+    expect(original?.getAttribute('rel')).toContain('noopener')
+
+    const close = document.querySelector('[data-testid="diagram-viewer-close"]')
+    expect(close).not.toBeNull()
+    ;(close as HTMLElement).click()
+    await vi.waitFor(() => {
+      if (document.querySelector('[data-testid="diagram-viewer"]')) throw new Error('still open')
+    })
   })
 
   it('keeps the image out of the flow until the server has answered', async () => {

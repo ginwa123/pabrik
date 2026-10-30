@@ -1,7 +1,7 @@
 /** Behavioural tests for <MermaidDiagram> — the transcript's `<mermaid>` block renderer. Mermaid
  * itself is mocked: jsdom has no layout, and the component's contract is "draw what mermaid
  * returned, or show the source", not "mermaid parses". */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 const { initializeMock, renderMock } = vi.hoisted(() => ({
@@ -13,10 +13,29 @@ vi.mock('mermaid', () => ({ default: { initialize: initializeMock, render: rende
 
 import MermaidDiagram from '../MermaidDiagram.vue'
 import { MERMAID_PALETTE_FALLBACK, _resetMermaidLoader } from '../../../helpers/mermaid'
+import { applyTheme } from '../../../theme/runtime'
 
 const SOURCE = 'flowchart TD\n  A[Prompt] --> B[Diagram]'
 
 const mountDiagram = (source: string) => mount(MermaidDiagram, { props: { source } })
+
+/** jsdom has no layout, so the column width a component measures has to be stubbed. */
+const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+const stubColumnWidth = (width: number): void => {
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get: () => width,
+  })
+}
+
+afterEach(() => {
+  applyTheme(document.documentElement, 'dark')
+  if (originalClientWidth) {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
+    return
+  }
+  delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+})
 
 beforeEach(() => {
   _resetMermaidLoader()
@@ -120,31 +139,91 @@ describe('MermaidDiagram', () => {
     expect(wrapper.find('[data-testid="chat-mermaid-svg"]').html()).not.toContain('stale')
   })
 
-  it('opens a full-screen preview on click, and closes it again', async () => {
+  it('opens the full-screen viewer on click, and locks the page behind it', async () => {
     const wrapper = mountDiagram(SOURCE)
     await flushPromises()
-    expect(document.querySelector('[data-testid="mermaid-preview"]')).toBeNull()
+    expect(document.querySelector('[data-testid="diagram-viewer"]')).toBeNull()
 
     await wrapper.find('[data-testid="chat-mermaid-enlarge"]').trigger('click')
-    const overlay = document.querySelector('[data-testid="mermaid-preview"]')
-    expect(overlay).not.toBeNull()
-    // The preview shows the SAME drawing, enlarged by the overlay's CSS.
-    expect(overlay?.querySelector('[data-testid="mermaid-preview-svg"] svg')).not.toBeNull()
+    const viewer = document.querySelector('[data-testid="diagram-viewer"]')
+    expect(viewer).not.toBeNull()
+    // The viewer shows the same drawing, with room and controls to read it.
+    expect(
+      viewer?.querySelector('[data-testid="diagram-viewer-content"] svg'),
+    ).not.toBeNull()
+    expect(viewer?.getAttribute('aria-label')).toBe('Mermaid diagram')
     expect(document.body.style.overflow).toBe('hidden')
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
-    expect(document.querySelector('[data-testid="mermaid-preview"]')).toBeNull()
+    expect(document.querySelector('[data-testid="diagram-viewer"]')).toBeNull()
     expect(document.body.style.overflow).toBe('')
   })
 
-  it('closes the preview from its close button', async () => {
+  it('closes the viewer from its own close button', async () => {
     const wrapper = mountDiagram(SOURCE)
     await flushPromises()
     await wrapper.find('[data-testid="chat-mermaid-enlarge"]').trigger('click')
-    ;(document.querySelector('[data-testid="mermaid-preview-close"]') as HTMLElement).click()
+    ;(document.querySelector('[data-testid="diagram-viewer-close"]') as HTMLElement).click()
     await flushPromises()
-    expect(document.querySelector('[data-testid="mermaid-preview"]')).toBeNull()
+    expect(document.querySelector('[data-testid="diagram-viewer"]')).toBeNull()
+  })
+
+  it('zooms in and back to fit from the viewer toolbar', async () => {
+    const wrapper = mountDiagram(SOURCE)
+    await flushPromises()
+    await wrapper.find('[data-testid="chat-mermaid-enlarge"]').trigger('click')
+
+    const zoom = (): string =>
+      document.querySelector('[data-testid="diagram-viewer-zoom"]')?.textContent ?? ''
+    expect(zoom()).toBe('100%')
+
+    ;(document.querySelector('[data-testid="diagram-viewer-zoom-in"]') as HTMLElement).click()
+    await flushPromises()
+    expect(zoom()).toBe('125%')
+
+    ;(document.querySelector('[data-testid="diagram-viewer-fit"]') as HTMLElement).click()
+    await flushPromises()
+    expect(zoom()).toBe('100%')
+  })
+
+  it('redraws the drawing inside the open viewer when the theme flips', async () => {
+    const wrapper = mountDiagram(SOURCE)
+    await flushPromises()
+    await wrapper.find('[data-testid="chat-mermaid-enlarge"]').trigger('click')
+    expect(
+      document
+        .querySelector('[data-testid="diagram-viewer-content"] svg')
+        ?.getAttribute('data-rendered'),
+    ).toBe('yes')
+
+    renderMock.mockResolvedValue({ svg: '<svg data-rendered="light"><text>A</text></svg>' })
+    applyTheme(document.documentElement, 'light')
+    await flushPromises()
+
+    // The SVG bakes literal colours, so the theme flip has to rebuild it — in the viewer too.
+    expect(
+      document
+        .querySelector('[data-testid="diagram-viewer-content"] svg')
+        ?.getAttribute('data-rendered'),
+    ).toBe('light')
+    expect(wrapper.find('[data-testid="chat-mermaid-svg"] svg').attributes('data-rendered')).toBe(
+      'light',
+    )
+  })
+
+  it('keeps a diagram wider than the column at a legible width, and says it is wider', async () => {
+    renderMock.mockResolvedValue({ svg: '<svg viewBox="0 0 3000 600"><text>A</text></svg>' })
+    stubColumnWidth(800)
+    const wrapper = mountDiagram(SOURCE)
+    await flushPromises()
+
+    const enlarge = wrapper.find('[data-testid="chat-mermaid-enlarge"]')
+    const width = Number(/width:\s*([\d.]+)px/.exec(enlarge.attributes('style') ?? '')?.[1])
+    // 3000px of drawing in an 800px column would be 27% — unreadable labels. It keeps 75%.
+    expect(width).toBe(2250)
+    expect(width).toBeGreaterThan(800)
+    expect(wrapper.find('[data-testid="chat-mermaid-wide"]').exists()).toBe(true)
   })
 
   it('copies the mermaid source, and says so on the button', async () => {
