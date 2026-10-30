@@ -4,6 +4,9 @@
  * a theme flip, because the SVG carries a scoped stylesheet of literal colours. */
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
+import DiagramViewer from './DiagramViewer.vue'
+import { inlineDiagramLayout, parseDiagramSize } from '../../helpers/diagramViewport'
+import type { DiagramSize } from '../../helpers/diagramViewport'
 import { renderMermaid } from '../../helpers/mermaid'
 import { onThemeApplied, themeRevision } from '../../theme/runtime'
 
@@ -13,6 +16,8 @@ const svg = ref('')
 const failure = ref('')
 const copied = ref(false)
 const preview = ref(false)
+const frame = ref<HTMLElement | null>(null)
+const available = ref(0)
 
 // The source AND the theme revision this component has already asked for. `onUpdated` fires on ANY
 // parent re-render (a streaming sibling, a scroll), so the draw is keyed on both: a theme flip has to
@@ -22,8 +27,6 @@ let drawn = ''
 let token = 0
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 let offThemeApplied: (() => void) | null = null
-// Restored when the overlay closes: the transcript's own overflow is not always `''`.
-let overflowBeforePreview = ''
 
 const draw = (): void => {
   const key = `${themeRevision.value}\u0000${props.source}`
@@ -42,11 +45,28 @@ const draw = (): void => {
     })
 }
 
+/** The column the drawing has to live in. A block's own width is only knowable after layout, so it
+ * is read on every update — `available` only re-renders when the number actually changed. */
+const measure = (): void => {
+  available.value = frame.value?.clientWidth ?? 0
+}
+
 onMounted(() => {
   draw()
   offThemeApplied = onThemeApplied(draw)
+  measure()
 })
-onUpdated(draw)
+onUpdated(() => {
+  draw()
+  measure()
+})
+
+const natural = computed<DiagramSize | null>(() => parseDiagramSize(svg.value))
+const layout = computed(() => inlineDiagramLayout(natural.value, available.value))
+/** Never upscale, never shrink past `MIN_INLINE_SCALE` — the frame scrolls the rest. */
+const zoomStyle = computed(() =>
+  layout.value ? { width: `${layout.value.width}px` } : undefined,
+)
 
 // A Mermaid parse error is a multi-line dump with the offending source line in it; the first line
 // names the problem, and the source underneath is already the rest of the answer.
@@ -72,45 +92,24 @@ const copySource = (event?: MouseEvent): void => {
     })
 }
 
-const onEscape = (event: KeyboardEvent): void => {
-  if (event.key !== 'Escape') return
-  event.stopPropagation()
-  closePreview()
-}
-
-const openPreview = (): void => {
-  preview.value = true
-  if (typeof document === 'undefined') return
-  overflowBeforePreview = document.body.style.overflow
-  document.body.style.overflow = 'hidden'
-  document.addEventListener('keydown', onEscape)
-}
-
-const closePreview = (): void => {
-  preview.value = false
-  if (typeof document === 'undefined') return
-  document.body.style.overflow = overflowBeforePreview
-  document.removeEventListener('keydown', onEscape)
-}
-
 onBeforeUnmount(() => {
   offThemeApplied?.()
   offThemeApplied = null
   if (copyTimer) clearTimeout(copyTimer)
-  if (preview.value) closePreview()
 })
 </script>
 
 <template>
-  <figure class="chat-mermaid" data-testid="chat-mermaid">
+  <figure ref="frame" class="chat-mermaid" data-testid="chat-mermaid">
     <div v-if="svg" class="chat-mermaid-canvas">
       <button
         type="button"
         class="chat-mermaid-zoom"
+        :style="zoomStyle"
         title="Click to enlarge"
         aria-label="Enlarge diagram"
         data-testid="chat-mermaid-enlarge"
-        @click="openPreview"
+        @click="preview = true"
       >
         <!-- eslint-disable-next-line vue/no-v-html -->
         <span class="chat-mermaid-svg" data-testid="chat-mermaid-svg" v-html="svg"></span>
@@ -134,44 +133,18 @@ onBeforeUnmount(() => {
       <pre class="chat-mermaid-source"><code>{{ source }}</code></pre>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="preview"
-        class="mermaid-preview"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Diagram preview"
-        data-testid="mermaid-preview"
-        @click="closePreview"
-      >
-        <figure class="mermaid-preview-body" @click.stop>
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <div class="mermaid-preview-svg" data-testid="mermaid-preview-svg" v-html="svg"></div>
-        </figure>
-        <button
-          type="button"
-          class="mermaid-preview-close"
-          aria-label="Close diagram preview"
-          data-testid="mermaid-preview-close"
-          @click.stop="closePreview"
-        >
-          <svg
-            class="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
-      </div>
-    </Teleport>
+    <figcaption v-if="layout?.overflow" class="chat-mermaid-wide" data-testid="chat-mermaid-wide">
+      Wider than this column — scroll across, or open it to zoom.
+    </figcaption>
+
+    <DiagramViewer
+      :open="preview"
+      label="Mermaid diagram"
+      :natural="natural"
+      @close="preview = false"
+    >
+      <div class="chat-mermaid-viewer-svg" v-html="svg"></div>
+    </DiagramViewer>
   </figure>
 </template>
 
@@ -187,19 +160,32 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-border, #282727);
   border-radius: 8px;
   background: var(--semantic-card-bg, #1d1c19);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.chat-mermaid::-webkit-scrollbar {
-  display: none;
+/* The scroll container, not the frame: a drawing wider than the column keeps its legible width and
+   scrolls here, with a visible thin scrollbar so the overflow is discoverable. */
+.chat-mermaid-canvas {
+  max-height: 70vh;
+  overflow: auto;
+  scrollbar-color: var(--color-gray-3, #7a8382) transparent;
+  scrollbar-width: thin;
+}
+
+.chat-mermaid-canvas::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.chat-mermaid-canvas::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--color-gray-3, #7a8382);
 }
 
 /* The whole drawing is the hit target: a real <button>, so Enter/Space work and the browser
    announces it, with the diagram's own pointer as the affordance. */
 .chat-mermaid-zoom {
   display: block;
-  width: 100%;
+  min-width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
@@ -219,6 +205,12 @@ onBeforeUnmount(() => {
   outline: 1px solid var(--semantic-link, #8ba4b0);
   outline-offset: 4px;
   border-radius: 4px;
+}
+
+.chat-mermaid-wide {
+  margin-top: 8px;
+  color: var(--semantic-text-muted, #a6a69c);
+  font-size: 0.75rem;
 }
 
 /* Copy chrome sits over the diagram, not in the flow: it appears on hover or keyboard focus, and
@@ -261,65 +253,13 @@ onBeforeUnmount(() => {
   border-color: var(--semantic-success, #87a987);
 }
 
-.mermaid-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background-color: rgba(0, 0, 0, 0.85);
-}
-
-.mermaid-preview-body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  max-width: 90vw;
-  max-height: 90vh;
-  padding: 20px;
-  overflow: auto;
-  border: 1px solid var(--color-border, #282727);
-  border-radius: 8px;
-  background: var(--semantic-card-bg, #1d1c19);
-}
-
-/* Mermaid writes `max-width: <own px>` inline; the preview's job is to beat it. The wrapper gets an
-   explicit width so the svg's own `width: 100%` resolves against the lightbox, not its shrink-to-fit
-   parent — without it the "enlarged" diagram came out barely wider than the inline one. */
-.mermaid-preview-svg {
-  width: min(70vw, 1100px);
-}
-
-.mermaid-preview-svg :deep(svg) {
+.chat-mermaid-viewer-svg :deep(svg) {
   display: block;
-  max-width: 100% !important;
   height: auto;
 }
 
-.mermaid-preview-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  padding: 8px;
-  border: 0;
-  background: none;
-  color: white;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.2s;
-}
-
-.mermaid-preview-close:hover,
-.mermaid-preview-close:focus-visible {
-  opacity: 1;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .chat-mermaid-copy,
-  .mermaid-preview-close {
+  .chat-mermaid-copy {
     transition: none;
   }
 }

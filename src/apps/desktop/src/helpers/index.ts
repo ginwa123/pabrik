@@ -63,3 +63,25 @@ export {
   autoResizeScript,
   PREVIEW_AUTO_RESIZE_SCRIPT,
 } from './iframeAutoResize'
+export {
+  MIN_INLINE_SCALE,
+  MAX_ZOOM,
+  ZOOM_STEP,
+  KEYBOARD_PAN_PX,
+  STAGE_FALLBACK,
+  parseDiagramSize,
+  inlineDiagramLayout,
+  fitZoom,
+  clampZoom,
+  clampViewport,
+  zoomAround,
+  panBy,
+  fittedViewport,
+  formatZoom,
+} from './diagramViewport'
+export type {
+  DiagramSize,
+  DiagramViewport,
+  DiagramPoint,
+  InlineDiagramLayout,
+} from './diagramViewport'

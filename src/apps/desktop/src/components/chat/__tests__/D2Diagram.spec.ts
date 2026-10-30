@@ -29,13 +29,25 @@ describe('D2Diagram', () => {
     expect(wrapper.find(IMG).attributes('src')).toBe(await d2SvgUrl(SOURCE))
   })
 
-  it('links the diagram out so it can be enlarged without a lightbox', async () => {
+  it('opens the in-app viewer, which keeps the original svg url', async () => {
     const wrapper = mount(D2Diagram, { props: { source: SOURCE } })
     await waitForImage(wrapper)
-    const link = wrapper.find('[data-testid="chat-d2-open"]')
-    expect(link.attributes('href')).toBe(await d2SvgUrl(SOURCE))
-    expect(link.attributes('target')).toBe('_blank')
-    expect(link.attributes('rel')).toContain('noopener')
+    await wrapper.find('[data-testid="chat-d2-zoom"]').trigger('click')
+
+    const viewer = document.querySelector('[data-testid="diagram-viewer"]')
+    expect(viewer).not.toBeNull()
+    expect(viewer?.querySelector('[data-testid="chat-d2-img"], img')).not.toBeNull()
+    const original = document.querySelector('[data-testid="diagram-viewer-original"]')
+    expect(original?.getAttribute('href')).toBe(await d2SvgUrl(SOURCE))
+    expect(original?.getAttribute('target')).toBe('_blank')
+    expect(original?.getAttribute('rel')).toContain('noopener')
+
+    const close = document.querySelector('[data-testid="diagram-viewer-close"]')
+    expect(close).not.toBeNull()
+    ;(close as HTMLElement).click()
+    await vi.waitFor(() => {
+      if (document.querySelector('[data-testid="diagram-viewer"]')) throw new Error('still open')
+    })
   })
 
   it('keeps the image out of the flow until the server has answered', async () => {
