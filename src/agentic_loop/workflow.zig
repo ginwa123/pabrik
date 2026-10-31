@@ -1189,7 +1189,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             sessionNameIsPlaceholder(allocator, db, copy_session_id))
         {
             auto_name_attempted = true;
-            generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, logger, io, db, event_bus);
+            generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, logger, io, db, event_bus);
         }
 
         // ─── Progressive tool search ─────────────────────────────────── The
@@ -1268,7 +1268,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // Make this turn cancellable.
         llm_cancel_thunk.register(.{ .db = db, .session_id = copy_session_id, .io = io });
         defer llm_cancel_thunk.unregister();
-        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
+        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
             if (err == error.Cancelled) {
                 logger.infoFmt("WORKFLOW CANCELLED during streaming: session_id={s}", .{copy_session_id});
                 // Keep the partial text and settle the transcript — without
@@ -1356,6 +1356,25 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 res_dynamic_agent.usage.total_tokens,
             },
         );
+
+        if (res_dynamic_agent.cli_tool_calls) |calls| {
+            persistCliToolCalls(
+                allocator,
+                io,
+                db,
+                logger,
+                event_bus,
+                copy_session_id,
+                copy_parent_session_id,
+                copy_cwd,
+                eff.model,
+                effective_agent_name,
+                calls,
+                loop_counter,
+                agent_temperature,
+                isThinking,
+            );
+        }
 
         // Successful LLM call — clear the retry-cause capture so the
         // NEXT soft-bail diagnostic reflects the most recent failure,
@@ -1653,6 +1672,9 @@ fn generateSessionNameNew(
     base_url: []const u8,
     url_style: []const u8,
     backend: []const u8,
+    opencode_agent: ?[]const u8,
+    opencode_auto: ?bool,
+    cwd: []const u8,
     session_id: []const u8,
     logger: *logger_mod.Logger,
     io: std.Io,
@@ -1695,6 +1717,9 @@ fn generateSessionNameNew(
     name_agent.baseUrl = base_url;
     name_agent.UrlStyle = url_style;
     name_agent.backend = backend;
+    name_agent.opencode_agent = opencode_agent;
+    name_agent.opencode_auto = opencode_auto;
+    name_agent.opencode_cwd = cwd;
     name_agent.sessionId = session_id;
     name_agent.thinkingEnabled = false;
     name_agent.httpOptions.read_timeout_ms = 300_000; // 10 minutes
@@ -1863,6 +1888,89 @@ fn saveRetryAttemptMessage(
     };
 }
 
+fn persistCliToolCalls(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *database.Db,
+    logger: *logger_mod.Logger,
+    event_bus: *event_bus_mod.EventBus,
+    session_id: []const u8,
+    parent_session_id: []const u8,
+    cwd: []const u8,
+    model: []const u8,
+    agent_name: []const u8,
+    calls: []const agent.CliToolCall,
+    loop_index: u32,
+    temperature: f32,
+    is_thinking: bool,
+) void {
+    if (calls.len == 0) return;
+    for (calls) |call| {
+        const created_at = std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}) catch return;
+        defer allocator.free(created_at);
+        const tool_call_id = std.fmt.allocPrint(allocator, "cli-{s}", .{created_at}) catch return;
+        defer allocator.free(tool_call_id);
+
+        const ok = std.mem.eql(u8, call.status, "completed");
+        const envelope = tools.wrapToolOutput(
+            allocator,
+            call.name,
+            call.arguments,
+            ok,
+            if (ok) null else call.output,
+            if (ok) call.output else "",
+        ) catch return;
+        defer allocator.free(envelope);
+
+        const step_json = std.fmt.allocPrint(
+            allocator,
+            "[{{\"id\":{f},\"type\":\"function\",\"function\":{{\"name\":{f},\"arguments\":{f}}}}}]",
+            .{
+                std.json.fmt(tool_call_id, .{}),
+                std.json.fmt(call.name, .{}),
+                std.json.fmt(call.arguments, .{}),
+            },
+        ) catch return;
+        defer allocator.free(step_json);
+
+        const row_id = insert_llm_histories_mod.inserLLMHistories(.{
+            .allocator = allocator,
+            .io = io,
+            .db = db,
+            .logger = logger,
+            .is_emit_sse = true,
+            .event_bus = event_bus,
+            .cwd = cwd,
+            .entity = .{
+                .id = created_at,
+                .session_id = session_id,
+                .model = model,
+                .response_content = envelope,
+                .reasoning_content = null,
+                .role = agent.Role.tool.to_str(),
+                .finish_reason = agent.FinishReason.tool.to_str(),
+                .tool_calls_json = step_json,
+                .tool_call_id = tool_call_id,
+                .agent = agent_name,
+                .loop_index = loop_index,
+                .temperature = temperature,
+                .is_thinking = is_thinking,
+                .parent_id = parent_session_id,
+                .parent_session_id = parent_session_id,
+                .is_input = false,
+                .is_output = true,
+                .created_at = created_at,
+                .is_feed_to_llm = false,
+                .tool_name = call.name,
+            },
+        }) catch |err| {
+            logger.warnFmt("[workflow] could not persist a CLI tool step: {s}", .{@errorName(err)});
+            continue;
+        };
+        allocator.free(row_id);
+    }
+}
+
 fn callDynamicAgentNew(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1885,6 +1993,9 @@ fn callDynamicAgentNew(
     base_url: []const u8,
     url_style: []const u8,
     backend: []const u8,
+    opencode_agent: ?[]const u8,
+    opencode_auto: ?bool,
+    opencode_cwd: []const u8,
     session_id: []const u8,
     equip_tools: []const agent.AgentTool,
     /// Polled by the agent's SSE chunk-read loop between chunks so a
@@ -1905,6 +2016,9 @@ fn callDynamicAgentNew(
     dynamic_agent.baseUrl = base_url;
     dynamic_agent.UrlStyle = url_style;
     dynamic_agent.backend = backend;
+    dynamic_agent.opencode_agent = opencode_agent;
+    dynamic_agent.opencode_auto = opencode_auto;
+    dynamic_agent.opencode_cwd = opencode_cwd;
     dynamic_agent.sessionId = session_id;
     // `messages_list.items` is `[]agent.AgentMessage`; the local
     // `agent.AgentCall.messages` wants the same type — direct assignment.
@@ -1960,6 +2074,7 @@ fn callDynamicAgentNew(
         .reasoning_id = res_dynamic_agent.reasoning_id,
         .reasoning_encrypted_content = res_dynamic_agent.reasoning_encrypted_content,
         .usage = usage_for_agent,
+        .cli_tool_calls = res_dynamic_agent.cli_tool_calls,
     };
 }
 
@@ -3337,6 +3452,9 @@ test "generateSessionNameNew: name call failure leaves the placeholder name and 
         "http://127.0.0.1:1/v1/chat/completions",
         "openai",
         "http",
+        null,
+        null,
+        "",
         session_id,
         &lg,
         s.threaded.io(),

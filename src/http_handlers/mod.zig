@@ -855,7 +855,9 @@ fn llmTestProbeClaudeCode(
     );
 }
 
-/// Probe an OpenCode profile by running `opencode --version`.
+/// Probe an OpenCode profile by making the CLI answer a real prompt with the
+/// profile's own model — a `--version` check says nothing about whether the
+/// model routes, and the modal exists to answer exactly that.
 fn llmTestProbeOpencode(
     allocator: std.mem.Allocator,
     logger: *loggermod.Logger,
@@ -863,19 +865,93 @@ fn llmTestProbeOpencode(
     req: LlmTestRequest,
 ) LlmTestError!LlmTestOutcome {
     const binary = opencode.resolveBinaryPath("");
-    const argv = opencode.buildVersionProbeArgs(allocator, binary) catch
+    const start_ns = helpers.monotonicTimestampNanos();
+
+    const argv = opencode.buildRunArgs(allocator, binary, .{ .model = req.model }) catch
         return LlmTestError.OutOfMemory;
     defer opencode.freeArgs(allocator, argv);
-    return llmTestProbeCli(
-        allocator,
-        logger,
-        io,
-        req,
-        "opencode",
-        binary,
-        argv,
-        opencode.describeVersionProbe,
+
+    var result = helpers.run_captured.run(allocator, io, argv, .{
+        .timeout_ms = TEST_LLM_TIMEOUT_MS,
+        .stdin_data = PROBE_PROMPT,
+    }) catch |err| {
+        logger.warnFmt("[llm_test] opencode probe could not spawn '{s}': {s}", .{ binary, @errorName(err) });
+        const reply = switch (err) {
+            error.FileNotFound => opencode.describeMissingBinary(allocator, binary),
+            else => opencode.describeRunFailure(allocator, binary, req.model, @errorName(err)),
+        } catch return LlmTestError.OutOfMemory;
+        return .{ .model = req.model, .reply = reply, .latency_ms = 0 };
+    };
+    defer result.deinit(allocator);
+
+    const latency_ms: i64 = @intCast((helpers.monotonicTimestampNanos() - start_ns) / std.time.ns_per_ms);
+    logger.infoFmt(
+        "[llm_test] opencode probe model='{s}' latency={d}ms exited_zero={}",
+        .{ req.model, latency_ms, switch (result.term) {
+            .exited => |code| code == 0,
+            else => false,
+        } },
     );
+
+    if (result.timed_out) {
+        const reply = std.fmt.allocPrint(
+            allocator,
+            "`{s} run --model {s}` did not answer within {d} ms.",
+            .{ binary, req.model, TEST_LLM_TIMEOUT_MS },
+        ) catch return LlmTestError.OutOfMemory;
+        return .{ .model = req.model, .reply = reply, .latency_ms = latency_ms };
+    }
+
+    var text: std.ArrayList(u8) = .empty;
+    defer text.deinit(allocator);
+    var failure: ?[]const u8 = null;
+    defer if (failure) |f| allocator.free(f);
+
+    var arena_state = std.heap.ArenaAllocator.init(allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    while (lines.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (line.len == 0) continue;
+        const parsed = std.json.parseFromSlice(std.json.Value, arena, line, .{}) catch continue;
+        switch (opencode.parseEventLine(parsed.value)) {
+            .text => |chunk| text.appendSlice(allocator, chunk) catch return LlmTestError.OutOfMemory,
+            .failure => |f| {
+                if (failure) |old| allocator.free(old);
+                failure = std.fmt.allocPrint(allocator, "{s}: {s}", .{
+                    if (f.kind.len > 0) f.kind else "provider error",
+                    if (f.message.len > 0) f.message else "no detail",
+                }) catch null;
+            },
+            else => {},
+        }
+    }
+
+    if (failure) |f| {
+        const reply = opencode.describeRunFailure(allocator, binary, req.model, f) catch
+            return LlmTestError.OutOfMemory;
+        return .{ .model = req.model, .reply = reply, .latency_ms = latency_ms };
+    }
+
+    const reply_text = std.mem.trim(u8, text.items, " \t\r\n");
+    if (reply_text.len == 0) {
+        const trimmed_stderr = std.mem.trim(u8, result.stderr, " \t\r\n");
+        const reply = if (trimmed_stderr.len > 0)
+            opencode.describeRunFailure(allocator, binary, req.model, trimmed_stderr) catch
+                return LlmTestError.OutOfMemory
+        else
+            opencode.describeEmptyReply(allocator, req.model) catch
+                return LlmTestError.OutOfMemory;
+        return .{ .model = req.model, .reply = reply, .latency_ms = latency_ms };
+    }
+
+    return .{
+        .model = req.model,
+        .reply = allocator.dupe(u8, reply_text) catch return LlmTestError.OutOfMemory,
+        .latency_ms = latency_ms,
+    };
 }
 
 /// Probe the candidate, retrying once with a bigger output budget when the
