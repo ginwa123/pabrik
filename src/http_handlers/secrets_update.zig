@@ -6,6 +6,8 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const secrets_store = @import("../agentic_loop/secrets_store.zig");
+const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
+const gate = @import("workspace_members_gate.zig");
 
 /// PATCH body. Both fields default to `null` so an omitted field is
 /// distinguishable from an explicit `""` — the latter is a real "send me an
@@ -23,6 +25,9 @@ pub const SecretsUpdateError = error{
     NotFound,
     QueryFailed,
     UpdateFailed,
+    /// No master key on this host: the new value cannot be sealed, so the stored
+    /// one is left alone rather than replaced with plaintext.
+    SealingUnavailable,
     OutOfMemory,
 };
 
@@ -76,6 +81,7 @@ fn useCase(
         error.NotFound => return error.NotFound,
         error.QueryFailed => return error.QueryFailed,
         error.UpdateFailed => return error.UpdateFailed,
+        error.SealingUnavailable => return error.SealingUnavailable,
         error.OutOfMemory => return error.OutOfMemory,
         // The rest of the store's shared error set belongs to the create
         // path, which this handler never calls.
@@ -111,6 +117,7 @@ fn readRow(
         error.InsertFailed,
         error.UpdateFailed,
         error.DeleteFailed,
+        error.SealingUnavailable,
         => unreachable,
     };
 }
@@ -125,7 +132,7 @@ fn statusFor(err: SecretsUpdateError) u16 {
         // 404, never 403: a 403 would confirm the id exists, which is the
         // one thing workspace scoping exists to withhold.
         error.NotFound => 404,
-        error.QueryFailed, error.UpdateFailed, error.OutOfMemory => 500,
+        error.SealingUnavailable, error.QueryFailed, error.UpdateFailed, error.OutOfMemory => 500,
     };
 }
 
@@ -138,6 +145,7 @@ fn messageFor(err: SecretsUpdateError) []const u8 {
         error.NotFound => "secret not found",
         error.QueryFailed => "DB error",
         error.UpdateFailed => "DB error",
+        error.SealingUnavailable => "This host has no secret-encryption key, so the value cannot be replaced",
         error.OutOfMemory => "Out of memory",
     };
 }
@@ -156,6 +164,15 @@ pub fn secretsUpdateHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
+    const workspace_id = req.params.get("workspace_id") orelse "";
+    // Writes need owner/admin: a viewer may read a workspace, not its credentials.
+    gate.checkRequest(allocator, di.db, di.auth_enabled, req.headers, workspace_id, .manage) catch |err| {
+        return res.jsonResponse(.{
+            .status_code = gate.statusFor(err),
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = gate.messageFor(err) }),
+        });
+    };
+
     if (req.body.len == 0) {
         return res.jsonResponse(.{
             .status_code = 400,
@@ -171,7 +188,7 @@ pub fn secretsUpdateHandler(
     };
 
     const output = useCase(allocator, sqlite_db, .{
-        .workspace_id = req.params.get("workspace_id") orelse "",
+        .workspace_id = workspace_id,
         .secret_id = req.params.get("secret_id") orelse "",
         .body = body,
     }) catch |err| {
@@ -201,6 +218,11 @@ const TestCtx = struct {
 };
 
 fn setupDb() !TestCtx {
+    // The store seals on write and refuses a write with no key.
+    var fixture_key: [secrets_at_rest.KEY_LEN]u8 = undefined;
+    for (&fixture_key, 0..) |*b, i| b.* = @intCast(i + 1);
+    secrets_at_rest.setKey(fixture_key);
+
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
@@ -257,7 +279,11 @@ test "useCase: rotates the value and leaves the name alone" {
     try testing.expectEqualStrings("GITHUB_TOKEN", output.secret.name);
     try testing.expect(!std.mem.eql(u8, output.secret.updated_at, "2000-01-01 00:00:00"));
 
-    const kept = try storedValue(&ctx, "sec_a");
+    // The column holds an envelope: open it to assert the credential.
+    const kept_raw = try storedValue(&ctx, "sec_a");
+    defer alloc.free(kept_raw);
+    try testing.expect(secrets_at_rest.isSealed(kept_raw));
+    const kept = try secrets_at_rest.openValue(alloc, "sec_a", kept_raw);
     defer alloc.free(kept);
     try testing.expectEqualStrings("ghp_new_do_not_leak", kept);
 

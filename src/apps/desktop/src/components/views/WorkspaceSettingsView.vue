@@ -105,6 +105,16 @@ async function handleRotate(payload: { id: string; name: string; value: string }
   await secretsStore.rotateSecret(workspaceId.value, payload.id, payload.value)
 }
 
+/** Unseal ONE value on request. The store holds it only until Hide, a workspace switch or a delete. */
+async function handleReveal(secretId: string): Promise<void> {
+  if (!workspaceId.value) return
+  await secretsStore.revealSecret(workspaceId.value, secretId)
+}
+
+function handleHide(secretId: string): void {
+  secretsStore.hideSecret(secretId)
+}
+
 /** The section emits the NAME; the store needs the id, so match on it. */
 async function handleDelete(name: string): Promise<void> {
   const target = secretsStore.secrets.find((s) => s.name === name)
@@ -177,6 +187,10 @@ function handleRetry(): void {
               :loaded="secretsStore.loaded"
               :error="secretsStore.error"
               :saving="secretsStore.saving"
+              :revealed="secretsStore.revealed"
+              :revealing="secretsStore.revealing"
+              @reveal="handleReveal"
+              @hide="handleHide"
               @add="handleAdd"
               @rotate="handleRotate"
               @delete="handleDelete"

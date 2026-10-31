@@ -4,6 +4,22 @@ const Io = std.Io;
 /// Resolve `~/.config/pabrik/agent.db`, creating the directory tree with
 /// `mkdir -p` semantics if it does not yet exist.
 pub fn getDbPath(allocator: std.mem.Allocator, io: std.Io, environment: *std.process.Environ.Map) ![:0]const u8 {
+    const config_dir = try getConfigDir(allocator, io, environment);
+    defer allocator.free(config_dir);
+
+    const db_path = try std.fs.path.join(allocator, &[_][]const u8{
+        config_dir,
+        "agent.db",
+    });
+    defer allocator.free(db_path);
+
+    return try allocator.dupeZ(u8, db_path);
+}
+
+/// Resolve `~/.config/pabrik`, creating it if it does not yet exist. The one
+/// place a host's pabrik state directory is derived, so `agent.db` and the
+/// secrets master key cannot end up in different directories.
+pub fn getConfigDir(allocator: std.mem.Allocator, io: std.Io, environment: *std.process.Environ.Map) ![:0]const u8 {
     // On POSIX systems, the canonical user-home env var is `HOME`.
     const home = blk: {
         if (environment.get("HOME")) |h| {
@@ -42,11 +58,5 @@ pub fn getDbPath(allocator: std.mem.Allocator, io: std.Io, environment: *std.pro
         return err;
     };
 
-    const db_path = try std.fs.path.join(allocator, &[_][]const u8{
-        config_dir,
-        "agent.db",
-    });
-    defer allocator.free(db_path);
-
-    return try allocator.dupeZ(u8, db_path);
+    return try allocator.dupeZ(u8, config_dir);
 }
