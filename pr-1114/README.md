@@ -10,11 +10,12 @@ port 8084 (fresh `HOME`, its own `agent.db`).
 - `01-add-routine-in-menu.png` — the projects "+" menu, **Add Routine** enabled
 - `02-add-routine-dialog.png` — the create dialog: instruction, cron with the
   `Weekdays 09:00` preset applied, folder chosen, Add enabled
-- `03-routine-view-routine-tab.png` — the routine right after creating it:
-  status `Idle`, `next 2026-11-02 09:00:00 UTC`
+- `03-routine-view-routine-tab.png` — the routine after creating it: header bar
+  with the status pill (`Idle`), two cards, `next 2026-11-02 09:00:00 UTC`
 - `04-routine-view-agent-tab.png` — the Agent tab: tools, system prompts,
   knowledge, local memories
-- `05-run-now-running.png` — after `▶ Run now`: status `Running`
+- `05-after-run.png` — after `Run now`, once the run finished: status `Success`
+  with `last ran … UTC` and the next fire
 - `06-before-fix-footer-clipped.png` — 1280×577: the pre-`d6e30e610` dialog cuts
   its own footer off (`add_button 547..582` vs `dialog ..534`, the click lands on
   the backdrop: `clickable: false`)
