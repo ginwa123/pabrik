@@ -207,7 +207,7 @@ export async function answerAskUser(
     // The card renders a Retry affordance; the question row stays `pending`
     // server-side (the endpoint never resumes a run whose answer did not
     // land first), so a retry is safe.
-    console.error('Failed to answer ask_user question:', error)
+    console.error('Failed to answer the pending question:', error)
     return { success: false }
   }
 }

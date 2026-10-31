@@ -20,10 +20,6 @@ export const DEFAULT_CHAT_TOOLS = [
   // sub-agent-safe. Seeded here so plain chat, design mode, and routine sessions (which all use
   // this request body) get it; agent/kanban modes seed it via backend DEFAULT_AGENT_TOOLS.
   'used_tools',
-  // Interactive: ask the human a question (ends the turn until they answer).
-  // Seeded in every mode by default — without it here the tool would be
-  // silently filtered out of plain chat sessions.
-  'ask_user',
   // Workspace-scoped documents (Migration 095). Both resolve their own workspace server-side from
   // the calling session, so a plain chat is as safe as a project task: outside a workspace-linked
   // session they refuse rather than guessing a scope.

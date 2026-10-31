@@ -397,7 +397,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration085AddSessionProgressiveTool.version, .name = Migration085AddSessionProgressiveTool.name, .up = Migration085AddSessionProgressiveTool.up },
     .{ .version = Migration086AddSessionPrUrl.version, .name = Migration086AddSessionPrUrl.name, .up = Migration086AddSessionPrUrl.up },
     .{ .version = Migration087CreateAgentRoutines.version, .name = Migration087CreateAgentRoutines.name, .up = Migration087CreateAgentRoutines.up },
-    // Migration 088 — the `ask_user` question queue: one row per pending
+    // Migration 088 — the pending-question queue: one row per pending
     // question, answered later by POST /api/llm/session/:id/answer which
     // rewrites the matching tool-result row and resumes the session.
     .{ .version = Migration088AddSessionPendingQuestion.version, .name = Migration088AddSessionPendingQuestion.name, .up = Migration088AddSessionPendingQuestion.up },

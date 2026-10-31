@@ -5,10 +5,9 @@ const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 const inherited_context_helper = @import("../../../agentic_loop/inherited_context.zig");
-// The main-agent-only tool list lives with `ask_user` (the tool that made a
-// second entry necessary) so the parse-time validation here and
-// `tool_eligibility.zig`'s strip can never disagree about membership.
-const main_agent_only = @import("ask_user.zig");
+// The main-agent-only tool list is shared with `tool_eligibility.zig`'s strip
+// so the parse-time validation here and the strip can never disagree.
+const main_agent_only = @import("../../../agentic_loop/main_agent_only.zig");
 
 pub const SubAgentInput = struct {
     instruction: []const u8,
@@ -40,7 +39,7 @@ pub const spawn_sub_agent_tool_system_prompt =
     \\## Spawn Sub Agent Tool — Behavior
     \\Use `spawn_sub_agent` to delegate independent sub-tasks in parallel.
     \\- Provide `instruction` (full task details), `agent_name` (a configured agent, from `list_agents`), and `tools` (REQUIRED explicit allowlist — never omit, never "all"). The sub-agent runs isolated and returns a result.
-    \\- `ask_user` and `spawn_sub_agent` are main-agent-only: never list them for a sub-agent (rejected at parse time). A sub-agent cannot reach the human — if you need a decision, ask it yourself with `ask_user` before spawning, or bake the answer into the `instruction`.
+    \\- `spawn_sub_agent`, `run_session` and `run_skill_eval` are main-agent-only: never list them for a sub-agent (rejected at parse time). A sub-agent cannot reach the human — if you need a decision, write your own `ask_user` block before spawning, or bake the answer into the `instruction`.
     \\- Use for parallel research or multi-file work, not for trivial single-step tasks. Up to 20 sub-agents in parallel.
     \\- Explorer-code sub-agents (read-only: read_file, glob, search) share your cwd — NO new worktree needed.
     \\- Writer sub-agents (write_file, text_replace, remove_file, shell commands via `command`) MUST be told explicitly in `instruction` to call `set_git_worktree` first (path `.worktree/worktrees_agent_<randomname>`), do the work there, then return a summary of changed files and optionally push. Include `set_git_worktree` in their `tools`.
@@ -59,7 +58,7 @@ pub const spawn_sub_agent_tool = AgentTool{
         \\
         \\TOOLS (REQUIRED, explicit allowlist):
         \\- Every sub-agent MUST list its own "tools": a non-empty array of exact tool names. Missing, empty, or ["all"] is rejected at parse time. There is no omit-means-all — pick the minimal set the task needs. Explorer-code (read-only research) e.g. ["read_file", "glob", "search"]. Writer e.g. ["read_file", "write_file", "text_replace", "set_git_worktree", "command"].
-        \\- MAIN-AGENT-ONLY: "ask_user" and "spawn_sub_agent" can never be given to a sub-agent and listing either is rejected at parse time. A sub-agent cannot reach the human, so put any question in YOUR "instruction" instead, or ask the human yourself before spawning.
+        \\- MAIN-AGENT-ONLY: "spawn_sub_agent", "run_session" and "run_skill_eval" can never be given to a sub-agent and listing any of them is rejected at parse time. A sub-agent cannot reach the human, so put any question in YOUR "instruction" instead, or ask the human yourself before spawning.
         \\- Unknown names are ignored (the child never receives them), so double-check spelling against the tool list.
         \\
         \\WORKTREE RULE (explorer shares, writer isolates):
@@ -466,21 +465,21 @@ test "parse_sub_agents - explicit tools are parsed into SubAgentInput" {
 }
 
 // -------------------------------------------------------------------------
-// parse_sub_agents — main-agent-only tools (ask_user / spawn_sub_agent)
+// parse_sub_agents — main-agent-only tools (spawn_sub_agent / run_session)
 // ------------------------------------------------------------------------- A
 
-test "parse_sub_agents - tools containing ask_user returns MainAgentOnlyToolNotAllowed" {
+test "parse_sub_agents - tools containing run_session returns MainAgentOnlyToolNotAllowed" {
     const alloc = std.testing.allocator;
     const input_json =
-        \\{"sub_agents":[{"agent_name":"a","instruction":"do x","tools":["ask_user"]}]}
+        \\{"sub_agents":[{"agent_name":"a","instruction":"do x","tools":["run_session"]}]}
     ;
     try std.testing.expectError(error.MainAgentOnlyToolNotAllowed, parse_sub_agents(alloc, input_json, 20));
 }
 
-test "parse_sub_agents - ask_user among otherwise-valid tools is still rejected" {
+test "parse_sub_agents - run_session among otherwise-valid tools is still rejected" {
     const alloc = std.testing.allocator;
     const input_json =
-        \\{"sub_agents":[{"agent_name":"a","instruction":"do x","tools":["read_file","ask_user","glob"]}]}
+        \\{"sub_agents":[{"agent_name":"a","instruction":"do x","tools":["read_file","run_session","glob"]}]}
     ;
     try std.testing.expectError(error.MainAgentOnlyToolNotAllowed, parse_sub_agents(alloc, input_json, 20));
 }
@@ -495,21 +494,21 @@ test "parse_sub_agents - tools containing spawn_sub_agent returns MainAgentOnlyT
 
 test "parse_sub_agents - the rejection covers every sub-agent in the batch" {
     const alloc = std.testing.allocator;
-    // The FIRST sub-agent is clean; the SECOND asks for ask_user. The whole
+    // The FIRST sub-agent is clean; the SECOND asks for run_session. The whole
     // call must fail (the batch is atomic) rather than spawning a half-set.
     const input_json =
         \\{"sub_agents":[
         \\  {"agent_name":"a","instruction":"x","tools":["read_file"]},
-        \\  {"agent_name":"b","instruction":"x","tools":["ask_user"]}
+        \\  {"agent_name":"b","instruction":"x","tools":["run_session"]}
         \\]}
     ;
     try std.testing.expectError(error.MainAgentOnlyToolNotAllowed, parse_sub_agents(alloc, input_json, 20));
 }
 
-test "parse_sub_agents - whitespace-padded ask_user is still rejected" {
+test "parse_sub_agents - whitespace-padded run_session is still rejected" {
     const alloc = std.testing.allocator;
     const input_json =
-        \\{"sub_agents":[{"agent_name":"a","instruction":"do x","tools":[" ask_user "]}]}
+        \\{"sub_agents":[{"agent_name":"a","instruction":"do x","tools":[" run_session "]}]}
     ;
     try std.testing.expectError(error.MainAgentOnlyToolNotAllowed, parse_sub_agents(alloc, input_json, 20));
 }
@@ -528,7 +527,7 @@ test "parse_sub_agents - a normal read-only tool list still parses" {
 test "spawn_sub_agent description teaches the main-agent-only rule" {
     const desc = spawn_sub_agent_tool.function.description;
     try std.testing.expect(std.mem.indexOf(u8, desc, "MAIN-AGENT-ONLY") != null);
-    try std.testing.expect(std.mem.indexOf(u8, desc, "\"ask_user\" and \"spawn_sub_agent\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, desc, "\"spawn_sub_agent\", \"run_session\" and \"run_skill_eval\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, desc, "rejected at parse time") != null);
     // And the json_input schema block lists it among the rejected shapes
     // (that text lives on the property, which is what the model reads as the
@@ -539,7 +538,7 @@ test "spawn_sub_agent description teaches the main-agent-only rule" {
 
 test "spawn_sub_agent system prompt teaches the main-agent-only rule" {
     const sp = spawn_sub_agent_tool_system_prompt;
-    try std.testing.expect(std.mem.indexOf(u8, sp, "`ask_user` and `spawn_sub_agent` are main-agent-only") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sp, "are main-agent-only") != null);
     try std.testing.expect(std.mem.indexOf(u8, sp, "cannot reach the human") != null);
 }
 

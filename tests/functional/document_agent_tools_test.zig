@@ -15,12 +15,11 @@ const SEARCH_DOCUMENTS = "search_documents";
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the wire
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire
 /// order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "add_document",
     "add_skill",
-    "ask_user",
     "command",
     "edit_document",
     "edit_skill",
@@ -62,7 +61,6 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
 const AGENT_TOOLS_WITH_DELETE = [_][]const u8{
     "add_document",
     "add_skill",
-    "ask_user",
     "command",
     "delete_document",
     "edit_document",

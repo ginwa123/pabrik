@@ -17,7 +17,6 @@ const io = testing.io;
 const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "add_document",
     "add_skill",
-    "ask_user",
     "command",
     "edit_document",
     "edit_skill",

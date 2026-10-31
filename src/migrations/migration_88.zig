@@ -13,7 +13,7 @@ pub const Migration088AddSessionPendingQuestion = struct {
     pub const name = "add_session_pending_question";
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
-        // One row per `ask_user` tool call.
+        // One row per question the agent asked.
         try db.exec(allocator,
             \\CREATE TABLE IF NOT EXISTS session_pending_question (
             \\    id TEXT PRIMARY KEY,
@@ -32,7 +32,7 @@ pub const Migration088AddSessionPendingQuestion = struct {
             \\)
         , &[_][]const u8{});
 
-        // One question per tool call — makes a re-exec (retry after a
+        // One question per anchor row — makes a re-exec (retry after a
         // transient failure) idempotent instead of inserting a second row.
         try db.exec(allocator,
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_spq_tool_call ON session_pending_question(tool_call_id)",

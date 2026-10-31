@@ -186,11 +186,6 @@ describe('the compact group', () => {
     expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(2)
   })
 
-  it('opens itself when the run holds a question for the human', () => {
-    const wrapper = mountGroup(itemsOf([card('read_file'), card('ask_user')]))
-    expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(1)
-    expect(wrapper.find('[data-testid="ask-user-card"]').exists()).toBe(true)
-  })
 })
 
 /** A tool-call message of a transcript, as the chain builder sees it. */
@@ -302,27 +297,6 @@ describe('the chain one agent turn folds into', () => {
     )
     expect(chains.size).toBe(0)
     expect(foldedNarrationMessageIds(chains).size).toBe(0)
-  })
-
-  it('leaves the question that ends the turn at a call for the human out of the chain', () => {
-    const chains = buildCompactChains(
-      [
-        group('user', [{ id: 'u1' }]),
-        group('assistant', [
-          { id: 'n1', content: 'Which database should I read?', finish_reason: 'tool_calls' },
-        ]),
-        group('tool', [{ id: 't1' }]),
-        group('assistant', [
-          { id: 'n2', content: 'Reading the billing one.', finish_reason: 'tool_calls' },
-        ]),
-        group('tool', [{ id: 't2' }]),
-        group('assistant', [{ id: 'n3', content: 'Done.', finish_reason: 'stop' }]),
-      ],
-      (g) => g.messages.map((m) => (m.id === 't1' ? card('ask_user') : callCard(m.id))),
-    )
-    expect([...foldedNarrationMessageIds(chains)].sort()).toEqual(['n2'])
-    expect(kinds(chains.get(2) ?? [])).toEqual(['tool'])
-    expect([...chains.keys()]).toEqual([2, 4])
   })
 
   it('ends the turn at a message that awaits the user', () => {

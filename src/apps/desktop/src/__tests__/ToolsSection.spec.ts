@@ -20,7 +20,6 @@ const REGISTRY = [
   { name: 'glob', description: 'Find files by glob pattern' },
   { name: 'update_plan', description: 'Update the task checklist' },
   { name: 'spawn_sub_agent', description: 'Run a task in a sub-agent' },
-  { name: 'ask_user', description: 'Ask the human a question' },
   { name: 'kanban_list', description: 'Inspect the kanban board' },
   { name: 'kanban_move_task', description: 'Move a card between columns' },
   { name: 'present_files', description: 'Show files as preview cards' },
@@ -36,7 +35,6 @@ const DEFAULTS_IN_REGISTRY = [
   'glob',
   'update_plan',
   'spawn_sub_agent',
-  'ask_user',
   'kanban_list',
   'kanban_move_task',
   'present_files',
@@ -69,7 +67,6 @@ describe('ToolsSection', () => {
       'search',
       'planning',
       'sub-agents',
-      'interactive',
       'kanban',
       'presentation-media',
       'mcp',
@@ -98,7 +95,6 @@ describe('ToolsSection', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="row-spawn_sub_agent"]').text()).toContain('main-agent only')
-    expect(wrapper.find('[data-testid="row-ask_user"]').text()).toContain('main-agent only')
     expect(wrapper.find('[data-testid="row-kanban_list"]').text()).toContain('mode floor')
     expect(wrapper.find('[data-testid="row-kanban_move_task"]').text()).toContain('mode floor')
     expect(wrapper.find('[data-testid="row-command"]').text()).not.toContain('main-agent only')

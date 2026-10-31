@@ -9,7 +9,6 @@ import ShellTool from '../preview/ShellTool.vue'
 import UpdateActivity from '../preview/UpdateActivity.vue'
 import UseSkill from '../preview/UseSkill.vue'
 import AddSkill from './AddSkill.vue'
-import AskUser from './AskUser.vue'
 import EditSkill from './EditSkill.vue'
 import GenerateImage from './GenerateImage.vue'
 import GetPlan from './GetPlan.vue'
@@ -327,13 +326,6 @@ const emit = defineEmits<{
       startsWith so new servers work with zero template
       changes.
     -->
-    <AskUser
-      v-else-if="message.tool_name === 'ask_user'"
-      :content="content"
-      :parameters="parameters"
-      :expanded="expanded"
-      :session-id="sessionId"
-    />
     <McpTool
       v-else-if="message.tool_name?.startsWith('mcp_')"
       :content="content"

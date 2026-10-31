@@ -87,13 +87,13 @@ test "executeUsedTools: preserves input order" {
     const equipped = [_]ToolSummary{
         .{ .name = "write_file", .description = "w" },
         .{ .name = "command", .description = "c" },
-        .{ .name = "ask_user", .description = "a" },
+        .{ .name = "used_tools", .description = "a" },
     };
     const out = try executeUsedTools(alloc, &equipped);
     defer alloc.free(out);
     const write_pos = std.mem.indexOf(u8, out, "\"write_file\"").?;
     const command_pos = std.mem.indexOf(u8, out, "\"command\"").?;
-    const ask_pos = std.mem.indexOf(u8, out, "\"ask_user\"").?;
+    const ask_pos = std.mem.indexOf(u8, out, "\"used_tools\"").?;
     try testing.expect(write_pos < command_pos);
     try testing.expect(command_pos < ask_pos);
 }
@@ -115,7 +115,7 @@ const config_mod = pabrikcore.config;
 const ToolExecContext = exec_tools.ToolExecContext;
 const ToolExecResult = exec_tools.ToolExecResult;
 const agent = pabrikcore.agent;
-const ask_user_mod = pabrikcore.ask_user;
+const main_agent_only = pabrikcore.main_agent_only;
 const wrapToolOutput = exec_tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 /// Resolve the session's effective tool list (mirror of
@@ -147,7 +147,7 @@ fn resolveEquipped(ctx: ToolExecContext) ![]ToolSummary {
 
     for (equipped_rows) |row| {
         if (seen.contains(row.tool_name)) continue;
-        if (ctx.is_sub_agent and ask_user_mod.isMainAgentOnly(row.tool_name)) continue;
+        if (ctx.is_sub_agent and main_agent_only.isMainAgentOnly(row.tool_name)) continue;
         for (registered) |tool| {
             if (std.mem.eql(u8, tool.function.name, row.tool_name)) {
                 try seen.put(ctx.allocator, tool.function.name, {});
@@ -343,7 +343,7 @@ test "execUsedTools: sub-agent sessions do not list main-agent-only tools" {
     try exec_testing.expect(result.output_allocated);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"success\":true") != null);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"name\":\"spawn_sub_agent\"") == null);
-    try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"name\":\"ask_user\"") == null);
+    try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"name\":\"run_session\"") == null);
     // used_tools itself is sub-agent-safe → present in its own listing.
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "\"name\":\"used_tools\"") != null);
 }

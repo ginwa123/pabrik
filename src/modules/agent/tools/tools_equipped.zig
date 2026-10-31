@@ -70,9 +70,6 @@ const search_tool_mod = pabrikcore.search_tool;
 const list_directory_mod = pabrikcore.list_directory;
 const semantic_search_mod = pabrikcore.semantic_search;
 const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
-// 2026-09-16 — ask_user: the interactive tool that ends the turn to ask the
-// human a question.
-const ask_user_mod = pabrikcore.ask_user;
 const kanban_create_task_tool = pabrikcore.create_kanban_task;
 const command_tool_mod = pabrikcore.command_tool;
 // `process` — the read/stop/list half of the detached `mode`s.
@@ -147,8 +144,6 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         set_pull_request_mod.set_pull_request_tool,
         status_pull_request_mod.status_pull_request_tool,
         present_files_mod.present_files_tool,
-        // Interactive: asks the human and ends the turn.
-        ask_user_mod.ask_user_tool,
 
         // kanban only
         kanban_list_mod.kanban_list_tool,
@@ -189,10 +184,6 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
     return &.{
         // === AGENT CONTROL (main agent only) ===
         .{ .name = "spawn_sub_agent", .exec = tools.execSpawnSubAgent, .tool_def = spawn_sub_agent_tool.spawn_sub_agent_tool },
-
-        // === INTERACTIVE (main agent only) === ask_user ends the turn so the
-        // human can answer in their own time.
-        .{ .name = "ask_user", .exec = tools.execAskUser, .tool_def = ask_user_mod.ask_user_tool },
 
         // === PLAN TOOLS === 2026-08-19 — session_plan agent tools (Task 4 of
         // 2026-08-19-session-plan-agent-tool.md).
@@ -343,9 +334,6 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     // for context-aware tools
     update_plan_mod.update_plan_tool.function.name,
     get_plan_mod.get_plan_tool.function.name,
-
-    // interactive — ask the human and end the turn
-    ask_user_mod.ask_user_tool.function.name,
 
     // for memory tools // addon
     save_memory_mod.save_memory_tool.function.name,

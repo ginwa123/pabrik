@@ -6,6 +6,8 @@ import ChatAttachments from '../../chat/ChatAttachments.vue'
 import MermaidDiagram from '../../chat/MermaidDiagram.vue'
 import PlantUmlDiagram from '../../chat/PlantUmlDiagram.vue'
 import D2Diagram from '../../chat/D2Diagram.vue'
+import AskUser from '../../tool_outputs/AskUser.vue'
+import { type AskUserQuestion } from '../../../helpers/askUserBlock'
 import ToolCard, { type ToolCardData } from '../../tool_outputs/ToolCard.vue'
 import CompactToolGroup from '../../tool_outputs/compact/CompactToolGroup.vue'
 import type { CompactChainItem } from '../../tool_outputs/compact/chain'
@@ -39,6 +41,7 @@ defineProps<{
   bgShellData: (m: { content?: string }) => unknown
   isBgUserMsg: (m: { content?: string }) => boolean
   openImagePreview: (url: string) => void
+  asked: { question: AskUserQuestion; messageId: string } | null
   compactChains: Map<number, CompactChainItem[]>
   standaloneCardsFor: (group: MessageGroup, groupIndex: number) => ToolCardData[]
   toolCardsFor: (group: MessageGroup, groupIndex: number) => ToolCardData[]
@@ -249,6 +252,12 @@ defineProps<{
                  on tool_calls-only assistant turns. The tool header
                  (if any) is shown above; we don't want an empty
                  padded area below it. -->
+            <AskUser
+              v-if="asked"
+              :question="asked.question"
+              :message-id="asked.messageId"
+              :session-id="sessionId || chatId"
+            />
             <div v-if="answeredMessages(group).some(hasVisibleContent)" class="assistant-messages">
               <div
                 v-for="(msg, idx) in answeredMessages(group)"

@@ -9,6 +9,11 @@ import {
 import { indexSpawnSubAgentArgs, type SubAgentArgs } from '../../../helpers/parseSpawnSubAgentArgs'
 import { type SubAgentProgressMap } from '../../../helpers/subagentProgress'
 import { splitSkillEnvelope } from '../../../helpers/skillEnvelope'
+import {
+  parseAskUserBlock,
+  stripAskUserBlockPartial,
+  type AskUserQuestion,
+} from '../../../helpers/askUserBlock'
 import { isPillGroup } from '../../chat/activePill'
 import { type UserPill } from '../../chat/UserPillRail.vue'
 import {
@@ -85,13 +90,34 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     mode,
   } = deps
 
+  /** The question each assistant message carries, keyed by message id. */
+  const askUserByMessageId = computed((): Map<string, AskUserQuestion> => {
+    const map = new Map<string, AskUserQuestion>()
+    for (const m of messages.value) {
+      if (m.role !== 'assistant') continue
+      const asked = parseAskUserBlock(m.content)
+      if (asked) map.set(m.id, asked)
+    }
+    return map
+  })
+
+  /** The block is data, never prose — every renderer below reads this copy. */
+  const displayMessages = computed((): Message[] =>
+    messages.value.map((m) =>
+      m.role === 'assistant' && askUserByMessageId.value.has(m.id)
+        ? { ...m, content: stripAskUserBlockPartial(m.content) }
+        : m,
+    ),
+  )
+
   const filteredMessages = computed(() =>
-    messages.value.filter((m) => {
+    displayMessages.value.filter((m) => {
       // Always keep tool_calls messages even if content is only thinking tags
       if (m.finish_reason === 'tool_calls') return true
       if ((m.image_urls?.length ?? 0) > 0) return true
       if ((m.file_attachments?.length ?? 0) > 0) return true
       if (m.role === 'tool') return true
+      if (askUserByMessageId.value.has(m.id)) return true
       if (m.role === 'assistant' && m.reasoning_content && m.reasoning_content.trim() !== '') {
         return true
       }
@@ -99,6 +125,18 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
       return stripped && stripped.trim() !== ''
     }),
   )
+
+  /** The card a group draws under its answer: the last message in it that asked. */
+  const askUserFor = (group: MessageGroup): { question: AskUserQuestion; messageId: string } | null => {
+    if (group.role !== 'assistant') return null
+    for (let i = group.messages.length - 1; i >= 0; i--) {
+      const message = group.messages[i]
+      if (!message) continue
+      const question = askUserByMessageId.value.get(message.id)
+      if (question) return { question, messageId: message.id }
+    }
+    return null
+  }
 
   const groupKey = (group: MessageGroup): string =>
     group.messages[0]?.id ?? `empty-${group.timestamp.getTime()}`
@@ -357,13 +395,21 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
       const hasReasoning = group.messages.some(
         (m) => m.reasoning_content && m.reasoning_content.trim() !== '',
       )
-      return hasToolHeader || hasReasoning || group.messages.some(hasVisibleContent)
+      return (
+        hasToolHeader ||
+        hasReasoning ||
+        group.messages.some(hasVisibleContent) ||
+        askUserFor(group) !== null
+      )
     }
     return false
   }
 
   return {
     filteredMessages,
+    displayMessages,
+    askUserByMessageId,
+    askUserFor,
     groupKey,
     messageGroups,
     isInitializing,

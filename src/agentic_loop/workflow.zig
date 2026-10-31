@@ -13,9 +13,10 @@ const handle_tool = @import("handle_tool.zig").handle_tool;
 const skill_evals_config = @import("skill_evals_config.zig");
 const session_llm_config = @import("session_llm_config.zig");
 const ask_user_pending = @import("ask_user_pending.zig");
-// `MAIN_AGENT_ONLY_NAMES` (spawn_sub_agent, ask_user) — the tools a sub-agent
-// must not re-equip via `use_tool`.
-const ask_user_mod = pabrikcore.ask_user;
+const ask_user_message = @import("ask_user_message.zig");
+// `MAIN_AGENT_ONLY_NAMES` — the tools a sub-agent must not re-equip via
+// `use_tool`.
+const main_agent_only = pabrikcore.main_agent_only;
 const notifications = pabrikcore.notifications_mod;
 
 const sqlite = pabrikcore.sqlite;
@@ -873,7 +874,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // guess.
         if (ask_user_pending.hasPendingQuestion(allocator, db, copy_session_id)) {
             logger.infoFmt(
-                "[CHECKPOINT] ask_user question still pending — ending the run session_id={s}",
+                "[CHECKPOINT] question still pending — ending the run session_id={s}",
                 .{copy_session_id},
             );
             break;
@@ -1389,6 +1390,18 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     );
                     continue;
                 }
+                const raw_content: []const u8 = res_dynamic_agent.content orelse "";
+                const detected = ask_user_message.detect(allocator, raw_content);
+                defer if (detected) |d| d.deinit();
+                const asked: ?ask_user_message.Detection = if (copy_is_sub_agent) null else detected;
+
+                var stripped: ?[]u8 = null;
+                defer if (stripped) |buf| allocator.free(buf);
+                const content: []const u8 = if (copy_is_sub_agent and detected != null) blk: {
+                    stripped = try ask_user_message.strip(allocator, raw_content);
+                    break :blk stripped.?;
+                } else raw_content;
+
                 // In-stream final marker (llm_chunk / type="chunk_final"):
                 // tells the frontend the token stream is over + carries usage
                 // BEFORE the canonical llm_full row lands.
@@ -1401,16 +1414,16 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     },
                     .session_id = copy_session_id,
                 });
-                _ = try insertLLMHistories(.{ .allocator = allocator, .io = io, .db = db, .logger = logger, .event_bus = event_bus, .is_emit_sse = true, .cwd = copy_cwd, .entity = .{
+                const assistant_row_id = try insertLLMHistories(.{ .allocator = allocator, .io = io, .db = db, .logger = logger, .event_bus = event_bus, .is_emit_sse = true, .cwd = copy_cwd, .entity = .{
                     .id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}),
                     .session_id = copy_session_id,
                     .model = eff.model,
-                    .response_content = res_dynamic_agent.content orelse "",
+                    .response_content = content,
                     .reasoning_content = res_dynamic_agent.reasoning_content,
                     .reasoning_id = res_dynamic_agent.reasoning_id,
                     .reasoning_encrypted_content = res_dynamic_agent.reasoning_encrypted_content,
                     .role = agent.Role.assistant.to_str(),
-                    .finish_reason = if (res_dynamic_agent.finish_reason) |fr| fr.to_str() else "stop",
+                    .finish_reason = if (asked != null) agent.FinishReason.awaiting_user.to_str() else if (res_dynamic_agent.finish_reason) |fr| fr.to_str() else "stop",
                     .tool_calls_json = "",
                     .tool_call_id = null,
                     .agent = effective_agent_name,
@@ -1430,14 +1443,56 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     .created_at = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}),
                     .is_feed_to_llm = true,
                 } });
+                defer allocator.free(assistant_row_id);
+
+                if (asked) |d| {
+                    const q = d.question();
+                    const question_id = try ask_user_pending.insertPendingQuestion(.{
+                        .allocator = allocator,
+                        .io = io,
+                        .db = db,
+                        .session_id = copy_session_id,
+                        .tool_call_id = assistant_row_id,
+                        .llm_history_id = assistant_row_id,
+                        .question = q.question,
+                        .multi_select = q.multi_select orelse false,
+                    });
+                    allocator.free(question_id);
+                    llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, agent.FinishReason.awaiting_user.to_str()) catch |err| {
+                        logger.warnFmt(
+                            "[workflow] failed to persist last_finish_reason=awaiting_user: {s}",
+                            .{@errorName(err)},
+                        );
+                    };
+                }
 
                 const isHaveQueueMessage = hasQueuedMessages(allocator, db, copy_session_id);
                 if (isHaveQueueMessage) {
+                    if (asked != null) {
+                        _ = ask_user_pending.abandonPendingQuestions(allocator, io, db, copy_session_id) catch 0;
+                    }
                     logger.infoFmt(
                         "[CHECKPOINT] finish_reason=stop but queue has more messages, looping session_id={s}",
                         .{copy_session_id},
                     );
                     continue;
+                }
+
+                if (asked != null) {
+                    logger.infoFmt(
+                        "[CHECKPOINT] awaiting_user — ending the turn session_id={s} loop_counter={d}",
+                        .{ copy_session_id, loop_counter },
+                    );
+                    try deleteWorker(DeleteWorkerInput{
+                        .allocator = allocator,
+                        .db = db,
+                        .logger = logger,
+                        .session_id = copy_session_id,
+                        .event_bus = event_bus,
+                        .is_emit_sse = true,
+                        .run_token = run_lease.token,
+                    });
+                    break;
                 }
 
                 // Fire an OS notification when the user has opted in. Only on
@@ -1478,33 +1533,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 // Forward the LIVE per-session profile (re-read at the top of
                 // this iteration) to handle_tool.
                 const tool_outcome = try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
-
-                // `ask_user` ends the turn rather than parking the loop.
-                if (ask_user_pending.hasPendingQuestion(allocator, db, copy_session_id)) {
-                    // Overwrite the `tool_calls` value persisted at the top
-                    // of this iteration: as far as anything reading the
-                    // session is concerned, this turn ended waiting on the
-                    llm_history.updateSessionLastFinishReason(allocator, db, copy_session_id, agent.FinishReason.awaiting_user.to_str()) catch |err| {
-                        logger.warnFmt(
-                            "[workflow] failed to persist last_finish_reason=awaiting_user: {s}",
-                            .{@errorName(err)},
-                        );
-                    };
-                    logger.infoFmt(
-                        "[CHECKPOINT] ask_user pending — ending the turn session_id={s} loop_counter={d}",
-                        .{ copy_session_id, loop_counter },
-                    );
-                    try deleteWorker(DeleteWorkerInput{
-                        .allocator = allocator,
-                        .db = db,
-                        .logger = logger,
-                        .session_id = copy_session_id,
-                        .event_bus = event_bus,
-                        .is_emit_sse = true,
-                        .run_token = run_lease.token,
-                    });
-                    break;
-                }
 
                 // `is_stop` on a tool call (`command is_stop=true`): the
                 // model asked to end THIS turn.
@@ -2048,7 +2076,7 @@ pub fn filterAndMergeTools(
     // allowlist excluded them — that is the point of `use_tool`.
     for (progressive_equipped) |name| {
         if (seen.contains(name)) continue;
-        if (is_sub_agent and ask_user_mod.isMainAgentOnly(name)) continue;
+        if (is_sub_agent and main_agent_only.isMainAgentOnly(name)) continue;
         for (registered) |tool| {
             if (std.mem.eql(u8, tool.function.name, name)) {
                 try seen.put(allocator, name, {});

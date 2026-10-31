@@ -405,9 +405,6 @@
   },
   "src/components/tool_outputs/AskUser.vue": {
     "local/no-try-catch": {
-      "count": 2
-    },
-    "max-lines": {
       "count": 1
     }
   },

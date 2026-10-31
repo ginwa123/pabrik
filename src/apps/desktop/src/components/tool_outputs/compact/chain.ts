@@ -43,7 +43,8 @@ export const thoughtKey = (messageId: string): string => `thought-${messageId}`
 export const narrationKey = (messageId: string): string => `narration-${messageId}`
 
 /** The reasons that close a turn: the message carrying one is the agent's ANSWER, so it keeps its
- * own place in the transcript. `awaiting_user` is written by the loop, not the provider. */
+ * own place in the transcript. `awaiting_user` is written by the loop when the message ends with
+ * an `ask_user` block, not by the provider. */
 const TURN_ENDS: ReadonlySet<string> = new Set([
   'stop',
   'length',
@@ -87,13 +88,11 @@ export function buildCompactChains<G extends ChainGroup>(
   groups.forEach((group, groupIndex) => {
     if (group.role === 'tool') {
       const cards = cardsOf(group, groupIndex)
-      const asks = cards.some((card) => card.message.tool_name === 'ask_user')
       if (at === null) at = groupIndex
-      if (!asks) commitNarration()
+      commitNarration()
       for (const card of cards) {
         if (foldsIntoChain(card)) items.push({ kind: 'tool', key: card.expandKey, card })
       }
-      if (asks) flush()
       return
     }
     if (group.role === 'assistant') {

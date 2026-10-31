@@ -28,7 +28,6 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   'list_web_search_providers',
   'update_plan',
   'get_plan',
-  'ask_user',
   'save_memory',
   'load_memory',
   'read_workspace_session',
@@ -116,7 +115,6 @@ const GROUP_BY_TOOL: Record<string, string> = {
   spawn_sub_agent: 'Sub-agents',
   list_agents: 'Agents',
   used_tools: 'Progressive tool search',
-  ask_user: 'Interactive',
   search_tool: 'Progressive tool search',
   view_tool: 'Progressive tool search',
   use_tool: 'Progressive tool search',
@@ -143,7 +141,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
 // Hard invariants of the runtime (not user configuration):
 // MAIN_AGENT_ONLY_NAMES never reach sub-agents, and the two kanban
 // tools are the mode floor that is always re-added in kanban mode.
-const MAIN_AGENT_ONLY = new Set(['spawn_sub_agent', 'ask_user', 'run_session'])
+const MAIN_AGENT_ONLY = new Set(['spawn_sub_agent', 'run_session', 'run_skill_eval'])
 const MODE_FLOOR = new Set(['kanban_list', 'kanban_move_task'])
 
 type Pill = { label: string; color: string }

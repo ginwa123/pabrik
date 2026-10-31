@@ -25,7 +25,6 @@ const PATH_TOOLS = [_][]const u8{
 /// Tools that must NOT publish a `cwd` parameter.
 const CWD_FREE_TOOLS = [_][]const u8{
     // No filesystem parameter at all — the negative control.
-    "ask_user",
     // `cwd` dropped the same day, for reasons recorded at each tool.
     "create_kanban_task",
     "add_mcp_server",

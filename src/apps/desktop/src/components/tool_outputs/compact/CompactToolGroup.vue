@@ -48,15 +48,13 @@ const durationLabel = computed(() => {
   return `${(ms / 1000).toFixed(1)}s`
 })
 
-/** A question for the human, or a call the user opened: the full card, not a row. */
+/** A call the user opened: the full card, not a row. */
 function isFullCard(card: ToolCardData): boolean {
-  return card.expanded || card.message.tool_name === 'ask_user'
+  return card.expanded
 }
 
 const isRun = computed(() => cards.value.length > 1)
-/** A run that holds a question for the human starts open: a question you
- * cannot see is a question you cannot answer. */
-const open = ref(cards.value.some((card) => card.message.tool_name === 'ask_user'))
+const open = ref(false)
 
 function toggle(): void {
   open.value = !open.value
