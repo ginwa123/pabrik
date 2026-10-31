@@ -3,6 +3,7 @@ FROM ubuntu:24.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates \
+      git \
       libcurl4t64 \
       libsqlite3-0 \
       libssl3t64 \
@@ -10,6 +11,11 @@ RUN apt-get update \
 
 COPY pabrik /opt/pabrik/pabrik
 COPY api-bench /opt/pabrik/api-bench
+# The `folder-search` scenario's trees (built by `benchmark/run.sh`): two git
+# repositories holding the same matching files over 256 and 8 directories.
+COPY folder-tree /tmp/pabrik-bench-folder-search
+RUN git -C /tmp/pabrik-bench-folder-search/deep init --initial-branch=main --quiet \
+ && git -C /tmp/pabrik-bench-folder-search/flat init --initial-branch=main --quiet
 
 ENV HOME=/pabrik-home
 

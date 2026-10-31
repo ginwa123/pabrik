@@ -200,4 +200,92 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     expect(text).toContain('fast.ts')
     expect(text).not.toContain('slow.ts')
   })
+
+  it('a longer query keeps the rows on screen instead of blanking to Searching…', async () => {
+    // `comp` answers at once; `compo` stays in flight so the in-between frame
+    // is observable.
+    let release: ((v: { entries: ServerEntry[] }) => void) | null = null
+    const pending = new Promise<{ entries: ServerEntry[] }>((resolve) => {
+      release = resolve
+    })
+    searchFilesMock.mockImplementation(async (_cwd: string, q: string) => {
+      if (q === 'comp') return { entries: serverEntries(3, 'component') }
+      return pending
+    })
+
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+
+    await typeInTextarea(textarea, '@comp')
+    expect(wrapper.find('.file-picker-list').text()).toContain('component-0.ts')
+
+    // One more character: the request is in flight, the panel keeps its rows.
+    await typeInTextarea(textarea, '@compon', 250)
+    const inFlight = wrapper.find('.file-picker-list').text()
+    expect(inFlight).not.toContain('Searching…')
+    expect(inFlight).toContain('component-0.ts')
+    expect(inFlight).toMatch(/searching…/i)
+
+    // The answer replaces the preview.
+    release!({ entries: serverEntries(2, 'compon') })
+    await flushPromises()
+    expect(wrapper.find('.file-picker-list').text()).toContain('compon-0.ts')
+  })
+
+  it('retyping a query it already asked renders from cache without a request', async () => {
+    searchFilesMock.mockImplementation(async (_cwd: string, q: string) => {
+      const prefix = q || 'root'
+      return { entries: serverEntries(2, prefix) }
+    })
+
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+
+    await typeInTextarea(textarea, '@comp')
+    expect(searchFilesMock).toHaveBeenCalledTimes(1)
+
+    await typeInTextarea(textarea, '@com') // a new query — one more round-trip
+    expect(searchFilesMock).toHaveBeenCalledTimes(2)
+
+    await typeInTextarea(textarea, '@comp') // back to a query already answered
+    expect(searchFilesMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.file-picker-list').text()).toContain('comp-0.ts')
+  })
+
+  it('closing the picker drops the cached answers, so a reopen asks again', async () => {
+    searchFilesMock.mockImplementation(async (_cwd: string, q: string) => ({
+      entries: serverEntries(1, q || 'root'),
+    }))
+
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+
+    await typeInTextarea(textarea, '@comp')
+    expect(searchFilesMock).toHaveBeenCalledTimes(1)
+
+    await textarea.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(wrapper.find('.file-picker-list').exists()).toBe(false)
+
+    // Same query, fresh session: the cache from the closed picker is gone, so
+    // a file created meanwhile is not hidden behind a stale answer.
+    await typeInTextarea(textarea, '@comp')
+    expect(searchFilesMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('a burst of keystrokes costs one request for the final query', async () => {
+    searchFilesMock.mockImplementation(async (_cwd: string, q: string) => ({
+      entries: serverEntries(1, q || 'root'),
+    }))
+
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+
+    await typeInTextarea(textarea, '@c', 40)
+    await typeInTextarea(textarea, '@co', 40)
+    await typeInTextarea(textarea, '@comp', 300)
+
+    expect(searchFilesMock).toHaveBeenCalledTimes(1)
+    expect(searchFilesMock).toHaveBeenCalledWith('/home/user', 'comp', 50, 8, expect.anything())
+  })
 })

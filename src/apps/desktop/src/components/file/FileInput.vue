@@ -377,15 +377,25 @@ const isCompletionMsg = (msg: { message: string }): boolean =>
 const completionPid = (msg: { message: string }): string | null =>
   parseBackgroundCommandOutput(msg.message)?.pid ?? null
 
-// ── @ picker server search ────── Single round-trip per
-// query via `api.searchFiles`.
+// ── @ picker server search ────── Single round-trip per query via
+// `api.searchFiles`; both picker timers share 100 ms, which still collapses a
+// burst of keystrokes now that one search is a single round-trip.
+const PICKER_DEBOUNCE_MS = 100
 let fileSearchTimer: ReturnType<typeof setTimeout> | null = null
 let fileSearchGen = 0
 let fileSearchAbort: AbortController | null = null
-// Per-cwd cache for EMPTY-query top-N only (bounded: max 3 cwds, oldest
-// evicted). Non-empty queries always hit the server (fresh ranking).
+// Per-cwd cache for the EMPTY-query top-N (bounded: max 3 cwds, oldest
+// evicted). Survives closing the picker — it is the recent-files page.
 const fileSearchCache = new Map<string, FileEntry[]>()
 const FILE_SEARCH_CACHE_MAX_CWDS = 3
+// Answers for the queries this picker session asked, keyed by cwd + query
+// (bounded, oldest evicted): retyping a query renders from here. Cleared on
+// close, so a reopened picker sees the files that appeared meanwhile.
+const fileQueryCache = new Map<string, FileEntry[]>()
+const FILE_QUERY_CACHE_MAX = 64
+// Rows kept on screen while the debounced answer is in flight: the previous
+// page narrowed by the new query, so a keystroke never blanks the panel.
+const pickerPreview = ref<FileEntry[] | null>(null)
 // Total entries returned by the server for the current query (footer Y).
 const serverTotal = ref(0)
 // True when the server errored and `filteredFiles` falls back to the
@@ -398,6 +408,17 @@ const setFileSearchCache = (cwd: string, entries: FileEntry[]) => {
     if (!oldest.done) fileSearchCache.delete(oldest.value)
   }
   fileSearchCache.set(cwd, entries)
+}
+
+const fileQueryKey = (cwd: string, query: string): string => JSON.stringify([cwd, query])
+
+const rememberFileQuery = (cwd: string, query: string, entries: FileEntry[]) => {
+  const key = fileQueryKey(cwd, query)
+  if (!fileQueryCache.has(key) && fileQueryCache.size >= FILE_QUERY_CACHE_MAX) {
+    const oldest = fileQueryCache.keys().next()
+    if (!oldest.done) fileQueryCache.delete(oldest.value)
+  }
+  fileQueryCache.set(key, entries)
 }
 
 const toRelativeFileEntry = (
@@ -418,7 +439,9 @@ const runFileSearch = async (cwd: string, query: string, gen: number, signal: Ab
     fileList.value = mapped
     serverTotal.value = mapped.length
     serverFailed.value = false
+    pickerPreview.value = null
     if (query === '') setFileSearchCache(cwd, mapped)
+    else rememberFileQuery(cwd, query, mapped)
   } catch {
     if (gen !== fileSearchGen) return // stale — superseded, stay silent
     if (signal.aborted) return // cancelled on retype/close — expected, silent
@@ -426,6 +449,7 @@ const runFileSearch = async (cwd: string, query: string, gen: number, signal: Ab
     serverFailed.value = true
     fileList.value = fileSearchCache.get(cwd) ?? []
     serverTotal.value = fileList.value.length
+    pickerPreview.value = null
   } finally {
     if (gen === fileSearchGen) isLoadingFiles.value = false
   }
@@ -443,12 +467,15 @@ const scheduleFileSearch = (immediate: boolean) => {
     const cwd = props.cwd
     const query = fileQuery.value
     if (!cwd || !showFilePicker.value) return
-    // Empty-query cache hit: sync, no network.
-    if (query === '' && fileSearchCache.has(cwd)) {
-      const cached = fileSearchCache.get(cwd)!
+    // Already answered in this session (top-N or a query the user typed
+    // before): render it synchronously, no network.
+    const cached =
+      query === '' ? fileSearchCache.get(cwd) : fileQueryCache.get(fileQueryKey(cwd, query))
+    if (cached) {
       fileList.value = cached
       serverTotal.value = cached.length
       serverFailed.value = false
+      pickerPreview.value = null
       isLoadingFiles.value = false
       return
     }
@@ -458,12 +485,14 @@ const scheduleFileSearch = (immediate: boolean) => {
     void runFileSearch(cwd, query, gen, fileSearchAbort.signal)
   }
   if (immediate) run()
-  else fileSearchTimer = setTimeout(run, 150)
+  else fileSearchTimer = setTimeout(run, PICKER_DEBOUNCE_MS)
 }
 
 const closeFilePicker = () => {
   showFilePicker.value = false
   fileQuery.value = ''
+  fileQueryCache.clear()
+  pickerPreview.value = null
   if (fileSearchTimer) {
     clearTimeout(fileSearchTimer)
     fileSearchTimer = null
@@ -474,8 +503,8 @@ const closeFilePicker = () => {
 }
 
 // Smart word matching: support "out of order" characters
-// e.g., "comp" matches "components", "tst" matches "test"
-// Used ONLY as the server-error fallback (operates on cached top-N).
+// e.g., "comp" matches "components", "tst" matches "test". Used by the
+// server-error fallback and the in-flight preview — never over the tree.
 const matchesOutOfOrder = (path: string, query: string): boolean => {
   const lowerPath = path.toLowerCase()
   let pathIdx = 0
@@ -490,9 +519,15 @@ const matchesOutOfOrder = (path: string, query: string): boolean => {
   return queryIdx === query.length
 }
 
+// Same test the server ranks by (substring beats subsequence), applied to the
+// rows we already hold.
+const matchesPreview = (path: string, query: string): boolean =>
+  path.toLowerCase().includes(query.toLowerCase()) || matchesOutOfOrder(path, query)
+
 const filteredFiles = computed(() => {
-  // Server results are already ranked + filtered — use them directly.
-  if (!serverFailed.value) return fileList.value
+  // Server results are already ranked + filtered — use them directly; while
+  // the next answer is in flight, the narrowed preview stands in for them.
+  if (!serverFailed.value) return pickerPreview.value ?? fileList.value
   if (!fileQuery.value) return fileList.value
   const q = fileQuery.value.toLowerCase()
   return fileList.value.filter((f) => matchesOutOfOrder(f.path, q))
@@ -519,7 +554,12 @@ const detectAtTrigger = () => {
       scheduleFileSearch(true) // immediate on open
     } else if (queryChanged) {
       selectedFileIndex.value = 0
-      scheduleFileSearch(false) // debounced 150ms on retype
+      // Narrow the rows already on screen so the panel never blanks between a
+      // keystroke and the answer; the server's ranked page replaces them.
+      pickerPreview.value = q
+        ? fileList.value.filter((f) => matchesPreview(f.path, q))
+        : fileList.value
+      scheduleFileSearch(false) // debounced on retype
     }
   } else {
     closeFilePicker()
@@ -534,7 +574,7 @@ function scheduleDetectAtTrigger(): void {
     detectAtTrigger()
     detectSlashTrigger()
     detectToolTrigger()
-  }, 150)
+  }, PICKER_DEBOUNCE_MS)
 }
 
 // ── /skill picker (mirrors the @ picker above) ───────────────────────── Two triggers, in order of
@@ -1076,26 +1116,24 @@ const sendMessage = () => {
 
     <!-- File picker dropdown -->
     <div
-      v-if="showFilePicker && (filteredFiles.length > 0 || isLoadingFiles)"
+      v-if="showFilePicker && (filteredFiles.length > 0 || isLoadingFiles || fileQuery.length > 0)"
       ref="filePickerRef"
       class="file-picker-list mb-2 p-2 rounded-lg shadow-lg max-h-72 overflow-y-auto"
       style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
       tabindex="0"
     >
-      <!-- Loading state (driven by the request lifecycle, not fileList) -->
-      <div v-if="isLoadingFiles" class="p-4 text-center">
-        <div
-          class="w-6 h-6 border-2 rounded-full animate-spin mx-auto mb-2"
-          style="border-color: var(--color-violet); border-top-color: transparent"
-        ></div>
-        <p class="text-body" style="color: var(--semantic-text-dim)">Searching…</p>
-      </div>
-      <div
-        v-else-if="filteredFiles.length === 0"
-        class="p-2 text-body"
-        style="color: var(--semantic-text-dim)"
-      >
-        No files found
+      <!-- The spinner only stands in when there is nothing to show: rows
+        already on screen stay put while the next answer is in flight, and the
+        footer says so. -->
+      <div v-if="visibleFiles.length === 0" class="p-4 text-center">
+        <template v-if="isLoadingFiles">
+          <div
+            class="w-6 h-6 border-2 rounded-full animate-spin mx-auto mb-2"
+            style="border-color: var(--color-violet); border-top-color: transparent"
+          ></div>
+          <p class="text-body" style="color: var(--semantic-text-dim)">Searching…</p>
+        </template>
+        <p v-else class="text-body" style="color: var(--semantic-text-dim)">No files found</p>
       </div>
       <div v-else>
         <button
@@ -1115,13 +1153,15 @@ const sendMessage = () => {
           <span class="truncate font-mono text-dense">{{ file.path }}</span>
         </button>
       </div>
-      <!-- Footer info (render cap vs server total) -->
+      <!-- Footer info (render cap vs server total, plus the in-flight note) -->
       <div
-        v-if="!isLoadingFiles && filteredFiles.length > 0"
+        v-if="visibleFiles.length > 0"
         class="px-3 py-1.5 text-dense rounded mt-1"
         style="background-color: var(--semantic-sidebar-bg); color: var(--semantic-text-dim)"
       >
-        showing {{ visibleFiles.length }} of {{ serverTotal }} files
+        showing {{ visibleFiles.length }} of {{ serverTotal }} files<span v-if="isLoadingFiles">
+          · searching…</span
+        >
       </div>
     </div>
 

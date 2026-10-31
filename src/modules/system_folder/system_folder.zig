@@ -306,6 +306,7 @@ pub const SystemFolder = struct {
             git_hardening.appendGit(&argv, allocator) catch break;
             argv.appendSlice(allocator, &.{ "-C", dir_path, "check-ignore", "--" }) catch break;
             argv.appendSlice(allocator, chunk) catch break;
+            recordGitSpawn();
             const result = std.process.run(allocator, io, .{ .argv = argv.items }) catch continue;
             defer allocator.free(result.stdout);
             defer allocator.free(result.stderr);
@@ -348,6 +349,168 @@ pub const SystemFolder = struct {
         const list = ignored orelse return;
         for (list) |s| allocator.free(s);
         allocator.free(list);
+    }
+
+    /// How many `git` processes this process has started from the search path.
+    /// A walk's RESULT is identical whether it paid per directory or per level,
+    /// so the tests assert this cost instead of the answer.
+    var git_spawns = std.atomic.Value(usize).init(0);
+
+    pub fn gitSpawnCount() usize {
+        return git_spawns.load(.monotonic);
+    }
+
+    fn recordGitSpawn() void {
+        _ = git_spawns.fetchAdd(1, .monotonic);
+    }
+
+    /// How many repository-relative paths one `git check-ignore` call is given.
+    const check_ignore_batch: usize = 500;
+
+    /// The repository that owns a search root: the worktree root git must run
+    /// in plus the root's own path inside it (git's `--show-prefix`). Both come
+    /// from ONE `rev-parse`, so a search pays one lookup, not one per directory.
+    const RepoAnchor = struct {
+        toplevel: []u8,
+        prefix: []u8,
+
+        fn deinit(self: *RepoAnchor, allocator: std.mem.Allocator) void {
+            allocator.free(self.toplevel);
+            allocator.free(self.prefix);
+        }
+    };
+
+    fn resolveRepoAnchor(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) ?RepoAnchor {
+        var argv = std.ArrayList([]const u8).empty;
+        defer argv.deinit(allocator);
+        git_hardening.appendGit(&argv, allocator) catch return null;
+        argv.appendSlice(allocator, &.{ "-C", root_path, "rev-parse", "--show-toplevel", "--show-prefix" }) catch return null;
+
+        recordGitSpawn();
+        const result = std.process.run(allocator, io, .{ .argv = argv.items }) catch return null;
+        defer allocator.free(result.stdout);
+        defer allocator.free(result.stderr);
+        if (result.term.exited != 0) return null;
+
+        var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+        const toplevel = std.mem.trimEnd(u8, lines.next() orelse return null, "\r");
+        const prefix = std.mem.trimEnd(u8, lines.next() orelse return null, "\r");
+        if (toplevel.len == 0) return null;
+
+        const toplevel_owned = allocator.dupe(u8, toplevel) catch return null;
+        const prefix_owned = allocator.dupe(u8, prefix) catch {
+            allocator.free(toplevel_owned);
+            return null;
+        };
+        return .{ .toplevel = toplevel_owned, .prefix = prefix_owned };
+    }
+
+    /// The list `ignored` becomes owned, or null when nothing was ignored.
+    fn toOwnedIgnoreList(allocator: std.mem.Allocator, ignored: *std.ArrayList([]const u8)) ?[][]const u8 {
+        if (ignored.items.len == 0) {
+            ignored.deinit(allocator);
+            return null;
+        }
+        const out = ignored.toOwnedSlice(allocator) catch {
+            for (ignored.items) |s| allocator.free(s);
+            ignored.deinit(allocator);
+            return null;
+        };
+        return out;
+    }
+
+    /// Which of `rel_paths` (all relative to `toplevel`) git ignores: ONE
+    /// process per `check_ignore_batch` paths, whatever number of directories
+    /// they came from. git echoes each ignored input path verbatim.
+    fn batchIgnoredPaths(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        toplevel: []const u8,
+        rel_paths: []const []const u8,
+    ) ?[][]const u8 {
+        if (rel_paths.len == 0) return null;
+        var ignored = std.ArrayList([]const u8).empty;
+        var offset: usize = 0;
+        while (offset < rel_paths.len) {
+            const end = @min(offset + check_ignore_batch, rel_paths.len);
+            const chunk = rel_paths[offset..end];
+            offset = end;
+            var argv = std.ArrayList([]const u8).empty;
+            defer argv.deinit(allocator);
+            git_hardening.appendGit(&argv, allocator) catch break;
+            argv.appendSlice(allocator, &.{ "-C", toplevel, "check-ignore", "--" }) catch break;
+            argv.appendSlice(allocator, chunk) catch break;
+            recordGitSpawn();
+            const result = std.process.run(allocator, io, .{ .argv = argv.items }) catch continue;
+            defer allocator.free(result.stdout);
+            defer allocator.free(result.stderr);
+            // exit 0 = >=1 ignored (parse stdout); 1 = none ignored;
+            // 128/fatal = not a repo -> none ignored.
+            if (result.term.exited != 0) continue;
+            var it = std.mem.splitScalar(u8, result.stdout, '\n');
+            while (it.next()) |line| {
+                const trimmed = std.mem.trim(u8, line, "\r");
+                if (trimmed.len == 0) continue;
+                const dup = allocator.dupe(u8, trimmed) catch continue;
+                ignored.append(allocator, dup) catch {
+                    allocator.free(dup);
+                    continue;
+                };
+            }
+        }
+        return toOwnedIgnoreList(allocator, &ignored);
+    }
+
+    /// Which of `names` inside `dir_abs` the GUEST's git ignores. The guest API
+    /// answers one directory at a time, so this stays per directory.
+    fn guestIgnoredNames(
+        allocator: std.mem.Allocator,
+        fs: *const workspace_fs.Fs,
+        dir_abs: []const u8,
+        names: []const []const u8,
+    ) ?[][]const u8 {
+        if (names.len == 0) return null;
+        const flags = fs.gitCheckIgnore(dir_abs, names) catch return null;
+        defer allocator.free(flags);
+        var ignored = std.ArrayList([]const u8).empty;
+        for (names, 0..) |name, i| {
+            if (!flags[i]) continue;
+            const dup = allocator.dupe(u8, name) catch continue;
+            ignored.append(allocator, dup) catch {
+                allocator.free(dup);
+                continue;
+            };
+        }
+        return toOwnedIgnoreList(allocator, &ignored);
+    }
+
+    /// Mark every candidate git ignores, asking the repository ONCE for the
+    /// whole level.
+    fn markRepoIgnored(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        toplevel: []const u8,
+        candidates: anytype,
+    ) void {
+        var rel_paths = std.ArrayList([]const u8).empty;
+        defer rel_paths.deinit(allocator);
+        for (candidates) |c| {
+            const rel = c.rel orelse continue;
+            rel_paths.append(allocator, rel) catch return;
+        }
+        const ignored = batchIgnoredPaths(allocator, io, toplevel, rel_paths.items);
+        defer freeIgnored(allocator, ignored);
+        const list = ignored orelse return;
+
+        var ignored_paths = std.StringHashMapUnmanaged(void){};
+        defer ignored_paths.deinit(allocator);
+        for (list) |path| {
+            ignored_paths.put(allocator, path, {}) catch break;
+        }
+        for (candidates) |*c| {
+            const rel = c.rel orelse continue;
+            c.ignored = ignored_paths.contains(rel);
+        }
     }
 
     /// Case-insensitive ASCII substring check (mirrors the
@@ -429,8 +592,9 @@ pub const SystemFolder = struct {
         rank: u8,
     };
 
-    /// Recursive file search under `root_path` (iterative stack, NOT
-    /// recursion).
+    /// Recursive search under `root_path`: a breadth-first walk that asks git
+    /// about a whole depth LEVEL at a time — one `check-ignore` per level plus
+    /// one `rev-parse` per search, not one process per directory entered.
     pub fn searchFiles(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -447,86 +611,140 @@ pub const SystemFolder = struct {
         var matches = std.ArrayList(SearchHit).empty;
         defer matches.deinit(allocator);
 
-        const StackFrame = struct {
-            path: []const u8,
+        // Resolved ONCE for every directory below the root.
+        var route = routeForDirectory(allocator, root_path);
+        defer route.deinit();
+        const guest = route.guestFs();
+        var anchor: ?RepoAnchor = if (route == .host) resolveRepoAnchor(allocator, io, root_path) else null;
+        defer if (anchor) |*held| held.deinit(allocator);
+
+        const DirFrame = struct {
+            abs: []u8,
+            /// Path inside the repository: `""` at its root, else `a/b/`. Null
+            /// when no repository answers, so nothing is filtered.
+            rel: ?[]u8,
             depth: usize,
         };
-        var stack = std.ArrayList(StackFrame).empty;
+        const Candidate = struct {
+            name: []u8,
+            dir_index: usize,
+            is_dir: bool,
+            rel: ?[]u8,
+            ignored: bool = false,
+        };
+
+        var frontier = std.ArrayList(DirFrame).empty;
         defer {
-            for (stack.items) |frame| allocator.free(frame.path);
-            stack.deinit(allocator);
+            for (frontier.items) |frame| {
+                allocator.free(frame.abs);
+                if (frame.rel) |rel| allocator.free(rel);
+            }
+            frontier.deinit(allocator);
         }
 
-        const root_dup = allocator.dupe(u8, root_path) catch return SystemFolderError.OutOfMemory;
-        stack.append(allocator, .{ .path = root_dup, .depth = 0 }) catch return SystemFolderError.OutOfMemory;
+        const root_abs = allocator.dupe(u8, root_path) catch return SystemFolderError.OutOfMemory;
+        const root_rel: ?[]u8 = if (anchor) |*held|
+            allocator.dupe(u8, held.prefix) catch {
+                allocator.free(root_abs);
+                return SystemFolderError.OutOfMemory;
+            }
+        else
+            null;
+        frontier.append(allocator, .{ .abs = root_abs, .rel = root_rel, .depth = 0 }) catch {
+            allocator.free(root_abs);
+            if (root_rel) |rel| allocator.free(rel);
+            return SystemFolderError.OutOfMemory;
+        };
 
-        while (stack.items.len > 0) {
-            const frame = stack.pop().?;
-            defer allocator.free(frame.path);
+        while (frontier.items.len > 0) {
+            const child_depth = frontier.items[0].depth + 1;
 
-            var dir = std.Io.Dir.openDirAbsolute(io, frame.path, .{ .iterate = true }) catch continue;
-            defer std.Io.Dir.close(dir, io);
-
-            // First pass: collect candidates passing skip-list / kind / depth
-            // (duped names — iterator buffers are reused on next()).
-            const child_depth = frame.depth + 1;
-            const RawChild = struct {
-                name: []u8,
-                is_dir: bool,
-            };
-            var children = std.ArrayList(RawChild).empty;
+            var candidates = std.ArrayList(Candidate).empty;
             defer {
-                for (children.items) |c| allocator.free(c.name);
-                children.deinit(allocator);
-            }
-            var iter = dir.iterate();
-            while (iter.next(io) catch null) |entry| {
-                const name = entry.name;
-                if (name.len == 0) break;
-
-                if (isSearchSkipped(name)) continue;
-
-                const is_dir = entry.kind == .directory;
-                const is_file = entry.kind == .file;
-                if (!is_dir and !is_file) continue;
-
-                if (child_depth > depth_cap) continue;
-
-                const dup = allocator.dupe(u8, name) catch continue;
-                children.append(allocator, .{ .name = dup, .is_dir = is_dir }) catch {
-                    allocator.free(dup);
-                    continue;
-                };
+                for (candidates.items) |c| {
+                    allocator.free(c.name);
+                    if (c.rel) |rel| allocator.free(rel);
+                }
+                candidates.deinit(allocator);
             }
 
-            // ONE `git check-ignore` for the whole directory (was: one spawn
-            // per entry — ~30ms each on macOS, ~312 spawns for the 300-file
-            // fixture).
-            var batch_names = std.ArrayList([]const u8).empty;
-            defer batch_names.deinit(allocator);
-            for (children.items) |c| batch_names.append(allocator, c.name) catch break;
-            const ignored = batchIgnoredNames(allocator, io, frame.path, batch_names.items);
-            defer freeIgnored(allocator, ignored);
+            for (frontier.items, 0..) |frame, dir_index| {
+                const first = candidates.items.len;
+                var dir = std.Io.Dir.openDirAbsolute(io, frame.abs, .{ .iterate = true }) catch continue;
+                defer std.Io.Dir.close(dir, io);
 
-            // Second pass: descend + match (identical semantics to the old
-            // loop — non-matching dirs are still descended into since
-            // their children may match).
-            for (children.items) |c| {
-                if (isIgnored(ignored, c.name)) continue;
+                var iter = dir.iterate();
+                while (iter.next(io) catch null) |entry| {
+                    const name = entry.name;
+                    if (name.len == 0) break;
 
-                // Non-matching dirs are still descended into (their
-                // children may match); non-matching files are dropped.
+                    if (isSearchSkipped(name)) continue;
+
+                    const is_dir = entry.kind == .directory;
+                    const is_file = entry.kind == .file;
+                    if (!is_dir and !is_file) continue;
+                    if (child_depth > depth_cap) continue;
+
+                    const dup = allocator.dupe(u8, name) catch continue;
+                    const rel: ?[]u8 = if (frame.rel) |prefix|
+                        std.fmt.allocPrint(allocator, "{s}{s}", .{ prefix, name }) catch {
+                            allocator.free(dup);
+                            continue;
+                        }
+                    else
+                        null;
+                    candidates.append(allocator, .{
+                        .name = dup,
+                        .dir_index = dir_index,
+                        .is_dir = is_dir,
+                        .rel = rel,
+                    }) catch {
+                        allocator.free(dup);
+                        if (rel) |owned| allocator.free(owned);
+                        continue;
+                    };
+                }
+
+                if (guest) |fs| {
+                    var names = std.ArrayList([]const u8).empty;
+                    defer names.deinit(allocator);
+                    for (candidates.items[first..]) |c| names.append(allocator, c.name) catch break;
+                    const ignored = guestIgnoredNames(allocator, fs, frame.abs, names.items);
+                    defer freeIgnored(allocator, ignored);
+                    for (candidates.items[first..]) |*c| c.ignored = isIgnored(ignored, c.name);
+                }
+            }
+
+            if (guest == null) {
+                if (anchor) |*held| markRepoIgnored(allocator, io, held.toplevel, candidates.items);
+            }
+
+            var next = std.ArrayList(DirFrame).empty;
+            for (candidates.items) |c| {
+                if (c.ignored) continue;
+                const frame = frontier.items[c.dir_index];
+
+                // Non-matching dirs are still descended into (their children
+                // may match); non-matching files are dropped.
                 if (c.is_dir and child_depth < depth_cap) {
-                    const dir_path = std.fs.path.join(allocator, &.{ frame.path, c.name }) catch continue;
-                    stack.append(allocator, .{ .path = dir_path, .depth = child_depth }) catch {
+                    const dir_path = std.fs.path.join(allocator, &.{ frame.abs, c.name }) catch continue;
+                    const child_rel: ?[]u8 = if (frame.rel) |prefix|
+                        std.fmt.allocPrint(allocator, "{s}{s}/", .{ prefix, c.name }) catch {
+                            allocator.free(dir_path);
+                            continue;
+                        }
+                    else
+                        null;
+                    next.append(allocator, .{ .abs = dir_path, .rel = child_rel, .depth = child_depth }) catch {
                         allocator.free(dir_path);
+                        if (child_rel) |rel| allocator.free(rel);
                         continue;
                     };
                 }
 
                 const rank = matchRank(c.name, query) orelse continue;
                 const entry_name = allocator.dupe(u8, c.name) catch continue;
-                const full_path = std.fs.path.join(allocator, &.{ frame.path, c.name }) catch {
+                const full_path = std.fs.path.join(allocator, &.{ frame.abs, c.name }) catch {
                     allocator.free(entry_name);
                     continue;
                 };
@@ -535,9 +753,9 @@ pub const SystemFolder = struct {
                         .name = entry_name,
                         .path = full_path,
                         .is_directory = c.is_dir,
-                        // Symlinks never reach here (kind filter above
-                        // drops them) — same as the old per-entry code
-                        // where `is_symlink` was always false for hits.
+                        // Symlinks never reach here (the kind filter above
+                        // drops them) — same as the old per-entry code where
+                        // `is_symlink` was always false for hits.
                         .is_symlink = false,
                     },
                     .rank = rank,
@@ -547,6 +765,13 @@ pub const SystemFolder = struct {
                     continue;
                 };
             }
+
+            for (frontier.items) |frame| {
+                allocator.free(frame.abs);
+                if (frame.rel) |rel| allocator.free(rel);
+            }
+            frontier.deinit(allocator);
+            frontier = next;
         }
 
         // Rank: substring hits first, then dirs-first, then
@@ -2006,4 +2231,119 @@ fn freeFolderEntries(allocator: std.mem.Allocator, entries: []const FolderEntry)
         allocator.free(entry.path);
     }
     allocator.free(entries);
+}
+
+// ─── searchFiles: the ignore question is asked once per LEVEL ─────────────
+// A walk's RESULT cannot show whether it paid per directory, so these tests
+// assert the RESULT (what is filtered) and the COST (git processes spawned).
+
+fn writeInRoot(root: std.Io.Dir, io: std.Io, sub_path: []const u8, body: []const u8) !void {
+    if (std.fs.path.dirname(sub_path)) |parent| try root.createDirPath(io, parent);
+    try root.writeFile(io, .{ .sub_path = sub_path, .data = body });
+}
+
+test "searchFiles: a gitignored file is not a hit" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, ".gitignore", "*.secret\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "component.secret", "x\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "component.txt", "x\n");
+
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "component", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    try testing.expect(listsEntry(entries, "component.txt"));
+    try testing.expect(!listsEntry(entries, "component.secret"));
+}
+
+test "searchFiles: a gitignored directory is not descended into" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, ".gitignore", "vendor/\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "vendor/component_vendor.txt", "x\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "component.txt", "x\n");
+
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "component", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    try testing.expect(listsEntry(entries, "component.txt"));
+    for (entries) |entry| {
+        try testing.expect(!relContains(tenv.root_abs, entry.path, "vendor"));
+    }
+}
+
+test "searchFiles: a subdirectory root still honours the repository's .gitignore" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, ".gitignore", "sub/component_hidden.txt\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "sub/component_hidden.txt", "x\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "sub/component_shown.txt", "x\n");
+
+    const sub_root = try std.fs.path.join(allocator, &.{ tenv.root_abs, "sub" });
+    defer allocator.free(sub_root);
+
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, sub_root, "component", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    try testing.expect(listsEntry(entries, "component_shown.txt"));
+    try testing.expect(!listsEntry(entries, "component_hidden.txt"));
+}
+
+test "searchFiles: a deep tree asks git once per level, not once per directory" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    var dirs: usize = 0;
+    var files: usize = 0;
+    for (0..4) |top| {
+        for (0..4) |mid| {
+            for (0..2) |leaf| {
+                var name_buf: [64]u8 = undefined;
+                const sub_path = try std.fmt.bufPrint(&name_buf, "a{d}/b{d}/c{d}/component_{d}.txt", .{ top, mid, leaf, files });
+                try writeInRoot(tenv.tmp_dir.dir, testing.io, sub_path, "x\n");
+                files += 1;
+                dirs += 3;
+            }
+        }
+    }
+    try testing.expectEqual(@as(usize, 32), files);
+    try testing.expectEqual(@as(usize, 96), dirs);
+
+    const spawns_before = SystemFolder.gitSpawnCount();
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "component", 200, 8);
+    defer freeSearchResults(allocator, entries);
+    const spawns = SystemFolder.gitSpawnCount() - spawns_before;
+
+    try testing.expectEqual(@as(usize, 32), entries.len);
+    // One `rev-parse` for the repository, then one `check-ignore` per depth
+    // level (4 here). Paying per directory would be 96 + 1.
+    try testing.expect(spawns <= 6);
+}
+
+test "searchFiles: a --saas process with no VM answering asks the host's git nothing" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, ".gitignore", "*.secret\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "component.secret", "x\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "component.txt", "x\n");
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    if (!runtime_mode.vm_backend_available) return;
+
+    const spawns_before = SystemFolder.gitSpawnCount();
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "component", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    try testing.expectEqual(spawns_before, SystemFolder.gitSpawnCount());
+    try testing.expect(listsEntry(entries, "component.secret"));
 }
