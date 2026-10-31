@@ -43,6 +43,14 @@ describe('parseAskUserBlock', () => {
     expect(parseAskUserBlock(block(JSON.stringify({ question: '   ' })))).toBeNull()
   })
 
+  it('a block inside the markdown wrapper the server stores still parses', () => {
+    const q = parseAskUserBlock(`<markdown>\nFound it — the block is inline.\n${block(askJson)}\n</markdown>`)
+    expect(q?.question).toBe('Which environment?')
+    expect(stripAskUserBlock(`<markdown>\nFound it.\n${block(askJson)}\n</markdown>`)).toBe(
+      '<markdown>\nFound it.\n\n</markdown>',
+    )
+  })
+
   it('only the last block of a message is honoured', () => {
     const q = parseAskUserBlock(
       `${block(JSON.stringify({ question: 'first' }))}\n${block(JSON.stringify({ question: 'second' }))}`,

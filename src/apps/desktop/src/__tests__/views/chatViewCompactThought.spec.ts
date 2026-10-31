@@ -390,8 +390,9 @@ function seedQuestionTurn(): void {
     id: 'msg_asked',
     role: 'assistant',
     content:
-      'One thing first.\n' +
-      `<ask_user>${JSON.stringify({ question: QUESTION, options: ['billing', 'archive'] })}</ask_user>`,
+      '<markdown>\nOne thing first.\n' +
+      `<ask_user>${JSON.stringify({ question: QUESTION, options: ['billing', 'archive'] })}</ask_user>` +
+      '\n</markdown>',
     created_at: 2,
     finish_reason: 'awaiting_user',
   })
@@ -431,6 +432,12 @@ describe('the compact view of a turn that narrated on the way to its calls', () 
     expect(wrapper.text()).toContain(QUESTION)
     expect(wrapper.find('[data-testid="ask-user-card"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('<ask_user>')
+    // The JSON body must never leak as prose (the whole point of the strip).
+    expect(wrapper.text()).not.toContain('"question"')
+    // The card sits UNDER the answer of the message that asked.
+    const html = wrapper.html()
+    expect(html.indexOf('One thing first.')).toBeGreaterThan(-1)
+    expect(html.indexOf('One thing first.')).toBeLessThan(html.indexOf('ask-user-card'))
   })
 
   it('keeps the dev view drawing every line the agent wrote', async () => {

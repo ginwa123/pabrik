@@ -559,6 +559,9 @@ def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> 
         + json.dumps({"question": QUESTION, "options": ["billing", "archive"]})
         + "</ask_user>"
     )
+    # The shape the provider adapter actually stores: the text lives inside a
+    # chat envelope, and the history endpoint unwraps it server-side.
+    stored = json.dumps({"model": "test-model", "msg": f"<markdown>\nOne thing first.\n{ask_block}\n</markdown>"})
 
     seed = DbSeed(_seed_db_path(h))
     with seed.connect() as conn:
@@ -568,7 +571,7 @@ def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> 
         seed.seed_assistant_message(
             conn,
             session_id,
-            text=f"One thing first.\n{ask_block}",
+            text=stored,
             finish_reason="awaiting_user",
             message_id="msg_ask_1",
         )
@@ -583,6 +586,29 @@ def test_a_question_for_the_human_stays_visible(ui_harness: UIHarness, page) -> 
     assert "<ask_user>" not in body, (
         f"the block itself must never be rendered as text, got {body!r}"
     )
+    assert '"options"' not in body, (
+        f"the block's JSON must never leak as prose, got {body!r}"
+    )
+    assert '"model"' not in body and '"msg"' not in body, (
+        f"the chat envelope must never leak as prose, got {body!r}"
+    )
+
+    card = page.locator('[data-testid="ask-user-card"]').first
+    assert card.get_attribute("data-state") == "pending"
+    assert page.locator('[data-testid^="ask-user-option-"]').count() == 2, (
+        "both options must be clickable choices"
+    )
+    assert page.locator('[data-testid="ask-user-send"]').is_visible()
+    assert page.locator('[data-testid="ask-user-skip"]').is_visible()
+    assert page.locator('[data-testid="ask-user-freetext"]').count() == 1
+
+    prose_before = page.get_by_text("One thing first.", exact=False).first
+    assert prose_before.is_visible()
+    assert prose_before.bounding_box()["y"] < card.bounding_box()["y"] - 4, (
+        "the card must sit UNDER the answer of the message that asked"
+    )
+
+    page.screenshot(path=str(h.temp_dir / "ask_user_card.png"), full_page=True)
 
 
 def test_a_presented_file_keeps_its_own_card(ui_harness: UIHarness, page) -> None:

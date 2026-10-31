@@ -11,6 +11,7 @@ const llm_history = pabrikcore.llm_history;
 const ask_user_mod = pabrikcore.ask_user_message;
 const wrapToolOutput = @import("../modules/agent/tools/tools_wrap_output.zig").wrapToolOutput;
 const on_event_sent = @import("on_event_sent.zig");
+const parsing = @import("parsing.zig");
 const is_worker_running = @import("is_worker_running.zig");
 const testing = std.testing;
 
@@ -378,6 +379,37 @@ fn extractParametersJson(allocator: std.mem.Allocator, content: []const u8) ![]u
 /// The resolved block replaces the one the model wrote, in the row it wrote
 /// it in. A row that predates the block protocol still carries a tool
 /// envelope, so it keeps the envelope rewrite.
+fn rewriteInsideChatEnvelope(
+    allocator: std.mem.Allocator,
+    previous: []const u8,
+    block: []const u8,
+) !?[]u8 {
+    const trimmed = std.mem.trim(u8, previous, &std.ascii.whitespace);
+    if (trimmed.len == 0 or trimmed[0] != '{') return null;
+
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+
+    const msg_field = parsed.value.object.get("msg") orelse return null;
+    if (msg_field != .string) return null;
+    if (parsed.value.object.get("model") == null and parsed.value.object.get("user") == null) return null;
+
+    const msg = msg_field.string;
+    const span = ask_user_mod.findSpan(msg) orelse return null;
+
+    const updated_msg = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{
+        msg[0..span.start],
+        block,
+        msg[span.end..],
+    });
+    defer allocator.free(updated_msg);
+
+    var value = parsed.value;
+    try value.object.put(allocator, "msg", .{ .string = updated_msg });
+    return try std.json.Stringify.valueAlloc(allocator, value, .{});
+}
+
 fn resolvedContent(
     allocator: std.mem.Allocator,
     previous: []const u8,
@@ -389,6 +421,8 @@ fn resolvedContent(
         ask_user_mod.MARKER_CLOSE,
     });
     defer allocator.free(block);
+
+    if (try rewriteInsideChatEnvelope(allocator, previous, block)) |rewritten| return rewritten;
 
     if (ask_user_mod.findSpan(previous)) |span| {
         const out = try allocator.alloc(u8, span.start + block.len + (previous.len - span.end));
@@ -455,12 +489,15 @@ fn emitRowById(
         if (m.tool_call_id) |t| allocator.free(t);
     }
 
+    const sse_content = parsing.unwrapChatContent(allocator, m.response_content) catch null;
+    defer if (sse_content) |c| allocator.free(c);
+
     on_event_sent.onEventSendLLMHistory(allocator, .{
         .id = m.id,
         .session_id = m.session_id,
         .model = m.model,
         .cwd = "",
-        .content = m.response_content,
+        .content = sse_content orelse m.response_content,
         .reasoning_content = m.reasoning_content,
         .role = m.role,
         .finish_reason = m.finish_reason,
@@ -955,4 +992,66 @@ test "ask_user_pending: a legacy tool row keeps its envelope on resolve" {
     defer a.free(after);
     try testing.expect(std.mem.indexOf(u8, after, "\"status\":\"answered\"") != null);
     try testing.expect(std.mem.indexOf(u8, after, "\"answer\":\"staging\"") != null);
+}
+
+test "ask_user_pending: rewriting inside a chat envelope keeps the envelope valid JSON" {
+    const a = testing.allocator;
+    var s = try setupDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    try s.db.exec(a,
+        \\CREATE TABLE llm_history (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT NOT NULL,
+        \\    model TEXT NOT NULL,
+        \\    response_content TEXT,
+        \\    role TEXT,
+        \\    tool_name TEXT,
+        \\    diffview_before TEXT,
+        \\    diffview_after TEXT,
+        \\    is_loading INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+
+    const envelope =
+        "{\"model\":\"deepseek auto\",\"msg\":\"<markdown>\\nFound it.\\n" ++
+        "<ask_user>{\\\"question\\\":\\\"Which environment?\\\"}</ask_user>" ++
+        "\\n</markdown>\"}";
+    try s.db.exec(a,
+        \\INSERT INTO llm_history (id, session_id, model, response_content, role, tool_name)
+        \\VALUES ('row_env', 'sess_1', 'm', ?, 'assistant', NULL)
+    , &.{envelope});
+
+    const inner = try ask_user_mod.buildAskUserJson(a, .{
+        .status = .answered,
+        .question_id = "q_env",
+        .question = "Which environment?",
+        .answer = "staging",
+        .answers_count = 1,
+    });
+    defer a.free(inner);
+
+    try rewriteAnchorRow(.{
+        .allocator = a,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .session_id = "sess_1",
+        .llm_history_id = "row_env",
+        .inner = inner,
+    });
+
+    const after = (try readRowContent(a, &s.db, "row_env")).?;
+    defer a.free(after);
+
+    // The row is read back with `unwrapChatContent` on the history path, so an
+    // envelope that no longer parses renders as raw text in the transcript.
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, after, .{});
+    defer parsed.deinit();
+    const msg = parsed.value.object.get("msg").?.string;
+    try testing.expect(std.mem.startsWith(u8, msg, "<markdown>"));
+    try testing.expect(std.mem.indexOf(u8, msg, "\"status\":\"answered\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "\"answer\":\"staging\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "<ask_user>{") != null);
+    try testing.expectEqualStrings("deepseek auto", parsed.value.object.get("model").?.string);
 }

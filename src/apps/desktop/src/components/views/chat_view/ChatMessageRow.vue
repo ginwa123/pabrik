@@ -252,12 +252,6 @@ defineProps<{
                  on tool_calls-only assistant turns. The tool header
                  (if any) is shown above; we don't want an empty
                  padded area below it. -->
-            <AskUser
-              v-if="asked"
-              :question="asked.question"
-              :message-id="asked.messageId"
-              :session-id="sessionId || chatId"
-            />
             <div v-if="answeredMessages(group).some(hasVisibleContent)" class="assistant-messages">
               <div
                 v-for="(msg, idx) in answeredMessages(group)"
@@ -296,6 +290,12 @@ defineProps<{
                 <span v-else v-html="renderMessageHtml(msg)"></span>
               </div>
             </div>
+            <AskUser
+              v-if="asked"
+              :question="asked.question"
+              :message-id="asked.messageId"
+              :session-id="sessionId || chatId"
+            />
           </template>
         </div>
         <!-- Timestamp is hidden along with the bubble. The bubble
