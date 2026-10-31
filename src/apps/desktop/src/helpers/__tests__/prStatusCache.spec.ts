@@ -3,7 +3,7 @@
  * dedupe, TTL caching, retry-on-transient, no-retry-on-404, and fail-silent ''. */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { ApiError } from '@/api'
-import { fetchPrStatusCached, clearPrStatusCache } from '../prStatusCache'
+import { fetchPrStatusCached, fetchPrStatusFullCached, clearPrStatusCache } from '../prStatusCache'
 
 const { getPrStatusMock } = vi.hoisted(() => ({
   getPrStatusMock: vi.fn(),
@@ -92,5 +92,52 @@ describe('prStatusCache', () => {
     await expect(fetchPrStatusCached('', 'feature/x')).resolves.toBe('')
     await expect(fetchPrStatusCached('/repo', '')).resolves.toBe('')
     expect(getPrStatusMock).not.toHaveBeenCalled()
+  })
+
+  it('does not ask the forge again for ten minutes when the branch has no PR', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-21T10:00:00Z'))
+    getPrStatusMock.mockResolvedValue({ has_pr: false, reason: 'no_pr', status: '', state: '' })
+
+    await fetchPrStatusCached('/repo', 'main')
+    vi.setSystemTime(new Date('2026-09-21T10:09:00Z'))
+    await fetchPrStatusCached('/repo', 'main')
+    expect(getPrStatusMock).toHaveBeenCalledTimes(1)
+
+    vi.setSystemTime(new Date('2026-09-21T10:11:00Z'))
+    await fetchPrStatusCached('/repo', 'main')
+    expect(getPrStatusMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not ask the forge again for ten minutes once the PR is merged', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-21T10:00:00Z'))
+    getPrStatusMock.mockResolvedValue({ has_pr: true, status: 'merged', state: 'MERGED' })
+
+    await fetchPrStatusCached('/repo', 'feature/x')
+    vi.setSystemTime(new Date('2026-09-21T10:09:00Z'))
+    await expect(fetchPrStatusCached('/repo', 'feature/x')).resolves.toBe('merged')
+    expect(getPrStatusMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports hasPr true for a server that answers without the flag', async () => {
+    getPrStatusMock.mockResolvedValue({ status: 'open', state: 'OPEN' })
+    const info = await fetchPrStatusFullCached('/repo', 'feature/x')
+    expect(info.hasPr).toBe(true)
+    expect(info.status).toBe('open')
+  })
+
+  it('reports hasPr false and stays quiet when an older server answers 404', async () => {
+    getPrStatusMock.mockRejectedValue(new ApiError(404, 'Not Found', ''))
+    const info = await fetchPrStatusFullCached('/repo', 'main')
+    expect(info.hasPr).toBe(false)
+    expect(info.status).toBe('')
+    expect(console.warn).not.toHaveBeenCalled()
+  })
+
+  it('reports hasPr unknown rather than false when the fetch kept failing', async () => {
+    getPrStatusMock.mockRejectedValue(new ApiError(500, 'Server Error', ''))
+    const info = await fetchPrStatusFullCached('/repo', 'feature/x')
+    expect(info.hasPr).toBeNull()
   })
 })

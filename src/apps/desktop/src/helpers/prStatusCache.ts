@@ -8,6 +8,7 @@ import { describeCause } from './effectRuntime'
 import type { SseBus } from './sseBus'
 
 const TTL_MS = 60_000
+const SETTLED_TTL_MS = 10 * 60_000
 const MAX_RETRIES = 2
 const RETRY_DELAYS_MS = [300, 900]
 
@@ -16,14 +17,15 @@ export interface PrInfo {
   prUrl: string
   mergeable: string
   merge_state: string
+  /** `true` = the forge has a change request for this branch, `false` = it answered that there is
+   * none, `null` = the question is still open (failed fetch, or no answer yet). */
+  hasPr: boolean | null
 }
 
 interface CacheEntry {
-  status: string
-  prUrl: string
-  mergeable: string
-  merge_state: string
+  info: PrInfo
   at: number
+  ttl: number
 }
 
 /** CONFLICTING (or DIRTY) means the PR cannot merge until conflicts resolve. */
@@ -129,7 +131,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-const EMPTY_INFO: PrInfo = { status: '', prUrl: '', mergeable: '', merge_state: '' }
+const EMPTY_INFO: PrInfo = { status: '', prUrl: '', mergeable: '', merge_state: '', hasPr: null }
+
+/** How long an answer may be reused. A branch the forge has no change request for, and a change
+ * request that is already merged or closed, cannot answer differently in the next minute — so they
+ * are kept for `SETTLED_TTL_MS` and the board stops asking the forge about them. */
+function ttlFor(info: PrInfo): number {
+  if (info.hasPr === false) return SETTLED_TTL_MS
+  if (info.status === 'merged' || info.status === 'closed') return SETTLED_TTL_MS
+  return TTL_MS
+}
 
 async function fetchWithRetry(cwd: string, branch: string, provider: string): Promise<PrInfo> {
   let lastErr: unknown = null
@@ -145,10 +156,13 @@ async function fetchWithRetry(cwd: string, branch: string, provider: string): Pr
         prUrl: data.pr_url || '',
         mergeable: (data.mergeable || '').toUpperCase(),
         merge_state: (data.merge_state || '').toUpperCase(),
+        hasPr: data.has_pr !== false,
       }
     } catch (err) {
       lastErr = err
-      if (!isRetryable(err)) break
+      // A 404 is the pre-`has_pr` spelling of "this branch has no change request", so it is an
+      // answer rather than a failure: no retry, no warning, and it is remembered as an answer.
+      if (!isRetryable(err)) return { ...EMPTY_INFO, hasPr: false }
     }
   }
   console.warn(`[pr-status] giving up on branch "${branch}":`, lastErr)
@@ -161,13 +175,7 @@ export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): P
   if (!cwd || !branch) return Promise.resolve({ ...EMPTY_INFO })
   const k = cacheKey(cwd, branch, provider)
   const hit = cache.get(k)
-  if (hit && Date.now() - hit.at < TTL_MS)
-    return Promise.resolve({
-      status: hit.status,
-      prUrl: hit.prUrl,
-      mergeable: hit.mergeable,
-      merge_state: hit.merge_state,
-    })
+  if (hit && Date.now() - hit.at < hit.ttl) return Promise.resolve({ ...hit.info })
   const ongoing = inflight.get(k)
   if (ongoing) return ongoing
   // Captured before the request goes out: an `invalidatePrStatus` that lands
@@ -177,13 +185,7 @@ export function fetchPrInfoCached(cwd: string, branch: string, provider = ''): P
   const p = fetchWithRetry(cwd, branch, provider).then(
     (info) => {
       if ((epoch.get(k) ?? 0) === myEpoch) {
-        cache.set(k, {
-          status: info.status,
-          prUrl: info.prUrl,
-          mergeable: info.mergeable,
-          merge_state: info.merge_state,
-          at: Date.now(),
-        })
+        cache.set(k, { info, at: Date.now(), ttl: ttlFor(info) })
       }
       inflight.delete(k)
       return info

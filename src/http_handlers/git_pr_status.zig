@@ -739,12 +739,12 @@ pub fn gitPrStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
             return res.jsonResponse(.{ .status_code = 422, .data = try http_response.makeGitStatusErrorResponse(allocator, msg) });
         },
         error.NoAssociatedPr => {
-            const cli = handlerCli(allocator, io, path_param, pr_param, provider_param);
-            const msg = if (pr_param.len > 0)
-                try std.fmt.allocPrint(allocator, "no {s} found for '{s}'", .{ cli.label, pr_param })
-            else
-                try std.fmt.allocPrint(allocator, "no {s} found for the current branch", .{cli.label});
-            return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, msg) });
+            const provider_name: []const u8 = if (handlerProvider(allocator, io, path_param, pr_param, provider_param)) |p| p.toString() else "";
+            return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeGitPrStatusResponse(allocator, .{
+                .provider = provider_name,
+                .has_pr = false,
+                .reason = "no_pr",
+            }) });
         },
         error.FetchFailed => {
             // Surface the real CLI stderr (auth, bad number, rate limit) so

@@ -65,6 +65,11 @@ export async function getPrDiff(
 export interface GitPrStatus {
   // Which forge answered: `github` | `gitlab`. Absent on older servers.
   provider?: string
+  /** `false` when the forge was asked for this branch and has no change request: `status` and
+   * `state` are then `''`. Absent on older servers, where only a 404 said so. */
+  has_pr?: boolean
+  /** Machine-readable cause of `has_pr === false`: `no_pr`. */
+  reason?: string
   pr_url: string
   number: number
   title: string

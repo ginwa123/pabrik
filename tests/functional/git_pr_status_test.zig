@@ -191,6 +191,14 @@ const GH_FAIL_SCRIPT =
     \\exit 1
 ;
 
+/// A `gh` for a branch nobody opened a change request for: the stderr and
+/// exit code `gh pr view` itself produces.
+const GH_NO_PR_SCRIPT =
+    \\#!/bin/sh
+    \\echo 'no pull requests found for branch "worktree/no-pr-here"' >&2
+    \\exit 1
+;
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -385,6 +393,8 @@ test "happy_path_via_fake_gh" {
     try expectEqualStr(&doc, "title", "Fix login");
     try expectEqualStr(&doc, "head_ref", "feature");
     try expectEqualStr(&doc, "base_ref", "main");
+    try expectEqualBool(&doc, "has_pr", true);
+    try expectEqualStr(&doc, "reason", "");
 }
 
 // 6. An OPEN PR's `gh` payload carries `"mergedAt":null,"closedAt":null`.
@@ -478,6 +488,47 @@ test "fetch_failure_surfaces_gh_stderr" {
         std.debug.print("502 error does not start with \"{s}\": {s}\n", .{ prefix, message });
         return error.TestUnexpectedResult;
     }
+    if (doc.get("has_pr") != null) {
+        std.debug.print("a failed fetch must not answer a `has_pr` flag: {s}\n", .{r.body});
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "no_pr_for_branch_is_200_with_has_pr_false" {
+    try harness.requirePabrikBin(io, gpa);
+
+    var s = try Scratch.init();
+    defer s.deinit();
+    const repo = try buildRepo(&s);
+    defer gpa.free(repo);
+
+    const bindir = try installFakeGh(&s, "fakebin-no-pr", GH_NO_PR_SCRIPT);
+    defer gpa.free(bindir);
+
+    var shadow = try PathShadow.install(gpa, bindir);
+    defer shadow.restore();
+
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    var r = try h.http(io, .GET, "/api/git/pr/status", .{
+        .params = &.{
+            .{ .name = "path", .value = repo },
+            .{ .name = "pr", .value = "worktree/no-pr-here" },
+        },
+        .expect = &.{200},
+        .timeout_s = 15.0,
+    });
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+
+    try expectEqualBool(&doc, "has_pr", false);
+    try expectEqualStr(&doc, "reason", "no_pr");
+    try expectEqualStr(&doc, "status", "");
+    try expectEqualStr(&doc, "state", "");
 }
 
 // ============================================================================
@@ -528,6 +579,17 @@ fn expectEqualInt(doc: *const harness.Json, key: []const u8, want: i64) !void {
     }
 }
 
+fn expectEqualBool(doc: *const harness.Json, key: []const u8, want: bool) !void {
+    const got = doc.boolean(key) orelse {
+        std.debug.print("response has no boolean `{s}`\n", .{key});
+        return error.TestUnexpectedResult;
+    };
+    if (got != want) {
+        std.debug.print("`{s}` = {}, expected {}\n", .{ key, got, want });
+        return error.TestUnexpectedResult;
+    }
+}
+
 comptime {
     // Body-analysis barrier: an unreferenced helper is never
     // type-checked, so a stdlib rename inside one is invisible until a
@@ -542,5 +604,6 @@ comptime {
     _ = containsIgnoreCase;
     _ = expectEqualStr;
     _ = expectEqualInt;
+    _ = expectEqualBool;
     _ = git;
 }
