@@ -1,8 +1,8 @@
 import { apiFetch } from './client'
 
 // ─── Workspace secrets (Migration 101) ─────────────────────────────────── Named credentials
-// scoped to one workspace: an API key the agent's tools can substitute into a request, never
-// displayed back to the browser. NO RESPONSE EVER CONTAINS THE VALUE.
+// scoped to one workspace. Values are sealed at rest and no list response contains one; only
+// `revealSecret` returns a plaintext, and only to a member of that workspace.
 export interface Secret {
   id: string
   name: string
@@ -59,5 +59,25 @@ export async function deleteSecret(
   return await apiFetch<{ id: string; success: boolean }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(secretId)}`,
     { method: 'DELETE' },
+  )
+}
+
+/** The one shape on this surface that carries a plaintext credential. */
+export interface RevealedSecret {
+  id: string
+  name: string
+  value: string
+}
+
+/** GET /api/workspaces/:workspaceId/secrets/:secretId/reveal Asks the server to unseal ONE value.
+ * Member-only: a non-member gets 404, the same answer as an id that does not exist. Never call this
+ * in a list or a loop — one explicit user action, one request. */
+export async function revealSecret(
+  workspaceId: string,
+  secretId: string,
+): Promise<{ secret: RevealedSecret }> {
+  return await apiFetch<{ secret: RevealedSecret }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(secretId)}/reveal`,
+    { track: false },
   )
 }

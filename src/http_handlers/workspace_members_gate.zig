@@ -63,6 +63,21 @@ pub fn check(
     if (!allowed) return error.Forbidden;
 }
 
+/// `check` for a handler that only needs the verdict: resolves the caller from
+/// the request itself, so no call site can pass the wrong user.
+pub fn checkRequest(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.database.Db,
+    auth_enabled: bool,
+    headers: anytype,
+    workspace_id: []const u8,
+    access: Access,
+) GateError!void {
+    const caller = try callerFor(allocator, db, auth_enabled, headers);
+    defer allocator.free(caller);
+    try check(allocator, db, workspace_id, caller, access);
+}
+
 pub fn statusFor(err: GateError) u16 {
     return switch (err) {
         error.WorkspaceIdRequired => 400,

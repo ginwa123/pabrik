@@ -7,6 +7,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const secrets_store = @import("../agentic_loop/secrets_store.zig");
+const gate = @import("workspace_members_gate.zig");
 
 pub const SecretsDeleteError = error{
     WorkspaceIdRequired,
@@ -47,6 +48,7 @@ fn useCase(
         error.InsertFailed,
         error.UpdateFailed,
         error.OutOfMemory,
+        error.SealingUnavailable,
         => unreachable,
     };
 }
@@ -86,12 +88,17 @@ pub fn secretsDeleteHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
+    const workspace_id = req.params.get("workspace_id") orelse "";
     const secret_id = req.params.get("secret_id") orelse "";
+    // Writes need owner/admin: a viewer may read a workspace, not its credentials.
+    gate.checkRequest(allocator, di.db, di.auth_enabled, req.headers, workspace_id, .manage) catch |err| {
+        return res.jsonResponse(.{
+            .status_code = gate.statusFor(err),
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = gate.messageFor(err) }),
+        });
+    };
 
-    useCase(allocator, sqlite_db, .{
-        .workspace_id = req.params.get("workspace_id") orelse "",
-        .secret_id = secret_id,
-    }) catch |err| {
+    useCase(allocator, sqlite_db, .{ .workspace_id = workspace_id, .secret_id = secret_id }) catch |err| {
         return res.jsonResponse(.{
             .status_code = statusFor(err),
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = messageFor(err) }),

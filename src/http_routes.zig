@@ -414,6 +414,9 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     try authed.post("/api/workspaces/:workspace_id/secrets", ai_mod.http_handlers.secretsCreateHandler);
     try authed.patch("/api/workspaces/:workspace_id/secrets/:secret_id", ai_mod.http_handlers.secretsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/secrets/:secret_id", ai_mod.http_handlers.secretsDeleteHandler);
+    // The ONE route that returns a credential. Member-only (`workspace_members_gate`),
+    // 404 for anybody else, and `Cache-Control: no-store` on the answer.
+    try authed.get("/api/workspaces/:workspace_id/secrets/:secret_id/reveal", ai_mod.http_handlers.secretsRevealHandler);
 
     // Per-workspace config overlay (Migration 105): the config sections that
     // moved out of the User-scope Pabrik page into Workspace settings.

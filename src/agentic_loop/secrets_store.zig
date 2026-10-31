@@ -5,6 +5,7 @@ const test_db = @import("pabrikcore").test_db;
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
+const secrets_at_rest = @import("secrets_at_rest.zig");
 
 /// Longest legal secret name.
 pub const MAX_NAME_LEN: usize = 64;
@@ -53,6 +54,40 @@ pub const SecretsError = error{
     InsertFailed,
     UpdateFailed,
     DeleteFailed,
+    /// No master key on this host: the value cannot be sealed, so the write is
+    /// refused rather than stored as plaintext.
+    SealingUnavailable,
+    OutOfMemory,
+};
+
+/// The value-reading paths have their own error set, so the four HTTP
+/// handlers' exhaustive switches over `SecretsError` do not grow a variant they
+/// can never see.
+pub const ReadValuesError = error{
+    WorkspaceIdRequired,
+    QueryFailed,
+    /// The row is an envelope this host cannot open: a different key, or a
+    /// damaged row. Never reported as an empty credential.
+    ValueUnreadable,
+    OutOfMemory,
+};
+
+/// The plaintext of ONE secret, returned only to a caller that already decided
+/// the requester is a member of `workspace_id`. Owned; free with
+/// `freeRevealedSecret`.
+pub const RevealedSecret = struct {
+    id: []u8,
+    name: []u8,
+    value: []u8,
+};
+
+pub const RevealError = error{
+    IdsRequired,
+    /// No such secret in this workspace — never distinguished from "exists in
+    /// another workspace".
+    NotFound,
+    QueryFailed,
+    ValueUnreadable,
     OutOfMemory,
 };
 
@@ -69,10 +104,10 @@ const SELECT_COLUMNS =
 const SELECT_NAMES =
     "SELECT name FROM workspace_secrets WHERE workspace_id = ? ORDER BY name";
 
-/// Prefix for `loadSecretValues`, which appends the `IN (...)` list. The
-/// only two functions in this file whose SQL mentions `value`.
+/// Prefix for `loadSecretValues`, which appends the `IN (...)` list. `id` is
+/// selected because it is the AAD the envelope is bound to.
 const SELECT_NAME_VALUE_PREFIX =
-    "SELECT name, value FROM workspace_secrets WHERE workspace_id = ? AND name IN (";
+    "SELECT id, name, value FROM workspace_secrets WHERE workspace_id = ? AND name IN (";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !SecretRow {
     return .{
@@ -160,12 +195,21 @@ pub fn createSecret(
     const secret_id = try std.fmt.allocPrint(allocator, "sec_{d}", .{helpers.unixTimestampNanos()});
     defer allocator.free(secret_id);
 
+    // Sealed under the row's own id, so the envelope cannot be moved to a
+    // different secret. No key means no write — see `sealValue`.
+    const sealed = secrets_at_rest.sealValue(allocator, secret_id, args.value) catch |err| switch (err) {
+        error.SealingUnavailable => return error.SealingUnavailable,
+        error.OutOfMemory => return error.OutOfMemory,
+        error.RandomFailed, error.UnsupportedPlatform => return error.InsertFailed,
+    };
+    defer allocator.free(sealed);
+
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column, for the
     // empty-slice-binds-as-NULL reason described above.
     db.exec(allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value, created_at, updated_at)
         \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    , &[_][]const u8{ secret_id, args.workspace_id, name, args.value }) catch |err| switch (err) {
+    , &[_][]const u8{ secret_id, args.workspace_id, name, sealed }) catch |err| switch (err) {
         error.ExecuteFailed => {
             // A failed INSERT is not automatically a taken name: it is also
             // what a same-nanosecond primary-key collision looks like.
@@ -216,11 +260,18 @@ pub fn updateSecret(
         r.deinit(allocator);
     } else return error.NotFound;
 
+    const sealed = secrets_at_rest.sealValue(allocator, args.secret_id, args.value) catch |err| switch (err) {
+        error.SealingUnavailable => return error.SealingUnavailable,
+        error.OutOfMemory => return error.OutOfMemory,
+        error.RandomFailed, error.UnsupportedPlatform => return error.UpdateFailed,
+    };
+    defer allocator.free(sealed);
+
     db.exec(allocator,
         \\UPDATE workspace_secrets
         \\SET value = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
         \\WHERE id = ? AND workspace_id = ?
-    , &[_][]const u8{ args.value, args.secret_id, args.workspace_id }) catch
+    , &[_][]const u8{ sealed, args.secret_id, args.workspace_id }) catch
         return error.UpdateFailed;
 
     return getSecret(allocator, db, args.workspace_id, args.secret_id) catch
@@ -278,15 +329,14 @@ pub fn listSecretNames(
     return out.toOwnedSlice(allocator);
 }
 
-/// The values of the named secrets in one workspace — the ONLY function in
-/// this file that returns a value, and therefore the only one the
-/// substitution path may call.
+/// The values of the named secrets in one workspace, for the substitution path. Every value is
+/// OPENED here, and a row that will not open reports `ValueUnreadable` instead of an empty value.
 pub fn loadSecretValues(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
     names: []const []const u8,
-) SecretsError![]SecretValueRow {
+) ReadValuesError![]SecretValueRow {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
 
     var out: std.ArrayList(SecretValueRow) = .empty;
@@ -314,13 +364,55 @@ pub fn loadSecretValues(
 
     while (q.next() catch return error.QueryFailed) |r| {
         defer r.deinit(allocator);
-        const name_copy = try allocator.dupe(u8, r.values[0]);
+        // r.values: 0 = id (the AAD), 1 = name, 2 = stored value.
+        const opened = secrets_at_rest.openValue(allocator, r.values[0], r.values[2]) catch
+            return error.ValueUnreadable;
+        errdefer allocator.free(opened);
+        const name_copy = try allocator.dupe(u8, r.values[1]);
         errdefer allocator.free(name_copy);
-        const value_copy = try allocator.dupe(u8, r.values[1]);
-        errdefer allocator.free(value_copy);
-        try out.append(allocator, .{ .name = name_copy, .value = value_copy });
+        try out.append(allocator, .{ .name = name_copy, .value = opened });
     }
     return out.toOwnedSlice(allocator);
+}
+
+/// The plaintext of ONE secret, for the member-only reveal route. The caller is
+/// responsible for having checked membership first — this function scopes to
+/// the workspace and nothing else.
+pub fn revealSecret(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+    secret_id: []const u8,
+) RevealError!RevealedSecret {
+    if (workspace_id.len == 0 or secret_id.len == 0) return error.IdsRequired;
+
+    var q = db.query(
+        allocator,
+        "SELECT id, name, value FROM workspace_secrets WHERE id = ? AND workspace_id = ?",
+        &[_][]const u8{ secret_id, workspace_id },
+    ) catch return error.QueryFailed;
+    defer q.deinit();
+
+    const r = (q.next() catch return error.QueryFailed) orelse return error.NotFound;
+    defer r.deinit(allocator);
+
+    const value = secrets_at_rest.openValue(allocator, r.values[0], r.values[2]) catch
+        return error.ValueUnreadable;
+    errdefer allocator.free(value);
+
+    const id_copy = try allocator.dupe(u8, r.values[0]);
+    errdefer allocator.free(id_copy);
+    const name_copy = try allocator.dupe(u8, r.values[1]);
+    errdefer allocator.free(name_copy);
+
+    return .{ .id = id_copy, .name = name_copy, .value = value };
+}
+
+/// Free a revealed value. Call it as soon as the response body has been built.
+pub fn freeRevealedSecret(allocator: std.mem.Allocator, revealed: RevealedSecret) void {
+    allocator.free(revealed.id);
+    allocator.free(revealed.name);
+    allocator.free(revealed.value);
 }
 
 /// Whether `(workspace_id, name)` is already taken. Used both as the
@@ -401,8 +493,17 @@ const TestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
+/// A fixed key for the whole suite: no test reads the host's real key file, and
+/// the key is stable so an envelope written by one call opens in the next.
+const test_key: [secrets_at_rest.KEY_LEN]u8 = blk: {
+    var k: [secrets_at_rest.KEY_LEN]u8 = undefined;
+    for (&k, 0..) |*b, i| b.* = @intCast(i);
+    break :blk k;
+};
+
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
+    secrets_at_rest.setKey(test_key);
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
@@ -429,8 +530,27 @@ fn setupDb() !TestCtx {
 }
 
 fn teardown(ctx: *TestCtx) void {
+    secrets_at_rest.setKey(null);
     ctx.db.deinit();
     ctx.threaded.deinit();
+}
+
+/// The credential behind a stored value. The raw column is an envelope, so
+/// every assertion about what was saved has to open it.
+fn openStored(ctx: *TestCtx, name: []const u8) ![]u8 {
+    const alloc = testing.allocator;
+    const stored = try storedValue(ctx, name);
+    defer alloc.free(stored);
+
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT id FROM workspace_secrets WHERE name = ?",
+        &[_][]const u8{name},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.SecretMissing;
+    defer row.deinit(alloc);
+    return secrets_at_rest.openValue(alloc, row.values[0], stored);
 }
 
 /// Create one secret and free the returned row, for tests that only care
@@ -565,7 +685,7 @@ test "createSecret reports a duplicate name in the same workspace as NameTaken" 
     }));
 
     // The rejected insert must not have overwritten the stored value.
-    const kept = try storedValue(&ctx, "GITHUB_TOKEN");
+    const kept = try openStored(&ctx, "GITHUB_TOKEN");
     defer alloc.free(kept);
     try testing.expectEqualStrings("v_GITHUB_TOKEN", kept);
 
@@ -602,7 +722,7 @@ test "every read is scoped: a foreign workspace_id sees nothing" {
     try testing.expectError(error.NotFound, deleteSecret(alloc, &ctx.db, "ws_2", row.id));
 
     // ...and the rejected writes changed nothing.
-    const kept = try storedValue(&ctx, "GH");
+    const kept = try openStored(&ctx, "GH");
     defer alloc.free(kept);
     try testing.expectEqualStrings("ghp_1", kept);
 
@@ -705,7 +825,7 @@ test "updateSecret rotates the value and leaves the name alone" {
     try testing.expectEqualStrings("GH", rotated.name);
     try testing.expectEqualStrings(created.id, rotated.id);
 
-    const persisted = try storedValue(&ctx, "GH");
+    const persisted = try openStored(&ctx, "GH");
     defer alloc.free(persisted);
     try testing.expectEqualStrings("ghp_new", persisted);
 
@@ -728,8 +848,7 @@ test "a value with quotes, a backslash and a newline round-trips byte for byte" 
     var ctx = try setupDb();
     defer teardown(&ctx);
 
-    // The value is stored plaintext, so the only correctness question is
-    // whether the binder corrupts it.
+    // The value is sealed, so this covers both the cipher and the binder.
     const gnarly = "he said \"hi\" \\ path\\to\\x\nsecond line\ttabbed";
     const row = try createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
@@ -782,4 +901,153 @@ test "isValidName accepts the documented grammar and nothing else" {
     try testing.expect(!isValidName("has space"));
     try testing.expect(!isValidName("emoji😀"));
     try testing.expect(!isValidName("a" ** (MAX_NAME_LEN + 1)));
+}
+
+test "createSecret stores an envelope, so the raw column carries no credential" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_real_credential",
+    });
+    defer freeSecretRow(alloc, row);
+
+    // The column a database GUI shows, a backup contains and `sqlite3` prints.
+    const stored = try storedValue(&ctx, "GH");
+    defer alloc.free(stored);
+    try testing.expect(secrets_at_rest.isSealed(stored));
+    try testing.expect(std.mem.indexOf(u8, stored, "ghp_real_credential") == null);
+
+    // ...and the value is not lost: it opens under the same key.
+    const opened = try openStored(&ctx, "GH");
+    defer alloc.free(opened);
+    try testing.expectEqualStrings("ghp_real_credential", opened);
+}
+
+test "a create is refused when this host has no key, and nothing is written" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    secrets_at_rest.setKey(null);
+    try testing.expectError(error.SealingUnavailable, createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_never_stored",
+    }));
+
+    const names = try listSecretNames(alloc, &ctx.db, "ws_1");
+    defer freeSecretNames(alloc, names);
+    try testing.expectEqual(@as(usize, 0), names.len);
+}
+
+test "a rotation is refused when this host has no key, and the old value survives" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_old",
+    });
+    defer freeSecretRow(alloc, row);
+
+    secrets_at_rest.setKey(null);
+    try testing.expectError(error.SealingUnavailable, updateSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = row.id,
+        .value = "ghp_new",
+    }));
+
+    secrets_at_rest.setKey(test_key);
+    const kept = try openStored(&ctx, "GH");
+    defer alloc.free(kept);
+    try testing.expectEqualStrings("ghp_old", kept);
+}
+
+test "revealSecret returns the plaintext for its own workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "STRIPE",
+        .value = "sk_live_opened_on_request",
+    });
+    defer freeSecretRow(alloc, row);
+
+    const revealed = try revealSecret(alloc, &ctx.db, "ws_1", row.id);
+    defer freeRevealedSecret(alloc, revealed);
+
+    try testing.expectEqualStrings(row.id, revealed.id);
+    try testing.expectEqualStrings("STRIPE", revealed.name);
+    try testing.expectEqualStrings("sk_live_opened_on_request", revealed.value);
+}
+
+test "revealSecret answers NotFound for another workspace's id" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "STRIPE",
+        .value = "sk_live_1",
+    });
+    defer freeSecretRow(alloc, row);
+
+    // NotFound, not a distinct "wrong workspace" error: a different answer
+    // would confirm the id exists somewhere else.
+    try testing.expectError(error.NotFound, revealSecret(alloc, &ctx.db, "ws_2", row.id));
+    try testing.expectError(error.NotFound, revealSecret(alloc, &ctx.db, "ws_1", "sec_missing"));
+    try testing.expectError(error.IdsRequired, revealSecret(alloc, &ctx.db, "ws_1", ""));
+}
+
+test "revealSecret opens a row written before values were sealed" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    // A pre-upgrade row, written straight to SQL: no envelope, no `v1:`.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO workspace_secrets (id, workspace_id, name, value)
+        \\VALUES ('sec_legacy', 'ws_1', 'OLD', 'plain-from-before-the-upgrade')
+    , &.{});
+
+    const revealed = try revealSecret(alloc, &ctx.db, "ws_1", "sec_legacy");
+    defer freeRevealedSecret(alloc, revealed);
+    // Readable, which is why the upgrade cannot brick a workspace...
+    try testing.expectEqualStrings("plain-from-before-the-upgrade", revealed.value);
+
+    // ...and the boot pass is what turns it into an envelope.
+    try testing.expectEqual(@as(usize, 1), try secrets_at_rest.sealLegacyRows(alloc, &ctx.db));
+    const after = try storedValue(&ctx, "OLD");
+    defer alloc.free(after);
+    try testing.expect(secrets_at_rest.isSealed(after));
+}
+
+test "a row sealed under a different key reports ValueUnreadable, not an empty value" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_sealed_elsewhere",
+    });
+    defer freeSecretRow(alloc, row);
+
+    var other_key: [secrets_at_rest.KEY_LEN]u8 = undefined;
+    @memset(&other_key, 9);
+    secrets_at_rest.setKey(other_key);
+
+    try testing.expectError(error.ValueUnreadable, revealSecret(alloc, &ctx.db, "ws_1", row.id));
+    const names = [_][]const u8{"GH"};
+    try testing.expectError(error.ValueUnreadable, loadSecretValues(alloc, &ctx.db, "ws_1", &names));
 }

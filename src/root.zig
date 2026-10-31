@@ -234,6 +234,9 @@ pub const skills_store = @import("agentic_loop/skills_store.zig");
 pub const skill_frontmatter = @import("agentic_loop/skill_frontmatter.zig");
 /// Workspace-scoped secret storage (Migration 103).
 pub const secrets_store = @import("agentic_loop/secrets_store.zig");
+/// At-rest sealing of secret values: the envelope, the process key slot and the
+/// boot pass that re-seals rows written before this feature existed.
+pub const secrets_at_rest = @import("agentic_loop/secrets_at_rest.zig");
 /// Membership of workspaces (Migration 100): who is in, with which role.
 pub const workspace_members_store = @import("agentic_loop/workspace_members_store.zig");
 /// Pending membership asks (Migration 123): an invitation is answered, not applied.
@@ -284,6 +287,8 @@ pub const metrics_mod = @import("modules/metrics/metrics.zig");
 pub const boot_shutdown = @import("boot/shutdown.zig");
 pub const boot_cli_dispatch = @import("boot/cli_dispatch.zig");
 pub const boot_server_boot = @import("boot/server_boot.zig");
+/// Where the secret-sealing master key comes from (env var, else a 0600 file).
+pub const boot_secrets_key = @import("boot/secrets_key.zig");
 // `pabrik headless ...` — the no-server, no-port backend runner.
 pub const boot_headless_dispatch = @import("boot/headless_dispatch.zig");
 // The headless backend itself: boot phases, argv parsing, the turn runner

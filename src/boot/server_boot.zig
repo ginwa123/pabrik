@@ -16,6 +16,8 @@ const db_config = @import("db_config.zig");
 const db_target = @import("db_target.zig");
 const static_serve = @import("../http_static/static_serve.zig");
 const model_catalog_refresh = @import("../agentic_loop/model_catalog_refresh.zig");
+const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
+const secrets_key = @import("secrets_key.zig");
 
 /// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write
 /// must surface as a write error, not a signal (OpenSSL uses plain write(2)).
@@ -222,7 +224,44 @@ pub fn openDatabase(
     };
     shutdown.logSqliteConfig(allocator, &db);
     try runMigrations(allocator, &db);
+    installSecretsKey(allocator, io, env, &db, if (target.backend == .sqlite) target.sqlite_path else "");
     return .{ .target = target, .db = db };
+}
+
+/// Install the master key, then re-seal every row written before this feature existed. Runs on every
+/// open path before a request can reach a secret, and never fails the boot: a keyless host refuses
+/// secret writes and says why on one line. Not a migration — the chain must run without a key.
+pub fn installSecretsKey(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    env: *std.process.Environ.Map,
+    db: *database.Db,
+    sqlite_path: []const u8,
+) void {
+    var status: secrets_key.Status = .{ .problem = .unwritable };
+    if (helpers.db_path.getConfigDir(allocator, io, env)) |config_dir| {
+        defer allocator.free(config_dir);
+        status = secrets_key.load(allocator, io, env.get(secrets_key.env_var), config_dir);
+    } else |_| {}
+    defer status.deinit(allocator);
+
+    secrets_at_rest.setKey(status.key);
+    if (status.key == null) {
+        std.log.warn("{s}", .{status.describe()});
+        return;
+    }
+    std.log.info("{s}", .{status.describe()});
+
+    const sealed = secrets_at_rest.sealLegacyRows(allocator, db) catch |err| {
+        std.log.warn("workspace secrets: sealing legacy rows failed ({s})", .{@errorName(err)});
+        return;
+    };
+    if (sealed == 0) return;
+    std.log.info("workspace secrets: sealed {d} legacy plaintext value(s)", .{sealed});
+    // Only the sqlite backend has a file whose free pages can still hold the
+    // pre-seal bytes.
+    if (sqlite_path.len == 0) return;
+    secrets_at_rest.compactAfterSeal(allocator, db, sqlite_path, io);
 }
 
 pub fn runMigrations(allocator: std.mem.Allocator, db: *database.Db) !void {
