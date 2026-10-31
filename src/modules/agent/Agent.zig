@@ -1038,6 +1038,13 @@ pub const Usage = struct {
     cache_read_input_tokens: usize = 0,
 };
 
+pub const CliToolCall = struct {
+    name: []const u8,
+    arguments: []const u8,
+    output: []const u8,
+    status: []const u8,
+};
+
 pub const ToolCallDelta = struct {
     index: usize,
     id: ?[]const u8 = null,
@@ -1245,9 +1252,22 @@ pub const CallResponse = struct {
     reasoning_id: ?[]const u8 = null,
     reasoning_encrypted_content: ?[]const u8 = null,
     usage: Usage = .{},
+    /// Steps a CLI backend ran with its OWN tools. pabrik never executes these;
+    /// the workflow writes them into the transcript so the user can see what
+    /// happened between the prompt and the answer.
+    cli_tool_calls: ?[]CliToolCall = null,
 
     pub fn deinit(self: *const CallResponse) void {
         if (self.content) |c| self.allocator.free(c);
+        if (self.cli_tool_calls) |calls| {
+            for (calls) |call| {
+                self.allocator.free(call.name);
+                self.allocator.free(call.arguments);
+                self.allocator.free(call.output);
+                self.allocator.free(call.status);
+            }
+            self.allocator.free(calls);
+        }
         if (self.reasoning_content) |rc| self.allocator.free(rc);
         if (self.reasoning_id) |rid| self.allocator.free(rid);
         if (self.reasoning_encrypted_content) |rec| self.allocator.free(rec);
@@ -3051,6 +3071,7 @@ pub const Agent = struct {
             .model = self.model,
             .agent = self.opencode_agent orelse "",
             .auto_approve = self.opencode_auto orelse true,
+            .show_thinking = self.thinkingEnabled,
         }) catch return error.OutOfMemory;
 
         var result = helpers.run_captured.run(allocator, self.io, argv, .{
@@ -3088,11 +3109,22 @@ pub const Agent = struct {
 
         var content: std.ArrayList(u8) = .empty;
         errdefer content.deinit(allocator);
+        var reasoning: std.ArrayList(u8) = .empty;
+        errdefer reasoning.deinit(allocator);
+        var cli_calls: std.ArrayList(CliToolCall) = .empty;
+        errdefer {
+            for (cli_calls.items) |call| {
+                allocator.free(call.name);
+                allocator.free(call.arguments);
+                allocator.free(call.output);
+                allocator.free(call.status);
+            }
+            cli_calls.deinit(allocator);
+        }
         var usage: Usage = .{};
         var finish: ?FinishReason = null;
         var failure: ?[]const u8 = null;
         defer if (failure) |f| allocator.free(f);
-        var tool_calls: usize = 0;
 
         var lines = std.mem.splitScalar(u8, result.stdout, '\n');
         while (lines.next()) |raw_line| {
@@ -3104,9 +3136,27 @@ pub const Agent = struct {
                     content.appendSlice(allocator, text) catch return error.OutOfMemory;
                     callback(ctx, .{ .content = text });
                 },
-                .tool_use => |name| {
-                    tool_calls += 1;
-                    self.log_fmt(.info, "[STREAM] opencode CLI ran its own tool: {s}", .{name});
+                .reasoning => |text| {
+                    reasoning.appendSlice(allocator, text) catch return error.OutOfMemory;
+                    callback(ctx, .{ .reasoning_content = text });
+                },
+                .tool_use => |tool| {
+                    const status = if (tool.status.len > 0) tool.status else if (tool.error_message.len > 0) "error" else "completed";
+                    cli_calls.append(allocator, .{
+                        .name = allocator.dupe(u8, tool.name) catch return error.OutOfMemory,
+                        .arguments = allocator.dupe(u8, tool.input) catch return error.OutOfMemory,
+                        .output = allocator.dupe(
+                            u8,
+                            if (tool.error_message.len > 0) tool.error_message else tool.output,
+                        ) catch return error.OutOfMemory,
+                        .status = allocator.dupe(u8, status) catch return error.OutOfMemory,
+                    }) catch return error.OutOfMemory;
+                    self.log_fmt(.info, "[STREAM] opencode CLI ran its own tool: {s} ({s})", .{ tool.name, status });
+                    callback(ctx, .{ .tool_calls_delta = &.{.{
+                        .index = cli_calls.items.len - 1,
+                        .function_name = tool.name,
+                        .function_arguments = tool.input,
+                    }} });
                 },
                 .step_finish => |step| {
                     usage.prompt_tokens += step.input_tokens;
@@ -3158,17 +3208,25 @@ pub const Agent = struct {
         }
 
         usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+        const billed_input = usage.prompt_tokens + usage.cache_read_input_tokens;
+        self.log_fmt(.info, "[STREAM] opencode usage prompt={} cache_read={} cache_hit={d:.1}% (n/a when 0: the CLI sent no step_finish)", .{
+            usage.prompt_tokens,
+            usage.cache_read_input_tokens,
+            if (billed_input > 0) @as(f64, @floatFromInt(usage.cache_read_input_tokens)) / @as(f64, @floatFromInt(billed_input)) * 100.0 else 0.0,
+        });
         const finished = finish orelse .stop;
         callback(ctx, .{ .finish_reason = finished, .usage = usage });
         callback(ctx, .{ .done = true });
-        self.log_fmt(.info, "[STREAM] opencode CLI complete model={s} prompt={} completion={} cli_tool_calls={}", .{
-            self.model, usage.prompt_tokens, usage.completion_tokens, tool_calls,
+        self.log_fmt(.info, "[STREAM] opencode CLI complete model={s} prompt={} completion={} cli_tool_calls={} reasoning_bytes={}", .{
+            self.model, usage.prompt_tokens, usage.completion_tokens, cli_calls.items.len, reasoning.items.len,
         });
 
         return .{
             .allocator = allocator,
             .content = content.toOwnedSlice(allocator) catch return error.OutOfMemory,
+            .reasoning_content = if (reasoning.items.len > 0) reasoning.toOwnedSlice(allocator) catch return error.OutOfMemory else null,
             .tool_calls = null,
+            .cli_tool_calls = if (cli_calls.items.len > 0) cli_calls.toOwnedSlice(allocator) catch return error.OutOfMemory else null,
             .finish_reason = finished,
             .usage = usage,
         };
@@ -3952,6 +4010,47 @@ test "callStreaming with opencode backend runs the CLI with no prompt on its com
     try expectCallStreaming(helpers.host_fixture.recordedArgvContains(recorded, "--auto"));
     try expectCallStreaming(std.mem.indexOf(u8, recorded, "You are Pabrik.") == null);
     try expectCallStreaming(std.mem.indexOf(u8, recorded, "what is this?") == null);
+}
+
+test "callStreaming with opencode backend keeps the CLI's thinking and its tool steps" {
+    const gpa = testing_allocatorCallStreaming;
+    var fx = try helpers.host_fixture.Fixture.init(gpa);
+    defer fx.deinit();
+    const events =
+        \\{"type":"reasoning","part":{"type":"reasoning","text":"I should list the files."}}
+        \\{"type":"tool_use","part":{"type":"tool","id":"c1","tool":"glob","state":{"status":"completed","output":"a.txt","metadata":{"rawInput":"{\"pattern\":\"*\"}"}}}}
+        \\{"type":"tool_use","part":{"type":"tool","id":"c2","tool":"shell","state":{"status":"error","error":{"message":"exit 127"}}}}
+        \\{"type":"text","part":{"type":"text","text":"there is one file"}}
+        \\
+    ;
+    const prog = try fx.writeProgram("opencode", .{ .stdout = events });
+    defer gpa.free(prog);
+
+    var a = Agent.init(gpa, std.testing.io);
+    defer a.deinit();
+    a.model = "opencode/flint-40b-free";
+    a.backend = "opencode";
+    a.opencode_binary = prog;
+
+    var chunks = ChunkCounter{};
+    var resp = try a.callStreaming(makeCall(), &chunks, ChunkCounter.callback);
+    defer resp.deinit();
+
+    try expectEqualStringsCallStreaming("there is one file", resp.content.?);
+    try expectEqualStringsCallStreaming("I should list the files.", resp.reasoning_content.?);
+
+    const calls = resp.cli_tool_calls orelse return error.MissingToolSteps;
+    try expectEqualCallStreaming(@as(usize, 2), calls.len);
+    try expectEqualStringsCallStreaming("glob", calls[0].name);
+    try expectEqualStringsCallStreaming("completed", calls[0].status);
+    try expectEqualStringsCallStreaming("a.txt", calls[0].output);
+    try expectCallStreaming(std.mem.indexOf(u8, calls[0].arguments, "pattern") != null);
+    try expectEqualStringsCallStreaming("shell", calls[1].name);
+    try expectEqualStringsCallStreaming("error", calls[1].status);
+    try expectEqualStringsCallStreaming("exit 127", calls[1].output);
+
+    try expectCallStreaming(resp.tool_calls == null);
+    try expectCallStreaming(chunks.seen >= 4);
 }
 
 test "callStreaming with opencode backend surfaces a provider error event" {

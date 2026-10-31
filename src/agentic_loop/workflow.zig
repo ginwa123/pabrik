@@ -1357,6 +1357,25 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             },
         );
 
+        if (res_dynamic_agent.cli_tool_calls) |calls| {
+            persistCliToolCalls(
+                allocator,
+                io,
+                db,
+                logger,
+                event_bus,
+                copy_session_id,
+                copy_parent_session_id,
+                copy_cwd,
+                eff.model,
+                effective_agent_name,
+                calls,
+                loop_counter,
+                agent_temperature,
+                isThinking,
+            );
+        }
+
         // Successful LLM call — clear the retry-cause capture so the
         // NEXT soft-bail diagnostic reflects the most recent failure,
         // not the first one of this session.
@@ -1869,6 +1888,103 @@ fn saveRetryAttemptMessage(
     };
 }
 
+fn persistCliToolCalls(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    db: *database.Db,
+    logger: *logger_mod.Logger,
+    event_bus: *event_bus_mod.EventBus,
+    session_id: []const u8,
+    parent_session_id: []const u8,
+    cwd: []const u8,
+    model: []const u8,
+    agent_name: []const u8,
+    calls: []const agent.CliToolCall,
+    loop_index: u32,
+    temperature: f32,
+    is_thinking: bool,
+) void {
+    if (calls.len == 0) return;
+    for (calls) |call| {
+        const created_at = std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(io, .real).nanoseconds}) catch return;
+        defer allocator.free(created_at);
+        const tool_call_id = std.fmt.allocPrint(allocator, "cli-{s}", .{created_at}) catch return;
+        defer allocator.free(tool_call_id);
+
+        const ok = std.mem.eql(u8, call.status, "completed");
+        const shellish = std.mem.eql(u8, call.name, "shell") or
+            std.mem.eql(u8, call.name, "bash") or
+            std.mem.eql(u8, call.name, "sh") or
+            std.mem.eql(u8, call.name, "command");
+        const data_json = if (shellish)
+            std.fmt.allocPrint(allocator, "{{\"stdout\":{f},\"stderr\":\"\",\"exit_code\":{d},\"_raw\":{f}}}", .{
+                std.json.fmt(call.output, .{}),
+                @as(u8, if (ok) 0 else 1),
+                std.json.fmt(call.output, .{}),
+            }) catch return
+        else
+            std.fmt.allocPrint(allocator, "{{\"_raw\":{f}}}", .{std.json.fmt(call.output, .{})}) catch return;
+        defer allocator.free(data_json);
+
+        const envelope = tools.wrapToolOutput(
+            allocator,
+            call.name,
+            call.arguments,
+            ok,
+            if (ok) null else call.output,
+            if (ok) data_json else "",
+        ) catch return;
+        defer allocator.free(envelope);
+
+        const step_json = std.fmt.allocPrint(
+            allocator,
+            "[{{\"id\":{f},\"type\":\"function\",\"function\":{{\"name\":{f},\"arguments\":{f}}}}}]",
+            .{
+                std.json.fmt(tool_call_id, .{}),
+                std.json.fmt(call.name, .{}),
+                std.json.fmt(call.arguments, .{}),
+            },
+        ) catch return;
+        defer allocator.free(step_json);
+
+        const row_id = insert_llm_histories_mod.inserLLMHistories(.{
+            .allocator = allocator,
+            .io = io,
+            .db = db,
+            .logger = logger,
+            .is_emit_sse = true,
+            .event_bus = event_bus,
+            .cwd = cwd,
+            .entity = .{
+                .id = created_at,
+                .session_id = session_id,
+                .model = model,
+                .response_content = envelope,
+                .reasoning_content = null,
+                .role = agent.Role.tool.to_str(),
+                .finish_reason = agent.FinishReason.tool.to_str(),
+                .tool_calls_json = step_json,
+                .tool_call_id = tool_call_id,
+                .agent = agent_name,
+                .loop_index = loop_index,
+                .temperature = temperature,
+                .is_thinking = is_thinking,
+                .parent_id = parent_session_id,
+                .parent_session_id = parent_session_id,
+                .is_input = false,
+                .is_output = true,
+                .created_at = created_at,
+                .is_feed_to_llm = false,
+                .tool_name = call.name,
+            },
+        }) catch |err| {
+            logger.warnFmt("[workflow] could not persist a CLI tool step: {s}", .{@errorName(err)});
+            continue;
+        };
+        allocator.free(row_id);
+    }
+}
+
 fn callDynamicAgentNew(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -1972,6 +2088,7 @@ fn callDynamicAgentNew(
         .reasoning_id = res_dynamic_agent.reasoning_id,
         .reasoning_encrypted_content = res_dynamic_agent.reasoning_encrypted_content,
         .usage = usage_for_agent,
+        .cli_tool_calls = res_dynamic_agent.cli_tool_calls,
     };
 }
 
