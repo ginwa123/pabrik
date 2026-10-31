@@ -461,7 +461,9 @@ fn rawColumn(ctx: *TestCtx, owner: []const u8, workspace_id: []const u8) ![]u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
         alloc,
-        "SELECT COALESCE(CAST(config_json AS TEXT), '') FROM workspace_settings WHERE owner = ? AND workspace_id = ?",
+        // `COALESCE(CAST(? AS TEXT), '')` for the same reason `loadRaw` uses it:
+        // a bare `?` bound to the empty owner never compares equal on postgres.
+        "SELECT COALESCE(CAST(config_json AS TEXT), '') FROM workspace_settings WHERE owner = COALESCE(CAST(? AS TEXT), '') AND workspace_id = ?",
         &[_][]const u8{ owner, workspace_id },
     );
     defer q.deinit();
