@@ -43,6 +43,12 @@ pub const Scenario = struct {
     /// one's p50, so the machine's speed cancels out of the ratio.
     reference_route: ?[]const u8 = null,
     max_cost_ratio: f64 = 0,
+    /// The ratio check's name, so it says what it compared (`cost.rows`,
+    /// `cost.dirs`).
+    cost_check_name: []const u8 = "cost.rows",
+    /// This scenario's own request count, when a slower route would make the
+    /// shared one take minutes. Zero keeps `--requests`.
+    requests: usize = 0,
     /// This scenario's performance checks block even without `--strict`.
     enforced_performance: bool = false,
 };
@@ -100,6 +106,21 @@ pub const scenarios = [_]Scenario{
         .min_scaling = 1.0,
         .min_rps = 300.0,
     },
+    .{
+        .name = "folder-search",
+        .route = "/api/system/folder?path=/tmp/pabrik-bench-folder-search/deep&action=search&q=component&limit=50&max_depth=8",
+        .mask_timestamp = false,
+        .expected = "",
+        .probe_contract = true,
+        .reference_route = "/api/system/folder?path=/tmp/pabrik-bench-folder-search/flat&action=search&q=component&limit=50&max_depth=8",
+        .max_cost_ratio = 4.0,
+        .cost_check_name = "cost.dirs",
+        .max_p99_ms = 250.0,
+        .min_scaling = 1.0,
+        .min_rps = 50.0,
+        .requests = 300,
+        .enforced_performance = true,
+    },
 };
 
 pub const scenario_pointers = [scenarios.len]*const Scenario{
@@ -108,6 +129,7 @@ pub const scenario_pointers = [scenarios.len]*const Scenario{
     &scenarios[2],
     &scenarios[3],
     &scenarios[4],
+    &scenarios[5],
 };
 
 pub fn findScenario(name: []const u8) ?*const Scenario {
@@ -521,7 +543,7 @@ pub fn evaluateGate(
 
     if (scenario.max_cost_ratio > 0) {
         try checks.append(gpa, .{
-            .name = try gpa.dupe(u8, "cost.rows"),
+            .name = try gpa.dupe(u8, scenario.cost_check_name),
             .kind = "performance",
             .ok = cost_ratio > 0 and cost_ratio <= scenario.max_cost_ratio,
             .value = cost_ratio,
@@ -1012,6 +1034,9 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
     const payload = try buildPayload(gpa, cfg, scenario);
     defer gpa.free(payload);
 
+    const requests = if (scenario.requests > 0) @min(scenario.requests, cfg.requests) else cfg.requests;
+    const warmup = if (scenario.requests > 0) @min(cfg.warmup, @max(requests / 10, 10)) else cfg.warmup;
+
     waitReady(gpa, cfg, payload) catch return error.NotReady;
 
     if (scenario.seed_route) |seed_route| {
@@ -1039,12 +1064,12 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
     }
     const contract: []const u8 = contract_owned orelse scenario.expected;
 
-    if (cfg.warmup > 0) {
-        var warm = try runPhase(gpa, cfg, scenario, payload, cfg.warmup, @min(cfg.warmup, cfg.concurrency), contract);
+    if (warmup > 0) {
+        var warm = try runPhase(gpa, cfg, scenario, payload, warmup, @min(warmup, cfg.concurrency), contract);
         const measured = warm.requests;
         const problems = warm.problems.items.len;
         warm.deinit();
-        std.log.info("{s}: warmup {d} requests, {d} measured, {d} problems", .{ scenario.name, cfg.warmup, measured, problems });
+        std.log.info("{s}: warmup {d} requests, {d} measured, {d} problems", .{ scenario.name, warmup, measured, problems });
         if (measured == 0) return error.NotReady;
     }
 
@@ -1056,14 +1081,14 @@ fn runScenario(gpa: std.mem.Allocator, cfg: *const Config, scenario: *const Scen
         .gate = undefined,
         .gpa = gpa,
     };
-    result.phases[0] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, 1, contract);
-    result.phases[1] = try runPhase(gpa, cfg, scenario, payload, cfg.requests, cfg.concurrency, contract);
+    result.phases[0] = try runPhase(gpa, cfg, scenario, payload, requests, 1, contract);
+    result.phases[1] = try runPhase(gpa, cfg, scenario, payload, requests, cfg.concurrency, contract);
 
     if (scenario.reference_route) |reference_route| {
         const reference_payload = try buildRequest(gpa, cfg, .get, reference_route, null);
         defer gpa.free(reference_payload);
 
-        var reference = try runPhase(gpa, cfg, scenario, reference_payload, cfg.requests, 1, "");
+        var reference = try runPhase(gpa, cfg, scenario, reference_payload, requests, 1, "");
         defer reference.deinit();
 
         const head = result.phases[0].latency.p50_ms;
@@ -1086,8 +1111,8 @@ fn renderMarkdown(gpa: std.mem.Allocator, cfg: *const Config, results: []const S
     for (results) |result| {
         try appendPrint(&text, gpa, "`{s} {s}` (`{s}`)\n", .{ result.scenario.method.name(), result.scenario.route, result.scenario.name });
     }
-    try appendPrint(&text, gpa, "\nprofile `{s}` — {d} requests per phase, concurrency 1 and {d}, warmup {d}\n", .{
-        cfg.profile, cfg.requests, cfg.concurrency, cfg.warmup,
+    try appendPrint(&text, gpa, "\nprofile `{s}` — concurrency 1 and {d}, warmup up to {d} requests; each table names its own counts\n", .{
+        cfg.profile, cfg.concurrency, cfg.warmup,
     });
 
     for (results) |result| {
@@ -1216,8 +1241,8 @@ fn renderJson(gpa: std.mem.Allocator, cfg: *const Config, results: []const Scena
             }
             try text.appendSlice(gpa, "],\n          \"latency\": {\n");
             try appendPrint(&text, gpa, "            \"samples\": {d},\n            \"p50_ms\": {d:.3},\n            \"p90_ms\": {d:.3},\n            \"p99_ms\": {d:.3},\n            \"max_ms\": {d:.3},\n            \"mean_ms\": {d:.3},\n            \"throughput_rps\": {d:.1}\n          }},\n", .{
-                phase.latency.samples, phase.latency.p50_ms, phase.latency.p90_ms, phase.latency.p99_ms,
-                phase.latency.max_ms, phase.latency.mean_ms, phase.latency.throughput_rps,
+                phase.latency.samples, phase.latency.p50_ms,  phase.latency.p90_ms,         phase.latency.p99_ms,
+                phase.latency.max_ms,  phase.latency.mean_ms, phase.latency.throughput_rps,
             });
             try appendPrint(&text, gpa, "          \"ok\": {s},\n          \"problems\": [", .{jsonBool(phase.ok())});
             for (phase.problems.items, 0..) |problem, position| {
@@ -1284,7 +1309,8 @@ fn usage(io: std.Io) !void {
         \\scenarios: health (/health), messages (/api/session/bench/messages),
         \\           sessions (/api/llm/session?limit=50, seeded)
         \\           documents (GET /api/workspaces/bench-docs/documents, seeded),
-        \\           documents-reorder (PATCH .../documents/reorder, seeded)
+        \\           documents-reorder (PATCH .../documents/reorder, seeded),
+        \\           folder-search (GET /api/system/folder?action=search, seeded)
         \\
     ;
     try std.Io.File.writeStreamingAll(std.Io.File.stdout(), io, text);
@@ -1962,6 +1988,31 @@ test "a slow machine that slows both routes equally keeps cost.rows green" {
     defer gate.deinit();
 
     try std.testing.expect(findCheck(&gate, "cost.rows").?.ok);
+    try std.testing.expect(gate.verdict_pass);
+}
+
+test "a walk that pays per directory fails cost.dirs on any machine speed" {
+    var phases = try healthyPhases(std.testing.allocator);
+    defer for (&phases) |*phase| phase.deinit();
+    var config = healthyConfig(false);
+
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("folder-search").?, 39.9);
+    defer gate.deinit();
+
+    try std.testing.expect(!findCheck(&gate, "cost.dirs").?.ok);
+    try std.testing.expect(!gate.verdict_pass);
+    try std.testing.expect(gate.enforced);
+}
+
+test "a walk that pays per level keeps cost.dirs green" {
+    var phases = try healthyPhases(std.testing.allocator);
+    defer for (&phases) |*phase| phase.deinit();
+    var config = healthyConfig(false);
+
+    var gate = try evaluateGate(std.testing.allocator, &phases, &config, findScenario("folder-search").?, 1.67);
+    defer gate.deinit();
+
+    try std.testing.expect(findCheck(&gate, "cost.dirs").?.ok);
     try std.testing.expect(gate.verdict_pass);
 }
 

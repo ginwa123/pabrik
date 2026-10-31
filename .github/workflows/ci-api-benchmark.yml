@@ -10,7 +10,7 @@ on:
         description: 'concurrency of the cN phase'
         default: '8'
       scenarios:
-        description: 'comma list: health, messages, sessions, documents, documents-reorder, or all'
+        description: 'comma list: health, messages, sessions, documents, documents-reorder, folder-search, or all'
         default: 'all'
       min_scaling:
         description: 'gate: throughput at cN divided by throughput at c1'
@@ -32,6 +32,9 @@ on:
       - 'src/http_handlers/session_list.zig'
       - 'src/http_handlers/git_branch.zig'
       - 'src/http_handlers/bench_seed.zig'
+      - 'src/http_handlers/system_folder.zig'
+      - 'src/modules/system_folder/system_folder.zig'
+      - 'src/agentic_loop/workspace_fs.zig'
       - 'src/http_handlers/documents_*.zig'
       - 'src/agentic_loop/documents_store.zig'
       - 'src/migrations/migration_122.zig'
@@ -53,6 +56,9 @@ on:
       - 'src/http_handlers/session_list.zig'
       - 'src/http_handlers/git_branch.zig'
       - 'src/http_handlers/bench_seed.zig'
+      - 'src/http_handlers/system_folder.zig'
+      - 'src/modules/system_folder/system_folder.zig'
+      - 'src/agentic_loop/workspace_fs.zig'
       - 'src/http_handlers/documents_*.zig'
       - 'src/agentic_loop/documents_store.zig'
       - 'src/migrations/migration_122.zig'

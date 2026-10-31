@@ -46,7 +46,7 @@ environment:
   API_BENCH_OUT           directory for api-bench.json, api-bench.md, server.log
   API_BENCH_REQUESTS      requests per measured phase, default 2000
   API_BENCH_CONCURRENCY   the concurrency of the cN phase, default 8
-  API_BENCH_SCENARIOS     comma list of scenarios, default all (health, messages, sessions, documents, documents-reorder)
+  API_BENCH_SCENARIOS     comma list of scenarios, default all (health, messages, sessions, documents, documents-reorder, folder-search)
   API_BENCH_STRICT=1      a performance-gate miss fails the run
   API_BENCH_SERVER_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
   API_BENCH_CLIENT_CPUSET empty drops --cpuset-cpus and the profile becomes quota-2cpu
@@ -86,10 +86,11 @@ image            $IMAGE
 server binary    $PABRIK_BIN
 load generator   $LOADGEN_BIN
 scenarios        $SCENARIOS on 127.0.0.1:$PORT (health = /health, messages = /api/session/bench/messages, sessions = /api/llm/session?limit=50,
-                 documents = GET /api/workspaces/bench-docs/documents, documents-reorder = PATCH .../documents/reorder)
+                 documents = GET /api/workspaces/bench-docs/documents, documents-reorder = PATCH .../documents/reorder,
+                 folder-search = GET /api/system/folder?action=search over the image's deep/flat trees)
 server container --cpus $SERVER_CPUS --cpuset-cpus ${SERVER_CPUSET:-none} --memory ${MEMORY_MB}m --network none
 client container --cpus $CLIENT_CPUS --cpuset-cpus ${CLIENT_CPUSET:-none} --memory ${CLIENT_MEMORY_MB}m --network container:$SERVER_NAME
-phases           c1 (concurrency 1) and cN (concurrency $CONCURRENCY), $REQUESTS requests each, $WARMUP warmup
+phases           c1 (concurrency 1) and cN (concurrency $CONCURRENCY), $REQUESTS requests each ($WARMUP warmup; a scenario may set its own)
 gate             min scaling $MIN_SCALING, p99 at c1 <= $MAX_P99_MS ms, rps at cN >= $MIN_RPS
 strict           $STRICT
 output           $OUT_DIR
@@ -130,11 +131,45 @@ build_loadgen() {
   ( cd "$ROOT" && zig build-exe benchmark/api_bench.zig -O ReleaseFast -target x86_64-linux-musl -femit-bin="$LOADGEN_BIN" )
 }
 
+# The `folder-search` scenario's two trees: the same 512 matching files, one
+# spread over 256 leaf directories and one over 8. Built here rather than by the
+# server, so the benchmark writes nothing at run time and the route under test
+# keeps its only job.
+make_folder_tree() {
+  local dest="$1"
+  local deep="$dest/deep" flat="$dest/flat"
+  local top mid leaf n index=0
+  mkdir -p "$deep" "$flat"
+  for top in $(seq 0 7); do
+    for mid in $(seq 0 7); do
+      for leaf in $(seq 0 3); do
+        mkdir -p "$deep/a$top/b$mid/c$leaf"
+        for n in 0 1; do
+          : > "$deep/a$top/b$mid/c$leaf/component_$index.txt"
+          index=$((index + 1))
+        done
+      done
+    done
+  done
+  for top in $(seq 0 7); do
+    mkdir -p "$flat/f$top"
+    for n in $(seq 0 63); do
+      : > "$flat/f$top/component_$index.txt"
+      index=$((index + 1))
+    done
+  done
+  for tree in "$deep" "$flat"; do
+    printf '*.ignored\n' > "$tree/.gitignore"
+    for n in $(seq 0 7); do : > "$tree/junk_$n.ignored"; done
+  done
+}
+
 build_image() {
   local stage
   stage="$(mktemp -d)"
   cp "$PABRIK_BIN" "$stage/pabrik"
   cp "$LOADGEN_BIN" "$stage/api-bench"
+  make_folder_tree "$stage/folder-tree"
   printf 'api-bench: building %s from %s\n' "$IMAGE" "$stage"
   if ! "$ENGINE" build -f "$ROOT/benchmark/Containerfile" -t "$IMAGE" "$stage"; then
     rm -rf "$stage"
