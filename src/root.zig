@@ -236,6 +236,8 @@ pub const skill_frontmatter = @import("agentic_loop/skill_frontmatter.zig");
 pub const secrets_store = @import("agentic_loop/secrets_store.zig");
 /// Membership of workspaces (Migration 100): who is in, with which role.
 pub const workspace_members_store = @import("agentic_loop/workspace_members_store.zig");
+/// Pending membership asks (Migration 123): an invitation is answered, not applied.
+pub const workspace_invitations_store = @import("agentic_loop/workspace_invitations_store.zig");
 // Per-workspace config overlay: the sparse JSON merge rule and the
 // store behind `workspace_settings` (Migration 105). These two are what
 // make Profiles / MCP Servers / Tools / Skill Evals per-workspace.

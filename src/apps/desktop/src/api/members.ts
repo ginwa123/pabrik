@@ -6,6 +6,9 @@ import { apiFetch } from './client'
 export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer'
 
 export interface WorkspaceMember {
+  /** The workspace this membership is in — an accepted invitation's response
+   * carries it so the caller knows which workspace just became available. */
+  workspace_id: string
   user_id: string
   email: string
   name: string
@@ -23,20 +26,6 @@ export async function listMembers(
   return await apiFetch<{ members: WorkspaceMember[]; count: number }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/members`,
     { track: false },
-  )
-}
-
-/** POST /api/workspaces/:workspaceId/members Body: `{ email, role }`. The server defaults an
- * omitted role to `viewer`; this call always sends one. 404 when no active account carries that
- * email; 409 when the account is already a member. */
-export async function inviteMember(
-  workspaceId: string,
-  email: string,
-  role: WorkspaceRole,
-): Promise<{ member: WorkspaceMember }> {
-  return await apiFetch<{ member: WorkspaceMember }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/members`,
-    { method: 'POST', body: { email, role } },
   )
 }
 

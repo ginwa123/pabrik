@@ -82,9 +82,16 @@ pub const workspaceUpdateHandler = @import("workspace_update.zig").workspaceUpda
 pub const workspaceDeleteHandler = @import("workspace_delete.zig").workspaceDeleteHandler;
 // Membership of a workspace (Migration 100): who is in, with which role.
 pub const workspaceMembersListHandler = @import("workspace_members_list.zig").workspaceMembersListHandler;
-pub const workspaceMembersInviteHandler = @import("workspace_members_invite.zig").workspaceMembersInviteHandler;
 pub const workspaceMembersUpdateHandler = @import("workspace_members_update.zig").workspaceMembersUpdateHandler;
 pub const workspaceMembersRemoveHandler = @import("workspace_members_remove.zig").workspaceMembersRemoveHandler;
+// Invitations (Migration 123): the ask an invitee answers, and the only path
+// to a membership row that a human did not type into the members list.
+pub const workspaceInvitationsListHandler = @import("workspace_invitations_list.zig").workspaceInvitationsListHandler;
+pub const workspaceInvitationsCreateHandler = @import("workspace_invitations_create.zig").workspaceInvitationsCreateHandler;
+pub const workspaceInvitationsRevokeHandler = @import("workspace_invitations_revoke.zig").workspaceInvitationsRevokeHandler;
+pub const invitationsMineHandler = @import("invitations_mine.zig").invitationsMineHandler;
+pub const invitationsAcceptHandler = @import("invitations_accept.zig").invitationsAcceptHandler;
+pub const invitationsDeclineHandler = @import("invitations_decline.zig").invitationsDeclineHandler;
 pub const workspaceItemsCreateHandler = @import("workspace_items_create.zig").workspaceItemsCreateHandler;
 pub const workspaceItemsListHandler = @import("workspace_items_get.zig").workspaceItemsListHandler;
 pub const workspaceItemsGetHandler = @import("workspace_items_get.zig").workspaceItemsGetHandler;

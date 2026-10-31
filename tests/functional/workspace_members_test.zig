@@ -99,6 +99,39 @@ fn membersJson(h: *Harness, workspace_id: []const u8, cookie: []const u8) ![]u8 
     return gpa.dupe(u8, r.body);
 }
 
+fn inboxJson(h: *Harness, cookie: []const u8) ![]u8 {
+    var r = try send(h, .GET, "/api/invitations", null, cookie);
+    defer r.deinit();
+    try testing.expectEqual(@as(u16, 200), r.status);
+    return gpa.dupe(u8, r.body);
+}
+
+/// Invite `email` into `workspace_id` and return the invitation id (owned).
+fn invite(h: *Harness, workspace_id: []const u8, cookie: []const u8, email: []const u8, role: []const u8) ![]u8 {
+    const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/invitations", .{workspace_id});
+    defer gpa.free(path);
+    const body = try std.fmt.allocPrint(gpa, "{{\"email\":\"{s}\",\"role\":\"{s}\"}}", .{ email, role });
+    defer gpa.free(body);
+
+    var r = try send(h, .POST, path, body, cookie);
+    defer r.deinit();
+    if (r.status != 201) {
+        std.debug.print("invite failed {d}: {s}\n", .{ r.status, r.body });
+        return error.TestUnexpectedResult;
+    }
+    var doc = try std.json.parseFromSlice(std.json.Value, gpa, r.body, .{});
+    defer doc.deinit();
+    const id = doc.value.object.get("invitation").?.object.get("id").?.string;
+    return gpa.dupe(u8, id);
+}
+
+fn countIn(json: []const u8) !i64 {
+    var doc = try std.json.parseFromSlice(std.json.Value, gpa, json, .{});
+    defer doc.deinit();
+    return doc.value.object.get("count").?.integer;
+}
+
+/// One harness with two accounts, each owning its own workspace.
 const World = struct {
     h: Harness,
     cookie_a: []u8,
@@ -129,126 +162,212 @@ const World = struct {
     }
 };
 
-test "invite by email adds the account, and the member list shows both sides" {
+test "an invite is a pending request: the invitee gains NO access until it is accepted" {
     try harness.requirePabrikBin(io, gpa);
     var world = try World.boot();
     defer world.deinit();
 
+    const invitation_id = try invite(&world.h, world.ws_a, world.cookie_a, admin_b, "editor");
+    defer gpa.free(invitation_id);
+
+    // The inviter's member list still has ONE row: an invitation is not a member.
     {
         const json = try membersJson(&world.h, world.ws_a, world.cookie_a);
         defer gpa.free(json);
         try testing.expect(std.mem.indexOf(u8, json, "\"count\":1") != null);
-        try testing.expect(std.mem.indexOf(u8, json, admin_a) != null);
         try testing.expect(std.mem.indexOf(u8, json, admin_b) == null);
     }
 
+    // And the workspace is still invisible to the person who was asked.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members", .{world.ws_a});
         defer gpa.free(path);
-        var r = try send(&world.h, .POST, path, "{\"email\":\"ghost@example.com\",\"role\":\"viewer\"}", world.cookie_a);
+        var r = try send(&world.h, .GET, path, null, world.cookie_b);
         defer r.deinit();
         try testing.expectEqual(@as(u16, 404), r.status);
-        try testing.expect(std.mem.indexOf(u8, r.body, "ghost@example.com") != null);
+    }
+
+    // The ask IS visible in the invitee's own inbox, naming the workspace.
+    {
+        const json = try inboxJson(&world.h, world.cookie_b);
+        defer gpa.free(json);
+        try testing.expectEqual(@as(i64, 1), try countIn(json));
+        try testing.expect(std.mem.indexOf(u8, json, "\"workspace_id\":\"ws_") != null);
+        try testing.expect(std.mem.indexOf(u8, json, "\"role\":\"editor\"") != null);
+    }
+
+    // The inviter sees it waiting, and can revoke it.
+    {
+        const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/invitations", .{world.ws_a});
+        defer gpa.free(path);
+        var r = try send(&world.h, .GET, path, null, world.cookie_a);
+        defer r.deinit();
+        try testing.expectEqual(@as(u16, 200), r.status);
+        try testing.expect(std.mem.indexOf(u8, r.body, admin_b) != null);
+    }
+}
+
+test "accepting the invitation is what creates the membership" {
+    try harness.requirePabrikBin(io, gpa);
+    var world = try World.boot();
+    defer world.deinit();
+
+    const invitation_id = try invite(&world.h, world.ws_a, world.cookie_a, admin_b, "editor");
+    defer gpa.free(invitation_id);
+
+    // A third party cannot answer someone else's invitation: 404, never 403.
+    {
+        const path = try std.fmt.allocPrint(gpa, "/api/invitations/{s}/accept", .{invitation_id});
+        defer gpa.free(path);
+        var r = try send(&world.h, .POST, path, null, world.cookie_a);
+        defer r.deinit();
+        try testing.expectEqual(@as(u16, 404), r.status);
+        // …and it is still pending afterwards.
+        const json = try inboxJson(&world.h, world.cookie_b);
+        defer gpa.free(json);
+        try testing.expectEqual(@as(i64, 1), try countIn(json));
     }
 
     {
-        const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members", .{world.ws_a});
+        const path = try std.fmt.allocPrint(gpa, "/api/invitations/{s}/accept", .{invitation_id});
         defer gpa.free(path);
-        var r = try send(&world.h, .POST, path, "{\"email\":\"teammate@example.com\",\"role\":\"editor\"}", world.cookie_a);
+        var r = try send(&world.h, .POST, path, null, world.cookie_b);
         defer r.deinit();
-        try testing.expectEqual(@as(u16, 201), r.status);
-        try testing.expect(std.mem.indexOf(u8, r.body, admin_b) != null);
+        try testing.expectEqual(@as(u16, 200), r.status);
         try testing.expect(std.mem.indexOf(u8, r.body, "\"role\":\"editor\"") != null);
+        try testing.expect(std.mem.indexOf(u8, r.body, admin_b) != null);
     }
 
-    // Read back through the LIST, not the invite's own echo.
+    // Now — and only now — the workspace is readable by the invitee.
+    {
+        const json = try membersJson(&world.h, world.ws_a, world.cookie_b);
+        defer gpa.free(json);
+        try testing.expectEqual(@as(i64, 2), try countIn(json));
+    }
+
+    // The ask is consumed, and the workspace appears in the invitee's own list.
+    {
+        const json = try inboxJson(&world.h, world.cookie_b);
+        defer gpa.free(json);
+        try testing.expectEqual(@as(i64, 0), try countIn(json));
+    }
+    {
+        var r = try send(&world.h, .GET, "/api/workspaces", null, world.cookie_b);
+        defer r.deinit();
+        try testing.expect(std.mem.indexOf(u8, r.body, world.ws_a) != null);
+    }
+}
+
+test "declining and revoking both remove the request and grant nothing" {
+    try harness.requirePabrikBin(io, gpa);
+    var world = try World.boot();
+    defer world.deinit();
+
+    // Decline.
+    {
+        const invitation_id = try invite(&world.h, world.ws_a, world.cookie_a, admin_b, "viewer");
+        defer gpa.free(invitation_id);
+        const path = try std.fmt.allocPrint(gpa, "/api/invitations/{s}/decline", .{invitation_id});
+        defer gpa.free(path);
+        var r = try send(&world.h, .POST, path, null, world.cookie_b);
+        defer r.deinit();
+        try testing.expectEqual(@as(u16, 200), r.status);
+    }
+    {
+        const json = try inboxJson(&world.h, world.cookie_b);
+        defer gpa.free(json);
+        try testing.expectEqual(@as(i64, 0), try countIn(json));
+    }
     {
         const json = try membersJson(&world.h, world.ws_a, world.cookie_a);
         defer gpa.free(json);
-        try testing.expect(std.mem.indexOf(u8, json, "\"count\":2") != null);
-        try testing.expect(std.mem.indexOf(u8, json, admin_b) != null);
-        // Owners sort first, so the first row is still the owner, not the invitee.
-        const owner_at = std.mem.indexOf(u8, json, "\"role\":\"owner\"").?;
-        const editor_at = std.mem.indexOf(u8, json, "\"role\":\"editor\"").?;
-        try testing.expect(owner_at < editor_at);
+        try testing.expectEqual(@as(i64, 1), try countIn(json));
     }
 
-    // The invited account can now see the workspace it was invited to.
+    // Re-invite, then the inviter revokes it.
+    const revoked_id = try invite(&world.h, world.ws_a, world.cookie_a, admin_b, "viewer");
+    defer gpa.free(revoked_id);
+    {
+        const path = try std.fmt.allocPrint(
+            gpa,
+            "/api/workspaces/{s}/invitations/{s}",
+            .{ world.ws_a, revoked_id },
+        );
+        defer gpa.free(path);
+        var r = try send(&world.h, .DELETE, path, null, world.cookie_a);
+        defer r.deinit();
+        try testing.expectEqual(@as(u16, 200), r.status);
+    }
+    {
+        const json = try inboxJson(&world.h, world.cookie_b);
+        defer gpa.free(json);
+        try testing.expectEqual(@as(i64, 0), try countIn(json));
+    }
+    {
+        // A revoked invitation cannot be accepted afterwards.
+        const path = try std.fmt.allocPrint(gpa, "/api/invitations/{s}/accept", .{revoked_id});
+        defer gpa.free(path);
+        var r = try send(&world.h, .POST, path, null, world.cookie_b);
+        defer r.deinit();
+        try testing.expectEqual(@as(u16, 404), r.status);
+    }
+}
+
+test "inviting needs owner or admin; an invited editor may read but not invite" {
+    try harness.requirePabrikBin(io, gpa);
+    var world = try World.boot();
+    defer world.deinit();
+
+    const invitation_id = try invite(&world.h, world.ws_a, world.cookie_a, admin_b, "editor");
+    defer gpa.free(invitation_id);
+    {
+        const path = try std.fmt.allocPrint(gpa, "/api/invitations/{s}/accept", .{invitation_id});
+        defer gpa.free(path);
+        var r = try send(&world.h, .POST, path, null, world.cookie_b);
+        defer r.deinit();
+        try testing.expectEqual(@as(u16, 200), r.status);
+    }
+
+    // Read: allowed now that they are a member.
     {
         const json = try membersJson(&world.h, world.ws_a, world.cookie_b);
         defer gpa.free(json);
         try testing.expect(std.mem.indexOf(u8, json, admin_a) != null);
     }
 
+    // Invite: refused — a member, but an editor.
     {
-        const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members", .{world.ws_a});
+        const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/invitations", .{world.ws_a});
         defer gpa.free(path);
-        var r = try send(&world.h, .POST, path, "{\"email\":\"teammate@example.com\"}", world.cookie_a);
-        defer r.deinit();
-        try testing.expectEqual(@as(u16, 409), r.status);
-    }
-}
-
-test "an editor may read the member list but may not change it" {
-    try harness.requirePabrikBin(io, gpa);
-    var world = try World.boot();
-    defer world.deinit();
-
-    {
-        const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members", .{world.ws_a});
-        defer gpa.free(path);
-        var r = try send(&world.h, .POST, path, "{\"email\":\"teammate@example.com\",\"role\":\"editor\"}", world.cookie_a);
-        defer r.deinit();
-        try testing.expectEqual(@as(u16, 201), r.status);
-    }
-
-    const members_path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members", .{world.ws_a});
-    defer gpa.free(members_path);
-
-    {
-        var r = try send(&world.h, .GET, members_path, null, world.cookie_b);
-        defer r.deinit();
-        try testing.expectEqual(@as(u16, 200), r.status);
-    }
-
-    // Write: refused with 403 — the workspace is visible, the action is not.
-    {
-        var r = try send(&world.h, .POST, members_path, "{\"email\":\"owner@example.com\",\"role\":\"viewer\"}", world.cookie_b);
+        var r = try send(&world.h, .POST, path, "{\"email\":\"owner@example.com\",\"role\":\"viewer\"}", world.cookie_b);
         defer r.deinit();
         try testing.expectEqual(@as(u16, 403), r.status);
         try testing.expect(std.mem.indexOf(u8, r.body, "owner or admin") != null);
     }
+}
 
-    // Promote the editor to admin, then the same call succeeds. The invitee's
-    // id is not known up front, so read it from the list.
+test "invite answers 404 for an unknown address and 409 for a duplicate ask" {
+    try harness.requirePabrikBin(io, gpa);
+    var world = try World.boot();
+    defer world.deinit();
+
+    const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/invitations", .{world.ws_a});
+    defer gpa.free(path);
+
     {
-        const json = try membersJson(&world.h, world.ws_a, world.cookie_a);
-        defer gpa.free(json);
-        var doc = try std.json.parseFromSlice(std.json.Value, gpa, json, .{});
-        defer doc.deinit();
-        const members = doc.value.object.get("members").?.array;
-        var teammate_id: ?[]const u8 = null;
-        for (members.items) |m| {
-            const obj = m.object;
-            if (std.mem.eql(u8, obj.get("email").?.string, admin_b)) {
-                teammate_id = obj.get("user_id").?.string;
-            }
-        }
-        const id = teammate_id orelse return error.TestUnexpectedResult;
-
-        const promote = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members/{s}", .{ world.ws_a, id });
-        defer gpa.free(promote);
-        var r = try send(&world.h, .PATCH, promote, "{\"role\":\"admin\"}", world.cookie_a);
+        var r = try send(&world.h, .POST, path, "{\"email\":\"ghost@example.com\",\"role\":\"viewer\"}", world.cookie_a);
         defer r.deinit();
-        try testing.expectEqual(@as(u16, 200), r.status);
-        try testing.expect(std.mem.indexOf(u8, r.body, "\"role\":\"admin\"") != null);
+        try testing.expectEqual(@as(u16, 404), r.status);
+        try testing.expect(std.mem.indexOf(u8, r.body, "ghost@example.com") != null);
     }
 
+    const invitation_id = try invite(&world.h, world.ws_a, world.cookie_a, admin_b, "viewer");
+    defer gpa.free(invitation_id);
     {
-        var r = try send(&world.h, .POST, members_path, "{\"email\":\"owner@example.com\",\"role\":\"viewer\"}", world.cookie_b);
+        var r = try send(&world.h, .POST, path, "{\"email\":\"teammate@example.com\",\"role\":\"admin\"}", world.cookie_a);
         defer r.deinit();
-        // Already a member → 409 rather than 403: the gate let the call through.
         try testing.expectEqual(@as(u16, 409), r.status);
+        try testing.expect(std.mem.indexOf(u8, r.body, "pending invitation") != null);
     }
 }
 
@@ -278,32 +397,6 @@ test "a workspace cannot be left without an owner" {
 
         const after = try membersJson(&world.h, world.ws_a, world.cookie_a);
         defer gpa.free(after);
-        try testing.expect(std.mem.indexOf(u8, after, "\"count\":1") != null);
-        try testing.expect(std.mem.indexOf(u8, after, "\"role\":\"owner\"") != null);
-    }
-
-    {
-        const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members", .{world.ws_a});
-        defer gpa.free(path);
-        var r = try send(&world.h, .POST, path, "{\"email\":\"teammate@example.com\",\"role\":\"owner\"}", world.cookie_a);
-        defer r.deinit();
-        try testing.expectEqual(@as(u16, 201), r.status);
-
-        const list = try membersJson(&world.h, world.ws_a, world.cookie_a);
-        defer gpa.free(list);
-        var doc = try std.json.parseFromSlice(std.json.Value, gpa, list, .{});
-        defer doc.deinit();
-        var a_id: ?[]const u8 = null;
-        for (doc.value.object.get("members").?.array.items) |m| {
-            if (std.mem.eql(u8, m.object.get("email").?.string, admin_a)) a_id = m.object.get("user_id").?.string;
-        }
-        const id = a_id orelse return error.TestUnexpectedResult;
-
-        const member_path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/members/{s}", .{ world.ws_a, id });
-        defer gpa.free(member_path);
-        var patch = try send(&world.h, .PATCH, member_path, "{\"role\":\"viewer\"}", world.cookie_a);
-        defer patch.deinit();
-        try testing.expectEqual(@as(u16, 200), patch.status);
-        try testing.expect(std.mem.indexOf(u8, patch.body, "\"role\":\"viewer\"") != null);
+        try testing.expectEqual(@as(i64, 1), try countIn(after));
     }
 }

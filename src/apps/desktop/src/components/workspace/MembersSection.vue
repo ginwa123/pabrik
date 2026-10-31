@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useMembersStore } from '../../stores/members'
-import type { WorkspaceMember, WorkspaceRole } from '../../api'
+import { useInvitationsStore } from '../../stores/invitations'
+import type { WorkspaceInvitation, WorkspaceMember, WorkspaceRole } from '../../api'
 import EmptyState from '../pabrik/EmptyState.vue'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
@@ -12,7 +13,8 @@ const props = defineProps<{
   workspaceId: string
 }>()
 
-const store = useMembersStore()
+const membersStore = useMembersStore()
+const invitationsStore = useInvitationsStore()
 
 const ROLE_OPTIONS: readonly { value: WorkspaceRole; label: string }[] = [
   { value: 'owner', label: 'Owner' },
@@ -25,9 +27,19 @@ const emailInput = ref('')
 const roleInput = ref<WorkspaceRole>('viewer')
 const formError = ref<string | null>(null)
 const removeTarget = ref<WorkspaceMember | null>(null)
+const revokeTarget = ref<WorkspaceInvitation | null>(null)
 
-const ownerCount = computed(() => store.members.filter((m) => m.role === 'owner').length)
-const canInvite = computed(() => emailInput.value.trim().length > 0 && !store.saving)
+/** One banner for both stores: a refused invite and a refused removal are the
+ * same kind of answer to the user. */
+const error = computed<string | null>(() => membersStore.error ?? invitationsStore.error)
+
+const ownerCount = computed(
+  () => membersStore.members.filter((m) => m.role === 'owner').length,
+)
+const pending = computed<WorkspaceInvitation[]>(() => invitationsStore.pending)
+const canInvite = computed(
+  () => emailInput.value.trim().length > 0 && !invitationsStore.saving,
+)
 
 /** The one change the server would refuse anyway. Disabling it here is not a
  * substitute for the 409 — it stops the user walking into it. */
@@ -35,8 +47,12 @@ function isSoleOwner(member: WorkspaceMember): boolean {
   return member.role === 'owner' && ownerCount.value <= 1
 }
 
-function labelFor(member: WorkspaceMember): string {
+function labelFor(member: { email: string; name: string; user_id: string }): string {
   return member.name.trim().length > 0 ? member.name.trim() : member.email || member.user_id
+}
+
+function roleLabel(role: string): string {
+  return ROLE_OPTIONS.find((r) => r.value === role)?.label ?? role
 }
 
 async function handleInvite(): Promise<void> {
@@ -46,7 +62,7 @@ async function handleInvite(): Promise<void> {
     return
   }
   formError.value = null
-  const ok = await store.inviteMember(props.workspaceId, email, roleInput.value)
+  const ok = await invitationsStore.invite(props.workspaceId, email, roleInput.value)
   if (!ok) return
   emailInput.value = ''
   roleInput.value = 'viewer'
@@ -55,7 +71,7 @@ async function handleInvite(): Promise<void> {
 async function handleRoleChange(member: WorkspaceMember, event: Event): Promise<void> {
   const next = (event.target as HTMLSelectElement).value as WorkspaceRole
   if (next === member.role) return
-  const ok = await store.setRole(props.workspaceId, member.user_id, next)
+  const ok = await membersStore.setRole(props.workspaceId, member.user_id, next)
   // A refused change leaves the SELECT showing a role the server never
   // accepted, so put it back.
   if (!ok) (event.target as HTMLSelectElement).value = member.role
@@ -73,17 +89,34 @@ async function handleRemove(): Promise<void> {
   const target = removeTarget.value
   closeRemove()
   if (!target) return
-  await store.removeMember(props.workspaceId, target.user_id)
+  await membersStore.removeMember(props.workspaceId, target.user_id)
+}
+
+function openRevoke(invitation: WorkspaceInvitation): void {
+  revokeTarget.value = invitation
+}
+
+function closeRevoke(): void {
+  revokeTarget.value = null
+}
+
+async function handleRevoke(): Promise<void> {
+  const target = revokeTarget.value
+  closeRevoke()
+  if (!target) return
+  await invitationsStore.revoke(props.workspaceId, target.id)
 }
 
 function retry(): void {
-  void store.fetchMembers(props.workspaceId)
+  void membersStore.fetchMembers(props.workspaceId)
+  void invitationsStore.fetchPending(props.workspaceId)
 }
 
 onMounted(() => {
   // Clear first: a switch remounts this component, and `loaded` would
   // otherwise paint the previous workspace's rows while the new list loads.
-  store.reset()
+  membersStore.reset()
+  invitationsStore.reset()
   retry()
 })
 </script>
@@ -91,20 +124,20 @@ onMounted(() => {
 <template>
   <div class="space-y-5" data-testid="members-section-body">
     <p class="text-dense leading-relaxed max-w-2xl" style="color: var(--semantic-text-muted)">
-      People who can open {{ workspaceId }}. An invite adds an existing account by email — Owners
-      and Admins can manage this list, Editors and Viewers cannot.
+      People who can open {{ workspaceId }}. An invite is a request: the account you name is asked
+      first and gains nothing until it accepts. Owners and Admins can manage this list.
     </p>
 
     <!-- Failure is NOT an empty list, and it is not a silent no-op: a refused
-         invite or role change lands here too. -->
+         invite, role change or revocation lands here too. -->
     <div
-      v-if="store.error"
+      v-if="error"
       data-testid="error-message"
       role="alert"
       class="px-4 py-3 rounded-md flex items-start justify-between gap-4"
       style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-red)"
     >
-      <p class="text-dense" style="color: var(--color-red)">{{ store.error }}</p>
+      <p class="text-dense" style="color: var(--color-red)">{{ error }}</p>
       <button
         type="button"
         data-testid="retry-btn"
@@ -120,7 +153,19 @@ onMounted(() => {
       </button>
     </div>
 
+    <!-- A member who is not an owner/admin reads the roster and nothing else;
+         a form whose every submit would 403 is worse than no form. -->
+    <p
+      v-if="!invitationsStore.canManage"
+      data-testid="read-only-note"
+      class="text-dense"
+      style="color: var(--semantic-text-muted)"
+    >
+      Only owners and admins can invite or remove people in this workspace.
+    </p>
+
     <div
+      v-if="invitationsStore.canManage"
       class="px-4 py-3 rounded-md space-y-2"
       style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border)"
     >
@@ -197,22 +242,74 @@ onMounted(() => {
       </p>
     </div>
 
-    <p v-if="store.loading && !store.loaded" class="text-dense" style="color: var(--semantic-text-dim)">
+    <!-- Unanswered asks. They are NOT members: nothing here has access yet. -->
+    <div
+      v-if="pending.length"
+      data-testid="pending-invitations"
+      class="px-4 py-3 rounded-md space-y-2"
+      style="background-color: var(--semantic-content-bg); border: 1px dashed var(--color-border)"
+    >
+      <h3 class="text-dense font-semibold" style="color: var(--semantic-text)">
+        Pending invitations
+      </h3>
+      <p class="text-dense" style="color: var(--semantic-text-dim)">
+        Waiting for an answer. These accounts cannot see this workspace yet.
+      </p>
+      <ul class="space-y-1.5">
+        <li
+          v-for="invitation in pending"
+          :key="invitation.id"
+          data-testid="pending-invitation-row"
+          class="flex items-center justify-between gap-3"
+        >
+          <span class="flex-1 min-w-0 truncate text-dense font-mono" style="color: var(--semantic-text)">
+            {{ invitation.invitee_email || invitation.invitee_user_id }}
+          </span>
+          <span
+            data-testid="pending-invitation-role"
+            class="text-micro uppercase tracking-wide shrink-0"
+            style="color: var(--semantic-text-muted)"
+            >{{ roleLabel(invitation.role) }}</span
+          >
+          <button
+            type="button"
+            data-testid="revoke-btn"
+            :disabled="invitationsStore.saving"
+            class="px-2.5 h-7 rounded-md text-dense border shrink-0 transition-colors duration-150 disabled:opacity-40"
+            style="
+              border-color: var(--color-border);
+              color: var(--semantic-text-muted);
+              background-color: transparent;
+            "
+            :aria-label="`Revoke the invitation to ${invitation.invitee_email}`"
+            @click="openRevoke(invitation)"
+          >
+            Revoke
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <p
+      v-if="membersStore.loading && !membersStore.loaded"
+      class="text-dense"
+      style="color: var(--semantic-text-dim)"
+    >
       Loading members…
     </p>
 
     <!-- Only once a fetch has actually completed: before that, "no members"
          would be a claim nobody has verified. -->
     <EmptyState
-      v-else-if="store.loaded && store.members.length === 0 && !store.error"
+      v-else-if="membersStore.loaded && membersStore.members.length === 0 && !error"
       glyph="◇"
       title="No members yet"
       description="Invite an account by email to give it access to this workspace."
     />
 
-    <ul v-else-if="store.members.length" class="space-y-2" data-testid="member-list">
+    <ul v-else-if="membersStore.members.length" class="space-y-2" data-testid="member-list">
       <li
-        v-for="member in store.members"
+        v-for="member in membersStore.members"
         :key="member.user_id"
         data-testid="member-row"
         :data-user-id="member.user_id"
@@ -234,10 +331,11 @@ onMounted(() => {
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <select
+              v-if="invitationsStore.canManage"
               :value="member.role"
               data-testid="member-role-select"
               :aria-label="`Role for ${labelFor(member)}`"
-              :disabled="store.saving"
+              :disabled="membersStore.saving"
               class="px-2 h-7 rounded-md text-dense disabled:opacity-50"
               style="
                 background-color: var(--semantic-bg);
@@ -251,9 +349,10 @@ onMounted(() => {
               </option>
             </select>
             <button
+              v-if="invitationsStore.canManage"
               type="button"
               data-testid="remove-btn"
-              :disabled="store.saving || isSoleOwner(member)"
+              :disabled="membersStore.saving || isSoleOwner(member)"
               :title="isSoleOwner(member) ? 'A workspace must keep at least one owner' : undefined"
               class="px-2.5 h-7 rounded-md text-dense transition-colors duration-150 disabled:opacity-40"
               style="color: var(--color-red)"
@@ -268,17 +367,24 @@ onMounted(() => {
     </ul>
 
     <ConfirmDialog
-      :show="removeTarget !== null"
-      title="Remove member"
+      :show="removeTarget !== null || revokeTarget !== null"
+      :title="revokeTarget ? 'Revoke invitation' : 'Remove member'"
       :message="
-        removeTarget
-          ? `Remove ${labelFor(removeTarget)} from this workspace? They lose access to everything in it.`
-          : ''
+        revokeTarget
+          ? `Withdraw the invitation to ${revokeTarget.invitee_email}? They will not be asked again.`
+          : removeTarget
+            ? `Remove ${labelFor(removeTarget)} from this workspace? They lose access to everything in it.`
+            : ''
       "
-      confirm-text="Remove"
+      :confirm-text="revokeTarget ? 'Revoke' : 'Remove'"
       cancel-text="Cancel"
-      @confirm="handleRemove"
-      @close="closeRemove"
+      @confirm="revokeTarget ? handleRevoke() : handleRemove()"
+      @close="
+        () => {
+          closeRevoke()
+          closeRemove()
+        }
+      "
     />
   </div>
 </template>

@@ -135,6 +135,7 @@ const migration_119 = @import("migration_119.zig");
 const migration_120 = @import("migration_120.zig");
 const migration_121 = @import("migration_121.zig");
 const migration_122 = @import("migration_122.zig");
+const migration_123 = @import("migration_123.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -259,6 +260,7 @@ pub const Migration119CreateSkillMetadata = migration_119.Migration119CreateSkil
 pub const Migration120GrantSetSkillMetadata = migration_120.Migration120GrantSetSkillMetadata;
 pub const Migration121AddSqliteTimeFunctions = migration_121.Migration121AddSqliteTimeFunctions;
 pub const Migration122AddDocumentPosition = migration_122.Migration122AddDocumentPosition;
+pub const Migration123AddWorkspaceInvitations = migration_123.Migration123AddWorkspaceInvitations;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -493,6 +495,9 @@ pub const allMigrations: []const Migration = &.{
     // that already spell them stay identical on both engines (a no-op on sqlite).
     .{ .version = Migration121AddSqliteTimeFunctions.version, .name = Migration121AddSqliteTimeFunctions.name, .up = Migration121AddSqliteTimeFunctions.up },
     .{ .version = Migration122AddDocumentPosition.version, .name = Migration122AddDocumentPosition.name, .up = Migration122AddDocumentPosition.up },
+    // Migration 123 — a pending invitation is a ROW, and the membership row is only written when
+    // the invitee accepts it. Nothing can drop a workspace into a stranger's sidebar.
+    .{ .version = Migration123AddWorkspaceInvitations.version, .name = Migration123AddWorkspaceInvitations.name, .up = Migration123AddWorkspaceInvitations.up },
 };
 
 /// Register all migrations with a MigrationManager

@@ -1,9 +1,10 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useNavigationStore } from '../../stores/navigation'
 import { useWorkspacesStore } from '../../stores/workspaces'
+import { useInvitationsStore } from '../../stores/invitations'
 import { useSidebarStore } from '../../stores/sidebar'
 import { useNotificationStore } from '../../stores/notifications'
 import ProjectsList from '../workspace/ProjectsList.vue'
@@ -99,6 +100,7 @@ const openTaskPicker = (workspaceId: string, itemId: string) => {
 // column" path — kanban cards are always standard chats (the column is a workflow stage, not a
 // task-type discriminator), so the Routine / Memory options would be noise.
 const workspacesStore = useWorkspacesStore()
+const invitationsStore = useInvitationsStore()
 const sidebarStore = useSidebarStore()
 
 // State
@@ -186,6 +188,12 @@ const stopResize = () => {
   document.body.style.userSelect = ''
   document.body.style.cursor = ''
 }
+
+onMounted(() => {
+  // The inbox rides the boot of the shell: an invitation nobody is told about
+  // is an invitation nobody can accept.
+  void invitationsStore.fetchMine()
+})
 
 onUnmounted(() => {
   stopResize()
@@ -574,6 +582,17 @@ const handleSwitcherSelect = (workspaceId: string) => emit('selectWorkspace', wo
 // open the workspace in a real browser tab, never navigating here.
 const handleOpenWorkspaceInBackground = (workspaceId: string) => {
   openInNewTab(router, buildAppUrl({ workspaceId }))
+}
+/** Accepting is what creates the membership, so the workspace list is reloaded
+ * before navigating — otherwise the switcher would point at a row it lacks. */
+const handleAcceptInvitation = async (invitationId: string) => {
+  const workspaceId = await invitationsStore.accept(invitationId)
+  if (!workspaceId) return
+  await workspacesStore.init()
+  emit('selectWorkspace', workspaceId)
+}
+const handleDeclineInvitation = (invitationId: string) => {
+  void invitationsStore.decline(invitationId)
 }
 const handleCreateWorkspace = (name: string) => workspacesStore.addWorkspace(name)
 const handleCloseModal = () => (showAddWorkspaceModal.value = false)
@@ -1074,11 +1093,14 @@ defineExpose({
         <WorkspaceSwitcher
           :workspaces="workspacesStore.workspaces"
           :active-workspace-id="workspacesStore.activeWorkspace?.id ?? null"
+          :invitations="invitationsStore.mine"
           @select="handleSwitcherSelect"
           @open-workspace-in-background="handleOpenWorkspaceInBackground"
           @add-workspace="handleAddWorkspace"
           @rename-workspace="handleRenameWorkspace"
           @delete-workspace="handleDeleteWorkspace"
+          @accept-invitation="handleAcceptInvitation"
+          @decline-invitation="handleDeclineInvitation"
         />
       </div>
       <WorkspaceSwitcher
@@ -1086,11 +1108,14 @@ defineExpose({
         collapsed
         :workspaces="workspacesStore.workspaces"
         :active-workspace-id="workspacesStore.activeWorkspace?.id ?? null"
+        :invitations="invitationsStore.mine"
         @select="handleSwitcherSelect"
         @open-workspace-in-background="handleOpenWorkspaceInBackground"
         @add-workspace="handleAddWorkspace"
         @rename-workspace="handleRenameWorkspace"
         @delete-workspace="handleDeleteWorkspace"
+        @accept-invitation="handleAcceptInvitation"
+        @decline-invitation="handleDeclineInvitation"
         data-testid="sidebar-header-collapsed"
       />
       <div v-if="!isCollapsed" class="flex items-center gap-3">

@@ -34,6 +34,9 @@ pub const reserved_user_id = "user_system";
 /// One membership joined with its account. Every owned slice is freed by
 /// `freeMemberRow`.
 pub const MemberRow = struct {
+    /// The workspace this membership is IN — the client needs it to navigate
+    /// to the workspace an invitation was just accepted for.
+    workspace_id: []const u8,
     user_id: []const u8,
     email: []const u8,
     name: []const u8,
@@ -79,7 +82,7 @@ pub const MembersError = error{
 /// different column order. `LEFT JOIN` because a `user_system` member row
 /// (auth-off backfill) has no account behind it.
 const SELECT_MEMBERS =
-    "SELECT m.user_id, COALESCE(CAST(u.email AS TEXT), ''), COALESCE(CAST(u.name AS TEXT), ''), " ++
+    "SELECT m.workspace_id, m.user_id, COALESCE(CAST(u.email AS TEXT), ''), COALESCE(CAST(u.name AS TEXT), ''), " ++
     "m.role, COALESCE(CAST(m.joined_at AS TEXT), ''), COALESCE(CAST(m.invited_by AS TEXT), '') " ++
     "FROM workspace_members m LEFT JOIN users u ON u.id = m.user_id ";
 
@@ -90,18 +93,20 @@ const ORDER_MEMBERS =
     "WHEN 'editor' THEN 2 ELSE 3 END, COALESCE(u.email, ''), m.user_id";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) MembersError!MemberRow {
-    if (values.len < 6) return error.QueryFailed;
+    if (values.len < 7) return error.QueryFailed;
     return .{
-        .user_id = try allocator.dupe(u8, values[0]),
-        .email = try allocator.dupe(u8, values[1]),
-        .name = try allocator.dupe(u8, values[2]),
-        .role = try allocator.dupe(u8, values[3]),
-        .joined_at = try allocator.dupe(u8, values[4]),
-        .invited_by = try allocator.dupe(u8, values[5]),
+        .workspace_id = try allocator.dupe(u8, values[0]),
+        .user_id = try allocator.dupe(u8, values[1]),
+        .email = try allocator.dupe(u8, values[2]),
+        .name = try allocator.dupe(u8, values[3]),
+        .role = try allocator.dupe(u8, values[4]),
+        .joined_at = try allocator.dupe(u8, values[5]),
+        .invited_by = try allocator.dupe(u8, values[6]),
     };
 }
 
 pub fn freeMemberRow(allocator: std.mem.Allocator, row: MemberRow) void {
+    allocator.free(row.workspace_id);
     allocator.free(row.user_id);
     allocator.free(row.email);
     allocator.free(row.name);

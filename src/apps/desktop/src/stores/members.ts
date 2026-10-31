@@ -76,28 +76,6 @@ export const useMembersStore = defineStore('members', () => {
     loading.value = false
   }
 
-  /** Add an existing account by email. The server defaults an omitted role to `viewer`, so the
-   * panel always sends one. */
-  async function inviteMember(
-    workspaceId: string,
-    email: string,
-    role: WorkspaceRole,
-  ): Promise<boolean> {
-    if (!workspaceId) return false
-    saving.value = true
-    error.value = null
-    const result = await runRequest(
-      request('invite', () => api.inviteMember(workspaceId, email, role)),
-    )
-    saving.value = false
-    if (!result.ok) {
-      error.value = result.reason
-      return false
-    }
-    await reload(workspaceId)
-    return true
-  }
-
   async function setRole(
     workspaceId: string,
     userId: string,
@@ -152,7 +130,6 @@ export const useMembersStore = defineStore('members', () => {
     loaded,
     count,
     fetchMembers,
-    inviteMember,
     setRole,
     removeMember,
     reset,
