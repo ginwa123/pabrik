@@ -1,22 +1,14 @@
-//! OpenCode v2 agent backend — Phase 1 (configuration + detection).
-
 const std = @import("std");
 const config_mod = @import("../modules/config/Config.zig");
 
-/// Canonical `backend` values, re-exported from the config layer so there is
-/// one definition. `Config.zig` owns the names because it owns the parser.
 pub const Backend = config_mod.LlmConfig.Backend;
 
-/// Default binary name, resolved through `PATH`.
 pub const DEFAULT_BINARY: []const u8 = "opencode";
 
-/// True when `backend` selects the OpenCode CLI.
 pub fn isOpencodeBackend(backend: []const u8) bool {
     return std.mem.eql(u8, backend, Backend.opencode);
 }
 
-/// True when `backend` is one this build understands. An empty value means
-/// "unset", which the cascade resolves to `http`.
 pub fn isKnownBackend(backend: []const u8) bool {
     return backend.len == 0 or
         std.mem.eql(u8, backend, Backend.http) or
@@ -24,45 +16,26 @@ pub fn isKnownBackend(backend: []const u8) bool {
         isOpencodeBackend(backend);
 }
 
-/// Validation for an OpenCode agent. Unlike HTTP agents, `base_url` and
-/// `api_key` are NOT required — auth comes from `opencode` login state, not
-/// from config.
 pub fn validateOpencodeAgent(model: []const u8) error{MissingModel}!void {
     if (model.len == 0) return error.MissingModel;
 }
 
-/// Resolve the `opencode` binary to execute. * Empty `configured` →
-/// `DEFAULT_BINARY` (`"opencode"`, via `PATH`). * Otherwise the configured
-/// value verbatim (absolute path or alias).
 pub fn resolveBinaryPath(configured: []const u8) []const u8 {
     if (configured.len == 0) return DEFAULT_BINARY;
     return configured;
 }
 
-/// Options for `buildPrintArgs`.
-pub const PrintOptions = struct {
-    /// Model passed as `--model`, in the CLI's `provider/model` form
-    /// (e.g. `opencode-go/deepseek-flash`). Empty = omit (CLI default).
+pub const RunOptions = struct {
     model: []const u8 = "",
-    /// Agent name passed as `--agent`. Empty = omit (CLI default agent).
     agent: []const u8 = "",
-    /// When true, emit `--auto` — auto-approve permissions that are not
-    /// explicitly denied. Required for a headless run: without it the CLI
-    /// blocks on an interactive permission prompt that no one can answer.
     auto_approve: bool = true,
-    /// When true, emit `--format json` (the machine-readable shape
-    /// `parseResultLine` understands). Always true in production; exposed so
-    /// tests can assert the human-readable shape.
     json_format: bool = true,
 };
 
-/// Build argv for a non-interactive OpenCode run: `opencode run [--model m]
-/// [--agent a] [--auto] [--format json] <prompt>`.
-pub fn buildPrintArgs(
+pub fn buildRunArgs(
     allocator: std.mem.Allocator,
     binary: []const u8,
-    prompt: []const u8,
-    opts: PrintOptions,
+    opts: RunOptions,
 ) ![][]const u8 {
     var list = std.ArrayList([]const u8).empty;
     errdefer {
@@ -89,140 +62,248 @@ pub fn buildPrintArgs(
         try list.append(allocator, try allocator.dupe(u8, "json"));
     }
 
-    // The prompt is LAST: `opencode run [flags] [<message...>]` takes the
-    // message as a trailing positional, so a leading prompt would be parsed
-    // as a flag value.
-    try list.append(allocator, try allocator.dupe(u8, prompt));
-
     return list.toOwnedSlice(allocator);
 }
 
-/// Free an argv slice built by `buildPrintArgs`.
+pub fn buildModelsListArgs(allocator: std.mem.Allocator, binary: []const u8) ![][]const u8 {
+    const args = try allocator.alloc([]const u8, 2);
+    errdefer allocator.free(args);
+    args[0] = try allocator.dupe(u8, binary);
+    errdefer allocator.free(args[0]);
+    args[1] = try allocator.dupe(u8, "models");
+    return args;
+}
+
 pub fn freeArgs(allocator: std.mem.Allocator, args: [][]const u8) void {
     for (args) |s| allocator.free(s);
     allocator.free(args);
 }
 
-/// One environment variable to set on the CLI child process.
-pub const EnvVar = struct {
-    name: []const u8,
-    value: []const u8,
+pub const PromptMessage = struct {
+    role: []const u8,
+    content: []const u8,
 };
 
-/// Build the environment overlay for one OpenCode run. OpenCode doesn't
-/// require special environment variables for authentication like Claude Code
-/// does with `CLAUDE_CONFIG_DIR`.
-pub fn buildEnvOverlay(
-    _: std.mem.Allocator,
-    _: ?[]const u8,
-) ![]EnvVar {
-    return &.{};
+fn labelFor(role: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, role, "system")) return null;
+    if (std.mem.eql(u8, role, "user")) return "User";
+    if (std.mem.eql(u8, role, "assistant")) return "Assistant";
+    if (std.mem.eql(u8, role, "tool")) return "Tool";
+    return null;
 }
 
-/// Free an overlay built by `buildEnvOverlay`.
-pub fn freeEnvOverlay(allocator: std.mem.Allocator, vars: []EnvVar) void {
-    for (vars) |v| {
-        allocator.free(v.name);
-        allocator.free(v.value);
+pub fn buildPrompt(allocator: std.mem.Allocator, messages: []const PromptMessage) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var wrote_preamble = false;
+    for (messages) |m| {
+        if (labelFor(m.role) != null) continue;
+        const text = std.mem.trim(u8, m.content, " \t\r\n");
+        if (text.len == 0) continue;
+        if (wrote_preamble) try out.appendSlice(allocator, "\n\n");
+        try out.appendSlice(allocator, text);
+        wrote_preamble = true;
     }
-    if (vars.len > 0) allocator.free(vars);
+
+    var wrote_turn = false;
+    for (messages) |m| {
+        const label = labelFor(m.role) orelse continue;
+        const text = std.mem.trim(u8, m.content, " \t\r\n");
+        if (text.len == 0) continue;
+        if (!wrote_turn) {
+            if (out.items.len > 0) try out.appendSlice(allocator, "\n\n");
+            try out.appendSlice(allocator, "# Conversation\n\n");
+            wrote_turn = true;
+        } else {
+            try out.appendSlice(allocator, "\n\n");
+        }
+        try out.appendSlice(allocator, label);
+        try out.appendSlice(allocator, ": ");
+        try out.appendSlice(allocator, text);
+    }
+
+    return out.toOwnedSlice(allocator);
 }
 
-/// argv for the health probe: `<binary> --version`.
-pub fn buildVersionProbeArgs(allocator: std.mem.Allocator, binary: []const u8) ![][]const u8 {
-    const args = try allocator.alloc([]const u8, 2);
-    errdefer allocator.free(args);
-    args[0] = try allocator.dupe(u8, binary);
-    errdefer allocator.free(args[0]);
-    args[1] = try allocator.dupe(u8, "--version");
-    return args;
+pub const StepFinish = struct {
+    reason: []const u8 = "",
+    input_tokens: usize = 0,
+    output_tokens: usize = 0,
+    reasoning_tokens: usize = 0,
+    cache_read_tokens: usize = 0,
+};
+
+pub const Failure = struct {
+    kind: []const u8 = "",
+    message: []const u8 = "",
+};
+
+pub const Event = union(enum) {
+    text: []const u8,
+    tool_use: []const u8,
+    step_finish: StepFinish,
+    failure: Failure,
+    other,
+};
+
+fn strField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const v = obj.get(key) orelse return null;
+    return switch (v) {
+        .string => |s| s,
+        else => null,
+    };
 }
 
-/// Render the result of an `opencode --version` probe as one human line.
-pub fn describeVersionProbe(
+fn intField(obj: std.json.ObjectMap, key: []const u8) usize {
+    const v = obj.get(key) orelse return 0;
+    return switch (v) {
+        .integer => |i| if (i > 0) @intCast(i) else 0,
+        .float => |f| if (f > 0) @intFromFloat(f) else 0,
+        else => 0,
+    };
+}
+
+fn objectField(obj: std.json.ObjectMap, key: []const u8) ?std.json.ObjectMap {
+    const v = obj.get(key) orelse return null;
+    return switch (v) {
+        .object => |o| o,
+        else => null,
+    };
+}
+
+pub fn parseEventLine(parsed_value: std.json.Value) Event {
+    if (parsed_value != .object) return .other;
+    const root = parsed_value.object;
+    const kind = strField(root, "type") orelse return .other;
+
+    if (std.mem.eql(u8, kind, "text")) {
+        const part = objectField(root, "part") orelse return .other;
+        const text = strField(part, "text") orelse return .other;
+        if (text.len == 0) return .other;
+        return .{ .text = text };
+    }
+
+    if (std.mem.eql(u8, kind, "tool_use")) {
+        const part = objectField(root, "part") orelse return .other;
+        const name = strField(part, "tool") orelse strField(part, "title") orelse "tool";
+        return .{ .tool_use = name };
+    }
+
+    if (std.mem.eql(u8, kind, "step_finish")) {
+        const part = objectField(root, "part") orelse return .other;
+        var finish: StepFinish = .{ .reason = strField(part, "reason") orelse "" };
+        if (objectField(part, "tokens")) |tokens| {
+            finish.input_tokens = intField(tokens, "input");
+            finish.output_tokens = intField(tokens, "output");
+            finish.reasoning_tokens = intField(tokens, "reasoning");
+            if (objectField(tokens, "cache")) |cache| {
+                finish.cache_read_tokens = intField(cache, "read");
+            }
+        }
+        return .{ .step_finish = finish };
+    }
+
+    if (std.mem.eql(u8, kind, "error")) {
+        if (objectField(root, "error")) |err_obj| {
+            return .{ .failure = .{
+                .kind = strField(err_obj, "type") orelse "",
+                .message = strField(err_obj, "message") orelse "",
+            } };
+        }
+        return .{ .failure = .{ .message = strField(root, "message") orelse "" } };
+    }
+
+    return .other;
+}
+
+pub const ModelRef = struct {
+    provider: []const u8,
+    model: []const u8,
+};
+
+pub fn parseModelsList(allocator: std.mem.Allocator, stdout: []const u8) ![]ModelRef {
+    var list = std.ArrayList(ModelRef).empty;
+    errdefer {
+        for (list.items) |ref| {
+            allocator.free(ref.provider);
+            allocator.free(ref.model);
+        }
+        list.deinit(allocator);
+    }
+
+    var lines = std.mem.splitScalar(u8, stdout, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0) continue;
+        const slash = std.mem.indexOfScalar(u8, line, '/') orelse continue;
+        if (slash == 0 or slash + 1 >= line.len) continue;
+        try list.append(allocator, .{
+            .provider = try allocator.dupe(u8, line[0..slash]),
+            .model = try allocator.dupe(u8, line[slash + 1 ..]),
+        });
+    }
+    return list.toOwnedSlice(allocator);
+}
+
+pub fn freeModelsList(allocator: std.mem.Allocator, refs: []ModelRef) void {
+    for (refs) |ref| {
+        allocator.free(ref.provider);
+        allocator.free(ref.model);
+    }
+    if (refs.len > 0) allocator.free(refs);
+}
+
+pub fn isFreeModelId(model_id: []const u8) bool {
+    if (std.ascii.indexOfIgnoreCase(model_id, "free") != null) return true;
+    return std.ascii.indexOfIgnoreCase(model_id, "contributor") != null;
+}
+
+pub fn isFreeFromCost(cost_input: ?f64, cost_output: ?f64) ?bool {
+    const input = cost_input orelse return null;
+    const output = cost_output orelse return null;
+    return input == 0 and output == 0;
+}
+
+pub fn freeRank(is_free: bool) u8 {
+    return if (is_free) 0 else 1;
+}
+
+pub fn describeRunFailure(
     allocator: std.mem.Allocator,
     binary: []const u8,
-    spawn_failed: bool,
-    exited_zero: bool,
-    stdout: []const u8,
-    stderr: []const u8,
+    model: []const u8,
+    detail: []const u8,
 ) ![]u8 {
-    if (spawn_failed) {
-        return std.fmt.allocPrint(
-            allocator,
-            "'{s}' was not found or could not be executed. Install the OpenCode CLI and run `opencode login`, or point the agent at an absolute binary path.",
-            .{binary},
-        );
-    }
-    const out = std.mem.trim(u8, stdout, " \\t\\r\\n");
-    const err = std.mem.trim(u8, stderr, " \\t\\r\\n");
-    if (!exited_zero) {
-        return std.fmt.allocPrint(
-            allocator,
-            "`{s} --version` exited non-zero: {s}",
-            .{ binary, if (err.len > 0) err else "(no stderr)" },
-        );
-    }
+    const trimmed = std.mem.trim(u8, detail, " \t\r\n");
     return std.fmt.allocPrint(
         allocator,
-        "OpenCode CLI is available: {s}. Auth comes from `opencode login` (no API key in config).",
-        .{if (out.len > 0) out else "version unknown"},
+        "`{s} run --model {s}` failed: {s}",
+        .{ binary, model, if (trimmed.len > 0) trimmed else "the CLI exited non-zero and printed nothing" },
     );
 }
 
-/// Result extracted from one `--format json` output line.
-pub const ParsedLine = struct {
-    /// Raw `type` field (e.g. `"result"`, `"assistant"`, `"system"`).
-    /// Empty when the line has no string `type`.
-    line_type: []const u8,
-    /// For `type == "result"`: the `result` text (borrowed from the parsed
-    /// JSON value — valid while `parsed` lives) or the `subtype` fallback.
-    /// Empty otherwise.
-    result_text: []const u8 = "",
-    /// True iff this line is the terminal `type == "result"` message.
-    is_result: bool = false,
-};
-
-/// Parse one `opencode run --format json` output line. Returns `.is_result ==
-/// true` only for the terminal `{"type":"result","result":"..."}` message.
-pub fn parseResultLine(
-    parsed_value: std.json.Value,
-) ParsedLine {
-    if (parsed_value != .object) return .{ .line_type = "" };
-    const obj = parsed_value.object;
-    const t = switch (obj.get("type") orelse std.json.Value{ .null = {} }) {
-        .string => |s| s,
-        else => return .{ .line_type = "" },
-    };
-    if (!std.mem.eql(u8, t, "result")) return .{ .line_type = t };
-    const text: []const u8 = switch (obj.get("result") orelse std.json.Value{ .null = {} }) {
-        .string => |s| s,
-        else => switch (obj.get("subtype") orelse std.json.Value{ .null = {} }) {
-            .string => |s| s,
-            else => "",
-        },
-    };
-    return .{ .line_type = t, .result_text = text, .is_result = true };
+pub fn describeMissingBinary(
+    allocator: std.mem.Allocator,
+    binary: []const u8,
+) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "'{s}' was not found or could not be executed. Install the OpenCode CLI and run `opencode login`, or point the agent at an absolute binary path.",
+        .{binary},
+    );
 }
 
-/// Actionable error text surfaced when an OpenCode agent reaches the
-/// workflow before Phase 2 execution wiring lands.
-pub fn notWiredMessage(
+pub fn describeEmptyReply(
     allocator: std.mem.Allocator,
     model: []const u8,
 ) ![]u8 {
     return std.fmt.allocPrint(
         allocator,
-        "agent uses backend=\"opencode\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). " ++
-            "Install the CLI (https://docs.opencode.dev/) and run `opencode login`, " ++
-            "or set the agent's backend back to \"http\".",
+        "`opencode run --model {s}` finished without producing any text.",
         .{model},
     );
 }
-
-// ─── Behaviour tests ─────────────────────────────────────────────
-// These call the module's functions and assert return values — never source
-// text (see AGENTS.md "Tests — Assert Behaviour").
 
 const testing = std.testing;
 
@@ -231,7 +312,6 @@ test "isOpencodeBackend matches only the canonical value" {
     try testing.expect(!isOpencodeBackend("http"));
     try testing.expect(!isOpencodeBackend(""));
     try testing.expect(!isOpencodeBackend("Opencode"));
-    // A url_style value must never read as a backend.
     try testing.expect(!isOpencodeBackend("openai"));
 }
 
@@ -241,12 +321,11 @@ test "isKnownBackend accepts unset, http, claude-code and opencode" {
     try testing.expect(isKnownBackend("claude-code"));
     try testing.expect(isKnownBackend("opencode"));
     try testing.expect(!isKnownBackend("codex"));
-    try testing.expect(!isKnownBackend("weird"));
 }
 
 test "validateOpencodeAgent requires model only" {
-    try validateOpencodeAgent("deepseek-flash");
-    try validateOpencodeAgent("opencode-go/deepseek-flash");
+    try validateOpencodeAgent("opencode/beam-free");
+    try validateOpencodeAgent("opencode-go/deepseek-v4.1-flash");
     try testing.expectError(error.MissingModel, validateOpencodeAgent(""));
 }
 
@@ -255,145 +334,224 @@ test "resolveBinaryPath defaults to opencode on PATH" {
     try testing.expectEqualStrings("/usr/bin/opencode", resolveBinaryPath("/usr/bin/opencode"));
 }
 
-test "buildPrintArgs emits model, auto and json format with the prompt last" {
+test "buildRunArgs carries model, agent, auto and json format" {
     const alloc = testing.allocator;
-    const args = try buildPrintArgs(alloc, "opencode", "hello", .{ .model = "opencode-go/deepseek-flash" });
+    const args = try buildRunArgs(alloc, "opencode", .{ .model = "opencode/beam-free", .agent = "build" });
     defer freeArgs(alloc, args);
-    // opencode run --model opencode-go/deepseek-flash --auto --format json hello
-    try testing.expectEqual(@as(usize, 8), args.len);
+    try testing.expectEqual(@as(usize, 9), args.len);
     try testing.expectEqualStrings("opencode", args[0]);
     try testing.expectEqualStrings("run", args[1]);
     try testing.expectEqualStrings("--model", args[2]);
-    try testing.expectEqualStrings("opencode-go/deepseek-flash", args[3]);
-    try testing.expectEqualStrings("--auto", args[4]);
-    try testing.expectEqualStrings("--format", args[5]);
-    try testing.expectEqualStrings("json", args[6]);
-    // The prompt is the trailing positional — a leading prompt would be
-    // parsed as a flag value by `opencode run [flags] [<message...>]`.
-    try testing.expectEqualStrings("hello", args[7]);
+    try testing.expectEqualStrings("opencode/beam-free", args[3]);
+    try testing.expectEqualStrings("--agent", args[4]);
+    try testing.expectEqualStrings("build", args[5]);
+    try testing.expectEqualStrings("--auto", args[6]);
+    try testing.expectEqualStrings("--format", args[7]);
+    try testing.expectEqualStrings("json", args[8]);
 }
 
-test "buildPrintArgs omits optional flags when unset" {
+test "buildModelsListArgs asks the CLI for its own model list" {
     const alloc = testing.allocator;
-    const args = try buildPrintArgs(alloc, "opencode", "hi", .{});
-    defer freeArgs(alloc, args);
-    // opencode run --auto --format json hi
-    try testing.expectEqual(@as(usize, 6), args.len);
-    try testing.expectEqualStrings("opencode", args[0]);
-    try testing.expectEqualStrings("run", args[1]);
-    try testing.expectEqualStrings("--auto", args[2]);
-    try testing.expectEqualStrings("--format", args[3]);
-    try testing.expectEqualStrings("json", args[4]);
-    try testing.expectEqualStrings("hi", args[5]);
-}
-
-test "buildPrintArgs omits --auto and --format when disabled" {
-    const alloc = testing.allocator;
-    const args = try buildPrintArgs(alloc, "opencode", "hi", .{ .auto_approve = false, .json_format = false });
-    defer freeArgs(alloc, args);
-    try testing.expectEqual(@as(usize, 3), args.len);
-    try testing.expectEqualStrings("opencode", args[0]);
-    try testing.expectEqualStrings("run", args[1]);
-    try testing.expectEqualStrings("hi", args[2]);
-}
-
-test "buildPrintArgs includes --agent when set" {
-    const alloc = testing.allocator;
-    const args = try buildPrintArgs(alloc, "opencode", "hi", .{ .agent = "build" });
-    defer freeArgs(alloc, args);
-    // opencode run --agent build --auto --format json hi
-    try testing.expectEqual(@as(usize, 8), args.len);
-    try testing.expectEqualStrings("--agent", args[2]);
-    try testing.expectEqualStrings("build", args[3]);
-    try testing.expectEqualStrings("hi", args[7]);
-}
-
-test "buildPrintArgs never puts the prompt in a shell-interpreted position" {
-    // The prompt travels as a single argv element, so shell metacharacters
-    // in a user message stay literal.
-    const alloc = testing.allocator;
-    const args = try buildPrintArgs(alloc, "opencode", "rm -rf /; echo $(whoami)", .{});
-    defer freeArgs(alloc, args);
-    try testing.expectEqualStrings("rm -rf /; echo $(whoami)", args[args.len - 1]);
-}
-
-test "buildEnvOverlay is always empty" {
-    const alloc = testing.allocator;
-    const vars = try buildEnvOverlay(alloc, "/some/path");
-    defer freeEnvOverlay(alloc, vars);
-    try testing.expectEqual(@as(usize, 0), vars.len);
-
-    const empty = try buildEnvOverlay(alloc, "");
-    defer freeEnvOverlay(alloc, empty);
-    try testing.expectEqual(@as(usize, 0), empty.len);
-
-    const none = try buildEnvOverlay(alloc, null);
-    defer freeEnvOverlay(alloc, none);
-    try testing.expectEqual(@as(usize, 0), none.len);
-}
-
-test "buildVersionProbeArgs is binary plus --version" {
-    const alloc = testing.allocator;
-    const args = try buildVersionProbeArgs(alloc, "opencode");
+    const args = try buildModelsListArgs(alloc, "opencode");
     defer freeArgs(alloc, args);
     try testing.expectEqual(@as(usize, 2), args.len);
     try testing.expectEqualStrings("opencode", args[0]);
-    try testing.expectEqualStrings("--version", args[1]);
+    try testing.expectEqualStrings("models", args[1]);
 }
 
-test "describeVersionProbe reports a successful probe with its version" {
+test "buildRunArgs never carries the prompt on the command line" {
     const alloc = testing.allocator;
-    const msg = try describeVersionProbe(alloc, "opencode", false, true, "2.0.18\\n", "");
-    defer alloc.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "2.0.18") != null);
-    try testing.expect(std.mem.indexOf(u8, msg, "opencode login") != null);
+    const args = try buildRunArgs(alloc, "opencode", .{ .model = "opencode/beam-free" });
+    defer freeArgs(alloc, args);
+    for (args) |a| {
+        try testing.expect(std.mem.indexOf(u8, a, "hello") == null);
+    }
 }
 
-test "describeVersionProbe explains a missing binary" {
+test "buildRunArgs honours an explicit auto-off and non-json run" {
     const alloc = testing.allocator;
-    const msg = try describeVersionProbe(alloc, "opencode", true, false, "", "");
+    const args = try buildRunArgs(alloc, "opencode", .{ .auto_approve = false, .json_format = false });
+    defer freeArgs(alloc, args);
+    try testing.expectEqual(@as(usize, 2), args.len);
+}
+
+test "buildPrompt puts system text first and labels every turn" {
+    const alloc = testing.allocator;
+    const prompt = try buildPrompt(alloc, &.{
+        .{ .role = "system", .content = "You are Pabrik." },
+        .{ .role = "user", .content = "hello" },
+        .{ .role = "assistant", .content = "hi there" },
+        .{ .role = "user", .content = "what now?" },
+    });
+    defer alloc.free(prompt);
+
+    try testing.expect(std.mem.startsWith(u8, prompt, "You are Pabrik."));
+    const system_at = std.mem.indexOf(u8, prompt, "You are Pabrik.").?;
+    const first_user = std.mem.indexOf(u8, prompt, "User: hello").?;
+    const assistant_at = std.mem.indexOf(u8, prompt, "Assistant: hi there").?;
+    const last_user = std.mem.indexOf(u8, prompt, "User: what now?").?;
+    try testing.expect(system_at < first_user);
+    try testing.expect(first_user < assistant_at);
+    try testing.expect(assistant_at < last_user);
+}
+
+test "buildPrompt skips empty messages and keeps tool results" {
+    const alloc = testing.allocator;
+    const prompt = try buildPrompt(alloc, &.{
+        .{ .role = "user", .content = "run it" },
+        .{ .role = "assistant", .content = "   " },
+        .{ .role = "tool", .content = "exit 0" },
+    });
+    defer alloc.free(prompt);
+
+    try testing.expect(std.mem.indexOf(u8, prompt, "User: run it") != null);
+    try testing.expect(std.mem.indexOf(u8, prompt, "Tool: exit 0") != null);
+    try testing.expect(std.mem.indexOf(u8, prompt, "Assistant:") == null);
+}
+
+test "buildPrompt with an empty conversation is empty" {
+    const alloc = testing.allocator;
+    const prompt = try buildPrompt(alloc, &.{});
+    defer alloc.free(prompt);
+    try testing.expectEqual(@as(usize, 0), prompt.len);
+}
+
+test "parseEventLine reads the text part of a text event" {
+    const alloc = testing.allocator;
+    var doc = try std.json.parseFromSlice(std.json.Value, alloc,
+        \\{"type":"text","part":{"type":"text","text":"PONG"}}
+    , .{});
+    defer doc.deinit();
+    const ev = parseEventLine(doc.value);
+    try testing.expect(ev == .text);
+    try testing.expectEqualStrings("PONG", ev.text);
+}
+
+test "parseEventLine reads usage and stop reason from step_finish" {
+    const alloc = testing.allocator;
+    var doc = try std.json.parseFromSlice(std.json.Value, alloc,
+        \\{"type":"step_finish","part":{"type":"step-finish","reason":"stop","cost":0,"tokens":{"input":70,"output":26,"reasoning":41,"cache":{"read":4224,"write":0}}}}
+    , .{});
+    defer doc.deinit();
+    const ev = parseEventLine(doc.value);
+    try testing.expect(ev == .step_finish);
+    try testing.expectEqualStrings("stop", ev.step_finish.reason);
+    try testing.expectEqual(@as(usize, 70), ev.step_finish.input_tokens);
+    try testing.expectEqual(@as(usize, 26), ev.step_finish.output_tokens);
+    try testing.expectEqual(@as(usize, 41), ev.step_finish.reasoning_tokens);
+    try testing.expectEqual(@as(usize, 4224), ev.step_finish.cache_read_tokens);
+}
+
+test "parseEventLine names the tool a tool_use event ran" {
+    const alloc = testing.allocator;
+    var doc = try std.json.parseFromSlice(std.json.Value, alloc,
+        \\{"type":"tool_use","part":{"type":"tool","tool":"glob","state":{"status":"completed"}}}
+    , .{});
+    defer doc.deinit();
+    const ev = parseEventLine(doc.value);
+    try testing.expect(ev == .tool_use);
+    try testing.expectEqualStrings("glob", ev.tool_use);
+}
+
+test "parseEventLine surfaces the provider failure of an error event" {
+    const alloc = testing.allocator;
+    var doc = try std.json.parseFromSlice(std.json.Value, alloc,
+        \\{"type":"error","error":{"type":"provider.no-route","message":"Model unavailable: opencode/nope"}}
+    , .{});
+    defer doc.deinit();
+    const ev = parseEventLine(doc.value);
+    try testing.expect(ev == .failure);
+    try testing.expectEqualStrings("provider.no-route", ev.failure.kind);
+    try testing.expectEqualStrings("Model unavailable: opencode/nope", ev.failure.message);
+}
+
+test "parseEventLine ignores lifecycle and malformed events" {
+    const alloc = testing.allocator;
+    const cases = [_][]const u8{
+        \\{"type":"step_start","part":{"type":"step-start"}}
+        ,
+        \\{"type":"text","part":{}}
+        ,
+        \\{"type":"text","part":{"text":""}}
+        ,
+        \\{"nope":1}
+        ,
+        \\[1,2]
+        ,
+    };
+    for (cases) |raw| {
+        var doc = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
+        defer doc.deinit();
+        try testing.expect(parseEventLine(doc.value) == .other);
+    }
+}
+
+test "parseModelsList splits provider from model and drops junk lines" {
+    const alloc = testing.allocator;
+    const refs = try parseModelsList(alloc,
+        \\opencode/beam-free
+        \\opencode-go/iceman-contributor-free
+        \\
+        \\ not-a-model 
+        \\weird/
+        \\/noname
+    );
+    defer freeModelsList(alloc, refs);
+
+    try testing.expectEqual(@as(usize, 2), refs.len);
+    try testing.expectEqualStrings("opencode", refs[0].provider);
+    try testing.expectEqualStrings("beam-free", refs[0].model);
+    try testing.expectEqualStrings("opencode-go", refs[1].provider);
+    try testing.expectEqualStrings("iceman-contributor-free", refs[1].model);
+}
+
+test "parseModelsList owns its strings, so the CLI output buffer may be released" {
+    const alloc = testing.allocator;
+    const stdout = try alloc.dupe(u8, "opencode/beam-free\nopencode-go/kimi-k3\n");
+    const refs = try parseModelsList(alloc, stdout);
+    defer freeModelsList(alloc, refs);
+
+    @memset(stdout, 0xAA);
+    alloc.free(stdout);
+
+    try testing.expectEqualStrings("opencode", refs[0].provider);
+    try testing.expectEqualStrings("beam-free", refs[0].model);
+    try testing.expectEqualStrings("opencode-go", refs[1].provider);
+    try testing.expectEqualStrings("kimi-k3", refs[1].model);
+}
+
+test "isFreeModelId treats free and contributor models as free" {
+    try testing.expect(isFreeModelId("beam-free"));
+    try testing.expect(isFreeModelId("iceman-contributor-free"));
+    try testing.expect(isFreeModelId("muse-spark-1.3-contributor"));
+    try testing.expect(isFreeModelId("GLM-5-FREE"));
+    try testing.expect(!isFreeModelId("claude-opus-4-7"));
+}
+
+test "isFreeFromCost needs both sides priced at zero" {
+    try testing.expectEqual(true, isFreeFromCost(0, 0).?);
+    try testing.expectEqual(false, isFreeFromCost(0, 4.4).?);
+    try testing.expectEqual(false, isFreeFromCost(1.4, 0).?);
+    try testing.expect(isFreeFromCost(null, 0) == null);
+}
+
+test "freeRank sorts free models before paid ones" {
+    try testing.expect(freeRank(true) < freeRank(false));
+}
+
+test "describeMissingBinary names the binary and the login step" {
+    const alloc = testing.allocator;
+    const msg = try describeMissingBinary(alloc, "opencode");
     defer alloc.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "opencode") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "not found") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "opencode login") != null);
 }
 
-test "describeVersionProbe surfaces stderr on a non-zero exit" {
+test "describeRunFailure carries the model and the CLI's own words" {
     const alloc = testing.allocator;
-    const msg = try describeVersionProbe(alloc, "opencode", false, false, "", "boom");
+    const msg = try describeRunFailure(alloc, "opencode", "opencode/beam-free", "provider.no-route: boom");
     defer alloc.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "non-zero") != null);
-    try testing.expect(std.mem.indexOf(u8, msg, "boom") != null);
-}
-
-test "parseResultLine extracts the terminal result text" {
-    const alloc = testing.allocator;
-    const doc = try std.json.parseFromSlice(std.json.Value, alloc, "{\"type\":\"result\",\"result\":\"done!\"}", .{});
-    defer doc.deinit();
-    const p = parseResultLine(doc.value);
-    try testing.expect(p.is_result);
-    try testing.expectEqualStrings("result", p.line_type);
-    try testing.expectEqualStrings("done!", p.result_text);
-}
-
-test "parseResultLine ignores non-result lines and bad json shapes" {
-    const alloc = testing.allocator;
-    const doc = try std.json.parseFromSlice(std.json.Value, alloc, "{\"type\":\"assistant\",\"message\":{}}", .{});
-    defer doc.deinit();
-    const p = parseResultLine(doc.value);
-    try testing.expect(!p.is_result);
-    try testing.expectEqualStrings("assistant", p.line_type);
-
-    const arr = try std.json.parseFromSlice(std.json.Value, alloc, "[1,2]", .{});
-    defer arr.deinit();
-    const q = parseResultLine(arr.value);
-    try testing.expect(!q.is_result);
-}
-
-test "notWiredMessage names the backend, the model and the remediation" {
-    const alloc = testing.allocator;
-    const msg = try notWiredMessage(alloc, "deepseek-flash");
-    defer alloc.free(msg);
-    try testing.expect(std.mem.indexOf(u8, msg, "backend=\"opencode\"") != null);
-    try testing.expect(std.mem.indexOf(u8, msg, "deepseek-flash") != null);
-    try testing.expect(std.mem.indexOf(u8, msg, "opencode login") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "opencode/beam-free") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "provider.no-route: boom") != null);
 }

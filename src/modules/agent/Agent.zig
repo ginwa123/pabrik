@@ -16,9 +16,12 @@ const custom_http_client = @import("kabelweb").client;
 const args_repair = @import("tools/tools_args_repair.zig");
 const file_attachments = @import("../../agentic_loop/file_attachments.zig");
 const logger_mod = @import("../logger/Logger.zig");
+const opencode_mod = @import("../../agentic_loop/opencode.zig");
 
 /// Log level for agent logging
 const LogLevel = enum { err, warn, info, debug };
+
+const opencode_max_output_bytes: usize = 8 * 1024 * 1024;
 
 /// Get current timestamp in milliseconds since epoch
 fn timestampMs(io: std.Io) i64 {
@@ -1308,9 +1311,20 @@ pub const Agent = struct {
     allocator: std.mem.Allocator,
     httpOptions: HttpOptions = .{},
     UrlStyle: []const u8 = "openai",
-    /// Which TRANSPORT this call uses: `"http"` (default) | `"claude-code"`.
-    /// Deliberately NOT a `UrlStyle` value.
+    /// Which TRANSPORT this call uses: `"http"` (default) | `"claude-code"` |
+    /// `"opencode"`. Deliberately NOT a `UrlStyle` value.
     backend: []const u8 = "http",
+    /// OpenCode CLI only: which of the CLI's own agents runs the turn
+    /// (`--agent`). Null = the CLI's default agent.
+    opencode_agent: ?[]const u8 = null,
+    /// OpenCode CLI only: whether to pass `--auto`. Null means on — a headless
+    /// run that stops to ask a permission question can never finish.
+    opencode_auto: ?bool = null,
+    /// OpenCode CLI only: the binary to execute. Empty = `opencode` on PATH.
+    opencode_binary: []const u8 = "",
+    /// OpenCode CLI only: the directory the CLI runs in, so its file tools
+    /// operate on the session's project. Empty = the server's cwd.
+    opencode_cwd: []const u8 = "",
     userIdentifier: []const u8 = "AnakMagang",
     /// Stable per-conversation session id for OpenCode Go / Zen routing. Sent
     /// as the `x-opencode-session` HTTP header on every LLM request when
@@ -2007,8 +2021,6 @@ pub const Agent = struct {
         AllocFailed,
         /// Profile selects url_style="claude-code" (local CLI backend).
         ClaudeCodeNotWired,
-        /// Profile selects backend="opencode" (local CLI backend).
-        OpencodeNotWired,
         WriteFailed,
         OutOfMemory,
         Cancelled,
@@ -2650,19 +2662,8 @@ pub const Agent = struct {
             return error.ClaudeCodeNotWired;
         }
 
-        // OpenCode profiles select the local CLI backend, not HTTP.
-        if (std.mem.eql(u8, self.backend, "opencode")) {
-            const detail = std.fmt.allocPrint(
-                self.allocator,
-                "profile uses backend=\"opencode\" (model=\"{s}\") but CLI execution is not wired yet (Phase 1: configuration only). Install the CLI (https://docs.opencode.dev/) and run `opencode login`, or set the profile's backend back to \"http\".",
-                .{self.model},
-            ) catch null;
-            if (detail) |d| {
-                if (self.last_error_message) |prev| self.allocator.free(prev);
-                self.last_error_message = d;
-            }
-            self.log_fmt(.err, "[STREAM] opencode backend not wired yet (model={s})", .{self.model});
-            return error.OpencodeNotWired;
+        if (opencode_mod.isOpencodeBackend(self.backend)) {
+            return self.callOpencodeCli(params, ctx, callback);
         }
 
         // Reset per-call Anthropic parser scratch state. The Agent is reused
@@ -2993,6 +2994,184 @@ pub const Agent = struct {
         });
 
         return stream_response;
+    }
+
+    fn setLastError(self: *Agent, detail: []const u8) void {
+        const owned = self.allocator.dupe(u8, detail) catch return;
+        if (self.last_error_message) |prev| self.allocator.free(prev);
+        self.last_error_message = owned;
+    }
+
+    fn opencodeMessageText(msg: AgentMessage, allocator: std.mem.Allocator) ![]const u8 {
+        if (msg.content) |c| {
+            if (c.len > 0) return c;
+        }
+        const parts = msg.content_parts orelse return "";
+        var out: std.ArrayList(u8) = .empty;
+        for (parts) |part| {
+            const text = part.text orelse continue;
+            if (text.len == 0) continue;
+            if (out.items.len > 0) try out.appendSlice(allocator, "\n");
+            try out.appendSlice(allocator, text);
+        }
+        return out.toOwnedSlice(allocator);
+    }
+
+    fn opencodePrompt(params: AgentCall, allocator: std.mem.Allocator) ![]u8 {
+        const messages = try allocator.alloc(opencode_mod.PromptMessage, params.messages.len);
+        for (params.messages, 0..) |msg, i| {
+            messages[i] = .{
+                .role = msg.role.to_str(),
+                .content = try opencodeMessageText(msg, allocator),
+            };
+        }
+        return opencode_mod.buildPrompt(allocator, messages);
+    }
+
+    fn callOpencodeCli(
+        self: *Agent,
+        params: AgentCall,
+        ctx: ?*anyopaque,
+        callback: StreamCallback,
+    ) CallError!CallResponse {
+        const allocator = self.allocator;
+        const binary = opencode_mod.resolveBinaryPath(self.opencode_binary);
+
+        var arena_state = std.heap.ArenaAllocator.init(allocator);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+
+        const cli_prompt = opencodePrompt(params, arena) catch return error.OutOfMemory;
+        if (cli_prompt.len == 0) {
+            self.setLastError("the opencode CLI turn had no message to send");
+            return error.BuildRequestFailed;
+        }
+
+        const argv = opencode_mod.buildRunArgs(arena, binary, .{
+            .model = self.model,
+            .agent = self.opencode_agent orelse "",
+            .auto_approve = self.opencode_auto orelse true,
+        }) catch return error.OutOfMemory;
+
+        var result = helpers.run_captured.run(allocator, self.io, argv, .{
+            .cwd = if (self.opencode_cwd.len > 0) self.opencode_cwd else null,
+            .stdin_data = cli_prompt,
+            .timeout_ms = self.httpOptions.read_timeout_ms,
+            .max_output_bytes = opencode_max_output_bytes,
+            .cancel_fn = params.cancel_fn,
+        }) catch |err| {
+            const detail = switch (err) {
+                error.FileNotFound => opencode_mod.describeMissingBinary(allocator, binary),
+                else => opencode_mod.describeRunFailure(allocator, binary, self.model, @errorName(err)),
+            } catch return error.OutOfMemory;
+            defer allocator.free(detail);
+            self.setLastError(detail);
+            self.log_fmt(.err, "[STREAM] opencode CLI could not start: {s}", .{detail});
+            return error.ApiError;
+        };
+        defer result.deinit(allocator);
+
+        if (result.cancelled) {
+            self.log_fmt(.info, "[STREAM] opencode CLI cancelled (model={s})", .{self.model});
+            return error.Cancelled;
+        }
+        if (result.timed_out) {
+            const detail = std.fmt.allocPrint(
+                allocator,
+                "`{s} run --model {s}` exceeded its {d} ms budget and was killed.",
+                .{ binary, self.model, self.httpOptions.read_timeout_ms },
+            ) catch return error.OutOfMemory;
+            defer allocator.free(detail);
+            self.setLastError(detail);
+            return error.StreamTimeout;
+        }
+
+        var content: std.ArrayList(u8) = .empty;
+        errdefer content.deinit(allocator);
+        var usage: Usage = .{};
+        var finish: ?FinishReason = null;
+        var failure: ?[]const u8 = null;
+        defer if (failure) |f| allocator.free(f);
+        var tool_calls: usize = 0;
+
+        var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+        while (lines.next()) |raw_line| {
+            const line = std.mem.trim(u8, raw_line, " \t\r");
+            if (line.len == 0) continue;
+            const parsed = std.json.parseFromSlice(std.json.Value, arena, line, .{}) catch continue;
+            switch (opencode_mod.parseEventLine(parsed.value)) {
+                .text => |text| {
+                    content.appendSlice(allocator, text) catch return error.OutOfMemory;
+                    callback(ctx, .{ .content = text });
+                },
+                .tool_use => |name| {
+                    tool_calls += 1;
+                    self.log_fmt(.info, "[STREAM] opencode CLI ran its own tool: {s}", .{name});
+                },
+                .step_finish => |step| {
+                    usage.prompt_tokens += step.input_tokens;
+                    usage.completion_tokens += step.output_tokens;
+                    usage.cache_read_input_tokens += step.cache_read_tokens;
+                    if (std.mem.eql(u8, step.reason, "stop")) finish = .stop;
+                    if (std.mem.eql(u8, step.reason, "length")) finish = .length;
+                },
+                .failure => |f| {
+                    if (failure) |old| allocator.free(old);
+                    failure = std.fmt.allocPrint(allocator, "{s}: {s}", .{
+                        if (f.kind.len > 0) f.kind else "provider error",
+                        if (f.message.len > 0) f.message else "no detail",
+                    }) catch null;
+                },
+                .other => {},
+            }
+        }
+
+        if (failure) |f| {
+            self.setLastError(f);
+            self.log_fmt(.err, "[STREAM] opencode CLI reported {s}", .{f});
+            return error.ApiError;
+        }
+
+        const exited_zero = switch (result.term) {
+            .exited => |code| code == 0,
+            else => false,
+        };
+        if (!exited_zero) {
+            const detail = opencode_mod.describeRunFailure(
+                allocator,
+                binary,
+                self.model,
+                result.stderr,
+            ) catch return error.OutOfMemory;
+            defer allocator.free(detail);
+            self.setLastError(detail);
+            self.log_fmt(.err, "[STREAM] {s}", .{detail});
+            return error.ApiError;
+        }
+
+        if (content.items.len == 0) {
+            const detail = opencode_mod.describeEmptyReply(allocator, self.model) catch return error.OutOfMemory;
+            defer allocator.free(detail);
+            self.setLastError(detail);
+            self.log_fmt(.err, "[STREAM] {s}", .{detail});
+            return error.NoChoices;
+        }
+
+        usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+        const finished = finish orelse .stop;
+        callback(ctx, .{ .finish_reason = finished, .usage = usage });
+        callback(ctx, .{ .done = true });
+        self.log_fmt(.info, "[STREAM] opencode CLI complete model={s} prompt={} completion={} cli_tool_calls={}", .{
+            self.model, usage.prompt_tokens, usage.completion_tokens, tool_calls,
+        });
+
+        return .{
+            .allocator = allocator,
+            .content = content.toOwnedSlice(allocator) catch return error.OutOfMemory,
+            .tool_calls = null,
+            .finish_reason = finished,
+            .usage = usage,
+        };
     }
 
     pub fn deinit(self: *Agent) void {
@@ -3704,18 +3883,143 @@ test "callStreaming with claude-code backend fails fast with actionable error" {
     try expectCallStreaming(std.mem.indexOf(u8, detail, "claude login") != null);
 }
 
-test "callStreaming with opencode backend fails fast with actionable error" {
+test "callStreaming with opencode backend streams the CLI reply and its usage" {
+    const gpa = testing_allocatorCallStreaming;
+    var fx = try helpers.host_fixture.Fixture.init(gpa);
+    defer fx.deinit();
+    const events =
+        \\{"type":"step_start","part":{"type":"step-start"}}
+        \\{"type":"text","part":{"type":"text","text":"PONG"}}
+        \\{"type":"step_finish","part":{"reason":"stop","tokens":{"input":7,"output":3,"reasoning":1,"cache":{"read":11}}}}
+        \\
+    ;
+    const prog = try fx.writeProgram("opencode", .{ .stdout = events });
+    defer gpa.free(prog);
+
+    var a = Agent.init(gpa, std.testing.io);
+    defer a.deinit();
+    a.model = "opencode/beam-free";
+    a.backend = "opencode";
+    a.opencode_binary = prog;
+
+    var chunks = ChunkCounter{};
+    var resp = try a.callStreaming(makeCall(), &chunks, ChunkCounter.callback);
+    defer resp.deinit();
+
+    try expectEqualStringsCallStreaming("PONG", resp.content.?);
+    try expectEqualCallStreaming(@as(usize, 7), resp.usage.prompt_tokens);
+    try expectEqualCallStreaming(@as(usize, 3), resp.usage.completion_tokens);
+    try expectEqualCallStreaming(@as(usize, 11), resp.usage.cache_read_input_tokens);
+    try expectEqualCallStreaming(@as(usize, 10), resp.usage.total_tokens);
+    try expectEqualCallStreaming(FinishReason.stop, resp.finish_reason.?);
+    try expectCallStreaming(resp.tool_calls == null);
+    try expectCallStreaming(chunks.seen >= 3);
+}
+
+test "callStreaming with opencode backend runs the CLI with no prompt on its command line" {
+    const gpa = testing_allocatorCallStreaming;
+    var fx = try helpers.host_fixture.Fixture.init(gpa);
+    defer fx.deinit();
+    const argv_path = try std.fmt.allocPrint(gpa, "{s}/argv.txt", .{fx.root});
+    defer gpa.free(argv_path);
+    const prog = try fx.writeProgram("opencode", .{
+        .stdout = "{\"type\":\"text\",\"part\":{\"text\":\"read it\"}}\n",
+        .argv_file = argv_path,
+    });
+    defer gpa.free(prog);
+
+    var a = Agent.init(gpa, std.testing.io);
+    defer a.deinit();
+    a.model = "opencode/beam-free";
+    a.backend = "opencode";
+    a.opencode_binary = prog;
+
+    var resp = try a.callStreaming(.{
+        .tools = &.{},
+        .messages = &.{
+            .{ .role = .system, .content = "You are Pabrik." },
+            .{ .role = .user, .content = "what is this?" },
+        },
+    }, null, noopCallback);
+    defer resp.deinit();
+
+    try expectEqualStringsCallStreaming("read it", resp.content.?);
+
+    const recorded = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, argv_path, gpa, .limited(64 * 1024));
+    defer gpa.free(recorded);
+    try expectCallStreaming(helpers.host_fixture.recordedArgvContainsSequence(recorded, &.{ "run", "--model", "opencode/beam-free" }));
+    try expectCallStreaming(helpers.host_fixture.recordedArgvContainsSequence(recorded, &.{ "--format", "json" }));
+    try expectCallStreaming(helpers.host_fixture.recordedArgvContains(recorded, "--auto"));
+    try expectCallStreaming(std.mem.indexOf(u8, recorded, "You are Pabrik.") == null);
+    try expectCallStreaming(std.mem.indexOf(u8, recorded, "what is this?") == null);
+}
+
+test "callStreaming with opencode backend surfaces a provider error event" {
+    const gpa = testing_allocatorCallStreaming;
+    var fx = try helpers.host_fixture.Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.writeProgram("opencode", .{
+        .stdout =
+        \\{"type":"error","error":{"type":"provider.no-route","message":"Model unavailable: opencode/nope"}}
+        \\
+        ,
+        .exit_code = 1,
+    });
+    defer gpa.free(prog);
+
+    var a = Agent.init(gpa, std.testing.io);
+    defer a.deinit();
+    a.model = "opencode/nope";
+    a.backend = "opencode";
+    a.opencode_binary = prog;
+
+    try expectErrorCallStreaming(error.ApiError, a.callStreaming(makeCall(), null, noopCallback));
+    const detail = a.last_error_message orelse return error.MissingDetail;
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "provider.no-route") != null);
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "Model unavailable") != null);
+}
+
+test "callStreaming with opencode backend reports a missing binary actionably" {
     var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
     defer a.deinit();
-    a.baseUrl = "";
-    a.model = "deepseek-flash";
-    a.apiKey = "";
+    a.model = "opencode/beam-free";
     a.backend = "opencode";
-    const result = a.callStreaming(makeCall(), null, noopCallback);
-    try expectErrorCallStreaming(error.OpencodeNotWired, result);
+    a.opencode_binary = "pabrik-not-a-real-opencode-binary-xyzzy";
+
+    try expectErrorCallStreaming(error.ApiError, a.callStreaming(makeCall(), null, noopCallback));
     const detail = a.last_error_message orelse return error.MissingDetail;
-    try expectCallStreaming(std.mem.indexOf(u8, detail, "opencode") != null);
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "not found") != null);
     try expectCallStreaming(std.mem.indexOf(u8, detail, "opencode login") != null);
+}
+
+test "callStreaming with opencode backend reports a non-zero exit with the CLI's stderr" {
+    const gpa = testing_allocatorCallStreaming;
+    var fx = try helpers.host_fixture.Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.writeProgram("opencode", .{ .stderr = "auth expired", .exit_code = 3 });
+    defer gpa.free(prog);
+
+    var a = Agent.init(gpa, std.testing.io);
+    defer a.deinit();
+    a.model = "opencode/beam-free";
+    a.backend = "opencode";
+    a.opencode_binary = prog;
+
+    try expectErrorCallStreaming(error.ApiError, a.callStreaming(makeCall(), null, noopCallback));
+    const detail = a.last_error_message orelse return error.MissingDetail;
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "auth expired") != null);
+}
+
+test "callStreaming with opencode backend refuses a turn with nothing to send" {
+    var a = Agent.init(testing_allocatorCallStreaming, std.testing.io);
+    defer a.deinit();
+    a.model = "opencode/beam-free";
+    a.backend = "opencode";
+
+    const empty: AgentCall = .{ .tools = &.{}, .messages = &.{} };
+    try expectErrorCallStreaming(error.BuildRequestFailed, a.callStreaming(empty, null, noopCallback));
+    const detail = a.last_error_message orelse return error.MissingDetail;
+    try expectCallStreaming(std.mem.indexOf(u8, detail, "no message to send") != null);
 }
 
 test "callStreaming ignores a claude-code UrlStyle when backend is http" {

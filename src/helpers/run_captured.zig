@@ -19,6 +19,8 @@ pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 /// process group.
 const POST_KILL_GRACE_MS: u32 = 500;
 
+const POLL_MS: u64 = 10;
+
 /// POSIX process groups (`setpgid` / `kill(-pgid)`) are meaningless on
 /// Windows, which has no such concept in the POSIX sense.
 const posix_process_groups = switch (builtin.os.tag) {
@@ -48,6 +50,9 @@ pub const Result = struct {
     /// True when the child had to be killed because it outlived
     /// `Options.timeout_ms`. Callers should treat the output as partial.
     timed_out: bool,
+    /// True when the child had to be killed because `Options.cancel_fn`
+    /// answered yes. The output is partial, and the caller asked for that.
+    cancelled: bool = false,
 
     pub fn deinit(self: *Result, gpa: std.mem.Allocator) void {
         gpa.free(self.stdout);
@@ -69,6 +74,12 @@ pub const Options = struct {
     /// Put the child in its own process group and, on timeout, kill the whole
     /// group.
     kill_process_group: bool = true,
+    /// Bytes written to the child's stdin, which is closed right after they
+    /// land. `null` gives the child no stdin pipe at all.
+    stdin_data: ?[]const u8 = null,
+    /// Polled while waiting: a true answer kills the child and returns
+    /// `Result.cancelled`. `null` never cancels.
+    cancel_fn: ?*const fn () bool = null,
 };
 
 pub const RunError = std.mem.Allocator.Error ||
@@ -178,6 +189,26 @@ const Drain = struct {
     }
 };
 
+const StdinFeed = struct {
+    io: std.Io,
+    file: std.Io.File,
+    data: []const u8,
+    thread: ?std.Thread = null,
+
+    fn feed(self: *StdinFeed) void {
+        var buf: [4096]u8 = undefined;
+        var writer = std.Io.File.writer(self.file, self.io, &buf);
+        writer.interface.writeAll(self.data) catch {};
+        writer.interface.flush() catch {};
+        self.file.close(self.io);
+    }
+
+    fn join(self: *StdinFeed) void {
+        if (self.thread) |t| t.join();
+        self.thread = null;
+    }
+};
+
 /// Windows' process group, as a Job Object: every descendant of an assigned
 /// process joins it, so one `TerminateJobObject` takes the whole tree down —
 /// what `kill(-pgid)` does for the POSIX path.
@@ -247,7 +278,7 @@ pub fn run(
     var child = try std.process.spawn(io, .{
         .argv = argv,
         .cwd = if (opts.cwd) |c| .{ .path = c } else .inherit,
-        .stdin = .ignore,
+        .stdin = if (opts.stdin_data != null) .pipe else .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
         .pgid = if (own_pg) 0 else null,
@@ -269,8 +300,7 @@ pub fn run(
     const err_file = child.stderr orelse absent_pipe;
     const err_handle = err_file.handle;
     child.stderr = null;
-    // `.stdin = .ignore` means no stdin pipe, but be explicit so a
-    // future options change cannot resurrect the same hazard.
+    const stdin_file: ?std.Io.File = child.stdin;
     child.stdin = null;
 
     // Heap-allocated, not stack: if a drain thread is still wedged when we
@@ -305,20 +335,43 @@ pub fn run(
     if (out.thread == null) out.drain();
     if (errs.thread == null) errs.drain();
 
+    var feed: ?*StdinFeed = null;
+    if (opts.stdin_data) |data| {
+        if (stdin_file) |file| {
+            const created = gpa.create(StdinFeed) catch return error.OutOfMemory;
+            created.* = .{ .io = io, .file = file, .data = data };
+            feed = created;
+            created.thread = std.Thread.spawn(.{}, StdinFeed.feed, .{created}) catch null;
+            if (created.thread == null) created.feed();
+        }
+    }
+    defer if (feed) |f| gpa.destroy(f);
+
     var timed_out = false;
-    if (opts.timeout_ms) |budget_ms| {
-        const start = std.Io.Timestamp.now(io, .awake);
-        const deadline = start.addDuration(.fromMilliseconds(@intCast(budget_ms)));
+    var cancelled = false;
+    if (opts.timeout_ms != null or opts.cancel_fn != null) {
+        const deadline: ?std.Io.Timestamp = if (opts.timeout_ms) |budget_ms|
+            std.Io.Timestamp.now(io, .awake).addDuration(.fromMilliseconds(@intCast(budget_ms)))
+        else
+            null;
         while (!bothDone(out, errs)) {
-            if (std.Io.Timestamp.now(io, .awake).durationTo(deadline).toNanoseconds() <= 0) {
-                timed_out = true;
-                break;
+            if (opts.cancel_fn) |should_cancel| {
+                if (should_cancel()) {
+                    cancelled = true;
+                    break;
+                }
             }
-            std.Io.sleep(io, .fromMilliseconds(1), .awake) catch break;
+            if (deadline) |deadline_at| {
+                if (std.Io.Timestamp.now(io, .awake).durationTo(deadline_at).toNanoseconds() <= 0) {
+                    timed_out = true;
+                    break;
+                }
+            }
+            std.Io.sleep(io, .fromMilliseconds(POLL_MS), .awake) catch break;
         }
     }
 
-    if (timed_out) {
+    if (timed_out or cancelled) {
         // Kill the whole process group first so a grandchild cannot keep the
         // pipes open, then `kill` (which also reaps, and asserts the pipes
         // are detached — they are).
@@ -350,9 +403,10 @@ pub fn run(
 
     if (out.joinOrAbandon()) |t| t.join();
     if (errs.joinOrAbandon()) |t| t.join();
+    if (feed) |f| f.join();
 
     const result: Result = .{
-        .term = if (timed_out)
+        .term = if (timed_out or cancelled)
             // We chose this term; the child never got to report one.
             termForKill()
         else
@@ -362,6 +416,7 @@ pub fn run(
         .stdout = try out.buf.toOwnedSlice(gpa),
         .stderr = try errs.buf.toOwnedSlice(gpa),
         .timed_out = timed_out,
+        .cancelled = cancelled,
     };
     // `toOwnedSlice` empties the ArrayList, so the `defer` above will
     // not double-free; keep `result` immutable from here on.
@@ -741,4 +796,107 @@ fn concurrentWorker(gpa: std.mem.Allocator, prog: []const u8, ok: *bool) void {
             return;
         }
     }
+}
+
+fn alwaysCancel() bool {
+    return true;
+}
+
+test "run: stdin_data reaches the child on its own pipe" {
+    const gpa = testing.allocator;
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prompt_path = try std.fmt.allocPrint(gpa, "{s}/prompt.txt", .{fx.inner.root});
+    defer gpa.free(prompt_path);
+    const script = try std.fmt.allocPrint(gpa, if (builtin.os.tag == .windows)
+        "@echo off\r\nfindstr /v /r \"^$\" > \"{s}\"\r\nexit /b 0\r\n"
+    else
+        "#!/bin/sh\ncat > '{s}'\nexit 0\n", .{prompt_path});
+    defer gpa.free(script);
+    const program = try fx.inner.writeProgramText("reader", script);
+    defer gpa.free(program);
+
+    const prompt = "line one\nline two: with punctuation & $dollars\n";
+    var r = try run(gpa, testing.io, &.{program}, .{ .timeout_ms = 20_000, .stdin_data = prompt });
+    defer r.deinit(gpa);
+
+    try testing.expectEqual(@as(u8, 0), r.term.exited);
+    try testing.expect(!r.cancelled);
+    const landed = try std.Io.Dir.cwd().readFileAlloc(testing.io, prompt_path, gpa, .limited(64 * 1024));
+    defer gpa.free(landed);
+    try testing.expect(std.mem.indexOf(u8, landed, "line one") != null);
+    try testing.expect(std.mem.indexOf(u8, landed, "with punctuation & $dollars") != null);
+}
+
+test "run: stdin_data larger than a pipe buffer does not wedge a child that never reads it" {
+    const gpa = testing.allocator;
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("ignorer", .{});
+    defer gpa.free(prog);
+
+    const payload = try gpa.alloc(u8, 256 * 1024);
+    defer gpa.free(payload);
+    @memset(payload, 'x');
+
+    var r = try run(gpa, testing.io, &.{prog}, .{
+        .timeout_ms = 20_000,
+        .stdin_data = payload,
+    });
+    defer r.deinit(gpa);
+
+    try testing.expect(!r.timed_out);
+    try testing.expect(!r.cancelled);
+    try testing.expectEqual(@as(u8, 0), r.term.exited);
+}
+
+test "StdinFeed writes every byte and closes the handle it was given" {
+    const gpa = testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "stintest.txt", .data = "" });
+    var root_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const root_len = try tmp.dir.realPath(std.testing.io, &root_buf);
+    const path = try std.fmt.allocPrint(gpa, "{s}/stintest.txt", .{root_buf[0..root_len]});
+    defer gpa.free(path);
+
+    const file = try tmp.dir.openFile(std.testing.io, "stintest.txt", .{ .mode = .write_only });
+    const payload = "line one\nline two: & $x\n";
+    var feed = StdinFeed{ .io = std.testing.io, .file = file, .data = payload };
+    feed.feed();
+
+    const landed = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, gpa, .limited(4096));
+    defer gpa.free(landed);
+    try testing.expectEqualStrings(payload, landed);
+}
+
+test "run: cancel_fn kills the child and reports cancelled, not timed out" {
+    const gpa = testing.allocator;
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("sleeper", .{ .sleep_ms = 30_000 });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .cancel_fn = alwaysCancel });
+    defer r.deinit(gpa);
+
+    try testing.expect(r.cancelled);
+    try testing.expect(!r.timed_out);
+    try testing.expect(r.term == .signal or r.term == .unknown);
+}
+
+test "run: a child that finishes before the cancel poll is not reported as cancelled" {
+    const gpa = testing.allocator;
+    var fx = try Fixture.init(gpa);
+    defer fx.deinit();
+    const prog = try fx.write("quick", .{ .stdout = "done" });
+    defer gpa.free(prog);
+
+    var r = try run(gpa, testing.io, &.{prog}, .{ .timeout_ms = 10_000 });
+    defer r.deinit(gpa);
+
+    try testing.expect(!r.cancelled);
+    try testing.expectEqual(@as(u8, 0), r.term.exited);
+    try testing.expectEqualStrings("done", std.mem.trimEnd(u8, r.stdout, "\r\n"));
 }

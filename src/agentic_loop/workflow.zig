@@ -1189,7 +1189,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             sessionNameIsPlaceholder(allocator, db, copy_session_id))
         {
             auto_name_attempted = true;
-            generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, logger, io, db, event_bus);
+            generateSessionNameNew(db_messages, allocator, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, logger, io, db, event_bus);
         }
 
         // ─── Progressive tool search ─────────────────────────────────── The
@@ -1268,7 +1268,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // Make this turn cancellable.
         llm_cancel_thunk.register(.{ .db = db, .session_id = copy_session_id, .io = io });
         defer llm_cancel_thunk.unregister();
-        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
+        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
             if (err == error.Cancelled) {
                 logger.infoFmt("WORKFLOW CANCELLED during streaming: session_id={s}", .{copy_session_id});
                 // Keep the partial text and settle the transcript — without
@@ -1653,6 +1653,9 @@ fn generateSessionNameNew(
     base_url: []const u8,
     url_style: []const u8,
     backend: []const u8,
+    opencode_agent: ?[]const u8,
+    opencode_auto: ?bool,
+    cwd: []const u8,
     session_id: []const u8,
     logger: *logger_mod.Logger,
     io: std.Io,
@@ -1695,6 +1698,9 @@ fn generateSessionNameNew(
     name_agent.baseUrl = base_url;
     name_agent.UrlStyle = url_style;
     name_agent.backend = backend;
+    name_agent.opencode_agent = opencode_agent;
+    name_agent.opencode_auto = opencode_auto;
+    name_agent.opencode_cwd = cwd;
     name_agent.sessionId = session_id;
     name_agent.thinkingEnabled = false;
     name_agent.httpOptions.read_timeout_ms = 300_000; // 10 minutes
@@ -1885,6 +1891,9 @@ fn callDynamicAgentNew(
     base_url: []const u8,
     url_style: []const u8,
     backend: []const u8,
+    opencode_agent: ?[]const u8,
+    opencode_auto: ?bool,
+    opencode_cwd: []const u8,
     session_id: []const u8,
     equip_tools: []const agent.AgentTool,
     /// Polled by the agent's SSE chunk-read loop between chunks so a
@@ -1905,6 +1914,9 @@ fn callDynamicAgentNew(
     dynamic_agent.baseUrl = base_url;
     dynamic_agent.UrlStyle = url_style;
     dynamic_agent.backend = backend;
+    dynamic_agent.opencode_agent = opencode_agent;
+    dynamic_agent.opencode_auto = opencode_auto;
+    dynamic_agent.opencode_cwd = opencode_cwd;
     dynamic_agent.sessionId = session_id;
     // `messages_list.items` is `[]agent.AgentMessage`; the local
     // `agent.AgentCall.messages` wants the same type — direct assignment.
@@ -3337,6 +3349,9 @@ test "generateSessionNameNew: name call failure leaves the placeholder name and 
         "http://127.0.0.1:1/v1/chat/completions",
         "openai",
         "http",
+        null,
+        null,
+        "",
         session_id,
         &lg,
         s.threaded.io(),
