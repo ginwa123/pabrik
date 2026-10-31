@@ -53,6 +53,12 @@ async function runRequest<A>(
 
 export const useSecretsStore = defineStore('secrets', () => {
   const secrets = ref<Secret[]>([])
+  /** Plaintexts the user asked to see, keyed by secret id. NEVER filled by a list: only by
+   * `revealSecret`, one explicit action at a time, and dropped by `hideSecret`, `reset` and
+   * `deleteSecret`. */
+  const revealed = ref<Record<string, string>>({})
+  /** Id of the secret whose reveal is in flight, or null. */
+  const revealing = ref<string | null>(null)
   const loading = ref(false)
   const saving = ref(false)
   /** Last failure message, or null. Rendered by the view — never write-only. */
@@ -174,7 +180,38 @@ export const useSecretsStore = defineStore('secrets', () => {
       return false
     }
     secrets.value = secrets.value.filter((s) => s.id !== secretId)
+    hideSecret(secretId)
     return true
+  }
+
+  /** Ask the server to unseal ONE value. Returns the plaintext on success and null on failure, so a
+   * caller can copy it without the store keeping a second copy. The map is replaced, never mutated,
+   * so a component bound to the old object re-renders. */
+  async function revealSecret(workspaceId: string, secretId: string): Promise<string | null> {
+    if (!workspaceId || !secretId) return null
+    revealing.value = secretId
+    error.value = null
+    const result = await runRequest(
+      request('reveal', () => api.revealSecret(workspaceId, secretId)),
+      'reveal',
+    )
+    revealing.value = null
+    if (!result.ok) {
+      // A value that could not be unsealed must not look like one that is
+      // already on screen, so nothing is added to the map.
+      error.value = result.reason
+      return null
+    }
+    revealed.value = { ...revealed.value, [secretId]: result.value.secret.value }
+    return result.value.secret.value
+  }
+
+  /** Drop one plaintext from the page. */
+  function hideSecret(secretId: string): void {
+    if (!(secretId in revealed.value)) return
+    const next = { ...revealed.value }
+    delete next[secretId]
+    revealed.value = next
   }
 
   /**    * Called on workspace switch so one workspace's secrets are never shown under another workspace's
@@ -185,10 +222,14 @@ export const useSecretsStore = defineStore('secrets', () => {
     loaded.value = false
     loading.value = false
     saving.value = false
+    revealed.value = {}
+    revealing.value = null
   }
 
   return {
     secrets,
+    revealed,
+    revealing,
     loading,
     saving,
     error,
@@ -199,6 +240,8 @@ export const useSecretsStore = defineStore('secrets', () => {
     renameSecret,
     rotateSecret,
     deleteSecret,
+    revealSecret,
+    hideSecret,
     reset,
   }
 })

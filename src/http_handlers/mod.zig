@@ -188,6 +188,7 @@ pub const secretsListHandler = @import("secrets_list.zig").secretsListHandler;
 pub const secretsCreateHandler = @import("secrets_create.zig").secretsCreateHandler;
 pub const secretsUpdateHandler = @import("secrets_update.zig").secretsUpdateHandler;
 pub const secretsDeleteHandler = @import("secrets_delete.zig").secretsDeleteHandler;
+pub const secretsRevealHandler = @import("secrets_reveal.zig").secretsRevealHandler;
 
 // Kanban column CRUD handlers (item_type='kanban' sub-resources).
 pub const kanbanColumnsListHandler = @import("kanban_columns_list.zig").kanbanColumnsListHandler;

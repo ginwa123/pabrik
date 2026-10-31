@@ -8,6 +8,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const secrets_store = @import("../agentic_loop/secrets_store.zig");
+const gate = @import("workspace_members_gate.zig");
 
 pub const SecretsListError = error{
     WorkspaceIdRequired,
@@ -50,6 +51,7 @@ fn useCase(
         error.InsertFailed,
         error.UpdateFailed,
         error.DeleteFailed,
+        error.SealingUnavailable,
         => unreachable,
     };
     return .{ .secrets = rows };
@@ -88,9 +90,15 @@ pub fn secretsListHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    const output = useCase(allocator, sqlite_db, .{
-        .workspace_id = req.params.get("workspace_id") orelse "",
-    }) catch |err| {
+    const workspace_id = req.params.get("workspace_id") orelse "";
+    gate.checkRequest(allocator, di.db, di.auth_enabled, req.headers, workspace_id, .read) catch |err| {
+        return res.jsonResponse(.{
+            .status_code = gate.statusFor(err),
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = gate.messageFor(err) }),
+        });
+    };
+
+    const output = useCase(allocator, sqlite_db, .{ .workspace_id = workspace_id }) catch |err| {
         return res.jsonResponse(.{
             .status_code = statusFor(err),
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = messageFor(err) }),
@@ -218,4 +226,3 @@ test "the list response body carries no stored value" {
     try testing.expect(std.mem.indexOf(u8, json, "v_zebra_do_not_leak") == null);
     try testing.expect(std.mem.indexOf(u8, json, "\"count\":2") != null);
 }
-

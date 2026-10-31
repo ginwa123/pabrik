@@ -8,6 +8,8 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const secrets_store = @import("../agentic_loop/secrets_store.zig");
+const gate = @import("workspace_members_gate.zig");
+const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
 
 /// Request body. Both fields default to "" so an empty body parses and is
 /// then refused by validation rather than answering "Invalid JSON body".
@@ -23,6 +25,9 @@ pub const SecretsCreateError = error{
     ValueRequired,
     NameTaken,
     InsertFailed,
+    /// No master key on this host: the value cannot be sealed, so nothing is
+    /// stored rather than stored in plaintext.
+    SealingUnavailable,
     OutOfMemory,
 };
 
@@ -56,6 +61,7 @@ fn useCase(
         error.ValueRequired => return error.ValueRequired,
         error.NameTaken => return error.NameTaken,
         error.InsertFailed => return error.InsertFailed,
+        error.SealingUnavailable => return error.SealingUnavailable,
         error.OutOfMemory => return error.OutOfMemory,
         // The rest of the store's shared error set belongs to the read and
         // update paths, which `createSecret` cannot reach.
@@ -77,7 +83,7 @@ fn statusFor(err: SecretsCreateError) u16 {
     return switch (err) {
         error.WorkspaceIdRequired, error.NameRequired, error.InvalidName, error.ValueRequired => 400,
         error.NameTaken => 409,
-        error.InsertFailed, error.OutOfMemory => 500,
+        error.SealingUnavailable, error.InsertFailed, error.OutOfMemory => 500,
     };
 }
 
@@ -100,6 +106,7 @@ fn messageFor(
             "a secret named '{s}' already exists in this workspace",
             .{std.mem.trim(u8, requested_name, " \t\n\r")},
         ),
+        error.SealingUnavailable => "This host has no secret-encryption key, so a value cannot be stored",
         error.InsertFailed => "DB error",
         error.OutOfMemory => "Out of memory",
     };
@@ -120,6 +127,13 @@ pub fn secretsCreateHandler(
     const sqlite_db = di.db;
 
     const workspace_id = req.params.get("workspace_id") orelse "";
+    // Writes need owner/admin: a viewer may read a workspace, not its credentials.
+    gate.checkRequest(allocator, di.db, di.auth_enabled, req.headers, workspace_id, .manage) catch |err| {
+        return res.jsonResponse(.{
+            .status_code = gate.statusFor(err),
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = gate.messageFor(err) }),
+        });
+    };
 
     // An empty body is legal on the wire so the validation errors below are
     // what a blank submission sees; only unparseable JSON is a 400 here.
@@ -166,6 +180,12 @@ const TestCtx = struct {
 };
 
 fn setupDb() !TestCtx {
+    // The store seals on write and refuses a write with no key, so the fixture
+    // installs one — never the host's real key file.
+    var fixture_key: [secrets_at_rest.KEY_LEN]u8 = undefined;
+    for (&fixture_key, 0..) |*b, i| b.* = @intCast(i + 1);
+    secrets_at_rest.setKey(fixture_key);
+
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
@@ -186,9 +206,24 @@ fn countRows(ctx: *TestCtx) !usize {
     return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
 }
 
-/// Read the stored value straight from SQL, bypassing the store, so an
-/// assertion about what was persisted cannot be satisfied by the same code
-/// path it is testing.
+/// The credential behind a stored value, opened through the cipher: a row written by the store is an
+/// envelope, so asserting on the raw column would compare against ciphertext.
+fn openedValue(ctx: *TestCtx, name: []const u8) ![]u8 {
+    const alloc = testing.allocator;
+    const stored = try storedValue(ctx, name);
+    defer alloc.free(stored);
+
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT id FROM workspace_secrets WHERE name = ?",
+        &[_][]const u8{name},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.SecretMissing;
+    defer row.deinit(alloc);
+    return secrets_at_rest.openValue(alloc, row.values[0], stored);
+}
+
 fn storedValue(ctx: *TestCtx, name: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
@@ -246,7 +281,7 @@ test "useCase: the created response carries no value" {
 
     // ...while the value really was stored, so the absence above is the
     // response shape's doing and not a write that silently dropped it.
-    const kept = try storedValue(&ctx, "STRIPE_KEY");
+    const kept = try openedValue(&ctx, "STRIPE_KEY");
     defer alloc.free(kept);
     try testing.expectEqualStrings("sk_live_do_not_leak", kept);
 }
@@ -354,7 +389,7 @@ test "useCase: a duplicate name in one workspace is NameTaken, a 409" {
 
     // The duplicate must not have overwritten the stored credential — a
     // 409 that half-applied would be worse than no answer at all.
-    const kept = try storedValue(&ctx, "GITHUB_TOKEN");
+    const kept = try openedValue(&ctx, "GITHUB_TOKEN");
     defer alloc.free(kept);
     try testing.expectEqualStrings("ghp_first", kept);
 

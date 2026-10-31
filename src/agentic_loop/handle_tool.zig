@@ -27,6 +27,7 @@ const parsing = @import("parsing.zig");
 const hooks = @import("hooks.zig");
 const secrets_substitution = @import("secrets_substitution.zig");
 const secrets_store = @import("secrets_store.zig");
+const secrets_at_rest = @import("secrets_at_rest.zig");
 const workspace_scope = @import("workspace_scope.zig");
 const onEventSendLLMHistory = on_event_sent.onEventSendLLMHistory;
 const insertLLMHistories = @import("insert_llm_histories.zig").inserLLMHistories;
@@ -2041,6 +2042,7 @@ const SecretsFixture = struct {
     threaded: std.Io.Threaded,
 
     fn deinit(self: *SecretsFixture) void {
+        secrets_at_rest.setKey(null);
         self.db.deinit();
         self.threaded.deinit();
     }
@@ -2051,6 +2053,12 @@ const SecretsFixture = struct {
 };
 
 fn secretsSetup(allocator: std.mem.Allocator) !SecretsFixture {
+    // The store seals on write and refuses a write with no key, so the fixture
+    // installs one — never the host's real key file.
+    var fixture_key: [secrets_at_rest.KEY_LEN]u8 = undefined;
+    for (&fixture_key, 0..) |*b, i| b.* = @intCast(i + 1);
+    secrets_at_rest.setKey(fixture_key);
+
     var threaded = std.Io.Threaded.init(allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();

@@ -120,7 +120,7 @@ describe('SecretsSection', () => {
     wrapper.unmount()
   })
 
-  it('uses a write-only password input and offers no reveal toggle', async () => {
+  it('uses password inputs for the fields the user types into', async () => {
     const wrapper = mountSection({ secrets: [baseSecret] })
 
     const valueInputs = wrapper
@@ -131,16 +131,6 @@ describe('SecretsSection', () => {
       expect(input.attributes('type')).toBe('password')
     }
 
-    // No reveal / show / eye affordance anywhere — a stored value has
-    // nothing behind it, so a reveal button would be a lie.
-    const revealish = [...wrapper.findAll('button'), ...wrapper.findAll('[role="button"]')].filter(
-      (el) =>
-        /reveal|show|eye|unmask|peek/i.test(
-          `${el.attributes('data-testid') ?? ''} ${el.attributes('aria-label') ?? ''} ${el.attributes('title') ?? ''}`,
-        ),
-    )
-    expect(revealish).toHaveLength(0)
-
     // The rotate modal's value field is a password field too.
     await wrapper.find('[data-testid="rotate-btn"]').trigger('click')
     await flushPromises()
@@ -149,6 +139,48 @@ describe('SecretsSection', () => {
     )
     expect(rotateInput).not.toBeNull()
     expect(rotateInput?.getAttribute('type')).toBe('password')
+    wrapper.unmount()
+  })
+
+  it('reveals nothing until the user asks for that one row', async () => {
+    const wrapper = mountSection({ secrets: [baseSecret] })
+
+    // A fetched row carries no value, so nothing is displayable yet.
+    expect(wrapper.find('[data-testid="revealed-value"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="reveal-btn"]').trigger('click')
+    // The component asks; it never fetches the value itself and never invents
+    // one from the row payload.
+    expect(wrapper.emitted('reveal')?.[0]).toEqual(['sec_1'])
+    expect(wrapper.find('[data-testid="revealed-value"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the unsealed value for exactly the row it was handed, and hides it again', async () => {
+    const wrapper = mountSection({
+      secrets: [baseSecret, { ...baseSecret, id: 'sec_2', name: 'GITHUB_TOKEN' }],
+      revealed: { sec_1: SECRET_VALUE },
+    })
+
+    const rows = wrapper.findAll('[data-testid="secret-row"]')
+    expect(rows[0]?.find('[data-testid="revealed-value"]').text()).toBe(SECRET_VALUE)
+    // One reveal is one row: the neighbour's value is not on screen.
+    expect(rows[1]?.find('[data-testid="revealed-value"]').exists()).toBe(false)
+    // ...and the revealed row's button now offers the opposite action.
+    expect(rows[0]?.find('[data-testid="reveal-btn"]').text()).toMatch(/hide/i)
+
+    await rows[0]?.find('[data-testid="reveal-btn"]').trigger('click')
+    expect(wrapper.emitted('hide')?.[0]).toEqual(['sec_1'])
+    wrapper.unmount()
+  })
+
+  it('says Revealing… while the request is in flight, and disables the button', async () => {
+    const wrapper = mountSection({ secrets: [baseSecret], revealing: 'sec_1' })
+    const btn = wrapper.find('[data-testid="reveal-btn"]')
+    expect(btn.text()).toMatch(/revealing/i)
+    expect(btn.attributes('disabled')).toBeDefined()
+    // An in-flight reveal is not a revealed value.
+    expect(wrapper.find('[data-testid="revealed-value"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

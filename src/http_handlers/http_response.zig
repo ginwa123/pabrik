@@ -1392,6 +1392,23 @@ pub fn makeSecretListResponse(allocator: std.mem.Allocator, secrets: anytype) ![
     );
 }
 
+/// `GET /api/workspaces/:workspace_id/secrets/:secret_id/reveal` — the ONE
+/// response in this file that carries a credential. Only built after the
+/// membership gate has passed.
+pub const SecretRevealResponse = struct {
+    id: []const u8,
+    name: []const u8,
+    value: []const u8,
+};
+
+pub fn makeSecretRevealResponse(revealed: anytype) SecretRevealResponse {
+    return .{
+        .id = revealed.id,
+        .name = revealed.name,
+        .value = revealed.value,
+    };
+}
+
 // ─── Frontend error log response types ────────────────────────────────────
 // Wire shapes for `POST /api/logs` (no response body, 204 No Content) and
 // `GET /api/logs` (returns `{ logs: [...], count: N }`).

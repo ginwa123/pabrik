@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // Workspace secrets — the body of the Settings → Secrets tab. THE ONE RULE THIS COMPONENT EXISTS TO
-// KEEP: a secret value is write-only.
+// KEEP: a value reaches the screen only because the user asked for THAT row, and only through the
+// `reveal` event — never from the list payload.
 import { computed, ref } from 'vue'
 import type { Secret } from '../../api'
 import EmptyState from '../pabrik/EmptyState.vue'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
+import RotateSecretDialog from './RotateSecretDialog.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -15,8 +17,12 @@ const props = withDefaults(
     /** Rendered verbatim. Never swallowed into an empty list. */
     error?: string | null
     saving?: boolean
+    /** Plaintexts the store has unsealed, keyed by secret id. Absent = hidden. */
+    revealed?: Record<string, string>
+    /** Id whose reveal is in flight, so its button says so. */
+    revealing?: string | null
   }>(),
-  { loading: false, loaded: false, error: null, saving: false },
+  { loading: false, loaded: false, error: null, saving: false, revealed: () => ({}), revealing: null },
 )
 
 const emit = defineEmits<{
@@ -26,6 +32,10 @@ const emit = defineEmits<{
   rotate: [payload: { id: string; name: string; value: string }]
   /** Delete by NAME — the label the user sees, so the confirm reads right. */
   delete: [name: string]
+  /** Ask the server to unseal ONE value. The component never fetches by itself. */
+  reveal: [id: string]
+  /** Put it away again. */
+  hide: [id: string]
   retry: []
 }>()
 
@@ -34,7 +44,6 @@ const valueInput = ref('')
 const addError = ref<string | null>(null)
 
 const rotateTarget = ref<Secret | null>(null)
-const rotateValue = ref('')
 const deleteTarget = ref<Secret | null>(null)
 
 /** An empty value is not a secret. Silently swallowing the click would look
@@ -59,18 +68,16 @@ function handleAdd(): void {
 
 function openRotate(secret: Secret): void {
   rotateTarget.value = secret
-  rotateValue.value = ''
 }
 
 function closeRotate(): void {
   rotateTarget.value = null
-  rotateValue.value = ''
 }
 
-function handleRotate(): void {
+function handleRotate(value: string): void {
   const target = rotateTarget.value
-  if (!target || rotateValue.value.length === 0) return
-  emit('rotate', { id: target.id, name: target.name, value: rotateValue.value })
+  if (!target || value.length === 0) return
+  emit('rotate', { id: target.id, name: target.name, value })
   closeRotate()
 }
 
@@ -87,6 +94,19 @@ function handleDelete(): void {
   if (!target) return
   emit('delete', target.name)
   closeDelete()
+}
+
+/** True when this row's plaintext is on screen. */
+function isRevealed(secret: Secret): boolean {
+  return props.revealed[secret.id] !== undefined
+}
+
+function toggleReveal(secret: Secret): void {
+  if (isRevealed(secret)) {
+    emit('hide', secret.id)
+    return
+  }
+  emit('reveal', secret.id)
 }
 
 function formatTimestamp(value: string): string {
@@ -107,8 +127,8 @@ function focusAddName(): void {
   <div class="space-y-5" data-testid="secrets-section-body">
     <p class="text-dense leading-relaxed max-w-2xl" style="color: var(--semantic-text-muted)">
       Named credentials the agent's tools can substitute into requests made for this workspace.
-      Values are write-only: the server never sends one back, so there is nothing here to view after
-      you save. Rotating a secret replaces it.
+      Values are encrypted on disk and never leave the server in a list; Reveal asks for one value
+      on demand, and only a member of this workspace can do that. Rotating a secret replaces it.
     </p>
 
     <!-- Failure is NOT an empty list. This block is why the two look different. -->
@@ -134,8 +154,8 @@ function focusAddName(): void {
       </button>
     </div>
 
-    <!-- Add form. The value field is a password field with no reveal toggle,
-         because there is no stored value behind it to reveal. -->
+    <!-- Add form. The field holds what the user is typing right now; there is
+         nothing stored behind it yet, so it has no toggle of its own. -->
     <div
       class="px-4 py-3 rounded-md space-y-2"
       style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border)"
@@ -219,7 +239,7 @@ function focusAddName(): void {
       v-else-if="loaded && props.secrets.length === 0 && !error"
       glyph="⚿"
       title="No secrets yet"
-      description="Add a credential to let this workspace's agent tools authenticate against your services. You will only ever see the name, never the value."
+      description="Add a credential to let this workspace's agent tools authenticate against your services. It is stored encrypted; use Reveal when you need to check it."
       cta-label="+ Add secret"
       :cta-action="focusAddName"
     />
@@ -260,6 +280,17 @@ function focusAddName(): void {
           <div class="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
+              data-testid="reveal-btn"
+              :disabled="revealing === secret.id"
+              class="px-2.5 h-7 rounded-md text-dense border transition-colors duration-150 disabled:opacity-50"
+              style="border-color: var(--color-border); color: var(--semantic-text-muted); background-color: transparent"
+              :aria-label="isRevealed(secret) ? `Hide ${secret.name}` : `Reveal ${secret.name}`"
+              @click="toggleReveal(secret)"
+            >
+              {{ revealing === secret.id ? 'Revealing…' : isRevealed(secret) ? 'Hide' : 'Reveal' }}
+            </button>
+            <button
+              type="button"
               data-testid="rotate-btn"
               :disabled="saving"
               class="px-2.5 h-7 rounded-md text-dense border transition-colors duration-150 disabled:opacity-50"
@@ -286,73 +317,25 @@ function focusAddName(): void {
             </button>
           </div>
         </div>
+        <div
+          v-if="isRevealed(secret)"
+          data-testid="revealed-value"
+          class="mt-2 px-2 py-1.5 rounded-md text-dense font-mono break-all select-all"
+          style="background-color: var(--semantic-bg); color: var(--semantic-text); border: 1px solid var(--color-border)"
+        >
+          {{ revealed[secret.id] }}
+        </div>
       </li>
     </ul>
 
-    <!-- Rotate. Teleported, and the field is cleared on both exits. -->
-    <Teleport to="body">
-      <div
-        v-if="rotateTarget"
-        data-testid="rotate-dialog"
-        class="fixed inset-0 z-50 flex items-center justify-center"
-        @click.self="closeRotate"
-      >
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeRotate" />
-        <div
-          class="relative w-full max-w-sm mx-4 rounded-xl shadow-2xl px-5 py-5 space-y-3"
-          style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
-        >
-          <h3 class="text-lead font-semibold" style="color: var(--semantic-text)">
-            Rotate {{ rotateTarget.name }}
-          </h3>
-          <p class="text-dense leading-relaxed" style="color: var(--semantic-text-muted)">
-            Paste the new credential. The current one is overwritten and is not shown to you again.
-          </p>
-          <input
-            v-model="rotateValue"
-            data-testid="rotate-value-input"
-            type="password"
-            autocomplete="new-password"
-            spellcheck="false"
-            class="w-full px-3 h-8 rounded-md text-dense font-mono"
-            style="
-              background-color: var(--semantic-bg);
-              color: var(--semantic-text);
-              border: 1px solid var(--color-border);
-            "
-          />
-          <div class="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              data-testid="rotate-cancel-btn"
-              class="px-3 h-8 rounded-md text-dense border transition-colors duration-150"
-              style="
-                border-color: var(--color-border);
-                color: var(--semantic-text-muted);
-                background-color: transparent;
-              "
-              @click="closeRotate"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              data-testid="rotate-save-btn"
-              :disabled="rotateValue.length === 0"
-              class="px-3 h-8 rounded-md text-dense font-medium border transition-colors duration-150 disabled:opacity-50"
-              style="
-                border-color: var(--color-violet);
-                color: var(--color-violet);
-                background-color: transparent;
-              "
-              @click="handleRotate"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <!-- One dialog per target: the component is keyed on the id, so opening a
+         different secret remounts it with an empty field. -->
+    <RotateSecretDialog
+      :key="rotateTarget?.id ?? 'closed'"
+      :name="rotateTarget?.name ?? null"
+      @save="handleRotate"
+      @close="closeRotate"
+    />
 
     <ConfirmDialog
       :show="deleteTarget !== null"
