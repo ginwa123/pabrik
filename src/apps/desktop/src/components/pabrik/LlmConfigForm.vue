@@ -120,6 +120,8 @@ const pickerOpen = ref(false)
 const pickerResults = ref<ModelCatalogEntry[]>([])
 const pickerTotal = ref(0)
 const catalogState = ref<'fresh' | 'stale' | 'absent'>('absent')
+const pickerSource = ref<'models.dev' | 'opencode-cli'>('models.dev')
+const pickerCliError = ref<string | null>(null)
 const pickerError = ref<string | null>(null)
 let pickerTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -132,8 +134,11 @@ const PICKER_LIMIT = 50
 const pickerSummary = computed<string>(() => {
   const total = pickerTotal.value
   const shown = pickerResults.value.length
-  if (shown >= total) return `${total} match${total === 1 ? '' : 'es'}`
-  return `${shown} of ${total} matches — keep typing to narrow`
+  const counts =
+    shown >= total
+      ? `${total} match${total === 1 ? '' : 'es'}`
+      : `${shown} of ${total} matches — keep typing to narrow`
+  return pickerSource.value === 'opencode-cli' ? `opencode CLI · free first · ${counts}` : counts
 })
 
 async function runPickerSearch(): Promise<void> {
@@ -142,10 +147,13 @@ async function runPickerSearch(): Promise<void> {
       props.modelValue.model.trim() || undefined,
       undefined,
       PICKER_LIMIT,
+      isOpencodeBackend.value ? 'opencode' : undefined,
     )
     pickerResults.value = res.models
     pickerTotal.value = res.total
     catalogState.value = res.catalog
+    pickerSource.value = res.source ?? 'models.dev'
+    pickerCliError.value = res.cli_error ?? null
     pickerError.value = null
   } catch (err) {
     // A picker that cannot reach the catalog must not break typing — the field stays free text. But
@@ -240,6 +248,15 @@ const isOpencodeBackend = computed<boolean>(() => props.modelValue.backend === '
 /** True for any local-CLI backend — the set that hides every HTTP control. */
 const isCliBackend = computed<boolean>(() => isClaudeCodeBackend.value || isOpencodeBackend.value)
 const isHttpBackend = computed<boolean>(() => !isCliBackend.value)
+
+function onBackendChange(value: string): void {
+  update('backend', value)
+  pickerOpen.value = false
+  pickerResults.value = []
+  pickerTotal.value = 0
+  pickerSource.value = 'models.dev'
+  pickerCliError.value = null
+}
 
 // === Temperature (free text: "auto" or 0–1) =============================
 const temperatureDraft = ref(props.modelValue.temperature)
@@ -362,7 +379,7 @@ const overrideCount = computed<number>(() => {
       <label :class="labelBase" :style="labelStyle">Backend</label>
       <select
         :value="modelValue.backend ?? 'http'"
-        @change="update('backend', ($event.target as HTMLSelectElement).value)"
+        @change="onBackendChange(($event.target as HTMLSelectElement).value)"
         :class="inputBase"
         :style="inputStyle()"
         data-testid="backend-select"
@@ -453,6 +470,14 @@ const overrideCount = computed<number>(() => {
         >
           {{ pickerSummary }}
         </div>
+        <div
+          v-if="pickerCliError"
+          class="text-micro font-mono px-3 py-1.5 border-b"
+          style="color: var(--color-yellow); border-color: var(--color-border)"
+          data-testid="model-picker-cli-error"
+        >
+          opencode CLI unavailable — {{ pickerCliError }}. Showing the models.dev catalog.
+        </div>
         <!-- The page scrolls: a broad query matches far more than fits on screen, and a
              clipped list is a list of rows nobody can click. -->
         <div class="max-h-[260px] overflow-y-auto" data-testid="model-picker-results">
@@ -464,9 +489,18 @@ const overrideCount = computed<number>(() => {
             class="w-full flex items-center justify-between gap-3 px-3 py-1.5 hover:opacity-80 text-left"
             :data-testid="`model-option-${m.model_id}`"
           >
-            <span class="font-mono text-dense truncate" style="color: var(--semantic-text)">{{
-              m.model_id
-            }}</span>
+            <span class="flex items-center gap-2 min-w-0">
+              <span class="font-mono text-dense truncate" style="color: var(--semantic-text)">{{
+                m.model_id
+              }}</span>
+              <span
+                v-if="m.free"
+                class="font-mono text-micro shrink-0"
+                style="color: var(--color-green)"
+                :data-testid="`model-free-${m.model_id}`"
+                >Free</span
+              >
+            </span>
             <span class="font-mono text-micro shrink-0" style="color: var(--semantic-text-dim)">
               · {{ m.provider_name
               }}<template v-if="m.context_window"> · {{ fmtTokens(m.context_window) }}</template>

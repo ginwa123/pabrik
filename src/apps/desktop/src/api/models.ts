@@ -13,13 +13,23 @@ export interface ModelCatalogEntry {
   output_tokens: number | null
   reasoning: string
   temperature: boolean
+  /** True when the model costs nothing to run — from the catalog's zero prices, or, for a model
+   * the catalog does not know, from its `-free`/`contributor` name. */
+  free?: boolean
+  cost?: { input: number; output: number } | null
 }
 
 export interface ModelCatalogResponse {
   total: number
   returned: number
   catalog: ModelCatalogState
-  fetched_at_ms: number
+  /** `opencode-cli` = the list the local CLI reports (asked for with `backend=opencode`), which is
+   * already sorted free-first; `models.dev` = the machine-wide catalog. */
+  source?: 'models.dev' | 'opencode-cli'
+  /** Why the CLI source was unavailable, when the caller asked for it and it could not answer. The
+   * rows then come from the catalog instead, so the picker stays usable. */
+  cli_error?: string
+  fetched_at_ms?: number
   models: ModelCatalogEntry[]
   /** The last background sync's failure, when it failed. ABSENT when the last
    * attempt succeeded or none has run yet — so its presence is itself the news. */
@@ -62,11 +72,13 @@ export async function getModelCatalog(
   q?: string,
   provider?: string,
   limit?: number,
+  backend?: string,
 ): Promise<ModelCatalogResponse> {
   const params = new URLSearchParams()
   if (q) params.set('q', q)
   if (provider) params.set('provider', provider)
   if (limit) params.set('limit', String(limit))
+  if (backend) params.set('backend', backend)
   const qs = params.toString()
   return await apiFetch<ModelCatalogResponse>(`/models/catalog${qs ? `?${qs}` : ''}`)
 }
@@ -94,8 +106,7 @@ export async function refreshModelCatalog(): Promise<{
  * `{kind:'error', message}` is not something a caller can mistake for `context_window: 0`, which is
  * exactly the bug the Effect-style rule exists to prevent. */
 export type ModelResolveOutcome =
-  | { kind: 'ok'; value: ModelResolve }
-  | { kind: 'error'; message: string }
+  { kind: 'ok'; value: ModelResolve } | { kind: 'error'; message: string }
 
 export async function resolveModelOutcome(
   model: string,
