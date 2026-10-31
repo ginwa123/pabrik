@@ -116,9 +116,16 @@ describe('renderResponse mcp_* summary', () => {
   })
 
   it('surfaces the error envelope message', () => {
-    const envelope =
-      '<tool><name>mcp_db_query</name><parameters>{}</parameters>' +
-      '<success>false</success><error>boom</error><data></data></tool>'
+    // The wire envelope is JSON; `unwrapToolOutput` rejects the legacy <tool> XML outright, so an XML
+    // fixture would exercise the raw-echo fallback instead of the error branch.
+    const envelope = JSON.stringify({
+      tool: 'mcp_db_query',
+      parameters: {},
+      success: false,
+      error: 'boom',
+      data: null,
+      v: 1,
+    })
     const out = renderResponse(envelope, 'tool', 'mcp_db_query')
     expect(out).toContain('boom')
   })

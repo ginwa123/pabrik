@@ -40,6 +40,7 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
       [dataUrl1, dataUrl2],
       '',
       '',
+      undefined,
     )
   })
 
@@ -62,6 +63,7 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
       undefined,
       '',
       '',
+      undefined,
     )
   })
 
@@ -85,6 +87,7 @@ describe('workspacesStore.runAgentOnNewTask — imageUrls forwarding', () => {
       [],
       '',
       '',
+      undefined,
     )
   })
 })

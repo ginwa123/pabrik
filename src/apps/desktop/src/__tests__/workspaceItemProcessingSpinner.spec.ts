@@ -134,10 +134,10 @@ describe('WorkspaceItem item-row elapsed chip', () => {
     expect(visibleItemChips(wrapper)).toHaveLength(0)
   })
 
-  it('item-loading spinner and item elapsed chip can render simultaneously in separate slots', async () => {
-    // The two indicators live in different slots (loading on the right, elapsed chip right-aligned)
-    // and represent independent states (folder-contents fetch vs. LLM worker), so they must be able
-    // to show at the same time.
+  it('the elapsed chip takes the single meta slot ahead of the loading spinner', async () => {
+    // The right side is ONE exclusive slot (elapsed > spinner > dot > count, #875), so a busy item
+    // that is also still fetching its folder listing shows the elapsed chip — not two markers
+    // fighting for the same edge.
     const processingState: Ref<Record<string, boolean>> = ref({ task_alpha: true })
     const now = Date.now()
     const workerActivity = ref<Record<string, WorkerActivity>>({
@@ -152,19 +152,18 @@ describe('WorkspaceItem item-row elapsed chip', () => {
       },
       global: { provide: { processingState, workerActivity, workerNow } },
     })
-    expect(wrapper.findAll('[data-testid="item-loading-spinner"]')).toHaveLength(1)
     expect(visibleItemChips(wrapper)).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="item-loading-spinner"]')).toHaveLength(0)
   })
 
-  it('active dot and item elapsed chip can render simultaneously', async () => {
-    // Same reasoning as the loading/chip pair above: the FolderExplorer active dot and the elapsed
-    // chip are independent and must coexist. A user can have a selected item that is also being
-    // worked on.
+  it('the elapsed chip takes the single meta slot ahead of the active dot', async () => {
+    // Same exclusive slot: a selected item that is also being worked on shows the elapsed chip, and
+    // the active dot yields to it — the row never renders two trailing markers.
     const { wrapper, setBusy } = mountWorkspaceItem(itemWithTasks.tasks, true)
     setBusy(['task_alpha'])
     await nextTick()
     expect(visibleItemChips(wrapper)).toHaveLength(1)
-    expect(wrapper.findAll('[data-testid="item-active-dot"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="item-active-dot"]')).toHaveLength(0)
   })
 
   it('item-loading spinner still hides the active dot (preserved right-slot priority)', async () => {

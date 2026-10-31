@@ -459,7 +459,7 @@ const handleClick = (entry: FolderEntry) => {
 
 <style scoped>
 .git-badge {
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: 700;
   border-radius: 4px;
   padding: 1px 5px;
@@ -487,7 +487,7 @@ const handleClick = (entry: FolderEntry) => {
   color: var(--color-blue);
 }
 .git-count-pill {
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: 500;
   border-radius: 4px;
   padding: 1px 5px;

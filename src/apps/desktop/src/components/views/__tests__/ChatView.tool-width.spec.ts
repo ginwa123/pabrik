@@ -20,9 +20,11 @@ const progressiveSrc = readFileSync(
 
 describe('ChatView tool-width consistency', () => {
   it('tool-group container fills the column (flex-1 w-full), not shrink-to-fit', () => {
-    // The `min-w-0` wrapper at ~line 3073 inside the flex-row must also carry
-    // flex-1 + w-full so collapsed and expanded share the column width.
-    expect(chatViewSrc).toMatch(/class="min-w-0 flex-1 w-full"/)
+    // The transcript row wrapper carries `min-w-0` statically and takes its width from the group's
+    // role: a user turn is a right-aligned bubble, everything else — tool sequences included —
+    // fills the column, so collapsed and expanded rows share the same width.
+    expect(chatViewSrc).toMatch(/class="min-w-0"\s*\n\s*:class="/)
+    expect(chatViewSrc).toMatch(/: 'flex-1 w-full max-w-full'/)
   })
 
   it('.tool-sequence and .tool-item are full-width with min-width 0', () => {

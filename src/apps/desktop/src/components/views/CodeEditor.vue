@@ -541,7 +541,7 @@ const handleClose = () => {
 /* Inline blame chip (`author, age`) on annotated rows. */
 .blame-chip {
   margin-left: 12px;
-  font-size: 11px;
+  font-size: var(--text-meta);
   color: var(--semantic-text-dim);
   white-space: nowrap;
 }
@@ -553,7 +553,7 @@ const handleClose = () => {
   border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--text-meta);
 }
 .seg-toggle span {
   padding: 3px 10px;

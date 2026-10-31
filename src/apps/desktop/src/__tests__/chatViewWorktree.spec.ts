@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { Effect } from 'effect'
 
 import * as api from '../api'
 import ChatView from '../components/views/ChatView.vue'
@@ -54,18 +55,19 @@ function installChatViewMocks(opts: {
   gitWorktreeCwd?: string
   cwd?: string
 } = {}) {
-  vi.spyOn(api, 'getChatHistory').mockResolvedValue({
+  const history = {
     messages: [],
     has_more: false,
     next_cursor: null,
     cwd: opts.cwd ?? '/tmp/main-repo',
     git_worktree_cwd: opts.gitWorktreeCwd ?? '',
     max_total_tokens: 0,
-     
     max_capacity_total_tokens: 0,
-   
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any)
+  }
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
+  // it, so the mount stalled on a 404 and never reached `startGitStatusPoll()` — the status button
+  // under test is gated on the git-status payload that poll paints.
+  vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
   // A `watch(() => sessionId.value, ...)` in ChatView fires `api.getSession(newId)` once onMounted
@@ -261,65 +263,54 @@ describe('ChatView worktree status button', () => {
     expect(title).toContain('/abs/.worktrees/auth-fix')
   })
 
-  // ─── bus cross-session isolation ────────────────────────────────────────── After the
-  // single-global-EventSource migration, ChatView's SSE listener filters by `event.session_id !==
-  // sid` (the closure- captured sessionId inside `connectSse`).
-  it('bus llm events for the active session_id update streamingContent', async () => {
+  // ─── bus cross-session isolation ────────────────────────────── ChatView's SSE listener drops
+  // `event.session_id !== sid`; a `chunk`'s observable outcome is the transcript row it paints, so
+  // these assert on rendered text — the accumulator is `useChatSse`'s business, not the component's.
+  it('bus llm events for the active session_id paint the transcript', async () => {
     installChatViewMocks({ gitWorktreeCwd: '' })
 
     wrapper = await mountChatView('session_bus_match')
 
-    // Read the ref via the component instance proxy. Refs declared
-    // in <script setup> are exposed under the proxy's properties.
-    const vm = wrapper!.vm as unknown as { streamingContent: string }
-
- 
-
-    // Dispatch a chunk event for the matching session_id.
     __dispatchSseBus('llm', {
       session_id: 'session_bus_match',
       type: 'chunk',
       content: 'hello from bus',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     await nextTick()
     await nextTick()
 
-    expect(vm.streamingContent).toBe('hello from bus')
+    expect(wrapper!.text()).toContain('hello from bus')
   })
 
-  it('bus llm events for a DIFFERENT session_id do NOT update streamingContent (cross-session isolation)', async () => {
+  it('bus llm events for a DIFFERENT session_id do NOT paint the transcript (cross-session isolation)', async () => {
     installChatViewMocks({ gitWorktreeCwd: '' })
 
     wrapper = await mountChatView('session_bus_isolation')
-    const vm = wrapper!.vm as unknown as { streamingContent: string }
 
-    // Dispatch a chunk event for the WRONG session_id. The listener filter (`event.session_id !==
-    // sid`) must drop this — the bus's single global EventSource delivers ALL sessions' events to
-    // the listener; the filter is the layer that scopes them to the active ChatView.
+    // A chunk for the WRONG session_id. The bus's single global EventSource delivers ALL sessions'
+    // events to the listener; the filter is the layer that scopes them to the active ChatView.
     __dispatchSseBus('llm', {
       session_id: 'OTHER_SESSION',
       type: 'chunk',
       content: 'should be dropped',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     await nextTick()
     await nextTick()
 
-     
-    expect(vm.streamingContent).toBe('')
+    expect(wrapper!.text()).not.toContain('should be dropped')
 
-    // Now send a matching one — confirms the previous "no update"
-    // wasn't just because the wiring was broken.
+    // A matching one — confirms the previous "dropped" was the filter, not broken wiring.
     __dispatchSseBus('llm', {
       session_id: 'session_bus_isolation',
       type: 'chunk',
       content: 'matching one passes',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     await nextTick()
     await nextTick()
 
-    expect(vm.streamingContent).toBe('matching one passes')
+    expect(wrapper!.text()).toContain('matching one passes')
   })
 })

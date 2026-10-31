@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { Effect } from 'effect'
 
 import * as api from '../api'
 import ChatView from '../components/views/ChatView.vue'
@@ -87,7 +88,7 @@ const getPlanEmptyEnvelope = (): unknown => ({ empty: true })
 // api module + SSE bus + localStorage so the mount is fast and stable (parity with
 // profileCascade.spec.ts). ────────────────────────────────────────────────────────────────────────
 function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) {
-  vi.spyOn(api, 'getChatHistory').mockResolvedValue({
+  const history = {
     messages: opts.messages,
     has_more: false,
     next_cursor: null,
@@ -95,7 +96,10 @@ function installChatViewMocks(opts: { messages: Message[]; sessionId: string }) 
     git_worktree_cwd: '',
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
-  })
+  }
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
+  // it, so the transcript stayed empty and every render assertion read an unloaded view.
+  vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [], count: 0 })
   vi.spyOn(api, 'getSession').mockResolvedValue({
     sessionId: opts.sessionId,

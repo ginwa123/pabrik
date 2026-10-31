@@ -15,6 +15,11 @@ vi.mock('vue-router', async () => {
   return { ...actual, useRoute: useRouteMock }
 })
 
+// The active row is painted from the theme's semantic tokens (`--semantic-active-bg` +
+// `--semantic-active-text` + a violet inset rule), not a hard-coded rgb, so the row reads as active
+// in every theme. The token itself is the marker.
+const ACTIVE_MARKER = '--semantic-active-bg'
+
 const baseItem = {
   id: 'item_design',
   name: 'Design',
@@ -66,7 +71,7 @@ describe('WorkspaceItem — item row active state from URL', () => {
     const buttons = wrapper.findAll('button')
     const itemButton = buttons.find((b) => b.text().includes('Design'))
     expect(itemButton).toBeDefined()
-    expect(itemButton!.attributes('style')).toContain('38, 37, 34')
+    expect(itemButton!.attributes('style')).toContain(ACTIVE_MARKER)
   })
 
   it('item row is NOT active when URL is ?view=chat&session=X', async () => {
@@ -82,7 +87,7 @@ describe('WorkspaceItem — item row active state from URL', () => {
     const buttons = wrapper.findAll('button')
     const itemButton = buttons.find((b) => b.text().includes('Design'))
     expect(itemButton).toBeDefined()
-    expect(itemButton!.attributes('style') ?? '').not.toContain('38, 37, 34')
+    expect(itemButton!.attributes('style') ?? '').not.toContain(ACTIVE_MARKER)
   })
 
   it('item row is NOT active when URL is ?view=workspace&itemId=OTHER', async () => {
@@ -98,7 +103,7 @@ describe('WorkspaceItem — item row active state from URL', () => {
     const buttons = wrapper.findAll('button')
     const itemButton = buttons.find((b) => b.text().includes('Design'))
     expect(itemButton).toBeDefined()
-    expect(itemButton!.attributes('style') ?? '').not.toContain('38, 37, 34')
+    expect(itemButton!.attributes('style') ?? '').not.toContain(ACTIVE_MARKER)
   })
 
   it('item row active state reacts to URL changes mid-mount', async () => {
@@ -114,12 +119,12 @@ describe('WorkspaceItem — item row active state from URL', () => {
     await nextTick()
     let buttons = wrapper.findAll('button')
     let itemButton = buttons.find((b) => b.text().includes('Design'))
-    expect(itemButton!.attributes('style') ?? '').not.toContain('38, 37, 34')
+    expect(itemButton!.attributes('style') ?? '').not.toContain(ACTIVE_MARKER)
 
     route.query = { view: 'workspace', itemId: 'item_design' }
     await nextTick()
     buttons = wrapper.findAll('button')
     itemButton = buttons.find((b) => b.text().includes('Design'))
-    expect(itemButton!.attributes('style')).toContain('38, 37, 34')
+    expect(itemButton!.attributes('style')).toContain(ACTIVE_MARKER)
   })
 })

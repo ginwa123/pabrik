@@ -4,14 +4,6 @@
       "count": 1
     }
   },
-  "src/__tests__/KanbanRowView.preview.spec.ts": {
-    "local/no-silent-fallback-catch": {
-      "count": 1
-    },
-    "local/no-try-catch": {
-      "count": 1
-    }
-  },
   "src/__tests__/designLogger.spec.ts": {
     "local/no-try-catch": {
       "count": 1

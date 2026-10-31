@@ -111,8 +111,15 @@ function mountSidebar() {
 // containing `--semantic-active-bg` — both the workspace item row and the design page row inject
 // that CSS variable into the inline `style` when they are the URL-driven active row.
 function countActiveRows(html: string): number {
-  const matches = html.match(/style="[^"]*--semantic-active-bg[^"]*"/g)
-  return matches?.length ?? 0
+  // A loading SKELETON carries the token too \u2014 its shimmer is painted from the same active bg \u2014 and a
+  // skeleton is not a row: it has no identity, so it can never be "the active one".
+  let count = 0
+  for (const m of html.matchAll(/<[a-z-]+([^>]*)style="[^"]*--semantic-active-bg[^"]*"/g)) {
+    const cls = /class="([^"]*)"/.exec(m[1] ?? '')?.[1] ?? ''
+    if (cls.includes('animate-pulse')) continue
+    count += 1
+  }
+  return count
 }
 
 describe('Sidebar — URL-driven single-active contract', () => {

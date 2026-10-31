@@ -350,7 +350,7 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   background: var(--color-bg-p1, #282727);
   color: var(--semantic-text, #c5c9c5);
-  font-size: 0.8125rem;
+  font-size: var(--text-dense);
   text-decoration: none;
   cursor: pointer;
   transition: border-color 0.12s ease;
@@ -372,7 +372,7 @@ onBeforeUnmount(() => {
 .diagram-viewer-zoom {
   min-width: 48px;
   color: var(--semantic-text-muted, #a6a69c);
-  font-size: 0.8125rem;
+  font-size: var(--text-dense);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   padding-left: 4px;
   color: var(--semantic-text-muted, #a6a69c);
-  font-size: 0.75rem;
+  font-size: var(--text-dense);
   white-space: nowrap;
   text-overflow: ellipsis;
 }

@@ -47,7 +47,11 @@ describe('ChatView center-stage diff', () => {
   })
 
   it('drops stale diffs on cwd change', () => {
-    expect(chatViewSrc).toMatch(/\(\) => effectiveCwd\.value,/)
+    // No watcher any more: every assignment site calls `noteCwdMutation(prevCwd)`, which runs the
+    // hook only when the effective cwd really changed — the old watcher's own condition.
+    expect(chatViewSrc).toMatch(
+      /if \(effectiveCwd\.value !== prevCwd\) onEffectiveCwdChanged\(effectiveCwd\.value\)/,
+    )
     expect(chatViewSrc).toMatch(/centerDiff\.value = null/)
     expect(chatViewSrc).toMatch(/centerFiles\.value = \[\]/)
   })

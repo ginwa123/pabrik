@@ -134,7 +134,7 @@ describe('WorkspaceItem — design items hide the tasks list section', () => {
     wrapper.unmount()
   })
 
-  it('expanded KANBAN item: tasks section rendered as before (regression)', async () => {
+  it('expanded KANBAN item: no sidebar task list — the board owns its tasks', async () => {
     const store = useWorkspacesStore()
     store.expandedItemIds[ITEM_ID] = true
 
@@ -143,9 +143,9 @@ describe('WorkspaceItem — design items hide the tasks list section', () => {
 
     await flushPromises()
 
-    // Tasks section should render for kanban items — 1 task row.
-    const taskRows = wrapper.findAll('[data-task-id]')
-    expect(taskRows.length).toBeGreaterThan(0)
+    // Kanban rows are excluded from the sidebar task list for the same reason they get no Add-task
+    // entry: the board is where a board's tasks are read and created.
+    expect(wrapper.findAll('[data-task-id]')).toHaveLength(0)
 
     // No design pages section for kanban items.
     expect(wrapper.find('[data-testid="design-sidebar-add-page-button"]').exists()).toBe(false)

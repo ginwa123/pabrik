@@ -97,7 +97,7 @@ const SHELL_CSS = `
 function page(body: string, density: string): string {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>kanban row — ${density}</title>
-<style>${readFileSync(cssPath, 'utf-8')}</style>
+<style>${bundleCss}</style>
 <style>${SHELL_CSS}</style>
 </head><body>
 <div class="shell">
@@ -115,18 +115,16 @@ function page(body: string, density: string): string {
 </body></html>`
 }
 
-// The compiled bundle carries the exact same custom properties the app
-// uses, so the preview is colour-accurate rather than approximate.
-let cssPath = ''
-try {
+// Colour-accurate when `dist/` exists, OPTIONAL when it does not: a `pnpm run test` on a tree that
+// was never built has no bundle, and the harness renders rows + data attributes either way.
+function readBundleCss(): string {
   const cssDir = join(process.cwd(), 'dist/assets')
-  cssPath = join(
-    cssDir,
-    readdirSync(cssDir).find((f) => f.endsWith('.css'))!,
-  )
-} catch {
-  cssPath = ''
+  if (!existsSync(cssDir)) return ''
+  const file = readdirSync(cssDir).find((f) => f.endsWith('.css'))
+  return file ? readFileSync(join(cssDir, file), 'utf-8') : ''
 }
+
+const bundleCss = readBundleCss()
 
 describe('KanbanRowView visual preview generator', () => {
   it('writes a static HTML page per density', () => {

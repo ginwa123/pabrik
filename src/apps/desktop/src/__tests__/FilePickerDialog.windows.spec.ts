@@ -124,7 +124,8 @@ describe('FilePickerDialog — Windows paths (drive letters)', () => {
     expect(loadItems.mock.calls.map(([p]) => p)).not.toContain('/C:\\Users\\ginwa\\notes')
     // Folder-mode fallback shows the current folder in the footer.
     expect(selectedPathText()).toBe('C:\\Users\\ginwa\\notes')
-    expect(findInDom('[data-testid="file-picker-crumb-2"]')?.textContent).toBe('notes')
+    // Crumbs are drive-first: 0='C:', 1='Users', 2='ginwa', 3='notes'.
+    expect(findInDom('[data-testid="file-picker-crumb-3"]')?.textContent).toBe('notes')
   })
 
   it('Up button navigates to the Windows parent', async () => {
