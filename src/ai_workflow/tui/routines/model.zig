@@ -105,7 +105,6 @@ pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *Backend, no
         \\SELECT id FROM workspace_routines
         \\WHERE enabled = 1
         \\  AND next_run_at IS NOT NULL
-        \\  AND next_run_at != ''
         \\  AND next_run_at <= ?
         \\  AND (last_status IS NULL OR last_status != 'running')
     , &.{now_sqlite});

@@ -34,7 +34,7 @@ pub fn seedMissingNextRunAt(
     io: std.Io,
 ) !usize {
     var rows = try db.query(allocator,
-        "SELECT id, schedule FROM workspace_routines WHERE enabled = 1 AND schedule != '' AND (next_run_at IS NULL OR next_run_at = '')", &.{});
+        "SELECT id, schedule FROM workspace_routines WHERE enabled = 1 AND schedule != '' AND next_run_at IS NULL", &.{});
     defer rows.deinit();
 
     const now_ns: i128 = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds);
