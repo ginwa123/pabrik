@@ -3,6 +3,7 @@ import { ref, computed, nextTick, onBeforeUnmount, onMounted, onUpdated } from '
 import { getSystemFolder, listFolder, type FolderEntry } from '../../api'
 import FilePickerDialog from '../FilePickerDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
+import { ROUTINE_PRESETS, ROUTINE_CRON_FIELDS, routinePresetFor } from '../../helpers/routinePresets'
 
 export type RoutineCreateOptions = {
   instruction: string
@@ -16,12 +17,6 @@ const emit = defineEmits<{
   create: [name: string, path: string, options: RoutineCreateOptions]
 }>()
 
-const PRESETS: { label: string; cron: string }[] = [
-  { label: 'Manual only', cron: '' },
-  { label: 'Every hour', cron: '0 * * * *' },
-  { label: 'Daily 09:00', cron: '0 9 * * *' },
-  { label: 'Weekdays 09:00', cron: '0 9 * * 1-5' },
-]
 
 const name = ref('')
 const selectedPath = ref('')
@@ -50,13 +45,13 @@ const scheduleError = computed<string | null>(() => {
   const trimmed = schedule.value.trim()
   if (trimmed === '') return null
   if (trimmed.split(/\s+/).length !== 5)
-    return 'A cron schedule has 5 fields: minute hour day-of-month month day-of-week'
+    return `A cron schedule has 5 fields: ${ROUTINE_CRON_FIELDS}`
   return null
 })
 
 const activePreset = computed<string | null>(() => {
   const trimmed = schedule.value.trim()
-  const hit = PRESETS.find((p) => p.cron === trimmed)
+  const hit = routinePresetFor(trimmed)
   return hit ? hit.label : null
 })
 
@@ -284,7 +279,7 @@ onUpdated(() => {
             />
             <div class="flex flex-wrap gap-1.5 mt-2" data-testid="add-routine-presets">
               <button
-                v-for="preset in PRESETS"
+                v-for="preset in ROUTINE_PRESETS"
                 :key="preset.label"
                 type="button"
                 class="px-2 py-1 rounded-md text-micro font-medium"

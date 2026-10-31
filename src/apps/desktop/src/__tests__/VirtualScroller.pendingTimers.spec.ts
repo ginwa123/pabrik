@@ -12,7 +12,7 @@ describe('VirtualScroller unmount', () => {
   it('leaves no pending timer behind when it unmounts', async () => {
     vi.useFakeTimers()
     const wrapper = mount(VirtualScroller, {
-      props: { items, itemKey: (item: { id: string }) => item.id },
+      props: { items, itemKey: (item: unknown) => (item as { id: string }).id },
       slots: { default: '<div class="row">row</div>' },
       attachTo: document.body,
     })

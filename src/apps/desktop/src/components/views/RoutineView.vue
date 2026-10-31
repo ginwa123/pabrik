@@ -39,6 +39,7 @@ import AgentKnowledgeDialog from '../dialogs/AgentKnowledgeDialog.vue'
 import AgentKnowledgeDetailDialog from '../dialogs/AgentKnowledgeDetailDialog.vue'
 import AgentSystemPromptDialog from '../dialogs/AgentSystemPromptDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
+import { ROUTINE_PRESETS, ROUTINE_CRON_FIELDS, routinePresetFor } from '../../helpers/routinePresets'
 
 const props = defineProps<{
   item: WorkspaceItem
@@ -148,12 +149,21 @@ const statusLabel = computed(() => {
   return lastStatus.value.charAt(0).toUpperCase() + lastStatus.value.slice(1)
 })
 
-const statusTone = computed(() => {
-  if (lastStatus.value === 'running') return 'var(--color-yellow)'
-  if (lastStatus.value === 'success') return 'var(--color-green)'
-  if (lastStatus.value === 'failed') return 'var(--color-red)'
-  return 'var(--semantic-text-dim)'
+const statusMeta = computed(() => {
+  if (lastStatus.value === 'running')
+    return { fg: 'var(--color-yellow)', bg: 'rgba(196, 178, 138, 0.12)', bd: 'rgba(196, 178, 138, 0.4)' }
+  if (lastStatus.value === 'success')
+    return { fg: 'var(--color-green)', bg: 'rgba(135, 169, 135, 0.12)', bd: 'rgba(135, 169, 135, 0.4)' }
+  if (lastStatus.value === 'failed')
+    return { fg: 'var(--color-red)', bg: 'rgba(196, 116, 110, 0.12)', bd: 'rgba(196, 116, 110, 0.4)' }
+  return { fg: 'var(--semantic-text-muted)', bg: 'transparent', bd: 'var(--color-border)' }
 })
+
+const activePreset = computed(() => routinePresetFor(schedule.value)?.label ?? null)
+
+function applyPreset(cron: string) {
+  schedule.value = cron
+}
 
 const statusLine = computed(() => {
   const parts: string[] = []
@@ -482,23 +492,76 @@ onUpdated(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 p-5 max-w-2xl" data-testid="routine-view">
-    <div class="flex items-center gap-2">
-      <UiIcon name="stopwatch" size-class="w-4.5 h-4.5" />
-      <h2 class="text-lead font-semibold" style="color: var(--semantic-text)">
+  <div
+    class="flex flex-col h-full"
+    style="background-color: var(--semantic-content-bg)"
+    data-testid="routine-view"
+  >
+    <div
+      class="h-14 px-5 flex items-center gap-3 shrink-0"
+      style="border-bottom: 1px solid var(--color-border)"
+    >
+      <UiIcon name="stopwatch" size-class="w-4.5 h-4.5" style="color: var(--semantic-text-dim)" />
+      <h1 class="text-lead font-semibold truncate" style="color: var(--semantic-text)">
         {{ item.name ?? 'Routine' }}
-      </h2>
+      </h1>
+
+      <span
+        class="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full text-dense font-medium shrink-0"
+        :style="{
+          color: statusMeta.fg,
+          backgroundColor: statusMeta.bg,
+          border: `1px solid ${statusMeta.bd}`,
+        }"
+        data-testid="routine-status-pill"
+      >
+        <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: statusMeta.fg }" />
+        <span data-testid="routine-status">{{ statusLabel }}</span>
+      </span>
+
+      <button
+        type="button"
+        :disabled="running || !enabled"
+        :title="enabled ? 'Fire this routine once, now' : 'Enable the routine to run it'"
+        data-testid="routine-run"
+        class="px-3 py-1.5 rounded-lg text-dense font-medium shrink-0 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        style="
+          background-color: var(--semantic-card-bg);
+          border: 1px solid var(--color-border);
+          color: var(--semantic-text);
+        "
+        @click="handleRunNow"
+      >
+        {{ running ? 'Firing…' : 'Run now' }}
+      </button>
+      <button
+        type="button"
+        :disabled="!canSave"
+        data-testid="routine-save"
+        class="px-3 py-1.5 rounded-lg text-dense font-medium shrink-0 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+        style="
+          background: linear-gradient(135deg, var(--color-violet), var(--color-blue));
+          color: var(--color-bg);
+        "
+        @click="handleSave"
+      >
+        {{ saving ? 'Saving…' : 'Save' }}
+      </button>
     </div>
 
-    <div class="flex gap-1" data-testid="routine-tabs">
+    <div
+      class="flex gap-1 px-5 pt-3 shrink-0"
+      style="border-bottom: 1px solid var(--color-border)"
+      data-testid="routine-tabs"
+    >
       <button
         type="button"
         data-testid="routine-tab-routine"
-        class="px-3 py-1.5 rounded-lg text-body font-medium"
+        class="px-3 py-2 text-dense font-medium rounded-t-lg transition-colors"
         :style="
           activeTab === 'routine'
-            ? 'background-color: var(--semantic-card-bg); border: 1px solid var(--color-border); color: var(--semantic-text);'
-            : 'background-color: transparent; border: 1px solid transparent; color: var(--semantic-text-dim);'
+            ? 'background-color: var(--semantic-card-bg); color: var(--semantic-text); border: 1px solid var(--color-border); border-bottom-color: var(--semantic-card-bg); margin-bottom: -1px;'
+            : 'background-color: transparent; color: var(--semantic-text-muted);'
         "
         @click="activeTab = 'routine'"
       >
@@ -507,173 +570,206 @@ onUpdated(() => {
       <button
         type="button"
         data-testid="routine-tab-agent"
-        class="px-3 py-1.5 rounded-lg text-body font-medium"
+        class="px-3 py-2 text-dense font-medium rounded-t-lg transition-colors"
         :style="
           activeTab === 'agent'
-            ? 'background-color: var(--semantic-card-bg); border: 1px solid var(--color-border); color: var(--semantic-text);'
-            : 'background-color: transparent; border: 1px solid transparent; color: var(--semantic-text-dim);'
+            ? 'background-color: var(--semantic-card-bg); color: var(--semantic-text); border: 1px solid var(--color-border); border-bottom-color: var(--semantic-card-bg); margin-bottom: -1px;'
+            : 'background-color: transparent; color: var(--semantic-text-muted);'
         "
         @click="activeTab = 'agent'"
       >
-        <UiIcon name="robot" size-class="w-3.5 h-3.5" /> Agent
+        <UiIcon name="robot" size-class="w-3.5 h-3.5" class="inline mr-1" />Agent
       </button>
     </div>
 
-    <template v-if="activeTab === 'routine'">
-      <div v-if="loading" class="text-body" style="color: var(--semantic-text-dim)">
+    <div class="flex-1 min-h-0 flex flex-col">
+      <div v-if="loading" class="p-5 text-body" style="color: var(--semantic-text-dim)">
         Loading routine…
       </div>
 
       <div
         v-else-if="loadError"
-        class="text-body"
-        style="color: var(--color-red)"
+        class="m-5 px-4 py-3 rounded-xl text-body"
+        style="
+          color: var(--color-red);
+          background-color: rgba(196, 116, 110, 0.1);
+          border: 1px solid rgba(196, 116, 110, 0.35);
+        "
         data-testid="routine-error"
       >
         Failed to load routine: {{ loadError }}
       </div>
 
-      <template v-else>
-        <div class="flex flex-col gap-1">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span
-              class="w-1.5 h-1.5 rounded-full shrink-0"
-              :style="{ backgroundColor: statusTone }"
-              data-testid="routine-status-dot"
-            />
-            <span
-              class="text-dense font-medium"
-              style="color: var(--semantic-text)"
-              data-testid="routine-status"
+      <div
+        v-else-if="activeTab === 'routine'"
+        class="flex-1 min-h-0 overflow-y-auto px-5 py-4"
+        data-testid="routine-config"
+      >
+        <div class="max-w-3xl flex flex-col gap-4">
+          <section
+            class="rounded-xl p-4"
+            style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+          >
+            <h2 class="text-dense font-semibold mb-3" style="color: var(--semantic-text-dim)">
+              What it does
+            </h2>
+            <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)"
+              >Description</label
             >
-              {{ statusLabel }}
-            </span>
-            <span class="text-dense" style="color: var(--semantic-text-dim)" data-testid="routine-status-line">
-              {{ statusLine }}
-            </span>
-          </div>
-          <p
+            <input
+              v-model="description"
+              type="text"
+              placeholder="What is this routine for?"
+              data-testid="routine-description"
+              class="w-full px-3 py-2 rounded-lg text-body outline-none mb-3"
+              :style="{
+                backgroundColor: 'var(--semantic-sidebar-bg)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--semantic-text)',
+              }"
+            />
+            <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)"
+              >Instruction — sent on every fire</label
+            >
+            <textarea
+              v-model="instruction"
+              rows="5"
+              placeholder="Tell the agent what to do on every fire…"
+              data-testid="routine-instruction"
+              class="w-full px-3 py-2 rounded-lg text-body outline-none resize-y font-mono leading-relaxed"
+              :style="{
+                backgroundColor: 'var(--semantic-sidebar-bg)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--semantic-text)',
+              }"
+            />
+          </section>
+
+          <section
+            class="rounded-xl p-4"
+            style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+          >
+            <div class="flex items-center gap-2 mb-3">
+              <h2 class="text-dense font-semibold" style="color: var(--semantic-text-dim)">
+                When it runs
+              </h2>
+              <span
+                class="text-micro px-1.5 py-0.5 rounded"
+                style="
+                  color: var(--semantic-text-dim);
+                  border: 1px solid var(--color-border);
+                  letter-spacing: 0.04em;
+                "
+                title="Cron expressions are evaluated in UTC"
+                >UTC</span
+              >
+              <span
+                class="ml-auto text-micro truncate"
+                style="color: var(--semantic-text-dim)"
+                data-testid="routine-status-line"
+              >
+                {{ statusLine }}
+              </span>
+            </div>
+
+            <div class="flex gap-2 mb-2">
+              <input
+                v-model="schedule"
+                type="text"
+                placeholder="manual only"
+                data-testid="routine-schedule"
+                :aria-invalid="scheduleError !== null"
+                class="flex-1 px-3 py-2 rounded-lg text-body outline-none font-mono"
+                :style="{
+                  backgroundColor: 'var(--semantic-sidebar-bg)',
+                  border: `1px solid ${scheduleError ? 'var(--color-red)' : 'var(--color-border)'}`,
+                  color: 'var(--semantic-text)',
+                }"
+              />
+              <div class="flex gap-1 shrink-0">
+                <button
+                  v-for="preset in ROUTINE_PRESETS"
+                  :key="preset.label"
+                  type="button"
+                  class="px-2 py-1 rounded-lg text-micro font-medium transition-colors duration-200 whitespace-nowrap"
+                  :style="
+                    activePreset === preset.label
+                      ? 'background-color: var(--semantic-active-bg); border: 1px solid var(--color-border); color: var(--semantic-text);'
+                      : 'background-color: transparent; border: 1px solid var(--color-border); color: var(--semantic-text-muted);'
+                  "
+                  :title="preset.cron || 'no schedule'"
+                  :data-testid="`routine-preset-${preset.cron || 'manual'}`"
+                  @click="applyPreset(preset.cron)"
+                >
+                  {{ preset.label }}
+                </button>
+              </div>
+            </div>
+
+            <p v-if="scheduleError" class="text-dense" style="color: var(--color-red)">
+              {{ scheduleError }}
+            </p>
+            <p v-else class="text-micro font-mono" style="color: var(--semantic-text-dim)">
+              {{ ROUTINE_CRON_FIELDS }}
+            </p>
+
+            <div
+              class="mt-4 pt-3 flex items-start gap-2.5"
+              style="border-top: 1px solid var(--color-border)"
+            >
+              <input
+                id="routine-enabled"
+                v-model="enabled"
+                type="checkbox"
+                data-testid="routine-enabled"
+                class="mt-0.5 w-3.5 h-3.5 shrink-0 cursor-pointer"
+                style="accent-color: var(--color-blue)"
+              />
+              <div class="flex flex-col">
+                <label
+                  for="routine-enabled"
+                  class="text-dense font-medium cursor-pointer"
+                  style="color: var(--semantic-text)"
+                  >Enabled</label
+                >
+                <span class="text-micro" style="color: var(--semantic-text-dim)">
+                  {{
+                    enabled
+                      ? 'Fires on schedule, and Run now is available.'
+                      : 'Paused — never fires on its own, and cannot be run manually.'
+                  }}
+                </span>
+              </div>
+            </div>
+
+            <p v-if="runError" class="text-dense mt-3" style="color: var(--color-red)">
+              {{ runError }}
+            </p>
+            <p v-if="saveError" class="text-dense mt-3" style="color: var(--color-red)">
+              {{ saveError }}
+            </p>
+          </section>
+
+          <div
             v-if="lastError"
-            class="text-dense font-mono"
-            style="color: var(--color-red)"
+            class="px-4 py-3 rounded-xl text-dense font-mono"
+            style="
+              color: var(--color-red);
+              background-color: rgba(196, 116, 110, 0.1);
+              border: 1px solid rgba(196, 116, 110, 0.35);
+            "
             data-testid="routine-last-error"
           >
             {{ lastError }}
-          </p>
+          </div>
         </div>
+      </div>
 
-        <div>
-          <label class="block text-dense font-medium mb-1" style="color: var(--semantic-text-dim)"
-            >Description</label
-          >
-          <input
-            v-model="description"
-            type="text"
-            placeholder="What is this routine for?"
-            data-testid="routine-description"
-            class="w-full px-3 py-2 rounded-lg text-body outline-none"
-            :style="{
-              backgroundColor: 'var(--semantic-sidebar-bg)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--semantic-text)',
-            }"
-          />
-        </div>
-
-        <div>
-          <label class="block text-dense font-medium mb-1" style="color: var(--semantic-text-dim)"
-            >Instruction (fired on each run)</label
-          >
-          <textarea
-            v-model="instruction"
-            rows="4"
-            placeholder="Tell the agent what to do on every fire…"
-            data-testid="routine-instruction"
-            class="w-full px-3 py-2 rounded-lg text-body outline-none font-mono"
-            :style="{
-              backgroundColor: 'var(--semantic-sidebar-bg)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--semantic-text)',
-            }"
-          />
-        </div>
-
-        <div>
-          <label class="block text-dense font-medium mb-1" style="color: var(--semantic-text-dim)"
-            >Schedule (cron, UTC — empty = manual-only)</label
-          >
-          <input
-            v-model="schedule"
-            type="text"
-            placeholder="0 9 * * *"
-            data-testid="routine-schedule"
-            :aria-invalid="scheduleError !== null"
-            class="w-full px-3 py-2 rounded-lg text-body outline-none font-mono"
-            :style="{
-              backgroundColor: 'var(--semantic-sidebar-bg)',
-              border: `1px solid ${scheduleError ? 'var(--color-red)' : 'var(--color-border)'}`,
-              color: 'var(--semantic-text)',
-            }"
-          />
-          <p v-if="scheduleError" class="text-dense mt-1" style="color: var(--color-red)">
-            {{ scheduleError }}
-          </p>
-          <p v-else class="text-dense mt-1" style="color: var(--semantic-text-dim)">
-            5 fields: minute hour day-of-month month day-of-week — e.g.
-            <span class="font-mono">*/5 * * * *</span>, <span class="font-mono">0 9 * * 1-5</span>.
-            Fires are evaluated in UTC.
-          </p>
-        </div>
-
-        <label class="flex items-center gap-2 text-body" style="color: var(--semantic-text)">
-          <input v-model="enabled" type="checkbox" data-testid="routine-enabled" />
-          Enabled
-          <span class="text-dense" style="color: var(--semantic-text-dim)">
-            (disabled routines never fire and cannot be run manually)
-          </span>
-        </label>
-
-        <p v-if="saveError" class="text-dense" style="color: var(--color-red)">{{ saveError }}</p>
-        <p v-if="runError" class="text-dense" style="color: var(--color-red)">{{ runError }}</p>
-
-        <div class="flex gap-2">
-          <button
-            type="button"
-            :disabled="!canSave"
-            data-testid="routine-save"
-            class="px-3 py-1.5 rounded-lg text-body font-medium disabled:opacity-50"
-            style="
-              background: linear-gradient(135deg, var(--color-violet), var(--color-blue));
-              color: var(--color-bg);
-            "
-            @click="handleSave"
-          >
-            {{ saving ? 'Saving…' : 'Save' }}
-          </button>
-          <button
-            type="button"
-            :disabled="running || !enabled"
-            :title="enabled ? 'Fire this routine once, now' : 'Enable the routine to run it'"
-            data-testid="routine-run"
-            class="px-3 py-1.5 rounded-lg text-body font-medium disabled:opacity-50"
-            style="
-              background-color: var(--semantic-card-bg);
-              border: 1px solid var(--color-border);
-              color: var(--semantic-text);
-            "
-            @click="handleRunNow"
-          >
-            {{ running ? 'Firing…' : '▶ Run now' }}
-          </button>
-        </div>
-      </template>
-    </template>
-
-    <div
-      v-else
-      class="flex-1 min-h-0 overflow-hidden flex flex-col"
-      data-testid="routine-agent-panel"
-    >
+      <div
+        v-else
+        class="flex-1 min-h-0 overflow-hidden flex flex-col"
+        data-testid="routine-agent-panel"
+      >
       <AgentView
         :item="item"
         :workspace-id="workspaceId"
@@ -717,6 +813,7 @@ onUpdated(() => {
           </div>
         </template>
       </AgentView>
+      </div>
     </div>
 
     <!-- Routine Agent dialogs — same dialogs as kanban/agent (KanbanSettingsView, AppLayout). -->
