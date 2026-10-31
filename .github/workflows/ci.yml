@@ -1,10 +1,11 @@
 # CI orchestrator. The graph, and nothing else.
 #
-#   changes ──▶ lint ──┬─▶ zginlint ────────────────────────────────────────┐
-#                      ├─▶ backend-linux   ──▶ functional-linux-{1,2,3}     ──┤
-#                      ├─▶ backend-macos   ──▶ functional-macos-{1,2,3}     ──┼─▶ ci-ok
-#                      ├─▶ backend-windows ──▶ functional-windows-{1,2,3}   ──┤
-#                      └─▶ android-apk ──▶ android-test ────────────────────┘
+#   changes ──▶ lint ──┬─▶ desktop-tests ──────────────────────────────────────┐
+#                      ├─▶ zginlint ───────────────────────────────────────────┤
+#                      ├─▶ backend-linux   ──▶ functional-linux-{1,2,3}     ───┤
+#                      ├─▶ backend-macos   ──▶ functional-macos-{1,2,3}     ───┼─▶ ci-ok
+#                      ├─▶ backend-windows ──▶ functional-windows-{1,2,3}   ───┤
+#                      └─▶ android-apk ──▶ android-test ───────────────────────┘
 #
 # WHAT CHANGED, AND WHY EACH ONE WAS WORTH THE CHURN
 # ----------------------------------------------------
@@ -377,6 +378,73 @@ jobs:
           }
           python3 scripts/lint-no-dead-doc-refs.py --selftest
           python3 scripts/lint-no-dead-doc-refs.py
+
+  # ── 1a. desktop tests ───────────────────────────────────────────────
+  # The webapp's vitest suite. Until now NOTHING ran it: `lint` runs the
+  # linters and vue-tsc rides inside `pnpm run build` in the backend
+  # cells, so the 640 spec files had no gate at all and a suite sitting
+  # at 28 red files reported a green PR for weeks. A test that CI never
+  # runs is a test that does not exist.
+  #
+  # Hangs off `lint` (and shares its install) for the same reason
+  # zginlint does: a red cheap gate must not schedule a longer job.
+  desktop-tests:
+    name: desktop tests (vitest)
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    runs-on: ubuntu-latest
+    # Local wall clock is ~2 min for the whole suite on a warm cache; 20
+    # leaves room for a cold pnpm store plus a genuine hang.
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pnpm 11
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Cache pnpm store
+        # Its own key prefix, like every other job that installs: an
+        # actions/cache entry is immutable, so a shared key would just be
+        # whichever job saved first.
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pnpm-store
+          key: v4-desktop-tests-pnpm-${{ hashFiles('src/apps/desktop/pnpm-lock.yaml') }}
+          restore-keys: |
+            v4-desktop-tests-pnpm-
+
+      - name: Install webapp dependencies
+        shell: bash
+        env:
+          npm_config_store_dir: ${{ runner.temp }}/pnpm-store
+        run: |
+          set -euo pipefail
+          command -v pnpm >/dev/null 2>&1 || { echo "x pnpm not on PATH -- pnpm/action-setup must have failed" >&2; exit 1; }
+          pushd src/apps/desktop >/dev/null
+          pnpm install --frozen-lockfile
+          popd >/dev/null
+
+      - name: Test (vitest, whole suite)
+        # `pnpm run test` is `vitest --run`: no watch mode, no retries, and
+        # vitest's own exit code is the gate. There is deliberately no
+        # `continue-on-error` and no `|| true` -- the point of this job is
+        # that a red test is a red build.
+        #
+        # `dangerouslyIgnoreUnhandledErrors` is off in vitest.config.ts, so
+        # an unhandled rejection in a spec fails this step too: a mount that
+        # throws before its assertion is a failure, not a passing test with
+        # a noisy log.
+        working-directory: src/apps/desktop
+        shell: bash
+        run: pnpm run test
 
   # ── 1b. zginlint ────────────────────────────────────────────────────
   # The Zig linter's gate: github.com/ginwa123/zglint, pinned by URL +
@@ -1389,6 +1457,7 @@ jobs:
     needs:
       - changes
       - lint
+      - desktop-tests
       - zginlint
       - backend-postgres
       - backend-linux
@@ -1428,6 +1497,7 @@ jobs:
           RESULTS: |
             changes=${{ needs.changes.result }}
             lint=${{ needs.lint.result }}
+            desktop-tests=${{ needs.desktop-tests.result }}
             zginlint=${{ needs.zginlint.result }}
             backend-postgres=${{ needs.backend-postgres.result }}
             backend-linux=${{ needs.backend-linux.result }}

@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
 .chat-mermaid-wide {
   margin-top: 8px;
   color: var(--semantic-text-muted, #a6a69c);
-  font-size: 0.75rem;
+  font-size: var(--text-dense);
 }
 
 /* Copy chrome sits over the diagram, not in the flow: it appears on hover or keyboard focus, and

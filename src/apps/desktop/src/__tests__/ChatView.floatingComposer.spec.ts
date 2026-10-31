@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
+import { Effect } from 'effect'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -137,10 +138,9 @@ describe('ChatView floating composer', () => {
   let app: VueApp | null = null
 
   async function mountChat(props: Record<string, unknown> = {}) {
-    vi.spyOn(api, 'getChatHistory').mockResolvedValue(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      historyWithMessages() as any,
-    )
+    // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
+    // it, so the transcript stayed empty and no row ever rendered.
+    vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(historyWithMessages()))
     wrapper = mount(ChatView, {
       props: { chatId: 's_float', chatName: 'Float Chat', ...props },
       attachTo: document.body,

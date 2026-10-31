@@ -214,13 +214,13 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
     :data-eval-run="evalRunParam"
   >
     <header class="flex items-center justify-between px-3 py-2 border-b border-(--color-border)">
-      <h2 class="text-sm font-medium">Skill Evals</h2>
+      <h2 class="text-body font-medium">Skill Evals</h2>
       <div class="flex items-center gap-2">
-        <span v-if="total > 0" class="text-xs text-neutral-400" data-testid="evals-total">
+        <span v-if="total > 0" class="text-dense text-neutral-400" data-testid="evals-total">
           {{ total }} verdict{{ total === 1 ? '' : 's' }}
         </span>
         <button
-          class="text-xs px-2 py-1 rounded border border-(--color-border) hover:bg-(--semantic-active-bg)"
+          class="text-dense px-2 py-1 rounded border border-(--color-border) hover:bg-(--semantic-active-bg)"
           data-testid="evals-refresh"
           @click="load"
         >
@@ -232,23 +232,23 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
     <!-- The failure is rendered, not swallowed. -->
     <div
       v-if="error"
-      class="px-3 py-2 text-xs text-red-400 border-b border-(--color-border)"
+      class="px-3 py-2 text-dense text-red-400 border-b border-(--color-border)"
       data-testid="evals-error"
     >
       Could not load evals: {{ error }}
     </div>
 
-    <div v-if="applyError" class="px-3 py-2 text-xs text-amber-400" data-testid="evals-apply-error">
+    <div v-if="applyError" class="px-3 py-2 text-dense text-amber-400" data-testid="evals-apply-error">
       {{ applyError }}
     </div>
 
-    <div v-if="loading" class="px-3 py-2 text-xs text-neutral-400" data-testid="evals-loading">
+    <div v-if="loading" class="px-3 py-2 text-dense text-neutral-400" data-testid="evals-loading">
       Loading…
     </div>
 
     <div
       v-else-if="!hasAnything && !error"
-      class="px-3 py-6 text-xs text-neutral-400"
+      class="px-3 py-6 text-dense text-neutral-400"
       data-testid="evals-empty"
     >
       Nothing here yet. If Skill Evals is off, turn it on in
@@ -270,7 +270,7 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
         <li
           v-for="c in counts"
           :key="c.verdict"
-          class="text-xs px-2 py-0.5 rounded border border-(--color-border)"
+          class="text-dense px-2 py-0.5 rounded border border-(--color-border)"
           :class="verdictClass(c.verdict)"
         >
           {{ c.verdict }}: {{ c.n }}
@@ -286,10 +286,10 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
             @click="selectRun(run.id)"
           >
             <div class="flex items-center justify-between">
-              <span class="text-xs font-mono truncate">{{ run.id }}</span>
-              <span class="text-xs text-neutral-400">{{ run.status }}</span>
+              <span class="text-dense font-mono truncate">{{ run.id }}</span>
+              <span class="text-dense text-neutral-400">{{ run.status }}</span>
             </div>
-            <div class="text-xs text-neutral-500">{{ run.trigger }} · {{ run.session_id }}</div>
+            <div class="text-dense text-neutral-500">{{ run.trigger }} · {{ run.session_id }}</div>
           </button>
         </li>
       </ul>
@@ -297,9 +297,9 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
       <!-- Results for the selected run -->
       <div v-if="selectedRunId" class="px-3 py-2">
         <div class="flex items-center justify-between mb-2">
-          <h3 class="text-xs font-medium">Results</h3>
+          <h3 class="text-dense font-medium">Results</h3>
           <button
-            class="text-xs text-neutral-400 hover:text-neutral-200"
+            class="text-dense text-neutral-400 hover:text-neutral-200"
             data-testid="evals-clear-run"
             @click="clearRun"
           >
@@ -314,26 +314,26 @@ const hasAnything = computed(() => runs.value.length > 0 || results.value.length
             :data-testid="`evals-result-${r.id}`"
           >
             <div class="flex items-center justify-between">
-              <span class="text-xs font-medium">{{ r.skill_name }}</span>
-              <span class="text-xs" :class="verdictClass(r.verdict)">{{ r.verdict }}</span>
+              <span class="text-dense font-medium">{{ r.skill_name }}</span>
+              <span class="text-dense" :class="verdictClass(r.verdict)">{{ r.verdict }}</span>
             </div>
-            <p class="text-xs text-neutral-400 mt-1">{{ r.rationale }}</p>
-            <div class="flex items-center gap-3 mt-1 text-xs text-neutral-500">
+            <p class="text-dense text-neutral-400 mt-1">{{ r.rationale }}</p>
+            <div class="flex items-center gap-3 mt-1 text-dense text-neutral-500">
               <span>freshness {{ r.freshness }}</span>
               <span>accuracy {{ r.accuracy }}</span>
               <span>duplication {{ r.duplication }}</span>
               <span v-if="r.shared_fact" data-testid="evals-shared-fact">shared</span>
             </div>
-            <ul v-if="missingPaths(r).length" class="mt-1 text-xs text-amber-400">
+            <ul v-if="missingPaths(r).length" class="mt-1 text-dense text-amber-400">
               <li v-for="p in missingPaths(r)" :key="p" class="font-mono">{{ p }}</li>
             </ul>
             <div class="mt-2">
-              <span v-if="r.applied" class="text-xs text-emerald-400" data-testid="evals-applied">
+              <span v-if="r.applied" class="text-dense text-emerald-400" data-testid="evals-applied">
                 applied ({{ r.apply_action }})
               </span>
               <button
                 v-else
-                class="text-xs px-2 py-1 rounded border border-(--color-border) hover:bg-(--semantic-active-bg) disabled:opacity-50"
+                class="text-dense px-2 py-1 rounded border border-(--color-border) hover:bg-(--semantic-active-bg) disabled:opacity-50"
                 :disabled="applying === r.id"
                 :data-testid="`evals-apply-${r.id}`"
                 @click="apply(r)"

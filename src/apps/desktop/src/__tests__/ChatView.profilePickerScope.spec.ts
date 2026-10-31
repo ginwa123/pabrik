@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 
 import * as api from '../api'
+import { Effect } from 'effect'
 import ChatView from '../components/views/ChatView.vue'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
@@ -38,7 +39,7 @@ function makeStubClient(initial: SseState): SseClient {
 }
 
 function installApiMocks() {
-  vi.spyOn(api, 'getChatHistory').mockResolvedValue({
+  const history = {
     messages: [],
     has_more: false,
     next_cursor: null,
@@ -46,8 +47,10 @@ function installApiMocks() {
     git_worktree_cwd: '',
     max_total_tokens: 0,
     max_capacity_total_tokens: 0,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any)
+  }
+  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
+  // it, so the mount stalled on the 404 the global fetch stub answers with.
+  vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
   vi.spyOn(api, 'getSession').mockResolvedValue({

@@ -51,7 +51,9 @@ describe('user-pill rail wiring', () => {
     const source = await readChatViewSource()
     const block = source.match(/const userPills = computed\(\(\): UserPill\[\] => \{[\s\S]*?\n\}\)/)
     expect(block).not.toBeNull()
-    expect(block![0]).toContain("g.role !== 'user'")
+    // The rule lives in `isPillGroup` (role === 'user' && !isBgOnly && !isCompaction), which has
+    // its own behaviour spec in `components/chat/__tests__/activePill.spec.ts`.
+    expect(block![0]).toContain('isPillGroup(g.role, isBgOnlyGroup(g),')
     expect(block![0]).toContain('isCompactionMessage')
     expect(block![0]).toContain('groupKey(g)')
   })

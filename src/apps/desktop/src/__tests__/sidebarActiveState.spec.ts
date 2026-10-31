@@ -327,6 +327,10 @@ describe('AppLayout URL-driven chat navigation', () => {
     // active state. The guard `activeChatId.value !== 'chat-${sessionId}'` is true here
     // (activeChatId is empty after the workspace mount), so the reset block executes.
     routeObj.query = { view: 'chat', session: 'chat_new' }
+    await nextTick()
+    // The route reconcile runs from the layout's `onUpdated` pump (the watcher it replaced is gone),
+    // so a URL change takes effect when the layout re-renders — drive that explicitly.
+    wrapper.vm.$forceUpdate()
     await flushPromises()
     wrapper.unmount()
 

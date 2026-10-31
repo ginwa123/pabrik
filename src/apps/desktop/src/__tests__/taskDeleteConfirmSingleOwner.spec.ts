@@ -23,10 +23,15 @@ const vueFilesIn = (dir: string): string[] =>
   })
 
 describe('task delete — single confirm owner', () => {
-  it('no kanban or workspace component mounts a ConfirmDialog', () => {
+  it('no component on the task-delete path mounts its own ConfirmDialog', () => {
+    // Scoped to components that HANDLE a delete, not to the two directories: a member / secret / PR
+    // confirmation is its own gate and has nothing to do with task deletion.
     const offenders = ['components/kanban', 'components/workspace']
       .flatMap((dir) => vueFilesIn(join(SRC, dir)))
-      .filter((path) => mountsDialog(readFileSync(path, 'utf8')))
+      .filter((path) => {
+        const src = readFileSync(path, 'utf8')
+        return /deleteTask/.test(src) && mountsDialog(src)
+      })
       .map((path) => path.slice(SRC.length + 1))
 
     expect(offenders).toEqual([])

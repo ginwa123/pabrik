@@ -34,10 +34,11 @@ export default mergeConfig(
       // below the per-job timeout and surfaces real hangs (>15s) while
       // letting the slow-but-correct Windows tests pass.
       testTimeout: 15000,
-      // Don't fail on console.error — store actions log caught errors
-      // (e.g. fetch failures from unmocked API calls in tests). The
-      // error count is informational; the tests themselves pass.
-      dangerouslyIgnoreUnhandledErrors: true,
+      // Unhandled rejections FAIL the run. `dangerouslyIgnoreUnhandledErrors: true` used to sit
+      // here, and it is how a mount that threw before its first assertion reported a green suite:
+      // the test "passed" because its assertions never disagreed with an unrendered component. A
+      // spec whose async work rejects has a bug, and the suite has to say so.
+      dangerouslyIgnoreUnhandledErrors: false,
       onConsoleLog(_log: string, type: 'stdout' | 'stderr') {
         if (type === 'stderr') return false
       },

@@ -166,8 +166,10 @@ export function createInitActions(p: InitActionsParams) {
       await setActiveWorkspace(preferredWorkspaceId)
     }
 
-    // Also fetch system folder info for navigation
-    await fetchSystemFolder()
+    // Also fetch system folder info for navigation. Best-effort on purpose: `fetchSystemFolder`
+    // records the failure in `systemFolderError` for the UI, and the boot path that calls this is
+    // fire-and-forget — a rethrow here surfaced as an unhandled rejection and nothing else.
+    await fetchSystemFolder().catch(() => undefined)
 
     // Restore active task if it was set before workspaces were loaded
     // This handles the case where setActiveTask was called before init() completed

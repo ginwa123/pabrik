@@ -358,7 +358,11 @@ describe('AppLayout — a document is a PAGE, not a ?doc= overlay', () => {
     await flush()
     expect(nav.activeChatId).toBe('chat-sess_live')
 
-    // Re-enter the doc path (what a click / Back-Forward does).
+    // Leave the doc path and come back (what a click / Back-Forward does). The URL has to actually
+    // CHANGE: the reconcile runs from the layout's `onUpdated` pump, which fires on the re-render a
+    // real navigation causes — re-assigning the same path reconciles nothing.
+    navigate(PROJECT_PATH)
+    await flush()
     navigate(DOC_PATH)
     await flush()
 

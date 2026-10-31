@@ -65,7 +65,7 @@ export interface ChatSessionRuntimeDeps {
   rememberLiveMessage: ChatSseDeps['rememberLiveMessage']
   resetOlderPrefetch: (cause: string) => void
   resetPrefetchAutoChain: () => void
-  route: { query: { diff?: unknown } }
+  route: { query: { diff?: unknown } } | undefined
   scrollToBottom: ChatSseDeps['scrollToBottom']
   selectedAgent: Ref<string | null>
   sessionCwd: Ref<string>
@@ -487,7 +487,7 @@ export function useChatSessionRuntime(deps: ChatSessionRuntimeDeps) {
     // Refresh lands on chat, never auto-opens the diff: a reload keeps the ?diff= the scroll-spy
     // wrote while the viewer was open, and the panel no longer restores from it — strip it here so
     // the URL stays truthful (Back does the same on explicit exit).
-    if (typeof route.query.diff === 'string' && !showCenterDiff.value) syncDiffParam(null)
+    if (typeof route?.query?.diff === 'string' && !showCenterDiff.value) syncDiffParam(null)
 
     if (sessionId.value) {
       // Seed the re-stick baseline BEFORE loadChatHistory so we catch the very first

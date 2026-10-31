@@ -33,6 +33,7 @@ describe('workspacesStore.runAgentOnNewTask', () => {
       undefined,
       '',
       '1',
+      undefined,
     )
     expect(result).toEqual({ status: 'send' })
   })
@@ -53,6 +54,28 @@ describe('workspacesStore.runAgentOnNewTask', () => {
       undefined,
       '',
       '',
+      undefined,
+    )
+  })
+
+  it('forwards videoUrls as the seventh argument so a pasted clip rides video_urls', async () => {
+    const sendSpy = vi
+      .spyOn(api, 'sendChatMessage')
+      .mockResolvedValue({ status: 'send' })
+    const store = useWorkspacesStore()
+    await store.runAgentOnNewTask('ws_1', 'item_1', 'task_abc', {
+      queueMessage: 'Title',
+      cwd: '/cwd',
+      videoUrls: ['data:video/mp4;base64,AAAA'],
+    })
+    expect(sendSpy).toHaveBeenCalledWith(
+      'task_abc',
+      'Title',
+      '/cwd',
+      undefined,
+      '',
+      '',
+      ['data:video/mp4;base64,AAAA'],
     )
   })
 
@@ -84,6 +107,7 @@ describe('workspacesStore.runAgentOnNewTask', () => {
       undefined,
       '900r1bu',
       '',
+      undefined,
     )
   })
 
@@ -104,6 +128,7 @@ describe('workspacesStore.runAgentOnNewTask', () => {
       undefined,
       '',
       '',
+      undefined,
     )
   })
 })

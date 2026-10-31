@@ -179,6 +179,10 @@ describe('VirtualScroller tail-gap cap', () => {
     // the rows on screen NOW (measured bottom == window top + real rows),
     // not the previously recorded window (the PR #355 staleness bug).
     mockChildren(el, () => 200)
+    // jsdom has no ResizeObserver (setup.ts installs an inert one), so nothing can notice the new
+    // heights on its own — drive the measure explicitly rather than waiting for an observer that
+    // does not exist here.
+    ;(wrapper.vm as unknown as { remeasure: () => void }).remeasure()
     vi.advanceTimersByTime(150)
     await nextTick()
 

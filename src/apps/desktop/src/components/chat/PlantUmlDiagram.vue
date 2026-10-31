@@ -204,7 +204,7 @@ const copySource = (event?: MouseEvent): void => {
 .chat-plantuml-wide {
   margin-top: 8px;
   color: var(--semantic-text-muted, #a6a69c);
-  font-size: 0.75rem;
+  font-size: var(--text-dense);
 }
 
 .chat-plantuml-copy {
@@ -248,7 +248,7 @@ const copySource = (event?: MouseEvent): void => {
 .chat-plantuml-note {
   margin-bottom: 8px;
   color: var(--semantic-text-muted, #a6a69c);
-  font-size: 0.8125rem;
+  font-size: var(--text-dense);
 }
 
 .chat-plantuml-source {
@@ -259,7 +259,7 @@ const copySource = (event?: MouseEvent): void => {
   background: var(--color-bg-p1, #282727);
   color: var(--semantic-text, #c5c9c5);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 0.8125rem;
+  font-size: var(--text-dense);
 }
 
 .chat-plantuml-viewer-img {

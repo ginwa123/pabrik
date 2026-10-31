@@ -137,6 +137,16 @@ vi.mock('../api', () => ({
     rows,
   })),
   deleteTerminalSession: vi.fn(async () => ({ ok: true })),
+  // FolderExplorer (the Explorer tab) asks for git status on mount; a strict factory mock without
+  // this export throws inside the component's onMounted.
+  getGitChanges: vi.fn(async () => ({
+    is_git_repo: false,
+    branch: '',
+    has_changes: false,
+    is_clean: true,
+    current: '',
+    status: '',
+  })),
 }))
 
 import {

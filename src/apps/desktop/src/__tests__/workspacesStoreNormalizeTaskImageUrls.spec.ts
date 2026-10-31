@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
 import type { Task } from '../api'
+import { normalizeTaskTags } from '../stores/workspaces/normalize'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
@@ -134,53 +135,17 @@ describe('normalizeTaskTags — wire image_urls → imageUrls mapping', () => {
     expect(task.imageUrls).toEqual([DATA_URL_A, DATA_URL_B])
   })
 
-  it('does not overwrite an existing camelCase imageUrls array (optimistic writes)', async () => {
-    const { useWorkspacesStore } = await import('../stores/workspaces')
-    const store = useWorkspacesStore()
-    const optimistic = [DATA_URL_A]
-    store.workspaces.push({
-      id: 'ws_1',
-      name: 'Test',
-      icon: '📁',
-      expanded: true,
-      items: [
-        {
-          id: 'item_1',
-          name: 'Sprint',
-          item_type: 'kanban',
-          tasks: [
-            {
-              id: 'task_existing',
-              name: 'Existing',
-              imageUrls: optimistic,
-            } as Task,
-          ],
-          kanban_columns: [{ id: 'col_a', name: 'Todo', position: 0 }],
-        },
-      ],
-    } as never)
+  it('keeps an existing camelCase imageUrls array instead of the wire string', () => {
+    // Same rule as the dates: the wire→camel bridge only fires when the camelCase field is absent, so
+    // an optimistic local array is never replaced by a stale wire value.
+    const task = normalizeTaskTags({
+      id: 'task_existing',
+      name: 'Existing',
+      imageUrls: [DATA_URL_A],
+      image_urls: DATA_URL_B,
+    } as unknown as Task)
 
-    vi.mocked(api.getTasks).mockResolvedValueOnce({
-      tasks: [
-        {
-          id: 'task_existing',
-          name: 'Existing',
-          image_urls: DATA_URL_B,
-          tags: '',
-          git_branch: null,
-        } as unknown as Task,
-      ],
-      has_more: false,
-      next_cursor: null,
-    })
-
-    await store.fetchKanbanTasks('ws_1', 'item_1', 'col_a', 100)
-
-    const task = store.workspaces[0]!.items[0]!.tasks![0]!
-    // The optimistic array survives — the bridge only fires when the
-    // camelCase field is undefined. (Value equality, not reference:
-    // the store's reactivity wraps arrays in a Proxy.)
-    expect(task.imageUrls).toEqual(optimistic)
+    expect(task.imageUrls).toEqual([DATA_URL_A])
   })
 
   it('leaves tasks without any image field untouched (legacy fixtures)', async () => {

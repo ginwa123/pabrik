@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as api from '../api'
 import type { Task } from '../api'
+import { normalizeTaskTags } from '../stores/workspaces/normalize'
 
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
@@ -117,55 +118,17 @@ describe('normalizeTaskTags — wire→in-memory date mapping', () => {
     expect((task.updatedAt as Date).toISOString()).toBe('2026-08-05T04:24:56.000Z')
   })
 
-  it('does not overwrite an existing updatedAt Date (preserves optimistic writes)', async () => {
-    const { useWorkspacesStore } = await import('../stores/workspaces')
-    const store = useWorkspacesStore()
-
-    // Pre-populate the store with an optimistic task that has a Date
-    // updatedAt. After fetch, the wire's stale string should NOT
-    // overwrite this fresh Date.
+  it('keeps an already-set updatedAt Date instead of the wire string', () => {
+    // The rule the store relies on: normalization FILLS a missing Date, it never overwrites one. An
+    // optimistic local write therefore survives any later normalization of the same task.
     const freshDate = new Date('2026-08-06T10:00:00Z')
-    store.workspaces.push({
-      id: 'ws_1',
-      name: 'Test',
-      icon: '📁',
-      expanded: true,
-      items: [
-        {
-          id: 'item_1',
-          name: 'Sprint',
-          item_type: 'kanban',
-          tasks: [
-            {
-              id: 'task_existing',
-              name: 'Existing',
-              updatedAt: freshDate,
-            } as Task,
-          ],
-          kanban_columns: [{ id: 'col_a', name: 'Todo', position: 0 }],
-        } as never,
-      ],
-    })
+    const task = normalizeTaskTags({
+      id: 'task_existing',
+      name: 'Existing',
+      updatedAt: freshDate,
+      updated_at: '2026-08-05 04:24:56',
+    } as unknown as Task)
 
-    vi.mocked(api.getTasks).mockResolvedValueOnce({
-      tasks: [
-        {
-          id: 'task_existing',
-          name: 'Existing',
-          created_at: '2026-08-05 04:22:09',
-          updated_at: '2026-08-05 04:24:56', // older than freshDate
-          tags: '',
-          git_branch: null,
-        } as unknown as Task,
-      ],
-      has_more: false,
-      next_cursor: null,
-    })
-
-    await store.fetchKanbanTasks('ws_1', 'item_1', 'col_a', 100)
-
-    const task = store.workspaces[0]!.items[0]!.tasks![0]!
-    // The fresh Date survives — fetch cannot regress updatedAt
     expect(task.updatedAt).toBe(freshDate)
   })
 

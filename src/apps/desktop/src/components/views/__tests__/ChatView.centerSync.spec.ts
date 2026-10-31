@@ -25,7 +25,12 @@ describe('ChatView scroll-spy + URL sync', () => {
     expect(chatViewSrc).toMatch(/function syncDiffParam\(path: string \| null\)/)
     expect(chatViewSrc).toMatch(/router\.replace\(\{ path: route\.path, query \}\)/)
     expect(chatViewSrc).toMatch(/delete query\.diff/)
-    expect(chatViewSrc).toMatch(/watch\(currentPath/)
+    // No currentPath watcher any more: each assignment site calls syncDiffParam itself, which is
+    // what keeps the URL honest without a watcher re-reading a value it just wrote. The scroll spy
+    // is the writer that matters here — the section it deems most visible becomes ?diff=.
+    expect(chatViewSrc).toMatch(
+      /currentPath\.value = best\s*\n\s*if \(showCenterDiff\.value\) syncDiffParam\(best\)/,
+    )
     expect(chatViewSrc).toMatch(/syncDiffParam\(null\)/)
   })
 })
