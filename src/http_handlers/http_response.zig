@@ -686,6 +686,8 @@ pub fn makeGitPrCreateResponse(allocator: std.mem.Allocator, response: GitPrCrea
 pub const GitPrStatusResponse = struct {
     /// Which forge answered: "github" or "gitlab".
     provider: []const u8 = "",
+    has_pr: bool = true,
+    reason: []const u8 = "",
     pr_url: []const u8 = "",
     number: i64 = 0,
     title: []const u8 = "",
