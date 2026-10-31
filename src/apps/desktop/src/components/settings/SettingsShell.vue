@@ -58,6 +58,9 @@ const AGENT_SECTION_META: Record<
 
 const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [
   { id: 'overview', label: 'Overview', icon: 'cards', group: 'Workspace' },
+  // Who is in the workspace, next to what it is. `workspace_members` already
+  // answered "may this user see it"; this section is what manages the rows.
+  { id: 'members', label: 'Members', icon: 'users', group: 'Workspace' },
   { id: 'secrets', label: 'Secrets', icon: 'key', group: 'Workspace' },
   { id: 'skills', label: 'Skills', icon: 'books', group: 'Workspace' },
   { id: 'memories', label: 'Memories', icon: 'brain', group: 'Workspace' },

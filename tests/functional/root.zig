@@ -160,6 +160,7 @@ const workspace_isolation_test = @import("workspace_isolation_test.zig");
 const workspace_items_test = @import("workspace_items_test.zig");
 const workspace_lifecycle_test = @import("workspace_lifecycle_test.zig");
 const workspace_members_sharing_test = @import("workspace_members_sharing_test.zig");
+const workspace_members_test = @import("workspace_members_test.zig");
 const workspace_routines_test = @import("workspace_routines_test.zig");
 const workspace_secrets_test = @import("workspace_secrets_test.zig");
 
@@ -317,6 +318,7 @@ pub const suites = .{
     workspace_items_test,
     workspace_lifecycle_test,
     workspace_members_sharing_test,
+    workspace_members_test,
     workspace_routines_test,
     workspace_secrets_test,
 };

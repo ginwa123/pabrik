@@ -169,3 +169,63 @@ describe('WorkspaceSwitcher collapsed mode', () => {
     document.body.innerHTML = ''
   })
 })
+
+// ─── Pending invitations ──────────────────────────────────────────────── An invite is a REQUEST:
+// it renders above the workspace list, and until it is accepted the workspace
+// is not in that list at all.
+const INVITATION = {
+  id: 'inv_1',
+  workspace_id: 'ws_invited',
+  workspace_name: 'Inviting Co',
+  invitee_user_id: 'user_me',
+  invitee_email: 'me@example.com',
+  invitee_name: '',
+  role: 'editor' as const,
+  invited_by: 'user_amy',
+  created_at: '2026-10-03 09:00:00',
+}
+
+describe('WorkspaceSwitcher invitations', () => {
+  it('renders no invitations block when nothing is waiting', async () => {
+    const wrapper = mountSwitcher({ invitations: [] })
+    await wrapper.find('[data-testid="workspace-switcher-trigger"]').trigger('click')
+    expect(wrapper.find('[data-testid="workspace-switcher-invitations"]').exists()).toBe(false)
+  })
+
+  it('lists a pending invitation with the workspace NAME, above the workspaces', async () => {
+    const wrapper = mountSwitcher({ invitations: [INVITATION] })
+    await wrapper.find('[data-testid="workspace-switcher-trigger"]').trigger('click')
+
+    const block = wrapper.find('[data-testid="workspace-switcher-invitations"]')
+    expect(block.exists()).toBe(true)
+    expect(block.text()).toContain('Inviting Co')
+
+    // It is NOT a workspace row: the workspace list itself is unchanged.
+    expect(wrapper.find('[data-testid="workspace-switcher-option-ws_invited"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid^="workspace-switcher-option-"]')).toHaveLength(2)
+  })
+
+  it('Accept emits acceptInvitation with the invitation id and never selects a workspace', async () => {
+    const wrapper = mountSwitcher({ invitations: [INVITATION] })
+    await wrapper.find('[data-testid="workspace-switcher-trigger"]').trigger('click')
+
+    await wrapper
+      .find('[data-testid="workspace-switcher-invitation-accept-inv_1"]')
+      .trigger('click')
+
+    expect(wrapper.emitted('acceptInvitation')?.[0]).toEqual(['inv_1'])
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('Decline emits declineInvitation and leaves the panel open to reconsider', async () => {
+    const wrapper = mountSwitcher({ invitations: [INVITATION] })
+    await wrapper.find('[data-testid="workspace-switcher-trigger"]').trigger('click')
+
+    await wrapper
+      .find('[data-testid="workspace-switcher-invitation-decline-inv_1"]')
+      .trigger('click')
+
+    expect(wrapper.emitted('declineInvitation')?.[0]).toEqual(['inv_1'])
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+})

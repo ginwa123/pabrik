@@ -24,6 +24,7 @@ import { useWorkspacesStore } from '../../stores/workspaces'
 import SettingsShell from '../settings/SettingsShell.vue'
 import PabrikConfigEditor from '../pabrik/PabrikConfigEditor.vue'
 import { WORKSPACE_AGENT_SECTIONS, workspaceConfigSource } from '../../helpers/configSource'
+import MembersSection from '../workspace/MembersSection.vue'
 import SecretsSection from '../workspace/SecretsSection.vue'
 import SkillsSettings from '../preview/SkillsSettings.vue'
 import WorkspaceMemoriesSection from '../workspace/WorkspaceMemoriesSection.vue'
@@ -157,6 +158,14 @@ function handleRetry(): void {
                 itemCount
               }}</span>
             </div>
+          </section>
+        </div>
+
+        <div v-else-if="section === 'members'" class="mx-auto w-full max-w-3xl">
+          <section data-testid="members-section" role="tabpanel">
+            <!-- Keyed on the workspace: a switch must not leave one
+                 workspace's member list under another's header. -->
+            <MembersSection :key="workspaceId" :workspace-id="workspaceId" />
           </section>
         </div>
 

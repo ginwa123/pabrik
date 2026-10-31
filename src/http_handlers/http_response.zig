@@ -1451,3 +1451,98 @@ pub fn makeSkillDetailResponse(skill: anytype) SkillDetailResponse {
         .metadata = skill.metadata,
     };
 }
+
+// ─── Workspace member response types ────────────────────────────────
+// Wire shapes for `/api/workspaces/:wsId/members[/:userId]`.
+pub const WorkspaceMemberResponse = struct {
+    workspace_id: []const u8,
+    user_id: []const u8,
+    email: []const u8,
+    name: []const u8,
+    role: []const u8,
+    joined_at: []const u8,
+    invited_by: []const u8,
+};
+
+/// Map a `workspace_members_store.MemberRow` (or any struct with the same
+/// fields) into the wire shape, for the same reason as
+/// `makeSecretResponse`: the data layer and the wire must move independently.
+pub fn makeWorkspaceMemberResponse(member: anytype) WorkspaceMemberResponse {
+    return .{
+        .workspace_id = member.workspace_id,
+        .user_id = member.user_id,
+        .email = member.email,
+        .name = member.name,
+        .role = member.role,
+        .joined_at = member.joined_at,
+        .invited_by = member.invited_by,
+    };
+}
+
+pub const WorkspaceMemberListResponse = struct {
+    members: []const WorkspaceMemberResponse,
+    count: u32,
+};
+
+pub fn makeWorkspaceMemberListResponse(allocator: std.mem.Allocator, members: anytype) ![]u8 {
+    const mapped = try allocator.alloc(WorkspaceMemberResponse, members.len);
+    defer allocator.free(mapped);
+    for (members, 0..) |m, i| mapped[i] = makeWorkspaceMemberResponse(m);
+
+    return std.json.Stringify.valueAlloc(
+        allocator,
+        WorkspaceMemberListResponse{
+            .members = mapped,
+            .count = @intCast(members.len),
+        },
+        .{},
+    );
+}
+
+// ─── Workspace invitation response types ────────────────────────────
+// Wire shapes for `/api/workspaces/:wsId/invitations` and `/api/invitations`.
+pub const WorkspaceInvitationResponse = struct {
+    id: []const u8,
+    workspace_id: []const u8,
+    workspace_name: []const u8,
+    invitee_user_id: []const u8,
+    invitee_email: []const u8,
+    invitee_name: []const u8,
+    role: []const u8,
+    invited_by: []const u8,
+    created_at: []const u8,
+};
+
+pub fn makeWorkspaceInvitationResponse(invitation: anytype) WorkspaceInvitationResponse {
+    return .{
+        .id = invitation.id,
+        .workspace_id = invitation.workspace_id,
+        .workspace_name = invitation.workspace_name,
+        .invitee_user_id = invitation.invitee_user_id,
+        .invitee_email = invitation.invitee_email,
+        .invitee_name = invitation.invitee_name,
+        .role = invitation.role,
+        .invited_by = invitation.invited_by,
+        .created_at = invitation.created_at,
+    };
+}
+
+pub const WorkspaceInvitationListResponse = struct {
+    invitations: []const WorkspaceInvitationResponse,
+    count: u32,
+};
+
+pub fn makeWorkspaceInvitationListResponse(allocator: std.mem.Allocator, invitations: anytype) ![]u8 {
+    const mapped = try allocator.alloc(WorkspaceInvitationResponse, invitations.len);
+    defer allocator.free(mapped);
+    for (invitations, 0..) |invitation, i| mapped[i] = makeWorkspaceInvitationResponse(invitation);
+
+    return std.json.Stringify.valueAlloc(
+        allocator,
+        WorkspaceInvitationListResponse{
+            .invitations = mapped,
+            .count = @intCast(invitations.len),
+        },
+        .{},
+    );
+}

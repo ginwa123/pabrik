@@ -2,6 +2,7 @@
 /** WorkspaceSwitcher — header dropdown for selecting the active workspace. */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Workspace } from '../../stores/workspaces'
+import type { WorkspaceInvitation } from '../../api'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
 import { useContextMenu } from '../../composables/useContextMenu'
 import { isBackgroundOpenEvent } from '../../helpers/tabTarget'
@@ -13,8 +14,11 @@ const props = withDefaults(
     /**      * Collapsed-sidebar mode: monogram trigger + the panel is teleported to <body> (fixed position)
      * so it escapes the narrow sidebar's overflow. */
     collapsed?: boolean
+    /** Pending invitations addressed to the signed-in account. Rendered only
+     * when non-empty: an "Invitations" heading with nothing under it is noise. */
+    invitations?: WorkspaceInvitation[]
   }>(),
-  { activeWorkspaceId: null, collapsed: false },
+  { activeWorkspaceId: null, collapsed: false, invitations: () => [] },
 )
 
 const emit = defineEmits<{
@@ -23,6 +27,9 @@ const emit = defineEmits<{
   addWorkspace: []
   renameWorkspace: [workspaceId: string, currentName: string]
   deleteWorkspace: [workspaceId: string]
+  /** The invitee said yes — NOT the same as adding a workspace. */
+  acceptInvitation: [invitationId: string]
+  declineInvitation: [invitationId: string]
 }>()
 
 const open = ref(false)
@@ -232,6 +239,50 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentMouseD
         @click.stop
       >
         <div class="max-h-[320px] overflow-y-auto py-1">
+          <!-- An invitation is a request, not a workspace: it sits above the
+               list because answering it is what puts a row in that list. -->
+          <div
+            v-if="invitations.length"
+            data-testid="workspace-switcher-invitations"
+            class="pb-1 mb-1"
+            style="border-bottom: 1px solid var(--color-border)"
+          >
+            <p
+              class="px-3 pt-1 pb-1 text-micro uppercase tracking-wide"
+              style="color: var(--semantic-text-dim)"
+            >
+              Invitations
+            </p>
+            <div
+              v-for="invitation in invitations"
+              :key="invitation.id"
+              class="px-3 py-1.5 flex items-center gap-2"
+              :data-testid="`workspace-switcher-invitation-${invitation.id}`"
+            >
+              <span class="flex-1 min-w-0 text-dense truncate" style="color: var(--semantic-text)">
+                {{ invitation.workspace_name || invitation.workspace_id }}
+              </span>
+              <button
+                type="button"
+                class="px-2 h-6 rounded-md text-micro font-medium border transition-opacity duration-150 hover:opacity-80"
+                style="border-color: var(--color-green); color: var(--color-green)"
+                :data-testid="`workspace-switcher-invitation-accept-${invitation.id}`"
+                @click.stop="emit('acceptInvitation', invitation.id)"
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                class="px-2 h-6 rounded-md text-micro transition-opacity duration-150 opacity-70 hover:opacity-100"
+                style="color: var(--semantic-text-dim)"
+                :data-testid="`workspace-switcher-invitation-decline-${invitation.id}`"
+                @click.stop="emit('declineInvitation', invitation.id)"
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+
           <div
             v-for="(ws, idx) in workspaces"
             :key="ws.id"

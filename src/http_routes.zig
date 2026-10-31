@@ -286,6 +286,24 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
     // (item_type='agent', path=$HOME) when there is none. This is the
     // COLD-START FALLBACK.
     try authed.post("/api/workspaces/:workspace_id/default-project", ai_mod.http_handlers.workspaceDefaultProjectHandler);
+
+    // Membership (Migration 100). Reading needs a member row, writing needs
+    // owner/admin — see workspace_members_gate.zig. There is no POST here: a
+    // member row is only written by an invitation being ACCEPTED.
+    try authed.get("/api/workspaces/:workspace_id/members", ai_mod.http_handlers.workspaceMembersListHandler);
+    try authed.patch("/api/workspaces/:workspace_id/members/:user_id", ai_mod.http_handlers.workspaceMembersUpdateHandler);
+    try authed.delete("/api/workspaces/:workspace_id/members/:user_id", ai_mod.http_handlers.workspaceMembersRemoveHandler);
+
+    // Invitations (Migration 123): an invite is an ASK, and the invitee answers it.
+    try authed.get("/api/workspaces/:workspace_id/invitations", ai_mod.http_handlers.workspaceInvitationsListHandler);
+    try authed.post("/api/workspaces/:workspace_id/invitations", ai_mod.http_handlers.workspaceInvitationsCreateHandler);
+    try authed.delete("/api/workspaces/:workspace_id/invitations/:invitation_id", ai_mod.http_handlers.workspaceInvitationsRevokeHandler);
+
+    // The invitee's own inbox. Not workspace-scoped: the rows are chosen by the
+    // resolved caller, so a workspace id here would only be a way to probe.
+    try authed.get("/api/invitations", ai_mod.http_handlers.invitationsMineHandler);
+    try authed.post("/api/invitations/:invitation_id/accept", ai_mod.http_handlers.invitationsAcceptHandler);
+    try authed.post("/api/invitations/:invitation_id/decline", ai_mod.http_handlers.invitationsDeclineHandler);
     try authed.post("/api/workspaces/:workspace_id/items", ai_mod.http_handlers.workspaceItemsCreateHandler);
     try authed.get("/api/workspaces/:workspace_id/items", ai_mod.http_handlers.workspaceItemsListHandler);
     try authed.post("/api/workspaces/:workspace_id/items/reorder", ai_mod.http_handlers.workspaceItemsReorderHandler);
