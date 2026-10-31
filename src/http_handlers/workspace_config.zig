@@ -19,6 +19,9 @@ pub const WorkspaceConfigError = error{
     /// so accepting it would silently mean "inherit everything" when the
     /// caller believed they were saving something.
     NothingScoped,
+    /// The host has no master key, so the row cannot be sealed. Refusing beats
+    /// storing one more plaintext config.
+    SealingUnavailable,
     QueryFailed,
     OutOfMemory,
 };
@@ -64,7 +67,7 @@ pub fn overlayFromPutBody(
 fn statusFor(err: WorkspaceConfigError) u16 {
     return switch (err) {
         error.WorkspaceIdRequired, error.InvalidBody, error.NothingScoped => 400,
-        error.QueryFailed, error.OutOfMemory => 500,
+        error.QueryFailed, error.OutOfMemory, error.SealingUnavailable => 500,
     };
 }
 
@@ -73,6 +76,7 @@ fn messageFor(err: WorkspaceConfigError) []const u8 {
         error.WorkspaceIdRequired => "workspace_id required",
         error.InvalidBody => "Invalid JSON in config",
         error.NothingScoped => "No workspace-scoped settings in that body",
+        error.SealingUnavailable => "At-rest encryption is unavailable on this server (no master key), so the workspace config was not saved",
         error.QueryFailed => "DB error",
         error.OutOfMemory => "Out of memory",
     };
@@ -131,6 +135,11 @@ fn loadOverlay(
         owner,
         workspace_id,
     );
+}
+
+/// A write that could not be sealed is not a database fault, and says so.
+fn mapSaveError(err: anyerror) WorkspaceConfigError {
+    return if (err == error.SealingUnavailable) error.SealingUnavailable else error.QueryFailed;
 }
 
 fn errorResponse(
@@ -218,8 +227,8 @@ pub fn workspaceConfigPutHandler(
         return errorResponse(res, allocator, err);
     defer allocator.free(overlay);
 
-    store.saveRaw(allocator, di.db, owner, workspace_id, overlay) catch
-        return errorResponse(res, allocator, error.QueryFailed);
+    store.saveRaw(allocator, di.db, owner, workspace_id, overlay) catch |err|
+        return errorResponse(res, allocator, mapSaveError(err));
 
     return res.jsonResponse(.{
         .status_code = 200,
@@ -261,8 +270,8 @@ pub fn workspaceConfigProfileDeleteHandler(
         if (profile_delete.removeProfileFromDocument(allocator, overlay, name) catch null) |r| {
             if (r.outcome.removed) {
                 const saved = workspace_config.withRemovedProfile(allocator, r.document, name) catch r.document;
-                store.saveRaw(allocator, di.db, owner, workspace_id, saved) catch
-                    return profile_delete.makeErrorResponse(allocator, res, 500, name, "Failed to save the workspace config");
+                store.saveRaw(allocator, di.db, owner, workspace_id, saved) catch |err|
+                    return profile_delete.makeErrorResponse(allocator, res, 500, name, messageFor(mapSaveError(err)));
                 removed = true;
                 active_cleared = r.outcome.active_cleared;
             }
@@ -292,6 +301,7 @@ const TestCtx = struct {
 
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
+    store.installTestKey();
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     var db: database.Db = .{};

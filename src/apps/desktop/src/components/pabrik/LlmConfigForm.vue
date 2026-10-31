@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { activeScheme } from '../../theme/runtime'
+import { useSecretNames } from '../../helpers/secretNames'
+import { useSecretAutocomplete } from '../../composables/useSecretAutocomplete'
+import SecretSuggestionMenu from './SecretSuggestionMenu.vue'
 
 import {
   getModelCatalog,
@@ -368,6 +371,37 @@ const overrideCount = computed<number>(() => {
   if (props.modelValue.reasoning_effort !== null) n += 1
   return n
 })
+
+// === API key: a workspace secret can be inserted here =====================
+// The field holds the placeholder, never the credential, so saving an agent
+// does not put a plaintext key in the config row.
+const apiKeyField = ref<HTMLInputElement | null>(null)
+const {
+  open: apiKeyMenuOpen,
+  items: apiKeyMenuItems,
+  active: apiKeyMenuActive,
+  onInput: onApiKeySecretInput,
+  onKeydown: onApiKeySecretKeydown,
+  choose: chooseApiKeySecret,
+  close: closeApiKeySecretMenu,
+} = useSecretAutocomplete({
+  names: useSecretNames(),
+  commit: (text: string) => update('api_key', text),
+})
+
+function onApiKeyInput(field: HTMLInputElement): void {
+  update('api_key', field.value)
+  onApiKeySecretInput(field)
+}
+
+function onApiKeyKeydown(event: KeyboardEvent, field: HTMLInputElement): void {
+  if (onApiKeySecretKeydown(event, field)) event.preventDefault()
+}
+
+function onApiKeySecretPick(name: string): void {
+  const field = apiKeyField.value
+  if (field) chooseApiKeySecret(name, field)
+}
 </script>
 
 <template>
@@ -517,10 +551,14 @@ const overrideCount = computed<number>(() => {
       >
       <div class="relative">
         <input
+          ref="apiKeyField"
           :value="modelValue.api_key"
-          @input="update('api_key', ($event.target as HTMLInputElement).value)"
+          @input="onApiKeyInput($event.target as HTMLInputElement)"
+          @keydown="onApiKeyKeydown($event, $event.target as HTMLInputElement)"
+          @blur="closeApiKeySecretMenu()"
           :type="showKey ? 'text' : 'password'"
-          placeholder="sk-..."
+          placeholder="sk-... or use a workspace secret"
+          autocomplete="off"
           :class="inputBase + ' pr-9'"
           :style="inputStyle(!!errors?.api_key)"
           data-testid="api-key-input"
@@ -536,6 +574,13 @@ const overrideCount = computed<number>(() => {
         >
           {{ showKey ? '◉' : '○' }}
         </button>
+        <SecretSuggestionMenu
+          v-if="apiKeyMenuOpen"
+          :items="apiKeyMenuItems"
+          :active="apiKeyMenuActive"
+          @pick="onApiKeySecretPick"
+          @hover="(index: number) => (apiKeyMenuActive = index)"
+        />
       </div>
       <p v-if="errors?.api_key" class="text-dense mt-1" :style="errorStyle">{{ errors.api_key }}</p>
     </div>

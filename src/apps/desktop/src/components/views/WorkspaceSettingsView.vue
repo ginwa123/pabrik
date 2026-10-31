@@ -28,10 +28,15 @@ import MembersSection from '../workspace/MembersSection.vue'
 import SecretsSection from '../workspace/SecretsSection.vue'
 import SkillsSettings from '../preview/SkillsSettings.vue'
 import WorkspaceMemoriesSection from '../workspace/WorkspaceMemoriesSection.vue'
+import { provideSecretNames } from '../../helpers/secretNames'
 
 const route = useRoute()
 const secretsStore = useSecretsStore()
 const workspacesStore = useWorkspacesStore()
+
+// The credential fields (agent API key, MCP header and env values) offer this
+// workspace's secret NAMES, so a placeholder can be picked instead of typed.
+provideSecretNames(computed(() => secretsStore.secrets.map((secret) => secret.name)))
 
 /**  * The workspace this settings page belongs to. Read from the route param, not from `parseAppPath`:
  * `/app/{ws}/settings` is not one of the shapes `helpers/appUrl.ts` knows. Falls back to the active

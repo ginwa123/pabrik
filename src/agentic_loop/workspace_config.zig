@@ -343,7 +343,12 @@ pub fn workspaceOverlay(
 ) ?[]u8 {
     if (workspace_id.len == 0) return null;
     const key = settings_store.ownerKey(auth_enabled, owner);
-    return settings_store.loadRaw(allocator, db, key, workspace_id) catch null;
+    // A row that cannot be opened is reported, never silently rendered as "this
+    // workspace inherits everything" - the two states need different remedies.
+    return settings_store.loadRaw(allocator, db, key, workspace_id) catch |err| {
+        std.log.warn("workspace config: cannot unseal the overlay for {s}/{s} ({s})", .{ key, workspace_id, @errorName(err) });
+        return null;
+    };
 }
 
 // ===================================================================== Tests
@@ -628,6 +633,7 @@ const OverlayCtx = struct {
 
 fn setupOverlayDb() !OverlayCtx {
     const alloc = testing.allocator;
+    settings_store.installTestKey();
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     var db: database.Db = .{};

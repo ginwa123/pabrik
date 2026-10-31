@@ -2,7 +2,10 @@
 import { computed, onUpdated, ref } from 'vue'
 
 import { testMcpServer, type McpTestResult } from '../../api'
+import { useSecretAutocomplete } from '../../composables/useSecretAutocomplete'
+import { useSecretNames } from '../../helpers/secretNames'
 import McpHeadersEditor, { type McpHeader } from './McpHeadersEditor.vue'
+import SecretSuggestionMenu from './SecretSuggestionMenu.vue'
 
 /** MCP server modal value — discriminated by `transport`: - 'http'   → uses `url` + `headers` -
  * 'stdio'  → uses `command` + `args` + `env` + `cwd` The UI shows both branches under a transport
@@ -183,6 +186,36 @@ function updateUrl(e: Event) {
 function updateEnabled(e: Event) {
   const checked = (e.target as HTMLInputElement).checked
   emit('update:modelValue', { ...props.modelValue, enabled: checked })
+}
+
+const envField = ref<HTMLTextAreaElement | null>(null)
+const {
+  open: envMenuOpen,
+  items: envMenuItems,
+  active: envMenuActive,
+  onInput: onEnvSecretInput,
+  onKeydown: onEnvSecretKeydown,
+  choose: chooseEnvSecret,
+  close: closeEnvMenu,
+} = useSecretAutocomplete({
+  names: useSecretNames(),
+  commit: (text: string) => {
+    envText.value = text
+  },
+})
+
+function onEnvInput(field: HTMLTextAreaElement): void {
+  envText.value = field.value
+  onEnvSecretInput(field)
+}
+
+function onEnvKeydown(event: KeyboardEvent, field: HTMLTextAreaElement): void {
+  if (onEnvSecretKeydown(event, field)) event.preventDefault()
+}
+
+function onEnvSecretPick(name: string): void {
+  const field = envField.value
+  if (field) chooseEnvSecret(name, field)
 }
 
 function onSave() {
@@ -624,18 +657,31 @@ defineExpose({ onSave })
               Environment
               <span style="color: var(--semantic-text-dim)">(KEY=VALUE, one per line)</span>
             </label>
-            <textarea
-              v-model="envText"
-              rows="2"
-              placeholder="NODE_ENV=production"
-              data-testid="env-textarea"
-              class="w-full px-2.5 py-1.5 rounded-md text-dense font-mono border outline-none resize-y"
-              style="
-                background-color: var(--semantic-content-bg);
-                border-color: var(--color-border);
-                color: var(--semantic-text);
-              "
-            ></textarea>
+            <div class="relative">
+              <textarea
+                ref="envField"
+                :value="envText"
+                @input="onEnvInput($event.target as HTMLTextAreaElement)"
+                @keydown="onEnvKeydown($event, $event.target as HTMLTextAreaElement)"
+                @blur="closeEnvMenu()"
+                rows="2"
+                placeholder="NODE_ENV=production"
+                data-testid="env-textarea"
+                class="w-full px-2.5 py-1.5 rounded-md text-dense font-mono border outline-none resize-y"
+                style="
+                  background-color: var(--semantic-content-bg);
+                  border-color: var(--color-border);
+                  color: var(--semantic-text);
+                "
+              ></textarea>
+              <SecretSuggestionMenu
+                v-if="envMenuOpen"
+                :items="envMenuItems"
+                :active="envMenuActive"
+                @pick="onEnvSecretPick"
+                @hover="(index: number) => (envMenuActive = index)"
+              />
+            </div>
           </div>
 
           <div>
