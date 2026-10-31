@@ -137,11 +137,16 @@ const emit = defineEmits<{
       v-else-if="
         message.tool_name === 'bash' ||
         message.tool_name === 'pwsh' ||
+        message.tool_name === 'shell' ||
         message.tool_name === 'run_command' ||
         message.tool_name === 'command'
       "
       :tool-name="
-        message.tool_name === 'pwsh' ? 'pwsh' : message.tool_name === 'command' ? 'command' : 'bash'
+        message.tool_name === 'pwsh'
+          ? 'pwsh'
+          : message.tool_name === 'command'
+            ? 'command'
+            : 'bash'
       "
       :content="content"
       :expanded="expanded"

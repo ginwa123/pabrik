@@ -30,6 +30,7 @@ pub const RunOptions = struct {
     agent: []const u8 = "",
     auto_approve: bool = true,
     json_format: bool = true,
+    show_thinking: bool = false,
 };
 
 pub fn buildRunArgs(
@@ -56,6 +57,9 @@ pub fn buildRunArgs(
     }
     if (opts.auto_approve) {
         try list.append(allocator, try allocator.dupe(u8, "--auto"));
+    }
+    if (opts.show_thinking) {
+        try list.append(allocator, try allocator.dupe(u8, "--thinking"));
     }
     if (opts.json_format) {
         try list.append(allocator, try allocator.dupe(u8, "--format"));
@@ -139,9 +143,18 @@ pub const Failure = struct {
     message: []const u8 = "",
 };
 
+pub const ToolUse = struct {
+    name: []const u8 = "",
+    input: []const u8 = "",
+    output: []const u8 = "",
+    status: []const u8 = "",
+    error_message: []const u8 = "",
+};
+
 pub const Event = union(enum) {
     text: []const u8,
-    tool_use: []const u8,
+    reasoning: []const u8,
+    tool_use: ToolUse,
     step_finish: StepFinish,
     failure: Failure,
     other,
@@ -184,10 +197,29 @@ pub fn parseEventLine(parsed_value: std.json.Value) Event {
         return .{ .text = text };
     }
 
+    if (std.mem.eql(u8, kind, "reasoning")) {
+        const part = objectField(root, "part") orelse return .other;
+        const text = strField(part, "text") orelse return .other;
+        if (text.len == 0) return .other;
+        return .{ .reasoning = text };
+    }
+
     if (std.mem.eql(u8, kind, "tool_use")) {
         const part = objectField(root, "part") orelse return .other;
-        const name = strField(part, "tool") orelse strField(part, "title") orelse "tool";
-        return .{ .tool_use = name };
+        var tool: ToolUse = .{
+            .name = strField(part, "tool") orelse strField(part, "title") orelse "tool",
+        };
+        if (objectField(part, "state")) |state| {
+            tool.status = strField(state, "status") orelse "";
+            tool.output = strField(state, "output") orelse "";
+            if (objectField(state, "error")) |failure| {
+                tool.error_message = strField(failure, "message") orelse "";
+            }
+            if (objectField(state, "metadata")) |meta| {
+                tool.input = strField(meta, "rawInput") orelse "";
+            }
+        }
+        return .{ .tool_use = tool };
     }
 
     if (std.mem.eql(u8, kind, "step_finish")) {
@@ -368,6 +400,21 @@ test "buildRunArgs never carries the prompt on the command line" {
     }
 }
 
+test "buildRunArgs asks for the CLI's thinking blocks only when told to" {
+    const alloc = testing.allocator;
+    const quiet = try buildRunArgs(alloc, "opencode", .{ .model = "opencode/beam-free" });
+    defer freeArgs(alloc, quiet);
+    for (quiet) |arg| try testing.expect(!std.mem.eql(u8, arg, "--thinking"));
+
+    const thinking = try buildRunArgs(alloc, "opencode", .{ .model = "opencode/beam-free", .show_thinking = true });
+    defer freeArgs(alloc, thinking);
+    var found = false;
+    for (thinking) |arg| {
+        if (std.mem.eql(u8, arg, "--thinking")) found = true;
+    }
+    try testing.expect(found);
+}
+
 test "buildRunArgs honours an explicit auto-off and non-json run" {
     const alloc = testing.allocator;
     const args = try buildRunArgs(alloc, "opencode", .{ .auto_approve = false, .json_format = false });
@@ -442,15 +489,43 @@ test "parseEventLine reads usage and stop reason from step_finish" {
     try testing.expectEqual(@as(usize, 4224), ev.step_finish.cache_read_tokens);
 }
 
-test "parseEventLine names the tool a tool_use event ran" {
+test "parseEventLine reads the whole step a tool_use event ran" {
+    const alloc = testing.allocator;
+    const raw =
+        \\{"type":"tool_use","part":{"type":"tool","id":"call-1","tool":"glob","state":{"status":"completed","output":"/tmp/a.txt","input":{"path":"/tmp"},"metadata":{"rawInput":"{\"path\":\"/tmp\"}"}}}}
+    ;
+    var doc = try std.json.parseFromSlice(std.json.Value, alloc, raw, .{});
+    defer doc.deinit();
+    const ev = parseEventLine(doc.value);
+    try testing.expect(ev == .tool_use);
+    try testing.expectEqualStrings("glob", ev.tool_use.name);
+    try testing.expectEqualStrings("completed", ev.tool_use.status);
+    try testing.expectEqualStrings("/tmp/a.txt", ev.tool_use.output);
+    try testing.expect(std.mem.indexOf(u8, ev.tool_use.input, "/tmp") != null);
+}
+
+test "parseEventLine keeps the error of a tool_use that failed" {
     const alloc = testing.allocator;
     var doc = try std.json.parseFromSlice(std.json.Value, alloc,
-        \\{"type":"tool_use","part":{"type":"tool","tool":"glob","state":{"status":"completed"}}}
+        \\{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"error","error":{"message":"exit 127"}}}}
     , .{});
     defer doc.deinit();
     const ev = parseEventLine(doc.value);
     try testing.expect(ev == .tool_use);
-    try testing.expectEqualStrings("glob", ev.tool_use);
+    try testing.expectEqualStrings("bash", ev.tool_use.name);
+    try testing.expectEqualStrings("error", ev.tool_use.status);
+    try testing.expectEqualStrings("exit 127", ev.tool_use.error_message);
+}
+
+test "parseEventLine reads the reasoning text of a thinking block" {
+    const alloc = testing.allocator;
+    var doc = try std.json.parseFromSlice(std.json.Value, alloc,
+        \\{"type":"reasoning","part":{"type":"reasoning","text":"The user wants the file list.","metadata":{}}}
+    , .{});
+    defer doc.deinit();
+    const ev = parseEventLine(doc.value);
+    try testing.expect(ev == .reasoning);
+    try testing.expectEqualStrings("The user wants the file list.", ev.reasoning);
 }
 
 test "parseEventLine surfaces the provider failure of an error event" {
