@@ -558,7 +558,7 @@ const skillError = ref<string | null>(null)
 // Workspace the cached list was fetched for (fetch once per workspace).
 const skillLoadedWorkspace = ref<string | null>(null)
 
-const activeSkillWorkspaceId = (): string | null => {
+const activeWorkspaceId = (): string | null => {
   // FileInput also mounts outside pinia (unit tests, GitFileViewer) where
   // there is no workspace scope — `/` simply does not open there.
   if (!getActivePinia()) return null
@@ -604,7 +604,7 @@ const detectSlashTrigger = () => {
   const textBeforeCursor = text.slice(0, pos)
   const slashMatch = textBeforeCursor.match(SLASH_TOKEN_RE)
   if (slashMatch) {
-    const workspaceId = activeSkillWorkspaceId()
+    const workspaceId = activeWorkspaceId()
     if (!workspaceId) {
       closeSkillPicker()
       return
@@ -724,7 +724,11 @@ const loadToolsOnce = async () => {
   toolError.value = null
   const result = await runSyncResult(
     Effect.tryPromise({
-      try: () => api.getAgentToolsRegistry(),
+      try: () =>
+        api.getAgentToolsRegistry({
+          includeMcp: true,
+          workspaceId: activeWorkspaceId(),
+        }),
       catch: (e) =>
         new SyncRemoteError({
           op: 'tools.load',
@@ -1275,10 +1279,20 @@ const sendMessage = () => {
           "
           @mouseenter="selectedToolIndex = idx"
           :data-tool-name="tool.name"
+          :data-tool-kind="tool.kind ?? 'builtin'"
         >
           <UiIcon name="tools" size-class="w-3.5 h-3.5" />
           <span class="flex flex-col items-start min-w-0">
-            <span class="truncate font-mono text-dense">/tool-{{ tool.name }}</span>
+            <span class="truncate font-mono text-dense">
+              /tool-{{ tool.name }}
+              <span
+                v-if="tool.kind === 'mcp'"
+                data-testid="tool-picker-mcp-badge"
+                class="ml-1 px-1 rounded text-dense"
+                style="background-color: var(--color-violet); color: var(--color-bg)"
+                >MCP</span
+              >
+            </span>
             <span class="truncate text-dense" style="color: var(--semantic-text-dim)">{{
               tool.description
             }}</span>

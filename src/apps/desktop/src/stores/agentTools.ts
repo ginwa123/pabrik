@@ -10,6 +10,8 @@ export interface AgentRegistryEntry {
    * declared so the wire shape lives in one place, and so a future path/file
    * affordance (or a `cwd`-required badge) has the data it needs. */
   parameters?: Array<{ name: string; type: string; required: boolean }>
+  /** `mcp` when a configured MCP server advertised the tool. */
+  kind?: 'builtin' | 'mcp'
 }
 
 export const useAgentToolsStore = defineStore('agentTools', () => {
