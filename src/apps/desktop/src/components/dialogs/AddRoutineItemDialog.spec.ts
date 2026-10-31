@@ -119,6 +119,20 @@ describe('AddRoutineItemDialog', () => {
     expect(query<HTMLButtonElement>('add-routine-submit')!.hasAttribute('disabled')).toBe(true)
   })
 
+  it('keeps the Add button out of the scrolling body so a tall dialog cannot clip it', async () => {
+    mountDialog()
+    await nextTick()
+
+    const box = query('add-routine-dialog')!.querySelector('.relative')!
+    const scroller = box.querySelector('.overflow-y-auto') as HTMLElement | null
+    const submit = query<HTMLButtonElement>('add-routine-submit')!
+
+    expect(scroller).toBeTruthy()
+    expect(scroller!.contains(query('add-routine-instruction'))).toBe(true)
+    expect(scroller!.contains(submit)).toBe(false)
+    expect(box.contains(submit)).toBe(true)
+  })
+
   it('emits "close" when Cancel is clicked', async () => {
     const wrapper = mountDialog()
     await nextTick()

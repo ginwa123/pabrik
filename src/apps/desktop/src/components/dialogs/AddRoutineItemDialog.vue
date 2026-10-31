@@ -149,7 +149,7 @@ onUpdated(() => {
             max-height: 85vh;
           "
         >
-          <div class="px-5 pt-5 pb-3">
+          <div class="px-5 pt-5 pb-3 shrink-0">
             <h3
               id="add-routine-title"
               class="text-lead font-semibold flex items-center gap-2"
@@ -164,6 +164,7 @@ onUpdated(() => {
             </p>
           </div>
 
+          <div class="flex-1 min-h-0 overflow-y-auto">
           <div class="px-5 pb-3">
             <label class="block text-dense font-medium mb-2" style="color: var(--semantic-text-dim)"
               >Routine name</label
@@ -303,7 +304,12 @@ onUpdated(() => {
             </p>
           </div>
 
-          <div class="px-5 py-4 flex justify-end gap-2" style="border-top: 1px solid var(--color-border)">
+          </div>
+
+          <div
+            class="px-5 py-4 flex justify-end gap-2 shrink-0"
+            style="border-top: 1px solid var(--color-border)"
+          >
             <button
               type="button"
               @click="handleClose"
