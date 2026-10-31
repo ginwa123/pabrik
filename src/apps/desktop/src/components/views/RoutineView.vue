@@ -22,7 +22,7 @@
   Routine mode task_1789505553300_1 (option A, mirror agent_kanban_*).
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, onUpdated } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 import {
   getRoutineItem,
   updateRoutineItem,
@@ -65,6 +65,7 @@ const enabled = ref(true)
 const lastStatus = ref('')
 const lastRunAt = ref('')
 const nextRunAt = ref('')
+const lastError = ref('')
 
 async function load() {
   loading.value = true
@@ -87,6 +88,9 @@ function applyRoutine(routine: WorkspaceRoutine) {
   lastStatus.value = routine.last_status ?? ''
   lastRunAt.value = routine.last_run_at ?? ''
   nextRunAt.value = routine.next_run_at ?? ''
+  lastError.value = routine.last_error ?? ''
+  if (lastStatus.value === 'running') startStatusPoll()
+  else stopStatusPoll()
 }
 
 // Compact 5-field cron check (empty = manual-only, always valid).
@@ -131,7 +135,6 @@ async function handleRunNow() {
   runError.value = null
   try {
     await workspacesStore.runRoutineItem(props.workspaceId, props.itemId, props.itemId)
-    // Refresh status after the fire (last_status flips to success).
     await load()
   } catch (err) {
     runError.value = err instanceof Error ? err.message : String(err)
@@ -140,14 +143,44 @@ async function handleRunNow() {
   }
 }
 
+const statusLabel = computed(() => {
+  if (lastStatus.value === '') return 'Never run'
+  return lastStatus.value.charAt(0).toUpperCase() + lastStatus.value.slice(1)
+})
+
+const statusTone = computed(() => {
+  if (lastStatus.value === 'running') return 'var(--color-yellow)'
+  if (lastStatus.value === 'success') return 'var(--color-green)'
+  if (lastStatus.value === 'failed') return 'var(--color-red)'
+  return 'var(--semantic-text-dim)'
+})
+
 const statusLine = computed(() => {
   const parts: string[] = []
-  if (lastStatus.value) parts.push(`Last: ${lastStatus.value}`)
-  if (lastRunAt.value) parts.push(`ran ${lastRunAt.value}`)
-  if (nextRunAt.value) parts.push(`next ${nextRunAt.value}`)
-  else parts.push('manual-only (no schedule)')
+  if (lastRunAt.value) parts.push(`last ran ${lastRunAt.value} UTC`)
+  if (nextRunAt.value) parts.push(`next ${nextRunAt.value} UTC`)
+  else parts.push('manual only — no next fire')
   return parts.join(' · ')
 })
+
+let statusPoll: ReturnType<typeof setInterval> | null = null
+
+function stopStatusPoll() {
+  if (statusPoll === null) return
+  clearInterval(statusPoll)
+  statusPoll = null
+}
+
+function startStatusPoll() {
+  stopStatusPoll()
+  statusPoll = setInterval(() => {
+    if (lastStatus.value !== 'running') {
+      stopStatusPoll()
+      return
+    }
+    void load()
+  }, 5000)
+}
 
 // ─── Routine Agent (reuses AgentView, mirrors KanbanSettingsView) ────────── Same ownership split:
 // this view owns the data + API calls against the agent_routines mirror (Migration 087); AgentView
@@ -431,6 +464,10 @@ onMounted(() => {
   void loadRoutineAgent()
 })
 
+onBeforeUnmount(() => {
+  stopStatusPoll()
+})
+
 // Reload on item change (prev-value guard on update — same reset+loads
 // the watcher did; mount is covered above).
 let prevRoutineItemId = props.itemId
@@ -438,6 +475,7 @@ onUpdated(() => {
   if (props.itemId === prevRoutineItemId) return
   prevRoutineItemId = props.itemId
   activeTab.value = 'routine'
+  stopStatusPoll()
   void load()
   void loadRoutineAgent()
 })
@@ -496,9 +534,33 @@ onUpdated(() => {
       </div>
 
       <template v-else>
-        <p class="text-dense" style="color: var(--semantic-text-dim)" data-testid="routine-status">
-          {{ statusLine }}
-        </p>
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span
+              class="w-1.5 h-1.5 rounded-full shrink-0"
+              :style="{ backgroundColor: statusTone }"
+              data-testid="routine-status-dot"
+            />
+            <span
+              class="text-dense font-medium"
+              style="color: var(--semantic-text)"
+              data-testid="routine-status"
+            >
+              {{ statusLabel }}
+            </span>
+            <span class="text-dense" style="color: var(--semantic-text-dim)" data-testid="routine-status-line">
+              {{ statusLine }}
+            </span>
+          </div>
+          <p
+            v-if="lastError"
+            class="text-dense font-mono"
+            style="color: var(--color-red)"
+            data-testid="routine-last-error"
+          >
+            {{ lastError }}
+          </p>
+        </div>
 
         <div>
           <label class="block text-dense font-medium mb-1" style="color: var(--semantic-text-dim)"
@@ -538,7 +600,7 @@ onUpdated(() => {
 
         <div>
           <label class="block text-dense font-medium mb-1" style="color: var(--semantic-text-dim)"
-            >Schedule (cron — empty = manual-only)</label
+            >Schedule (cron, UTC — empty = manual-only)</label
           >
           <input
             v-model="schedule"
@@ -558,13 +620,17 @@ onUpdated(() => {
           </p>
           <p v-else class="text-dense mt-1" style="color: var(--semantic-text-dim)">
             5 fields: minute hour day-of-month month day-of-week — e.g.
-            <span class="font-mono">*/5 * * * *</span>, <span class="font-mono">0 9 * * 1-5</span>
+            <span class="font-mono">*/5 * * * *</span>, <span class="font-mono">0 9 * * 1-5</span>.
+            Fires are evaluated in UTC.
           </p>
         </div>
 
         <label class="flex items-center gap-2 text-body" style="color: var(--semantic-text)">
           <input v-model="enabled" type="checkbox" data-testid="routine-enabled" />
           Enabled
+          <span class="text-dense" style="color: var(--semantic-text-dim)">
+            (disabled routines never fire and cannot be run manually)
+          </span>
         </label>
 
         <p v-if="saveError" class="text-dense" style="color: var(--color-red)">{{ saveError }}</p>
@@ -587,6 +653,7 @@ onUpdated(() => {
           <button
             type="button"
             :disabled="running || !enabled"
+            :title="enabled ? 'Fire this routine once, now' : 'Enable the routine to run it'"
             data-testid="routine-run"
             class="px-3 py-1.5 rounded-lg text-body font-medium disabled:opacity-50"
             style="

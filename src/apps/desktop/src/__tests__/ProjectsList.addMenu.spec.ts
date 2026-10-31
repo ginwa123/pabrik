@@ -1,6 +1,3 @@
-/** The "+ Add Item" menu keeps listing every item type, but the DESIGN and ROUTINE options are
- * disabled (same treatment as the always-disabled "Add Project") so the user cannot open
- * AddDesignDialog / AddRoutineItemDialog from the sidebar. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick, ref } from 'vue'
@@ -28,14 +25,13 @@ const baseWorkspace = {
 }
 
 function mountList() {
-  const wrapper = mount(ProjectsList, {
+  return mount(ProjectsList, {
     props: { workspace: baseWorkspace, activeWorkspaceItemId: null },
     global: {
       provide: { processingState: ref<Record<string, boolean>>({}) },
       stubs: { WorkspaceItem: true },
     },
   })
-  return wrapper
 }
 
 async function openAddMenu(wrapper: ReturnType<typeof mountList>) {
@@ -45,7 +41,7 @@ async function openAddMenu(wrapper: ReturnType<typeof mountList>) {
   await nextTick()
 }
 
-describe('ProjectsList add-item menu — design + routine are disabled', () => {
+describe('ProjectsList add-item menu', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     Object.defineProperty(globalThis, 'localStorage', {
@@ -56,7 +52,29 @@ describe('ProjectsList add-item menu — design + routine are disabled', () => {
     useRouteMock.mockReturnValue({ query: {}, path: '/app', fullPath: '/app' } as never)
   })
 
-  it('lists the design option but renders it disabled', async () => {
+  it('lists the routine option enabled so the user can create a routine', async () => {
+    const wrapper = mountList()
+    await openAddMenu(wrapper)
+    const option = wrapper.find('[data-testid="workspace-add-routine-option"]')
+    expect(option.exists()).toBe(true)
+    expect(option.text()).toBe('Add Routine')
+    expect(option.attributes('disabled')).toBeUndefined()
+    expect(option.attributes('aria-disabled')).toBeUndefined()
+    expect(option.classes()).not.toContain('cursor-not-allowed')
+    wrapper.unmount()
+  })
+
+  it('clicking the routine option requests a routine item and closes the menu', async () => {
+    const wrapper = mountList()
+    await openAddMenu(wrapper)
+    await wrapper.find('[data-testid="workspace-add-routine-option"]').trigger('click')
+    await nextTick()
+    expect(wrapper.emitted('requestAddItem')).toEqual([['ws_1', 'routine']])
+    expect(wrapper.find('[data-testid="workspace-add-routine-option"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('still lists the paused design option as disabled', async () => {
     const wrapper = mountList()
     await openAddMenu(wrapper)
     const option = wrapper.find('[data-testid="workspace-add-design-option"]')
@@ -68,27 +86,12 @@ describe('ProjectsList add-item menu — design + routine are disabled', () => {
     wrapper.unmount()
   })
 
-  it('lists the routine option but renders it disabled', async () => {
-    const wrapper = mountList()
-    await openAddMenu(wrapper)
-    const option = wrapper.find('[data-testid="workspace-add-routine-option"]')
-    expect(option.exists()).toBe(true)
-    expect(option.text()).toBe('Add Routine')
-    expect(option.attributes('disabled')).toBeDefined()
-    expect(option.attributes('aria-disabled')).toBe('true')
-    expect(option.classes()).toContain('cursor-not-allowed')
-    wrapper.unmount()
-  })
-
-  it('clicking the disabled options never emits requestAddItem', async () => {
+  it('clicking the disabled design option never emits requestAddItem', async () => {
     const wrapper = mountList()
     await openAddMenu(wrapper)
     await wrapper.find('[data-testid="workspace-add-design-option"]').trigger('click')
-    await wrapper.find('[data-testid="workspace-add-routine-option"]').trigger('click')
     await nextTick()
     expect(wrapper.emitted('requestAddItem')).toBeUndefined()
-    // The menu stays open — a disabled option is inert, not a
-    // "close the menu" click.
     expect(wrapper.find('[data-testid="workspace-add-design-option"]').exists()).toBe(true)
     wrapper.unmount()
   })

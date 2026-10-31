@@ -1,22 +1,14 @@
-//! `workspace_routines` model — DB row struct + CRUD helpers. Retargeted from
-//! the deleted per-task `routines` table (Migration 044) to
-//! `workspace_routines` (Migration 084).
-
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const Backend = pabrikcore.database.Db;
-const Scheduler = @import("Scheduler.zig");
 
-/// Canonical status values written to the `workspace_routines.last_status`
-/// column.
 pub const RoutineRunStatus = enum {
     idle,
     success,
     failed,
     running,
 
-    /// String representation for the `last_status` column.
     pub fn dbValue(self: RoutineRunStatus) []const u8 {
         return switch (self) {
             .idle => "idle",
@@ -26,8 +18,6 @@ pub const RoutineRunStatus = enum {
         };
     }
 
-    /// Inverse of `dbValue` — NULL or the empty string decodes to `.idle`,
-    /// unknown strings also decode to `.idle` (defensive default).
     pub fn fromDb(text: ?[]const u8) RoutineRunStatus {
         const t = text orelse return .idle;
         if (t.len == 0) return .idle;
@@ -38,8 +28,6 @@ pub const RoutineRunStatus = enum {
     }
 };
 
-/// In-memory representation of one row in the `workspace_routines`
-/// table. All string fields are owned and must be freed with `deinit`.
 pub const Routine = struct {
     id: []const u8,
     workspace_item_id: []const u8,
@@ -68,8 +56,6 @@ pub const Routine = struct {
     }
 };
 
-/// Insert a new routine row. `next_run_at` null writes SQL NULL (manual-run
-/// only).
 pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Routine) !void {
     _ = try db.exec(allocator,
         \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at)
@@ -85,9 +71,6 @@ pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Rou
     });
 }
 
-/// Load the routine for a given workspace-routine `id` (which equals its
-/// `workspace_item_id` per the D3 identity). Returns `error.RoutineNotFound`
-/// if no row matches.
 pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: []const u8) !Routine {
     var q = try db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled, next_run_at,
@@ -99,7 +82,6 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: 
     const row = (try q.next()) orelse return error.RoutineNotFound;
     defer row.deinit(allocator);
 
-    // enabled is INTEGER — the Row API returns it as the text "1" or "0".
     const enabled_int = std.fmt.parseInt(i64, row.values[5], 10) catch 0;
 
     return .{
@@ -110,8 +92,6 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: 
         .schedule = try allocator.dupe(u8, row.values[4]),
         .enabled = enabled_int == 1,
         .next_run_at = try nullIfEmpty(allocator, row.values[6]),
-        // NULL columns arrive as empty strings in the Row API; translate
-        // empty → null so the in-memory model matches the SQL NULL.
         .last_run_at = try nullIfEmpty(allocator, row.values[7]),
         .last_status = RoutineRunStatus.fromDb(nullIfEmptyConst(row.values[8])),
         .last_error = try nullIfEmpty(allocator, row.values[9]),
@@ -120,12 +100,12 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: 
     };
 }
 
-/// Return the ids of every enabled routine whose `next_run_at` is at or
-/// before `now_sqlite` (formatted as an SQLite DATETIME literal, e.g.
 pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *Backend, now_sqlite: []const u8) ![][]u8 {
     var q = try db.query(allocator,
         \\SELECT id FROM workspace_routines
         \\WHERE enabled = 1
+        \\  AND next_run_at IS NOT NULL
+        \\  AND next_run_at != ''
         \\  AND next_run_at <= ?
         \\  AND (last_status IS NULL OR last_status != 'running')
     , &.{now_sqlite});
@@ -144,27 +124,17 @@ pub fn listDueWorkspaceRoutineIds(allocator: std.mem.Allocator, db: *Backend, no
     return out.toOwnedSlice(allocator);
 }
 
-/// Atomically transition a routine's `last_status` to `'running'` iff it is
-/// not already `'running'`.
 pub fn claimForRun(allocator: std.mem.Allocator, db: *Backend, routine_id: []const u8) !bool {
-    db.exec(allocator,
+    _ = try db.exec(allocator,
         \\UPDATE workspace_routines
         \\   SET last_status = 'running', updated_at = datetime('now')
         \\ WHERE id = ?
         \\   AND (last_status IS NULL OR last_status != 'running')
-    , &.{routine_id}) catch |err| {
-        std.log.warn("claimForRun: UPDATE failed for {s}: {s}", .{ routine_id, @errorName(err) });
-        return false;
-    };
+    , &.{routine_id});
 
-    // 1 → we won the claim; 0 → another caller claimed it first
-    // (or the row is gone).
     return db.changes() > 0;
 }
 
-/// Mark a routine as having completed successfully: set `last_status =
-/// 'success'`, bump `next_run_at` to the cron-computed next firing time,
-/// stamp `last_run_at` to now, and clear `last_error`.
 pub fn markSuccess(allocator: std.mem.Allocator, db: *Backend, routine_id: []const u8, next_run_at_sqlite: []const u8) !void {
     _ = try db.exec(allocator,
         \\UPDATE workspace_routines
@@ -177,8 +147,6 @@ pub fn markSuccess(allocator: std.mem.Allocator, db: *Backend, routine_id: []con
     , &.{ next_run_at_sqlite, routine_id });
 }
 
-/// Mark a routine as failed with the given error message, and advance its
-/// `next_run_at` so the scheduler picks a future run.
 pub fn markFailed(allocator: std.mem.Allocator, db: *Backend, routine_id: []const u8, err_msg: []const u8, next_run_at_sqlite: []const u8) !void {
     _ = try db.exec(allocator,
         \\UPDATE workspace_routines
@@ -190,28 +158,28 @@ pub fn markFailed(allocator: std.mem.Allocator, db: *Backend, routine_id: []cons
     , &.{ err_msg, next_run_at_sqlite, routine_id });
 }
 
-/// Iterate over all enabled routines, recompute `next_run_at` via
-/// `cron.nextFireTime`, and UPDATE the row.
-pub fn recomputeAllNextRunAt(
-    allocator: std.mem.Allocator,
-    db: *Backend,
-    compute_fn: *const fn (schedule: []const u8, now_unix_nanos: i128) anyerror![]const u8,
-    now_unix_nanos: i128,
-) !void {
-    _ = compute_fn;
-    _ = now_unix_nanos;
-    const di = pabrikcore.getSingleton() catch return;
-    try Scheduler.recomputeDueNextRunAt(allocator, db, di.io);
+pub fn reclaimStaleRuns(allocator: std.mem.Allocator, db: *Backend, stale_after_seconds: i64) !usize {
+    const err_msg = "run did not finish before its timeout";
+    const offset = try std.fmt.allocPrint(allocator, "-{d} seconds", .{stale_after_seconds});
+    defer allocator.free(offset);
+    _ = try db.exec(allocator,
+        \\UPDATE workspace_routines
+        \\   SET last_status = 'failed',
+        \\       last_error = ?,
+        \\       updated_at = datetime('now')
+        \\ WHERE last_status = 'running'
+        \\   AND updated_at <= datetime('now', ?)
+    , &.{ err_msg, offset });
+    const changed = db.changes();
+    if (changed <= 0) return 0;
+    return @intCast(changed);
 }
 
-/// Dupe a Row-API text slice, translating the empty string (SQL NULL)
-/// to Zig null.
 fn nullIfEmpty(allocator: std.mem.Allocator, v: []const u8) !?[]u8 {
     if (v.len == 0) return null;
     return try allocator.dupe(u8, v);
 }
 
-/// Non-allocating variant for `fromDb` inputs.
 fn nullIfEmptyConst(v: []const u8) ?[]const u8 {
     if (v.len == 0) return null;
     return v;
@@ -504,4 +472,79 @@ test "Routine: markFailed sets last_status=failed and last_error" {
     // Routine should STAY enabled (a transient failure must not silently
     // disable a recurring job — the user disables it explicitly).
     try testing.expect(loaded.enabled);
+}
+
+test "Routine: reclaimStaleRuns fails only the runs that outlived the timeout" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try insertParentItem(&ctx.db, alloc, "item_2");
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "slow",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = "2000-01-01 00:00:00",
+    });
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_2",
+        .workspace_item_id = "item_2",
+        .instruction = "fresh",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = "2000-01-01 00:00:00",
+    });
+    _ = try claimForRun(alloc, &ctx.db, "item_1");
+    _ = try claimForRun(alloc, &ctx.db, "item_2");
+    try ctx.db.exec(alloc,
+        "UPDATE workspace_routines SET updated_at = datetime('now', '-2 hours') WHERE id = 'item_1'",
+        &.{});
+
+    const reclaimed = try reclaimStaleRuns(alloc, &ctx.db, 30 * 60);
+
+    try testing.expectEqual(@as(usize, 1), reclaimed);
+    var stale = try loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer stale.deinit(alloc);
+    var fresh = try loadWorkspaceRoutineById(alloc, &ctx.db, "item_2");
+    defer fresh.deinit(alloc);
+    try testing.expectEqual(RoutineRunStatus.failed, stale.last_status);
+    try testing.expectEqualStrings("run did not finish before its timeout", stale.last_error.?);
+    try testing.expectEqual(RoutineRunStatus.running, fresh.last_status);
+}
+
+test "Routine: a routine is not due while its previous run is still in flight" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "slow",
+        .schedule = "* * * * *",
+        .enabled = true,
+        .next_run_at = "2000-01-01 00:00:00",
+    });
+
+    const before = try listDueWorkspaceRoutineIds(alloc, &ctx.db, "2025-01-01 00:00:00");
+    defer {
+        for (before) |id| alloc.free(id);
+        alloc.free(before);
+    }
+    try testing.expectEqual(@as(usize, 1), before.len);
+
+    _ = try claimForRun(alloc, &ctx.db, "item_1");
+
+    const during = try listDueWorkspaceRoutineIds(alloc, &ctx.db, "2025-01-01 00:00:00");
+    defer {
+        for (during) |id| alloc.free(id);
+        alloc.free(during);
+    }
+    try testing.expectEqual(@as(usize, 0), during.len);
 }

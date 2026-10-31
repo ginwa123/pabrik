@@ -421,18 +421,11 @@ const handleItemDragEnd = () => {
             Add Agent
           </button>
         </li>
-        <!-- Workspace routines (Migration 084) are paused for the same
-             reason as design mode: the option stays listed but the
-             button is disabled so nobody can open
-             AddRoutineItemDialog. Sidebar.handleAddItem still routes
-             'routine'. -->
         <li>
           <button
-            disabled
-            class="w-full px-3 py-2 text-left text-dense opacity-40 cursor-not-allowed"
+            @click="handleAddItem(workspace.id, 'routine')"
+            class="w-full px-3 py-2 text-left text-dense hover:opacity-80 transition-opacity"
             style="color: var(--semantic-text)"
-            title="Routines are temporarily disabled"
-            aria-disabled="true"
             data-testid="workspace-add-routine-option"
           >
             Add Routine
