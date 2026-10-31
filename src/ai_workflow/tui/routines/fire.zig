@@ -1,6 +1,3 @@
-//! `fire.zig` — the per-fire work for a workspace routine. Retargeted from
-//! per-task routines (Migration 044) to `workspace_routines` (Migration 084).
-
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
@@ -11,18 +8,12 @@ const ai_workflow = pabrikcore.ai_mod.ai_workflow;
 const model = @import("model.zig");
 const cron = @import("cron.zig");
 
-/// Errors returned by `fireWorkspaceRoutine`. These are all SENTINELS — the
-/// fire pipeline does NOT propagate underlying errors (e.g.
 pub const FireError = error{
-    /// No `workspace_routines` row for this id.
     NotARoutine,
-    /// The routine exists but `enabled = false`.
     Disabled,
-    /// A previous fire is still in flight (`last_status = 'running'`).
     AlreadyRunning,
 };
 
-/// Fire a single workspace routine.
 pub fn fireWorkspaceRoutine(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -30,8 +21,6 @@ pub fn fireWorkspaceRoutine(
     io: std.Io,
     routine_id: []const u8,
 ) anyerror!void {
-    // 1) Load the routine row. A missing row means the id is not a
-    //    workspace routine.
     const routine = model.loadWorkspaceRoutineById(allocator, db, routine_id) catch |err| switch (err) {
         error.RoutineNotFound => return FireError.NotARoutine,
         else => return err,
@@ -40,26 +29,21 @@ pub fn fireWorkspaceRoutine(
 
     if (!routine.enabled) return FireError.Disabled;
 
-    // 2) Atomic claim. `claimForRun` is a single conditional UPDATE;
-    //    a second concurrent fire on the same row sees zero affected
-    //    rows and `claimForRun` returns false.
     if (!try model.claimForRun(allocator, db, routine.id)) return FireError.AlreadyRunning;
 
-    // 3) Compute the new `next_run_at` ONCE and use it for both the
-    //    LLM message and the post-submit markSuccess. Manual-only
-    //    routines (empty schedule) keep NULL — there is no next fire.
     var next_sqlite: []const u8 = "";
     var next_sqlite_owned: ?[]u8 = null;
     defer if (next_sqlite_owned) |b| allocator.free(b);
     if (routine.schedule.len > 0) {
         const now_ns: i128 = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds);
-        const next_ns = try cron.nextFireTime(routine.schedule, now_ns);
+        const next_ns = cron.nextFireTime(routine.schedule, now_ns) catch |err| {
+            try model.markFailed(allocator, db, routine.id, "schedule is not a valid cron expression", "");
+            return err;
+        };
         next_sqlite_owned = try formatSqliteDatetime(allocator, next_ns);
         next_sqlite = next_sqlite_owned.?;
     }
 
-    // 4) Heap-allocate strings for the concurrent task. The callback owns
-    // these and frees them when done (mirrors `session_create.zig:141-159`).
     const sid = try di.allocator.dupe(u8, routine.id);
     errdefer di.allocator.free(sid);
     const schedule_label = if (routine.schedule.len > 0) routine.schedule else "(manual)";
@@ -76,22 +60,13 @@ pub fn fireWorkspaceRoutine(
     const spm = try di.allocator.dupe(u8, "");
     errdefer di.allocator.free(spm);
 
-    // 5) Submit the LLM work to the Io group. The callback emits the event;
-    // the Io runtime processes the event via `CallbackAiWorkerFlow` in a
-    // worker thread.
     try di.group_emit_session_create.concurrent(
         io,
         runFire,
         .{ di, sid, qmsg, cwd, bmsg, atools, iurls, spm },
     );
-
-    // 6) Mark success and advance next_run_at. The LLM is fire-and-forget —
-    // we don't wait for it to complete before marking success.
-    try model.markSuccess(allocator, db, routine.id, next_sqlite);
 }
 
-/// Callback for `group_emit_session_create.concurrent`. Emits the LLM event
-/// to the event bus.
 fn runFire(
     di: *pabrikcore.App,
     sid: []u8,
@@ -121,12 +96,41 @@ fn runFire(
         .image_urls = iurls,
         .selected_profile_model = spm,
     });
+
+    markRunFinished(di.allocator, di.db, sid, @intCast(std.Io.Timestamp.now(di.io, .real).nanoseconds)) catch |err| {
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("routine fire: could not record the run outcome for {s}: {s}", .{ sid, @errorName(err) });
+        }
+    };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
+pub fn markRunFinished(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    routine_id: []const u8,
+    now_unix_nanos: i128,
+) !void {
+    const routine = model.loadWorkspaceRoutineById(allocator, db, routine_id) catch |err| switch (err) {
+        error.RoutineNotFound => return,
+        else => return err,
+    };
+    defer routine.deinit(allocator);
 
-/// Format the user-style message that gets sent to the LLM when a routine
-/// fires.
+    var next_sqlite: []const u8 = "";
+    var next_sqlite_owned: ?[]u8 = null;
+    defer if (next_sqlite_owned) |b| allocator.free(b);
+    if (routine.enabled and routine.schedule.len > 0) {
+        const next_ns = cron.nextFireTime(routine.schedule, now_unix_nanos) catch {
+            try model.markFailed(allocator, db, routine_id, "schedule is not a valid cron expression", "");
+            return;
+        };
+        next_sqlite_owned = try formatSqliteDatetime(allocator, next_ns);
+        next_sqlite = next_sqlite_owned.?;
+    }
+
+    try model.markSuccess(allocator, db, routine_id, next_sqlite);
+}
+
 pub fn formatRoutineMessage(
     allocator: std.mem.Allocator,
     schedule: []const u8,
@@ -140,8 +144,6 @@ pub fn formatRoutineMessage(
         "{s}", .{ schedule, next_run_at_sqlite, instruction });
 }
 
-/// Convert unix nanos (i128) to a SQLite DATETIME literal `YYYY-MM-DD
-/// HH:MM:SS`.
 pub fn formatSqliteDatetime(allocator: std.mem.Allocator, unix_nanos: i128) ![]u8 {
     const secs: i64 = @intCast(@divTrunc(unix_nanos, std.time.ns_per_s));
     const epoch_seconds: std.time.epoch.EpochSeconds = .{ .secs = @intCast(secs) };
@@ -356,4 +358,58 @@ test "formatRoutineMessage places metadata header first and instruction last" {
 
     // A blank line separates the meta block from the task.
     try testing.expect(std.mem.indexOf(u8, msg, "\n\n") != null);
+}
+
+test "markRunFinished records success and schedules the next fire from the completion time" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = "2025-06-13 09:00:00",
+    });
+    _ = try model.claimForRun(alloc, &ctx.db, "item_1");
+
+    try markRunFinished(alloc, &ctx.db, "item_1", 1749808800 * std.time.ns_per_s);
+
+    var loaded = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+
+    try testing.expectEqual(model.RoutineRunStatus.success, loaded.last_status);
+    try testing.expectEqualStrings("2025-06-14 09:00:00", loaded.next_run_at.?);
+    try testing.expect(loaded.last_run_at != null);
+    try testing.expect(loaded.last_error == null);
+}
+
+test "markRunFinished leaves a manual-only routine without a next fire" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "",
+        .enabled = true,
+        .next_run_at = null,
+    });
+    _ = try model.claimForRun(alloc, &ctx.db, "item_1");
+
+    try markRunFinished(alloc, &ctx.db, "item_1", 1749808800 * std.time.ns_per_s);
+
+    var loaded = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+
+    try testing.expectEqual(model.RoutineRunStatus.success, loaded.last_status);
+    try testing.expect(loaded.next_run_at == null);
 }

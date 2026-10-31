@@ -202,12 +202,30 @@ describe('useWorkspacesStore.addRoutineItem', () => {
     const itemId = await ws.addRoutineItem('ws_1', 'Nightly', '/tmp/x')
 
     expect(itemId).toBe('item_r_1')
-    expect(createRoutineItemMock).toHaveBeenCalledWith('ws_1', 'Nightly', '/tmp/x')
+    expect(createRoutineItemMock).toHaveBeenCalledWith('ws_1', 'Nightly', '/tmp/x', undefined)
     const items = ws.workspaces[0]!.items
     expect(items).toHaveLength(1)
     expect(items[0]!.item_type).toBe('routine')
     // Workspace auto-expands so the new item is visible.
     expect(ws.workspaces[0]!.expanded).toBe(true)
+  })
+
+  it('forwards the instruction and schedule the dialog collected', async () => {
+    const ws = seedStore()
+    createRoutineItemMock.mockResolvedValueOnce({
+      item: { id: 'item_r_2', workspace_id: 'ws_1', item_type: 'routine', name: 'Hourly', path: '/tmp/y', position: 1 },
+      routine: { id: 'item_r_2', workspace_item_id: 'item_r_2' },
+    })
+
+    await ws.addRoutineItem('ws_1', 'Hourly', '/tmp/y', {
+      instruction: 'summarise issues',
+      schedule: '0 * * * *',
+    })
+
+    expect(createRoutineItemMock).toHaveBeenCalledWith('ws_1', 'Hourly', '/tmp/y', {
+      instruction: 'summarise issues',
+      schedule: '0 * * * *',
+    })
   })
 
   it('returns undefined if the API call fails', async () => {

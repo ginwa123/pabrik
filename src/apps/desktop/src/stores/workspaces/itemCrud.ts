@@ -218,9 +218,10 @@ export function createItemCrud(p: ItemCrudParams) {
     workspaceId: string,
     name: string,
     path: string,
+    options?: { instruction?: string; schedule?: string },
   ): Promise<string | undefined> {
     try {
-      const { item, routine } = await api.createRoutineItem(workspaceId, name, path)
+      const { item, routine } = await api.createRoutineItem(workspaceId, name, path, options)
       const ws = workspaces.value.find((w) => w.id === workspaceId)
       if (ws) {
         ws.items.push({
