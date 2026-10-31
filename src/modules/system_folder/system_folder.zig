@@ -368,9 +368,8 @@ pub const SystemFolder = struct {
     const check_ignore_batch: usize = 500;
 
     /// The repository that owns a search root: the worktree root git must run
-    /// in, plus the root's own path inside it (git's `--show-prefix`, trailing
-    /// slash included). Both answers come from ONE `rev-parse`, so a search
-    /// pays for one repository lookup however many directories it walks.
+    /// in plus the root's own path inside it (git's `--show-prefix`). Both come
+    /// from ONE `rev-parse`, so a search pays one lookup, not one per directory.
     const RepoAnchor = struct {
         toplevel: []u8,
         prefix: []u8,
@@ -593,11 +592,9 @@ pub const SystemFolder = struct {
         rank: u8,
     };
 
-    /// Recursive file search under `root_path`: a breadth-first walk that asks
-    /// git about a whole depth LEVEL at a time (non-recursive, level by level).
-    /// The `@` picker runs this on every debounced keystroke, so the walk pays
-    /// for one `git check-ignore` per level plus one `rev-parse` for the whole
-    /// repository — not one process per directory entered.
+    /// Recursive search under `root_path`: a breadth-first walk that asks git
+    /// about a whole depth LEVEL at a time — one `check-ignore` per level plus
+    /// one `rev-parse` per search, not one process per directory entered.
     pub fn searchFiles(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -2237,9 +2234,8 @@ fn freeFolderEntries(allocator: std.mem.Allocator, entries: []const FolderEntry)
 }
 
 // ─── searchFiles: the ignore question is asked once per LEVEL ─────────────
-// The result of a walk cannot show whether it paid per directory, so these
-// tests assert the RESULT (what is filtered) and the COST (git processes),
-// the two halves the `@` picker needs.
+// A walk's RESULT cannot show whether it paid per directory, so these tests
+// assert the RESULT (what is filtered) and the COST (git processes spawned).
 
 fn writeInRoot(root: std.Io.Dir, io: std.Io, sub_path: []const u8, body: []const u8) !void {
     if (std.fs.path.dirname(sub_path)) |parent| try root.createDirPath(io, parent);
