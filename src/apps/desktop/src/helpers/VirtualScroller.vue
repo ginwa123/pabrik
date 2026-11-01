@@ -432,6 +432,7 @@ let hasMeasuredItems = false
  * whole model onto the estimate floor. Probed once, off-screen. */
 let layoutReportsGeometry: boolean | null = null
 const hasRealLayout = (): boolean => {
+  if (typeof document === 'undefined') return false
   if (layoutReportsGeometry !== null) return layoutReportsGeometry
   const probe = document.createElement('div')
   probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px'
@@ -872,6 +873,14 @@ let ro: ResizeObserver | null = null
 // scroll, remeasure(), and rendered-range change.
 let contentRO: ResizeObserver | null = null
 let contentROTimer: ReturnType<typeof setTimeout> | null = null
+const measureTimers = new Set<ReturnType<typeof setTimeout>>()
+const scheduleMeasure = (delayMs: number): void => {
+  const timer = setTimeout(() => {
+    measureTimers.delete(timer)
+    measureItems()
+  }, delayMs)
+  measureTimers.add(timer)
+}
 let lastContentH = -1
 let lastScrollEventAt = 0
 const CONTENT_RO_DEBOUNCE_MS = 150
@@ -906,7 +915,7 @@ onMounted(() => {
     containerHeight.value = containerRef.value.clientHeight
     ro = new ResizeObserver(() => {
       if (containerRef.value) containerHeight.value = containerRef.value.clientHeight
-      nextTick(() => setTimeout(measureItems, 50))
+      nextTick(() => scheduleMeasure(50))
     })
     ro.observe(containerRef.value)
     const contentEl = containerRef.value.querySelector(
@@ -935,7 +944,7 @@ onMounted(() => {
       contentRO.observe(contentEl)
     }
   }
-  nextTick(() => setTimeout(measureItems, 100))
+  nextTick(() => scheduleMeasure(100))
 })
 onUnmounted(() => {
   ro?.disconnect()
@@ -945,6 +954,8 @@ onUnmounted(() => {
   if (measureDebounce) clearTimeout(measureDebounce)
   if (_prePaintTrailing) clearTimeout(_prePaintTrailing)
   if (programmaticResetTimer) clearTimeout(programmaticResetTimer)
+  for (const timer of measureTimers) clearTimeout(timer)
+  measureTimers.clear()
 })
 
 defineExpose({

@@ -1,57 +1,52 @@
-//! `Scheduler.zig` — the polling loop that drives workspace routines to fire.
-//! Retargeted from per-task routines (Migration 044) to `workspace_routines`
-//! (Migration 084).
-
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
+const logger_mod = pabrikcore.loggermod;
 
 const model = @import("model.zig");
 const cron = @import("cron.zig");
 const fire = @import("fire.zig");
 
-/// Polling interval between `fireDueRoutines` ticks.
 pub const TICK_INTERVAL_NS: i128 = 5 * std.time.ns_per_s;
 
-/// Reset every routine whose `last_status = 'running'` to `'failed'` with a
-/// "process killed" error.
-pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *database.Db) !void {
-    const err_msg = "process killed (restart detected)";
-    const copy = try allocator.dupe(u8, err_msg);
-    defer allocator.free(copy);
-    const sql = "UPDATE workspace_routines SET last_status = 'failed', last_error = ?, updated_at = " ++
-        dialect.now_stamp ++ " WHERE last_status = 'running'";
-    _ = try db.exec(allocator, sql, &.{copy});
+pub const stale_run_timeout_seconds: i64 = 30 * 60;
+
+fn warn(comptime fmt: []const u8, args: anytype) void {
+    if (logger_mod.getGlobal()) |logger| logger.warnFmt(fmt, args);
 }
 
-/// Recompute `next_run_at` for every enabled routine from the cron
-/// expression.
-pub fn recomputeDueNextRunAt(
+pub fn resetStuckRunning(allocator: std.mem.Allocator, db: *database.Db) !usize {
+    const err_msg = "process killed (restart detected)";
+    const sql = "UPDATE workspace_routines SET last_status = 'failed', last_error = ?, updated_at = " ++
+        dialect.now_stamp ++ " WHERE last_status = 'running'";
+    _ = try db.exec(allocator, sql, &.{err_msg});
+    const changed = db.changes();
+    if (changed <= 0) return 0;
+    return @intCast(changed);
+}
+
+pub fn seedMissingNextRunAt(
     allocator: std.mem.Allocator,
     db: *database.Db,
     io: std.Io,
-) !void {
-    // Collect (id, schedule, next_run_at) for every enabled routine in a
-    // first pass; then UPDATE in a second pass.
+) !usize {
     var rows = try db.query(allocator,
-        "SELECT id, schedule FROM workspace_routines WHERE enabled = 1 AND schedule != ''", &.{});
+        "SELECT id, schedule FROM workspace_routines WHERE enabled = 1 AND schedule != '' AND next_run_at IS NULL", &.{});
     defer rows.deinit();
 
     const now_ns: i128 = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds);
 
     const Pending = struct {
         id: []u8,
-        schedule: []u8,
         next_sqlite: []u8,
     };
     var to_update: std.ArrayList(Pending) = .empty;
     defer {
         for (to_update.items) |item| {
             allocator.free(item.id);
-            allocator.free(item.schedule);
             allocator.free(item.next_sqlite);
         }
         to_update.deinit(allocator);
@@ -60,39 +55,29 @@ pub fn recomputeDueNextRunAt(
     while (try rows.next()) |row| {
         defer row.deinit(allocator);
         const id = try allocator.dupe(u8, row.values[0]);
-        const schedule = try allocator.dupe(u8, row.values[1]);
+        errdefer allocator.free(id);
+        const schedule = row.values[1];
 
         const next_ns = cron.nextFireTime(schedule, now_ns) catch |err| {
-            // Bad cron expressions are the user's problem, not the
-            // scheduler's. Free what we've allocated for this row and
-            // skip; the loop continues with the remaining rows.
-            std.log.warn(
-                "scheduler: nextFireTime failed for routine {s} (schedule={s}): {s}",
-                .{ id, schedule, @errorName(err) },
-            );
+            warn("scheduler: {s} has an unusable schedule ({s}): {s}", .{ id, schedule, @errorName(err) });
             allocator.free(id);
-            allocator.free(schedule);
             continue;
         };
 
-        const next_sqlite = try fire.formatSqliteDatetime(allocator, next_ns);
         try to_update.append(allocator, .{
             .id = id,
-            .schedule = schedule,
-            .next_sqlite = next_sqlite,
+            .next_sqlite = try fire.formatSqliteDatetime(allocator, next_ns),
         });
     }
 
     for (to_update.items) |item| {
         _ = try db.exec(allocator,
-            "UPDATE workspace_routines SET next_run_at = ?, updated_at = datetime('now') WHERE id = ?",
+            "UPDATE workspace_routines SET next_run_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             &.{ item.next_sqlite, item.id });
     }
+    return to_update.items.len;
 }
 
-/// Fire one routine per due id. Uses the main process's
-/// `di.group_emit_session_create` group via `fire.fireWorkspaceRoutine` (no
-/// thread, no sub-process).
 pub fn fireDueRoutines(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -114,7 +99,7 @@ pub fn fireDueRoutines(
         fire.fireWorkspaceRoutine(allocator, db, di, io, routine_id) catch |err| switch (err) {
             error.NotARoutine, error.Disabled, error.AlreadyRunning => continue,
             else => {
-                std.log.warn("scheduler: fireWorkspaceRoutine failed for {s}: {s}", .{ routine_id, @errorName(err) });
+                warn("scheduler: fireWorkspaceRoutine failed for {s}: {s}", .{ routine_id, @errorName(err) });
                 continue;
             },
         };
@@ -123,28 +108,28 @@ pub fn fireDueRoutines(
     return fired;
 }
 
-/// The polling loop. Runs forever (no cancel signal in v1). Call
-/// from `di.group_emit_session_create.concurrent(io, ...)` — see
-/// `startup.zig` for the wiring.
 pub fn start(
     allocator: std.mem.Allocator,
     db: *database.Db,
     di: *pabrikcore.App,
     io: std.Io,
 ) !void {
-    // Restart safety: do these once at startup. A failure here is
-    // logged but does not abort the loop — the next tick's
-    // `fireDueRoutines` is still useful.
-    resetStuckRunning(allocator, db) catch |err| {
-        std.log.warn("scheduler: resetStuckRunning failed: {s}", .{@errorName(err)});
+    _ = resetStuckRunning(allocator, db) catch |err| blk: {
+        warn("scheduler: resetStuckRunning failed: {s}", .{@errorName(err)});
+        break :blk 0;
     };
-    recomputeDueNextRunAt(allocator, db, io) catch |err| {
-        std.log.warn("scheduler: recomputeDueNextRunAt failed: {s}", .{@errorName(err)});
+    _ = seedMissingNextRunAt(allocator, db, io) catch |err| blk: {
+        warn("scheduler: seedMissingNextRunAt failed: {s}", .{@errorName(err)});
+        break :blk 0;
     };
 
     while (true) {
+        _ = model.reclaimStaleRuns(allocator, db, stale_run_timeout_seconds) catch |err| blk: {
+            warn("scheduler: reclaimStaleRuns failed: {s}", .{@errorName(err)});
+            break :blk 0;
+        };
         _ = fireDueRoutines(allocator, db, di, io) catch |err| {
-            std.log.warn("scheduler: fireDueRoutines failed: {s}", .{@errorName(err)});
+            warn("scheduler: fireDueRoutines failed: {s}", .{@errorName(err)});
         };
         try std.Io.sleep(io, .{ .nanoseconds = TICK_INTERVAL_NS }, .real);
     }
@@ -238,7 +223,8 @@ test "Scheduler.resetStuckRunning marks running rows as failed" {
         "UPDATE workspace_routines SET last_status = 'running' WHERE id = 'item_1'",
         &.{});
 
-    try resetStuckRunning(alloc, &ctx.db);
+    const reset = try resetStuckRunning(alloc, &ctx.db);
+    try testing.expectEqual(@as(usize, 1), reset);
 
     const status = try scalarText(alloc, &ctx.db,
         "SELECT last_status FROM workspace_routines WHERE id = 'item_1'", &.{});
@@ -253,9 +239,36 @@ test "Scheduler.resetStuckRunning marks running rows as failed" {
     try testing.expectEqualStrings("process killed (restart detected)", err_msg.?);
 }
 
-// ─── Test 2: recomputeDueNextRunAt ────────────────────────────────────────
+// ─── Test 2: startup seeding does not swallow a missed fire ───────────────
 
-test "Scheduler.recomputeDueNextRunAt advances rows in the past" {
+test "Scheduler.seedMissingNextRunAt gives a scheduled routine its first next_run_at" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = null,
+    });
+
+    const seeded = try seedMissingNextRunAt(alloc, &ctx.db, ctx.threaded.io());
+    try testing.expectEqual(@as(usize, 1), seeded);
+
+    const next = try scalarText(alloc, &ctx.db,
+        "SELECT next_run_at FROM workspace_routines WHERE id = 'item_1'", &.{});
+    defer if (next) |s| alloc.free(s);
+
+    try testing.expect(next != null);
+    try testing.expect(std.mem.indexOf(u8, next.?, " 09:00:00") != null);
+}
+
+test "Scheduler.seedMissingNextRunAt keeps an overdue routine due so the missed fire still runs" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.db.deinit();
@@ -271,15 +284,20 @@ test "Scheduler.recomputeDueNextRunAt advances rows in the past" {
         .next_run_at = "2000-01-01 00:00:00",
     });
 
-    try recomputeDueNextRunAt(alloc, &ctx.db, ctx.threaded.io());
+    const seeded = try seedMissingNextRunAt(alloc, &ctx.db, ctx.threaded.io());
+    try testing.expectEqual(@as(usize, 0), seeded);
 
     const next = try scalarText(alloc, &ctx.db,
         "SELECT next_run_at FROM workspace_routines WHERE id = 'item_1'", &.{});
     defer if (next) |s| alloc.free(s);
 
-    try testing.expect(next != null);
-    // next_run_at should be in the 21st century, at 09:00:00 (cron
-    // nextFireTime from now), not stuck at the year 2000.
-    try testing.expect(std.mem.indexOf(u8, next.?, " 09:00:00") != null);
-    try testing.expect(std.mem.indexOf(u8, next.?, "2000-") == null);
+    try testing.expectEqualStrings("2000-01-01 00:00:00", next.?);
+
+    const due = try model.listDueWorkspaceRoutineIds(alloc, &ctx.db, "2025-01-01 00:00:00");
+    defer {
+        for (due) |id| alloc.free(id);
+        alloc.free(due);
+    }
+    try testing.expectEqual(@as(usize, 1), due.len);
+    try testing.expectEqualStrings("item_1", due[0]);
 }

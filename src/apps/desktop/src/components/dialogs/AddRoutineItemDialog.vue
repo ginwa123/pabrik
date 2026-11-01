@@ -1,33 +1,32 @@
-<!--
-  AddRoutineItemDialog — modal for creating a new Routine workspace item.
-
-  Mirrors AddAgentDialog: name input + folder picker (required).
-  A routine has a cwd like Agent/Kanban/Design.
-
-  Public API:
-    props:  show (boolean)
-    emits:  close, create(name: string, path: string)
-
--->
 <script setup lang="ts">
 import { ref, computed, nextTick, onBeforeUnmount, onMounted, onUpdated } from 'vue'
 import { getSystemFolder, listFolder, type FolderEntry } from '../../api'
 import FilePickerDialog from '../FilePickerDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
+import { ROUTINE_PRESETS, ROUTINE_CRON_FIELDS, routinePresetFor } from '../../helpers/routinePresets'
+
+export type RoutineCreateOptions = {
+  instruction: string
+  schedule: string
+}
 
 const props = defineProps<{ show: boolean }>()
 
 const emit = defineEmits<{
   close: []
-  create: [name: string, path: string]
+  create: [name: string, path: string, options: RoutineCreateOptions]
 }>()
+
 
 const name = ref('')
 const selectedPath = ref('')
+const instruction = ref('')
+const schedule = ref('')
 const showPicker = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 const nameTouched = ref(false)
 const pathTouched = ref(false)
+const scheduleTouched = ref(false)
 
 const nameError = computed<string | null>(() => {
   if (!nameTouched.value) return null
@@ -41,6 +40,21 @@ const pathError = computed<string | null>(() => {
   return null
 })
 
+const scheduleError = computed<string | null>(() => {
+  if (!scheduleTouched.value) return null
+  const trimmed = schedule.value.trim()
+  if (trimmed === '') return null
+  if (trimmed.split(/\s+/).length !== 5)
+    return `A cron schedule has 5 fields: ${ROUTINE_CRON_FIELDS}`
+  return null
+})
+
+const activePreset = computed<string | null>(() => {
+  const trimmed = schedule.value.trim()
+  const hit = routinePresetFor(trimmed)
+  return hit ? hit.label : null
+})
+
 const loadItemsForPicker = async (path: string): Promise<FolderEntry[]> => {
   const data = path ? await listFolder(path) : await getSystemFolder()
   return (data.entries || []) as FolderEntry[]
@@ -52,12 +66,23 @@ const handleFolderSelected = (path: string) => {
   showPicker.value = false
 }
 
+const applyPreset = (cron: string) => {
+  schedule.value = cron
+  scheduleTouched.value = true
+}
+
+const canSubmit = computed(
+  () => name.value.trim().length > 0 && selectedPath.value.length > 0 && scheduleError.value === null,
+)
+
 const handleCreate = () => {
   const trimmedName = name.value.trim()
-  if (trimmedName && selectedPath.value) {
-    emit('create', trimmedName, selectedPath.value)
-    handleClose()
-  }
+  if (!canSubmit.value) return
+  emit('create', trimmedName, selectedPath.value, {
+    instruction: instruction.value.trim(),
+    schedule: schedule.value.trim(),
+  })
+  handleClose()
 }
 
 const handleClose = () => emit('close')
@@ -69,9 +94,12 @@ const handleKeydown = (event: KeyboardEvent) => {
 const handleOpen = async () => {
   name.value = ''
   selectedPath.value = ''
+  instruction.value = ''
+  schedule.value = ''
   showPicker.value = false
   nameTouched.value = false
   pathTouched.value = false
+  scheduleTouched.value = false
   await nextTick()
   nameInput.value?.focus()
 }
@@ -80,9 +108,6 @@ onBeforeUnmount(() => {
   document.body.style.overflow = ''
 })
 
-// Open-reset without watch(): seed on mount (initial show=true) and on closed->open updates. A
-// Transition before-enter hook cannot do this — it never fires on initial mount (no `appear`) and
-// VTU stubs Transition, so specs that mount then setProps(show=true) would see empty fields.
 const wasShown = ref(props.show)
 onMounted(() => {
   if (props.show) void handleOpen()
@@ -116,10 +141,10 @@ onUpdated(() => {
           style="
             background-color: var(--semantic-card-bg);
             border: 1px solid var(--color-border);
-            max-height: 70vh;
+            max-height: 85vh;
           "
         >
-          <div class="px-5 pt-5 pb-4">
+          <div class="px-5 pt-5 pb-3 shrink-0">
             <h3
               id="add-routine-title"
               class="text-lead font-semibold flex items-center gap-2"
@@ -129,12 +154,15 @@ onUpdated(() => {
               Add Routine
             </h3>
             <p class="text-dense mt-1" style="color: var(--semantic-text-dim)">
-              Create a Routine — a schedulable agent with its own instruction and cron schedule
+              A routine is an agent that fires on a schedule. Give it an instruction now — you can
+              refine the cron, tools and knowledge afterwards.
             </p>
           </div>
-          <div class="px-5 pb-4">
+
+          <div class="flex-1 min-h-0 overflow-y-auto">
+          <div class="px-5 pb-3">
             <label class="block text-dense font-medium mb-2" style="color: var(--semantic-text-dim)"
-              >Routine Name</label
+              >Routine name</label
             >
             <input
               ref="nameInput"
@@ -157,13 +185,17 @@ onUpdated(() => {
               {{ nameError }}
             </p>
           </div>
-          <div class="px-5 pb-4">
+
+          <div class="px-5 pb-3">
             <label class="block text-dense font-medium mb-2" style="color: var(--semantic-text-dim)"
               >Folder (cwd)</label
             >
             <button
               type="button"
-              @click="showPicker = true; pathTouched = true"
+              @click="
+                showPicker = true;
+                pathTouched = true
+              "
               data-testid="add-routine-choose-folder"
               class="w-full px-3 py-2 rounded-lg text-body flex items-center justify-between gap-2"
               :style="{
@@ -194,7 +226,85 @@ onUpdated(() => {
               {{ pathError }}
             </p>
           </div>
-          <div class="px-5 pb-5 flex justify-end gap-2">
+
+          <div class="px-5 pb-3">
+            <label
+              class="block text-dense font-medium mb-2"
+              style="color: var(--semantic-text-dim)"
+              for="add-routine-instruction"
+              >Instruction (fired on every run)</label
+            >
+            <textarea
+              id="add-routine-instruction"
+              v-model="instruction"
+              rows="3"
+              placeholder="Summarise new issues in this repo and post them to the task board."
+              data-testid="add-routine-instruction"
+              class="w-full px-3 py-2 rounded-lg text-body outline-none resize-none font-mono"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+            />
+          </div>
+
+          <div class="px-5 pb-3">
+            <div class="flex items-baseline justify-between mb-2">
+              <label
+                class="text-dense font-medium"
+                style="color: var(--semantic-text-dim)"
+                for="add-routine-schedule"
+                >Schedule (cron, UTC)</label
+              >
+              <span class="text-micro" style="color: var(--semantic-text-dim); opacity: 0.7"
+                >empty = manual only</span
+              >
+            </div>
+            <input
+              id="add-routine-schedule"
+              v-model="schedule"
+              type="text"
+              placeholder="0 9 * * *"
+              data-testid="add-routine-schedule"
+              :aria-invalid="scheduleError !== null"
+              class="w-full px-3 py-2 rounded-lg text-body outline-none font-mono"
+              :style="{
+                backgroundColor: 'var(--semantic-sidebar-bg)',
+                border: `1px solid ${scheduleError ? 'var(--color-red)' : 'var(--color-border)'}`,
+                color: 'var(--semantic-text)',
+              }"
+              @input="scheduleTouched = true"
+              @blur="scheduleTouched = true"
+            />
+            <div class="flex flex-wrap gap-1.5 mt-2" data-testid="add-routine-presets">
+              <button
+                v-for="preset in ROUTINE_PRESETS"
+                :key="preset.label"
+                type="button"
+                class="px-2 py-1 rounded-md text-micro font-medium"
+                :style="
+                  activePreset === preset.label
+                    ? 'background-color: var(--semantic-active-bg); border: 1px solid var(--color-border); color: var(--semantic-text);'
+                    : 'background-color: transparent; border: 1px solid var(--color-border); color: var(--semantic-text-dim);'
+                "
+                :data-testid="`add-routine-preset-${preset.cron || 'manual'}`"
+                @click="applyPreset(preset.cron)"
+              >
+                {{ preset.label }}
+              </button>
+            </div>
+            <p v-if="scheduleError" class="text-dense mt-1" style="color: var(--color-red)">
+              {{ scheduleError }}
+            </p>
+          </div>
+
+          </div>
+
+          <div
+            class="px-5 py-4 flex justify-end gap-2 shrink-0"
+            style="border-top: 1px solid var(--color-border)"
+          >
             <button
               type="button"
               @click="handleClose"
@@ -211,7 +321,7 @@ onUpdated(() => {
             <button
               type="button"
               @click="handleCreate"
-              :disabled="!name.trim() || !selectedPath"
+              :disabled="!canSubmit"
               data-testid="add-routine-submit"
               class="px-3 py-1.5 rounded-lg text-body font-medium disabled:opacity-50"
               style="

@@ -526,9 +526,13 @@ const handleCloseAddAgentDialog = () => {
 // 2026-09-10-workspace-items-routines): routine item create +
 // dialog state — mirrors the agent flow above.
 const showAddRoutineItemDialog = ref(false)
-const handleCreateRoutineItem = async (name: string, path: string) => {
+const handleCreateRoutineItem = async (
+  name: string,
+  path: string,
+  options: { instruction: string; schedule: string },
+) => {
   if (addItemTargetWorkspaceId.value) {
-    await workspacesStore.addRoutineItem(addItemTargetWorkspaceId.value, name, path)
+    await workspacesStore.addRoutineItem(addItemTargetWorkspaceId.value, name, path, options)
   }
   showAddRoutineItemDialog.value = false
 }
