@@ -773,33 +773,19 @@ Collect security Issues and write to SECURITY_ISSUES.md</pre>
   </section>
 
   <section class="doc reveal">
-    <h2>The data model</h2>
+    <h2>The data model: no new table</h2>
 
-    <p>One new table, no new column on <code>sessions</code>. That table is read by every list query and joined in a dozen places in <code>llm_history.zig</code>, and a run's lifecycle is not a session's: a run is <code>queued</code> before any work happens and <code>needs you</code> after the session has gone quiet.</p>
+    <p>A run <b>is</b> a chat session. Four columns on <code>sessions</code> carry the three things a session cannot infer, plus the error text the product throws away today. No new table, and nothing added to <code>workspace_item_tasks</code>, which is referenced by roughly 120 files and would put every run in the item's task list, the workspace counts and the agent's kanban tool.</p>
 
-    <pre>-- Migration 125. IF NOT EXISTS everywhere, so a replay is a no-op.
-CREATE TABLE IF NOT EXISTS routine_runs (
-    id                TEXT PRIMARY KEY,      -- run_&lt;unix_seconds&gt;_&lt;item suffix&gt;
-    routine_id        TEXT NOT NULL,         -- workspace_routines.id, which is the routine item id
-    workspace_item_id TEXT NOT NULL,
-    workspace_id      TEXT NOT NULL,
-    session_id        TEXT NOT NULL UNIQUE,  -- sessions.id of this run's chat
-    trigger           TEXT NOT NULL,         -- 'schedule' | 'manual'
-    due_at            TEXT,                  -- the scheduled slot; NULL for manual
-    status            TEXT NOT NULL DEFAULT 'queued',
-                                             -- queued|running|success|failed|cancelled|needs_you|stale
-    started_at        TEXT NOT NULL,
-    finished_at       TEXT,
-    error             TEXT,
-    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    <pre>-- Migration 125. One guarded addColumnIfMissing each, so a replay is a no-op.
+ALTER TABLE sessions ADD COLUMN routine_id  TEXT NOT NULL DEFAULT '';  -- '' = an ordinary chat
+ALTER TABLE sessions ADD COLUMN run_trigger TEXT NOT NULL DEFAULT '';  -- 'schedule' | 'manual'
+ALTER TABLE sessions ADD COLUMN run_due_at  TEXT NOT NULL DEFAULT '';  -- the scheduled slot; '' for manual
+ALTER TABLE sessions ADD COLUMN run_error   TEXT NOT NULL DEFAULT '';  -- why it failed, if it did
 
-CREATE INDEX IF NOT EXISTS idx_routine_runs_routine ON routine_runs(routine_id, started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_routine_runs_session ON routine_runs(session_id);
-CREATE INDEX IF NOT EXISTS idx_routine_runs_status  ON routine_runs(status, started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_routine_runs_ws      ON routine_runs(workspace_id, started_at DESC);</pre>
+CREATE INDEX IF NOT EXISTS idx_sessions_routine ON sessions(routine_id, created_at DESC);</pre>
 
-    <p>The run id <b>is</b> the session id: one id, one pair of rows, nothing to reconcile. The sessions row carries the three values that make the run a normal chat. <code>workspace_id</code> so the workspace list resolves it, <code>cwd</code> set to the routine's directory, and a name you can read in the sidebar.</p>
+    <p>State is <b>derived, never stored</b>: a live <code>worker</code> row means running, <code>last_finish_reason</code> is <code>stop</code> or <code>awaiting_user</code>, <code>sessions.status</code> is cancelled, and no worker with no stop is a failure with <code>run_error</code> in hand. One predicate keeps runs out of the chat list, beside the one that already hides sub-agent sessions. Retention is deleting the session, which is a thing you already understand.</p>
   </section>
 
   <section class="doc reveal">
@@ -808,25 +794,22 @@ CREATE INDEX IF NOT EXISTS idx_routine_runs_ws      ON routine_runs(workspace_id
     <pre>fireWorkspaceRoutine(routine_id, trigger, due_at)
  1  routine = loadWorkspaceRoutineById(...)          the existing load
     context = loadRoutineContext(...)                NEW: workspace_id, item path, name, owner
- 2  if (openRunFor(routine_id)) |open| return AlreadyRunning{ .run = open }
-                                                     the overlap guard becomes a fact, not a status string
- 3  run_id = run_&lt;secs&gt;_&lt;suffix&gt;   session_id = run_id
- 4  INSERT routine_runs(status = 'queued', trigger, due_at)
-    prune to the newest 200 runs for this routine
- 5  INSERT INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at,
-                          selected_profile_model, is_auto_retry_until_stop, user_id)
+ 2  if (!claimForRun(routine_id)) return AlreadyRunning
+                                                     unchanged atomic UPDATE; a boolean, not a status string
+ 3  run_id = session_id = run_&lt;secs&gt;_&lt;suffix&gt;
+ 4  INSERT INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at,
+                          selected_profile_model, is_auto_retry_until_stop, user_id,
+                          routine_id, run_trigger, run_due_at)
     broadcast sessions.created                       the run is in the sidebar before the agent starts
- 6  workspace_routines: last_status = 'running', last_run_at = now, next_run_at = nextFireTime(now)
- 7  di.emit_run_agent(...)                           the chat funnel, not a raw event
+ 5  workspace_routines: next_run_at = nextFireTime(now)
+ 6  di.emit_run_agent(...)                           the chat funnel, not a raw event
       insert_worker: INSERT INTO sessions ... ON CONFLICT DO NOTHING   no-op, no second broadcast
                      INSERT INTO worker                               running is now observable
                      emit RunParamsNew                                worker slot, queue, agent loop
- 8  the loop finishes; emit is synchronous, so we are back here
-    status = last_finish_reason == 'stop'          ? success
-           : last_finish_reason == 'awaiting_user' ? needs_you
-           : failed
-    UPDATE routine_runs SET status, finished_at, error
-    workspace_routines: last_status, last_error       mirrors today's markSuccess / markFailed</pre>
+ 7  the loop finishes; emit is synchronous, so we are back here
+    reason = sessions.last_finish_reason
+    if reason not in ('stop','awaiting_user'): UPDATE sessions SET run_error = ?
+    workspace_routines: last_status = success | failed   the pill stops lying</pre>
 
     <p>Order matters. Inserting the session ourselves is what lets it carry the workspace, and because that insert is <code>ON CONFLICT DO NOTHING</code> with the broadcast gated on <code>db.changes() &gt; 0</code>, <code>insert_worker</code> stays a silent no-op afterwards: one broadcast, one sidebar row, no fight.</p>
   </section>
@@ -839,19 +822,18 @@ CREATE INDEX IF NOT EXISTS idx_routine_runs_ws      ON routine_runs(workspace_id
         <tr><th>Endpoint</th><th>Change</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>POST …/routines/:routine_id/run</code></td><td>202 with <code>{ run_id, session_id, status }</code>. The 409 carries the run in flight, so the UI can offer to open it.</td></tr>
+        <tr><td><code>POST …/routines/:routine_id/run</code></td><td>202 with <code>{ session_id, status }</code>. There is no separate run id: the run id is the session id. The 409 carries the session in flight, so the UI can offer to open it.</td></tr>
         <tr><td><code>GET /api/workspaces/:ws/routine-runs?status=live|all</code></td><td>New. The workspace-wide running list.</td></tr>
         <tr><td><code>GET …/routines/:routine_id/runs?limit=20</code></td><td>New. One routine's history.</td></tr>
-        <tr><td><code>POST /api/routine-runs/:run_id/stop</code></td><td>New. Cancels through the existing worker-cancel path.</td></tr>
-        <tr><td><code>GET /api/sessions</code></td><td>Same shape plus <code>routine_run_id</code> and <code>routine_name</code>, from a LEFT JOIN, so a run's chat row can be badged.</td></tr>
+        <tr><td><code>POST /api/routine-runs/:session_id/stop</code></td><td>New. Cancels through the existing worker-cancel path and sets <code>sessions.status = 'cancelled'</code>.</td></tr>
+        <tr><td><code>GET /api/sessions</code></td><td>Routine runs excluded by default (<code>routine_id = ''</code>), reachable with <code>?include=routine_runs</code>; each row gains <code>routine_id</code> and <code>routine_name</code> so a run can be badged.</td></tr>
       </tbody>
     </table>
 
     <pre>{
-  "id": "run_1793556739_1793535810996950572",
+  "session_id": "run_1793556739_1793535810996950572",
   "routine_id": "item_1793535810996950572",
   "routine_name": "Collecting security Issuess",
-  "session_id": "run_1793556739_1793535810996950572",
   "status": "running",
   "trigger": "manual",
   "due_at": null,
@@ -869,14 +851,14 @@ CREATE INDEX IF NOT EXISTS idx_routine_runs_ws      ON routine_runs(workspace_id
     <h2>Files</h2>
 
     <div class="files">
-      <div><span><code>src/migrations/migration_125.zig</code></span><span>the table and four indexes, plus a replay test; registered in <code>migration.zig</code></span></div>
-      <div><span><code>routines/model.zig</code></span><span>RoutineRun, insertRun, openRunFor, finishRun, listRuns, pruneRuns, loadRoutineContext</span></div>
+      <div><span><code>src/migrations/migration_125.zig</code></span><span>four guarded columns on <code>sessions</code> and one index, plus a replay test; registered in <code>migration.zig</code></span></div>
+      <div><span><code>routines/model.zig</code></span><span>the derived RunState, makeRunId, insertRunSession, listRuns, finishRun, pruneRuns, loadRoutineContext</span></div>
       <div><span><code>routines/fire.zig</code></span><span>the sequence above; the direct event emit and the unconditional markSuccess both go</span></div>
       <div><span><code>routines/Scheduler.zig</code></span><span>close open runs at boot, stale run to failed on the tick, trigger and due_at on a scheduled fire</span></div>
       <div><span><code>http_handlers/workspace_routines_run.zig</code></span><span>202 with the run id; the 409 carries the open run</span></div>
       <div><span><code>http_handlers/workspace_routine_runs_list.zig</code></span><span>new: both list endpoints, one use case, workspace scoped</span></div>
       <div><span><code>http_handlers/routine_run_stop.zig</code></span><span>new: stop a run</span></div>
-      <div><span><code>agentic_loop/llm_history.zig</code></span><span>LEFT JOIN routine_runs on the session list; two nullable fields</span></div>
+      <div><span><code>agentic_loop/llm_history.zig</code></span><span>the <code>routine_id = ''</code> predicate plus an <code>include</code> opt-in; <code>routine_id</code> and <code>routine_name</code> on the row</span></div>
       <div><span><code>src/api/routineRuns.ts</code>, <code>stores/routineRuns.ts</code></span><span>wire types, the live list, the poll lifecycle, stop</span></div>
       <div><span><code>views/RoutineView.vue</code></span><span>the Runs section, the pill opens the run, Run now navigates</span></div>
       <div><span><code>views/chatsList/RunningRunsGroup.vue</code></span><span>new: the sidebar group</span></div>
@@ -901,14 +883,15 @@ CREATE INDEX IF NOT EXISTS idx_routine_runs_ws      ON routine_runs(workspace_id
     <h2>Decisions worth re-reading before the build</h2>
 
     <ol class="decisions">
-      <li><b>A table, not columns on sessions.</b> History is the point: the routine needs N runs with durations and outcomes, and the run's lifecycle starts before a session does any work.</li>
-      <li><b>The run id is the session id.</b> Two ids would need a mapping table for no gain; <code>sessions.id</code> is free-form text.</li>
-      <li><b>The overlap guard moves to the run table.</b> Today it is <code>last_status = 'running'</code>, so a crashed process can wedge a routine until the next boot sweep. An open run row is the fact the guard was trying to approximate.</li>
+      <li><b>The run is a session, not a table.</b> This document's first revision added a <code>routine_runs</code> table. Every field it held was either already on the session or derivable from the <code>worker</code> row and <code>last_finish_reason</code>, so it is gone: four columns instead.</li>
+      <li><b>Runs are still not <code>workspace_item_tasks</code> rows.</b> They follow that table's id convention, but no query in the repo filters <code>task_type</code>, so a run row would surface as a task in the item's list, the workspace counts, run-all-agents and the agent's kanban tool, and there is no way to prune it without deleting something the user can see.</li>
+      <li><b>The overlap guard stays <code>claimForRun</code>.</b> <code>last_status</code> stops being a reported outcome and becomes the lock it already was; each run's state is derived per session instead of stored once.</li>
+      <li><b><code>workspace_routines</code> shrinks but stays.</b> Its <code>description</code> duplicates <code>agent_configs.description</code>, <code>last_run_at</code> and <code>last_error</code> are derivable, and <code>id</code> equals <code>workspace_item_id</code>: thirteen columns to seven, in a migration of its own. Cron state has no other home.</li>
       <li><b>Scheduling arithmetic is untouched.</b> Next fire is still computed from completion time. Changing that changes behaviour for every existing routine and deserves its own proof.</li>
       <li><b>Routines still do not set <code>is_auto_retry_until_stop</code>.</b> A routine that retries itself until it stops is an unattended loop, which is exactly what that flag is not for.</li>
     </ol>
 
-    <p class="provenance">Wireframe and design, not shipped. Every interface frame above uses the app's own dark palette and type scale, drawn at the current 240px sidebar width; the five states are new. The file and line references were read from the repository on the branch that carries this document. The routine's name, instruction and last-run time are the ones in the task's screenshot.</p>
+    <p class="provenance">Wireframe and design, revision 2 after review, not shipped. Every interface frame above uses the app's own dark palette and type scale, drawn at the current 240px sidebar width; the five states are new. The file and line references were read from the repository on the branch that carries this document. The routine's name, instruction and last-run time are the ones in the task's screenshot.</p>
   </section>
 
 </main>
