@@ -221,6 +221,35 @@ fn substituteCredentialLeaf(
     return !std.mem.eql(u8, text, substituted);
 }
 
+/// Replace placeholders in the ROOT fields named by `field_names`: each may be
+/// a string, an array of strings, or an object of string values. Any other
+/// field is left alone.
+pub fn substituteRootCredentialFields(
+    allocator: std.mem.Allocator,
+    document: []const u8,
+    field_names: []const []const u8,
+    resolver: Resolver,
+    ctx: ?*const anyopaque,
+    out_resolved: ?*std.ArrayList(ResolvedSecret),
+) SubstError![]u8 {
+    if (std.mem.indexOf(u8, document, placeholder_prefix) == null) {
+        return allocator.dupe(u8, document);
+    }
+
+    var parsed = std.json.parseFromSlice(std.json.Value, allocator, document, .{}) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.InvalidArguments,
+    };
+    defer parsed.deinit();
+
+    if (parsed.value != .object) return error.InvalidArguments;
+    for (field_names) |name| {
+        const field = parsed.value.object.getPtr(name) orelse continue;
+        try substituteTree(parsed.arena.allocator(), allocator, field, resolver, ctx, out_resolved);
+    }
+    return std.json.Stringify.valueAlloc(allocator, parsed.value, .{});
+}
+
 const PlaceholderMatch = struct { name: []const u8, end: usize };
 
 fn isNameChar(c: u8) bool {
@@ -700,4 +729,162 @@ test "substituteConfigCredentials: a document with no placeholder is returned un
     const out = try substituteConfigCredentials(alloc, document, tableResolver, &table);
     defer alloc.free(out);
     try testing.expectEqualStrings(document, out);
+}
+
+/// Free the `resolved` list a caller passed into
+/// `substituteRootCredentialFields`: each name and value is its own allocation.
+fn freeResolvedList(allocator: std.mem.Allocator, list: *std.ArrayList(ResolvedSecret)) void {
+    for (list.items) |entry| {
+        allocator.free(entry.name);
+        allocator.free(entry.value);
+    }
+    list.deinit(allocator);
+}
+
+test "substituteRootCredentialFields: an api_key placeholder becomes the stored value" {
+    const alloc = testing.allocator;
+    const key_ph = try placeholder(alloc, "API_KEY");
+    defer alloc.free(key_ph);
+
+    const document = try std.fmt.allocPrint(
+        alloc,
+        "{{\"model\":\"deepseek-v4\",\"base_url\":\"https://api.example.com\"," ++
+            "\"api_key\":\"{s}\",\"url_style\":\"openai\"}}",
+        .{key_ph},
+    );
+    defer alloc.free(document);
+
+    const table = SecretTable{ .entries = &.{.{ .name = "API_KEY", .value = "sk-live-value" }} };
+    var resolved: std.ArrayList(ResolvedSecret) = .empty;
+    defer freeResolvedList(alloc, &resolved);
+
+    const out = try substituteRootCredentialFields(alloc, document, &.{"api_key"}, tableResolver, &table, &resolved);
+    defer alloc.free(out);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, out, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expectEqualStrings("sk-live-value", obj.get("api_key").?.string);
+    // Positive control: the fields around the credential are byte-identical to
+    // what was sent, so the probe still reaches the same endpoint.
+    try testing.expectEqualStrings("deepseek-v4", obj.get("model").?.string);
+    try testing.expectEqualStrings("https://api.example.com", obj.get("base_url").?.string);
+
+    try testing.expectEqual(@as(usize, 1), resolved.items.len);
+    try testing.expectEqualStrings("API_KEY", resolved.items[0].name);
+    try testing.expectEqualStrings("sk-live-value", resolved.items[0].value);
+}
+
+test "substituteRootCredentialFields: a field that is not named keeps its placeholder" {
+    const alloc = testing.allocator;
+    const key_ph = try placeholder(alloc, "API_KEY");
+    defer alloc.free(key_ph);
+
+    const document = try std.fmt.allocPrint(
+        alloc,
+        "{{\"model\":\"{s}\",\"api_key\":\"{s}\"}}",
+        .{ key_ph, key_ph },
+    );
+    defer alloc.free(document);
+
+    const table = SecretTable{ .entries = &.{.{ .name = "API_KEY", .value = "sk-live" }} };
+    const out = try substituteRootCredentialFields(alloc, document, &.{"api_key"}, tableResolver, &table, null);
+    defer alloc.free(out);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, out, .{});
+    defer parsed.deinit();
+    try testing.expectEqualStrings("sk-live", parsed.value.object.get("api_key").?.string);
+    // A model named after the secret would be unusable, and a run does not
+    // substitute this field either.
+    try testing.expectEqualStrings(key_ph, parsed.value.object.get("model").?.string);
+}
+
+test "substituteRootCredentialFields: an unknown name fails the walk" {
+    const alloc = testing.allocator;
+    const missing_ph = try placeholder(alloc, "NOT_STORED");
+    defer alloc.free(missing_ph);
+
+    const document = try std.fmt.allocPrint(alloc, "{{\"api_key\":\"{s}\"}}", .{missing_ph});
+    defer alloc.free(document);
+
+    const table = SecretTable{ .entries = &.{.{ .name = "API_KEY", .value = "sk-live" }} };
+    try testing.expectError(
+        error.UnknownSecretName,
+        substituteRootCredentialFields(alloc, document, &.{"api_key"}, tableResolver, &table, null),
+    );
+}
+
+test "substituteRootCredentialFields: MCP header values and env entries resolve, args stay literal" {
+    const alloc = testing.allocator;
+    const token_ph = try placeholder(alloc, "MCP_TOKEN");
+    defer alloc.free(token_ph);
+
+    const document = try std.fmt.allocPrint(
+        alloc,
+        "{{\"transport\":\"stdio\",\"command\":\"npx\",\"args\":[\"--token\",\"{s}\"]," ++
+            "\"env\":[\"TOKEN={s}\",\"MODE=prod\"]," ++
+            "\"headers\":{{\"Authorization\":\"Bearer {s}\"}}}}",
+        .{ token_ph, token_ph, token_ph },
+    );
+    defer alloc.free(document);
+
+    const table = SecretTable{ .entries = &.{.{ .name = "MCP_TOKEN", .value = "tok-live" }} };
+    var resolved: std.ArrayList(ResolvedSecret) = .empty;
+    defer freeResolvedList(alloc, &resolved);
+
+    const out = try substituteRootCredentialFields(
+        alloc,
+        document,
+        &.{ "headers", "env" },
+        tableResolver,
+        &table,
+        &resolved,
+    );
+    defer alloc.free(out);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, out, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try testing.expectEqualStrings(
+        "Bearer tok-live",
+        obj.get("headers").?.object.get("Authorization").?.string,
+    );
+    try testing.expectEqualStrings("TOKEN=tok-live", obj.get("env").?.array.items[0].string);
+    try testing.expectEqualStrings("MODE=prod", obj.get("env").?.array.items[1].string);
+    // `args` is not a credential position: a run leaves it alone, so a probe
+    // that resolved it would pass where the run fails.
+    try testing.expectEqualStrings(token_ph, obj.get("args").?.array.items[1].string);
+    try testing.expectEqual(@as(usize, 1), resolved.items.len);
+}
+
+test "substituteRootCredentialFields: a body with no placeholder comes back unchanged" {
+    const alloc = testing.allocator;
+    const document =
+        "{\"model\":\"m\",\"base_url\":\"https://api.example.com\",\"api_key\":\"sk-plain\",\"url_style\":\"openai\"}";
+    const table = SecretTable{ .entries = &.{.{ .name = "API_KEY", .value = "sk-live" }} };
+
+    const out = try substituteRootCredentialFields(alloc, document, &.{"api_key"}, tableResolver, &table, null);
+    defer alloc.free(out);
+    try testing.expectEqualStrings(document, out);
+}
+
+test "substituteRootCredentialFields: a body that is not a JSON object is rejected" {
+    const alloc = testing.allocator;
+    const key_ph = try placeholder(alloc, "API_KEY");
+    defer alloc.free(key_ph);
+    const table = SecretTable{ .entries = &.{.{ .name = "API_KEY", .value = "sk-live" }} };
+
+    const array_body = try std.fmt.allocPrint(alloc, "[{s}]", .{key_ph});
+    defer alloc.free(array_body);
+    try testing.expectError(
+        error.InvalidArguments,
+        substituteRootCredentialFields(alloc, array_body, &.{"api_key"}, tableResolver, &table, null),
+    );
+
+    const truncated_body = try std.fmt.allocPrint(alloc, "{{\"api_key\": {s}", .{key_ph});
+    defer alloc.free(truncated_body);
+    try testing.expectError(
+        error.InvalidArguments,
+        substituteRootCredentialFields(alloc, truncated_body, &.{"api_key"}, tableResolver, &table, null),
+    );
 }

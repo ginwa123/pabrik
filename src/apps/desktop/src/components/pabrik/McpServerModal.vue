@@ -30,6 +30,9 @@ const props = withDefaults(
     errors?: { name?: string; url?: string; command?: string }
     mode: 'add' | 'edit'
     initialTransport?: 'http' | 'stdio'
+    /** The workspace whose secrets the Test probe resolves headers/env
+     * against. Absent in user scope, where a placeholder cannot be resolved. */
+    workspaceId?: string
   }>(),
   {
     // Default to 'http' for backward compat with legacy callers that
@@ -123,6 +126,7 @@ async function onTest() {
         args,
         env,
         cwd: cwdLocal.value.trim(),
+        workspace_id: props.workspaceId,
       })
     } catch (err) {
       // `testMcpServer` always returns a `McpTestResult`; this catch
@@ -150,6 +154,7 @@ async function onTest() {
       transport: 'http',
       url: props.modelValue.url.trim(),
       headers,
+      workspace_id: props.workspaceId,
     })
   } catch (err) {
     testResult.value = {

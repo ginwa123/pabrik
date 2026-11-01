@@ -4,60 +4,14 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const config_mod = @import("../modules/config/Config.zig");
-const secrets_store = @import("secrets_store.zig");
+const credential_resolver = @import("credential_resolver.zig");
 const secrets_substitution = @import("secrets_substitution.zig");
+const secrets_store = @import("secrets_store.zig");
 const workspace_config = @import("workspace_config.zig");
 const workspace_settings_store = @import("workspace_settings_store.zig");
 const workspace_scope = @import("workspace_scope.zig");
 
 const placeholder_prefix = "{" ++ "{SECRETS:";
-
-/// Maps a placeholder name onto this workspace's stored credential, one query
-/// per distinct name. Owns the values it looked up, because the substitution
-/// reads them after this returns.
-const CredentialResolver = struct {
-    allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
-    workspace_id: []const u8,
-    values: std.StringHashMapUnmanaged([]const u8) = .empty,
-
-    fn deinit(self: *CredentialResolver) void {
-        var it = self.values.iterator();
-        while (it.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
-        }
-        self.values.deinit(self.allocator);
-    }
-
-    fn resolve(self: *CredentialResolver, name: []const u8) ?[]const u8 {
-        if (self.values.get(name)) |hit| return if (hit.len == 0) null else hit;
-
-        const wanted = [_][]const u8{name};
-        const rows = secrets_store.loadSecretValues(self.allocator, self.db, self.workspace_id, &wanted) catch
-            return null;
-        defer secrets_store.freeSecretValueRows(self.allocator, rows);
-
-        for (rows) |row| {
-            const key = self.allocator.dupe(u8, row.name) catch return null;
-            const value = self.allocator.dupe(u8, row.value) catch {
-                self.allocator.free(key);
-                return null;
-            };
-            self.values.put(self.allocator, key, value) catch {
-                self.allocator.free(key);
-                self.allocator.free(value);
-                return null;
-            };
-        }
-        return self.values.get(name);
-    }
-
-    fn lookup(ctx: ?*const anyopaque, name: []const u8) ?[]const u8 {
-        const self: *CredentialResolver = @ptrCast(@alignCast(@constCast(ctx orelse return null)));
-        return self.resolve(name);
-    }
-};
 
 /// The merged config with `{` `{SECRETS:NAME}` `}` resolved in its credential
 /// fields, so a saved placeholder is what a run authenticates with. Takes
@@ -71,17 +25,13 @@ fn resolveCredentialPlaceholders(
     if (workspace_id.len == 0) return text;
     if (std.mem.indexOf(u8, text, placeholder_prefix) == null) return text;
 
-    var resolver = CredentialResolver{
-        .allocator = allocator,
-        .db = db,
-        .workspace_id = workspace_id,
-    };
+    var resolver = credential_resolver.StoreResolver.init(allocator, db, workspace_id);
     defer resolver.deinit();
 
     const substituted = secrets_substitution.substituteConfigCredentials(
         allocator,
         text,
-        CredentialResolver.lookup,
+        credential_resolver.StoreResolver.lookup,
         &resolver,
     ) catch return text;
     allocator.free(text);
