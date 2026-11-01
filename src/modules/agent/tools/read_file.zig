@@ -5,20 +5,29 @@ const path_validate = @import("helpers").path_validate;
 const invalidPathReason = path_validate.invalidPathReason;
 const text_normalize = @import("helpers").text_normalize;
 const normalizeLineEndings = text_normalize.normalizeLineEndings;
+const helpers_image = @import("helpers").image;
 const BashInput = schemas.BashInput;
 const ToolProperty = schemas.ToolProperty;
 const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
 
+pub const ReadFileImage = struct {
+    mime: []const u8,
+    url: []u8,
+    byte_len: usize,
+};
+
 pub const ReadFileResult = struct {
     content: []u8,
     total_lines: usize,
     start_line: usize,
     end_line: usize,
+    image: ?ReadFileImage = null,
 
     pub fn deinit(self: ReadFileResult, allocator: std.mem.Allocator) void {
         allocator.free(self.content);
+        if (self.image) |img| allocator.free(img.url);
     }
 };
 
@@ -54,6 +63,11 @@ pub fn readFile(
 /// above and the guest read in `execReadFile`, so a read answers with the same
 /// shape whichever substrate produced the bytes.
 pub fn shapeContent(allocator: std.mem.Allocator, on_disk: []const u8, opts: ReadFileOptions) !ReadFileResult {
+    // An image is answered with the image, not with its bytes as text: a
+    // screenshot handed to a model as mojibake costs context and says nothing.
+    if (helpers_image.sniffImageMime(on_disk)) |mime| return shapeImage(allocator, on_disk, mime);
+    if (helpers_image.looksBinary(on_disk)) return error.BinaryFileNotText;
+
     // Hand the model the LF form.
     const normalized = if (std.mem.indexOf(u8, on_disk, "\r\n") != null)
         try normalizeLineEndings(allocator, on_disk)
@@ -110,6 +124,39 @@ pub fn shapeContent(allocator: std.mem.Allocator, on_disk: []const u8, opts: Rea
     };
 }
 
+fn shapeImage(allocator: std.mem.Allocator, bytes: []const u8, mime: []const u8) !ReadFileResult {
+    if (bytes.len > helpers_image.max_inline_bytes) return error.ImageTooLarge;
+    return ReadFileResult{
+        .content = try allocator.dupe(u8, ""),
+        .total_lines = 0,
+        .start_line = 0,
+        .end_line = 0,
+        .image = .{
+            .mime = mime,
+            .url = try helpers_image.toDataUrl(allocator, mime, bytes),
+            .byte_len = bytes.len,
+        },
+    };
+}
+
+/// JSON payload for an image read. The image itself rides on the tool result's
+/// `image_url`, so this text stays small enough to keep forever.
+pub const ReadFileImageJSON = struct {
+    path: []const u8,
+    mime: []const u8,
+    bytes: usize,
+    attached_as: []const u8,
+};
+
+pub fn toJSONImage(allocator: std.mem.Allocator, image: ReadFileImage, path: []const u8) ![]u8 {
+    return try std.json.Stringify.valueAlloc(allocator, ReadFileImageJSON{
+        .path = path,
+        .mime = image.mime,
+        .bytes = image.byte_len,
+        .attached_as = "image_url",
+    }, .{});
+}
+
 /// JSON payload for a successful read: mirrors the old `<path>` /
 /// `<content>` / `<total_lines>` / `<start_line>` / `<end_line>` tags 1:1.
 /// `content` is raw file text — `<`/`&` need no escaping in JSON.
@@ -138,6 +185,8 @@ pub const read_file_tool_system_prompt =
     \\- For large files, use `offset` + `limit` to paginate (500 lines per page). Check `total_lines` first.
     \\- Content is raw (no per-line number prefixes). Derive absolute 1-indexed line numbers as `start_line + 1 + index`.
     \\- Never guess offsets — read sequentially.
+    \\- An image (png/jpeg/gif/webp) is attached to you as a picture you can see; the text is `{path,mime,bytes,attached_as}` and offset/limit do not apply. Look at the picture before describing what it shows.
+    \\- Any other binary is refused with `BinaryFileNotText` — do not retry it as text.
     \\
 ;
 
@@ -149,6 +198,8 @@ pub const read_file_tool = AgentTool{
         \\Read a file by path. Returns content, total_lines, start_line, end_line.
         \\
         \\Omit offset/limit to read the whole file; paginate large files with offset + limit (recommended page: 500 lines), checking total_lines from a prior call first — never guess offsets. Content is raw, with no line-number prefixes: absolute 1-indexed line numbers are start_line + 1 + index.
+        \\
+        \\An IMAGE (png/jpeg/gif/webp) is attached to you as a picture you can see; the text payload is {path,mime,bytes,attached_as} and offset/limit do not apply. Any other binary file is refused with BinaryFileNotText instead of being returned as garbled text.
         ,
         .parameters = .{
             .type = "object",
@@ -418,11 +469,130 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     defer read_result.deinit(ctx.allocator);
 
     // Single allocation: combines path and content into the JSON result
-    const inner = try exec_toJSONSuccess(ctx.allocator, read_result, path_abs);
+    const inner = if (read_result.image) |img|
+        try toJSONImage(ctx.allocator, img, path_abs)
+    else
+        try exec_toJSONSuccess(ctx.allocator, read_result, path_abs);
+    defer ctx.allocator.free(inner);
     const output = try wrapToolOutput(ctx.allocator, "read_file", tc.function.arguments, true, null, inner);
-    return ToolExecResult{ .output = output, .output_allocated = true };
+    return ToolExecResult{
+        .output = output,
+        .output_allocated = true,
+        .image_url = if (read_result.image) |img| try ctx.allocator.dupe(u8, img.url) else null,
+    };
 }
 
+// ─── An image is answered with the picture ─────────────────────────────────
+
+const png_bytes = "\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR";
+const jpeg_bytes = "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01";
+const webp_bytes = "RIFF\x24\x00\x00\x00WEBPVP8 ";
+const gif_bytes = "GIF89a\x01\x00\x01\x00";
+const elf_bytes = "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00";
+
+test "read_file answers a png with the picture, not with its bytes" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const abs = try writeTmp(allocator, &tmp, "shot.png", png_bytes);
+    defer allocator.free(abs);
+
+    var result = try readFile(allocator, std.testing.io, abs, .{});
+    defer result.deinit(allocator);
+
+    const image = result.image orelse return error.TestExpectedImage;
+    try std.testing.expectEqualStrings("image/png", image.mime);
+    try std.testing.expectEqual(png_bytes.len, image.byte_len);
+    try std.testing.expect(std.mem.startsWith(u8, image.url, "data:image/png;base64,"));
+    try std.testing.expectEqualStrings("", result.content);
+}
+
+test "read_file takes the image format from the bytes, not from the file name" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const abs = try writeTmp(allocator, &tmp, "liar.png", jpeg_bytes);
+    defer allocator.free(abs);
+
+    var result = try readFile(allocator, std.testing.io, abs, .{});
+    defer result.deinit(allocator);
+
+    const image = result.image orelse return error.TestExpectedImage;
+    try std.testing.expectEqualStrings("image/jpeg", image.mime);
+    try std.testing.expect(std.mem.startsWith(u8, image.url, "data:image/jpeg;base64,"));
+}
+
+test "read_file recognises every image format a provider accepts" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    for ([_][2][]const u8{
+        .{ "a.webp", webp_bytes },
+        .{ "a.gif", gif_bytes },
+        .{ "a.jpeg", jpeg_bytes },
+    }) |fixture| {
+        const abs = try writeTmp(allocator, &tmp, fixture[0], fixture[1]);
+        defer allocator.free(abs);
+        var result = try readFile(allocator, std.testing.io, abs, .{});
+        defer result.deinit(allocator);
+        try std.testing.expect(result.image != null);
+    }
+}
+
+test "read_file ignores offset and limit on an image instead of refusing the range" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const abs = try writeTmp(allocator, &tmp, "one-shot.png", png_bytes);
+    defer allocator.free(abs);
+
+    var result = try readFile(allocator, std.testing.io, abs, .{ .offset = 99, .limit = 1 });
+    defer result.deinit(allocator);
+
+    try std.testing.expect(result.image != null);
+}
+
+test "read_file refuses a binary file instead of handing the model mojibake" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const abs = try writeTmp(allocator, &tmp, "app.elf", elf_bytes);
+    defer allocator.free(abs);
+
+    try std.testing.expectError(error.BinaryFileNotText, readFile(allocator, std.testing.io, abs, .{}));
+}
+
+test "read_file refuses an image past the inline size cap" {
+    const allocator = std.testing.allocator;
+    const big = try allocator.alloc(u8, helpers_image.max_inline_bytes + 1);
+    defer allocator.free(big);
+    @memset(big, 0);
+    @memcpy(big[0..png_bytes.len], png_bytes);
+
+    try std.testing.expectError(error.ImageTooLarge, shapeContent(allocator, big, .{}));
+}
+
+test "the image payload names the path, the mime and the byte count" {
+    const allocator = std.testing.allocator;
+    const image = ReadFileImage{
+        .mime = "image/png",
+        .url = try allocator.dupe(u8, "data:image/png;base64,AAA"),
+        .byte_len = 42,
+    };
+    defer allocator.free(image.url);
+
+    const payload = try toJSONImage(allocator, image, "/a/shot.png");
+    defer allocator.free(payload);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, payload, .{});
+    defer parsed.deinit();
+    const obj = parsed.value.object;
+    try std.testing.expectEqualStrings("/a/shot.png", obj.get("path").?.string);
+    try std.testing.expectEqualStrings("image/png", obj.get("mime").?.string);
+    try std.testing.expectEqual(@as(i64, 42), obj.get("bytes").?.integer);
+    try std.testing.expectEqualStrings("image_url", obj.get("attached_as").?.string);
+}
 
 test "shapeContent: the guest read and the host read answer with one shape" {
     const allocator = std.testing.allocator;

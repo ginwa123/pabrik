@@ -25,6 +25,12 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
             .tool_call_id = try allocator.dupe(u8, message.tool_call_id orelse ""),
         };
         try messages.append(allocator, agentMessage);
+
+        // A provider refuses an image part on a tool message, so the picture
+        // rides in a user message directly after it.
+        if (message.image_urls) |urls| {
+            if (urls.len > 0) try messages.append(allocator, try toolImageFollowUp(allocator, message.tool_name, urls));
+        }
         return messages.toOwnedSlice(allocator);
     }
 
@@ -199,6 +205,43 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
     }
 
     return messages.toOwnedSlice(allocator);
+}
+
+/// The `user` message that carries a tool's images, so `read_file` on a
+/// screenshot puts the screenshot in front of the model instead of its bytes.
+fn toolImageFollowUp(allocator: std.mem.Allocator, tool_name: []const u8, urls: []const []const u8) !agent.AgentMessage {
+    const caption = if (tool_name.len > 0)
+        try std.fmt.allocPrint(allocator, "The `{s}` tool attached this image — look at it before answering.", .{tool_name})
+    else
+        try allocator.dupe(u8, "A tool attached this image — look at it before answering.");
+    errdefer allocator.free(caption);
+
+    const parts = try allocator.alloc(agent.ContentPart, urls.len + 1);
+    parts[0] = .{
+        .part_type = "text",
+        .text = caption,
+        .image_url = null,
+        .video_url = null,
+        .file = null,
+    };
+    for (urls, 0..) |url, i| {
+        parts[i + 1] = .{
+            .part_type = "image_url",
+            .text = null,
+            .image_url = .{
+                .url = try allocator.dupe(u8, url),
+                .detail = null,
+            },
+            .video_url = null,
+            .file = null,
+        };
+    }
+
+    return agent.AgentMessage{
+        .role = .user,
+        .content = null,
+        .content_parts = parts,
+    };
 }
 
 /// Strip the JSON tool envelope
@@ -431,6 +474,66 @@ test "tool message success envelope with null data returns empty content" {
     defer freeMessages(allocator, result);
 
     try testing.expectEqualStrings("", result[0].content.?);
+}
+
+// ─── Tests: an image a tool read ────────────────────────────────────────────
+
+fn giveToolMessageImage(allocator: std.mem.Allocator, msg: *LLMHistory, tool_name: []const u8, urls: []const []const u8) !void {
+    allocator.free(msg.tool_name);
+    msg.tool_name = try allocator.dupe(u8, tool_name);
+    const owned = try allocator.alloc([]const u8, urls.len);
+    for (urls, 0..) |url, i| owned[i] = try allocator.dupe(u8, url);
+    msg.image_urls = owned;
+}
+
+test "a tool result carrying an image becomes a tool message plus a user message with the picture" {
+    const allocator = testing.allocator;
+    var msg = try makeToolMessage(allocator, "{\"tool\":\"read_file\",\"parameters\":{},\"success\":true,\"data\":{\"mime\":\"image/png\"},\"error\":null,\"v\":1}");
+    defer msg.deinit(allocator);
+    try giveToolMessageImage(allocator, &msg, "read_file", &.{"data:image/png;base64,iVBORw0KGgo="});
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    try testing.expectEqual(@as(usize, 2), result.len);
+    try testing.expect(result[0].role == .tool);
+    try testing.expectEqualStrings("{\"mime\":\"image/png\"}", result[0].content.?);
+
+    try testing.expect(result[1].role == .user);
+    const parts = result[1].content_parts.?;
+    try testing.expectEqual(@as(usize, 2), parts.len);
+    try testing.expectEqualStrings("text", parts[0].part_type);
+    try testing.expect(std.mem.indexOf(u8, parts[0].text.?, "read_file") != null);
+    try testing.expectEqualStrings("image_url", parts[1].part_type);
+    try testing.expectEqualStrings("data:image/png;base64,iVBORw0KGgo=", parts[1].image_url.?.url.?);
+}
+
+test "a tool result with several images puts every one of them in the picture message" {
+    const allocator = testing.allocator;
+    var msg = try makeToolMessage(allocator, "ok");
+    defer msg.deinit(allocator);
+    try giveToolMessageImage(allocator, &msg, "read_file", &.{ "data:image/png;base64,AAA", "data:image/jpeg;base64,BBB" });
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    try testing.expectEqual(@as(usize, 2), result.len);
+    const parts = result[1].content_parts.?;
+    try testing.expectEqual(@as(usize, 3), parts.len);
+    try testing.expectEqualStrings("data:image/png;base64,AAA", parts[1].image_url.?.url.?);
+    try testing.expectEqualStrings("data:image/jpeg;base64,BBB", parts[2].image_url.?.url.?);
+}
+
+test "a tool result with no image stays one text message" {
+    const allocator = testing.allocator;
+    var msg = try makeToolMessage(allocator, "ok");
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expect(result[0].content_parts == null);
 }
 
 // ─── Tests: failure envelope ("error") ─────────────────────────────────────

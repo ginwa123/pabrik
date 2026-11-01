@@ -1,5 +1,42 @@
 const std = @import("std");
 
+/// The raster formats every chat provider accepts as an `image_url` part.
+/// Recognised by magic bytes, never by file extension: a `.jpg` that is
+/// really a PNG must be described as the PNG it is or the provider rejects it.
+pub fn sniffImageMime(bytes: []const u8) ?[]const u8 {
+    if (std.mem.startsWith(u8, bytes, "\x89PNG\r\n\x1a\n")) return "image/png";
+    if (std.mem.startsWith(u8, bytes, "\xFF\xD8\xFF")) return "image/jpeg";
+    if (std.mem.startsWith(u8, bytes, "GIF87a") or std.mem.startsWith(u8, bytes, "GIF89a")) return "image/gif";
+    if (bytes.len >= 12 and std.mem.startsWith(u8, bytes, "RIFF") and std.mem.eql(u8, bytes[8..12], "WEBP")) return "image/webp";
+    return null;
+}
+
+/// A NUL byte in the head of a file is what makes it unreadable as text.
+/// Only NUL counts: a lone invalid byte is a Latin-1 line in a source file,
+/// not a binary.
+pub fn looksBinary(bytes: []const u8) bool {
+    const head = bytes[0..@min(bytes.len, 8192)];
+    return std.mem.indexOfScalar(u8, head, 0) != null;
+}
+
+/// The largest image `read_file` will inline as a data URL: the same 10 MB the
+/// upload validators use, so one read can never exceed what a chat attachment
+/// can carry.
+pub const max_inline_bytes: usize = 10 * 1024 * 1024;
+
+/// `data:<mime>;base64,<payload>` — the only shape the providers accept and
+/// the only shape `validateImageUrls` lets through.
+pub fn toDataUrl(allocator: std.mem.Allocator, mime: []const u8, bytes: []const u8) ![]u8 {
+    const prefix_len = "data:".len + mime.len + ";base64,".len;
+    const url = try allocator.alloc(u8, prefix_len + std.base64.standard.Encoder.calcSize(bytes.len));
+    errdefer allocator.free(url);
+    @memcpy(url[0..5], "data:");
+    @memcpy(url[5 .. 5 + mime.len], mime);
+    @memcpy(url[5 + mime.len .. prefix_len], ";base64,");
+    _ = std.base64.standard.Encoder.encode(url[prefix_len..], bytes);
+    return url;
+}
+
 /// Extract all base64 image URLs from a message
 /// Looks for patterns like: data:image/png;base64,... or data:image/jpeg;base64,...
 /// Returns an array of all data URLs found (can be empty)

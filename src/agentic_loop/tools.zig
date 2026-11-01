@@ -153,6 +153,9 @@ pub const ProgressiveToolSaveInfo = struct {
 pub const ToolExecResult = struct {
     output: []const u8,
     output_allocated: bool = false,
+    /// A `data:image/<mime>;base64,...` URL the result carries to the model as
+    /// an `image_url` part. Owned by the result when non-null.
+    image_url: ?[]const u8 = null,
     temperature: ?f32 = null,
     is_thinking: ?bool = null,
     skill_save: ?SkillSaveInfo = null,
@@ -166,5 +169,6 @@ pub const ToolExecResult = struct {
         if (self.output_allocated) {
             allocator.free(self.output);
         }
+        if (self.image_url) |url| allocator.free(url);
     }
 };

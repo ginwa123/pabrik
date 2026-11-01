@@ -158,6 +158,9 @@ const ToolResult = struct {
     /// of `output` before it is persisted or streamed. Empty when the call
     /// carried no placeholder.
     secrets: []const secrets_substitution.ResolvedSecret = &.{},
+    /// A `data:image/<mime>;base64,...` URL for the model to SEE, not just
+    /// read about. Owned by the caller once returned.
+    image_url: ?[]const u8 = null,
 };
 
 const SkillSaveInfo = struct {
@@ -503,6 +506,7 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         .temperature = exec_result.temperature,
         .is_thinking = exec_result.is_thinking,
         .stop_loop = exec_result.stop_loop,
+        .image_url = exec_result.image_url,
         .skill_saved = if (exec_result.skill_save) |sk| SkillSaveInfo{ .name = sk.name, .content = sk.content } else null,
         .agent_saved = if (exec_result.agent_save) |ag| AgentSaveInfo{ .name = ag.name } else null,
         .progressive_tool_saved = if (exec_result.progressive_tool_save) |pt| ProgressiveToolSaveInfo{
@@ -1054,6 +1058,9 @@ pub fn handle_tool(
             tool_result = exec_result.output;
             // Loop control (`command`'s `is_stop`).
             if (exec_result.stop_loop) outcome.stop_loop = true;
+            // An image the model must SEE rides on the row, next to the text.
+            const tool_image_url = exec_result.image_url;
+            defer if (tool_image_url) |url| allocator.free(url);
             // `exec_result.secrets` is ours to release once the result has been
             // scrubbed; the catch above `continue`s, so nothing registers it
             // on a path that never got a result.
@@ -1108,6 +1115,7 @@ pub fn handle_tool(
             // resolved a secret; `redactOutput` is idempotent, so passing the
             // same `resolved` again is a no-op walk rather than a second copy.
             try persistRedacted(allocator, io, db, id_llm_history, session_id, cwd, tool_call, tool_result, exec_result.secrets, toolAgentTemp, toolIsThinking, current_agent_for_save, parent_session_id);
+            if (tool_image_url) |url| try llm_history.setToolResultImageUrl(allocator, db, id_llm_history, url);
         }
     }
 
