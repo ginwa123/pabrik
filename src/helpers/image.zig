@@ -19,10 +19,13 @@ pub fn looksBinary(bytes: []const u8) bool {
     return std.mem.indexOfScalar(u8, head, 0) != null;
 }
 
-/// The largest image `read_file` will inline as a data URL: the same 10 MB the
-/// upload validators use, so one read can never exceed what a chat attachment
-/// can carry.
-pub const max_inline_bytes: usize = 10 * 1024 * 1024;
+/// How many leading bytes the magic-byte sniff needs.
+pub const header_len: usize = 512;
+
+/// The largest image `read_file` will inline, taken from the lowest real limit:
+/// Anthropic refuses an image part over 5 MB and a guest workspace refuses a
+/// read over 4 MiB, so above this the same file would break in `--saas` only.
+pub const max_inline_bytes: usize = 4 * 1024 * 1024;
 
 /// `data:<mime>;base64,<payload>` — the only shape the providers accept and
 /// the only shape `validateImageUrls` lets through.

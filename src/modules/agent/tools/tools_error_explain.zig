@@ -257,7 +257,7 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
         error.ImageTooLarge => try pathMsg(
             allocator,
             context,
-            "is an image larger than the 10 MB inline cap. Downscale or re-capture it at a smaller size, then read it again.",
+            "is an image larger than the 4 MB inline cap. Downscale or re-capture it at a smaller size, then read it again.",
         ),
         error.OldStrNotFound => try allocator.dupe(
             u8,

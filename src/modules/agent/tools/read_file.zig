@@ -53,7 +53,27 @@ pub fn readFile(
     const file = try std.Io.Dir.cwd().openFile(io, path, .{});
     defer std.Io.File.close(file, io);
 
-    const on_disk = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(std.math.maxInt(usize)));
+    // A head peek decides whether the whole file is worth reading: an image is
+    // refused from its reported size, so a 500 MB "screenshot.png" costs one
+    // pread and one stat instead of 500 MB of heap. Text keeps today's read.
+    const is_image = blk: {
+        var head: [helpers_image.header_len]u8 = undefined;
+        const len = file.readPositionalAll(io, &head, 0) catch 0;
+        break :blk helpers_image.sniffImageMime(head[0..len]) != null;
+    };
+    if (is_image) {
+        const stat = try file.stat(io);
+        if (stat.size > helpers_image.max_inline_bytes) return error.ImageTooLarge;
+    }
+
+    const on_disk = if (is_image)
+        // The stat above can race a writer, so the read keeps the same ceiling.
+        std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(helpers_image.max_inline_bytes + 1)) catch |err| switch (err) {
+            error.FileTooBig => return error.ImageTooLarge,
+            else => return err,
+        }
+    else
+        try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, std.Io.Limit.limited(std.math.maxInt(usize)));
     defer allocator.free(on_disk);
 
     return shapeContent(allocator, on_disk, opts);
@@ -458,7 +478,7 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         .limit = parsed.value.limit,
     };
 
-    const read_result = readThrough(ctx, path_abs, read_opts) catch |err| {
+    var read_result = readThrough(ctx, path_abs, read_opts) catch |err| {
         // The path is the one thing the model can act on here, so it is
         // passed as the explanation's context.
         const err_msg = try error_explain.explain(ctx.allocator, err, path_abs);
@@ -475,10 +495,14 @@ pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
         try exec_toJSONSuccess(ctx.allocator, read_result, path_abs);
     defer ctx.allocator.free(inner);
     const output = try wrapToolOutput(ctx.allocator, "read_file", tc.function.arguments, true, null, inner);
+    // The base64 is moved, not copied: it is megabytes that would otherwise
+    // sit in memory twice between here and the row.
+    const image_url = if (read_result.image) |img| img.url else null;
+    read_result.image = null;
     return ToolExecResult{
         .output = output,
         .output_allocated = true,
-        .image_url = if (read_result.image) |img| try ctx.allocator.dupe(u8, img.url) else null,
+        .image_url = image_url,
     };
 }
 
@@ -489,6 +513,54 @@ const jpeg_bytes = "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01";
 const webp_bytes = "RIFF\x24\x00\x00\x00WEBPVP8 ";
 const gif_bytes = "GIF89a\x01\x00\x01\x00";
 const elf_bytes = "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00";
+
+/// Counts what a read costs, so "the whole file never loads" is an assertion
+/// and not a hope. `resize`/`remap` decline, which makes every growth a
+/// alloc+copy+free and keeps both counters honest.
+const CountingAllocator = struct {
+    child: std.mem.Allocator,
+    live: usize = 0,
+    peak: usize = 0,
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        const ptr = self.child.rawAlloc(len, alignment, ret_addr) orelse return null;
+        self.live += len;
+        self.peak = @max(self.peak, self.live);
+        return ptr;
+    }
+
+    fn resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+        _ = ctx;
+        _ = memory;
+        _ = alignment;
+        _ = new_len;
+        _ = ret_addr;
+        return false;
+    }
+
+    fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        _ = ctx;
+        _ = memory;
+        _ = alignment;
+        _ = new_len;
+        _ = ret_addr;
+        return null;
+    }
+
+    fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        self.live -= memory.len;
+        self.child.rawFree(memory, alignment, ret_addr);
+    }
+
+    fn allocator(self: *CountingAllocator) std.mem.Allocator {
+        return .{
+            .ptr = self,
+            .vtable = &.{ .alloc = alloc, .resize = resize, .remap = remap, .free = free },
+        };
+    }
+};
 
 test "read_file answers a png with the picture, not with its bytes" {
     const allocator = std.testing.allocator;
@@ -571,6 +643,31 @@ test "read_file refuses an image past the inline size cap" {
     @memcpy(big[0..png_bytes.len], png_bytes);
 
     try std.testing.expectError(error.ImageTooLarge, shapeContent(allocator, big, .{}));
+}
+
+test "an oversized image costs a pread and a stat, not the whole file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // PNG magic at byte 0, then a sparse tail out to 64 MiB. Loading that tail
+    // is the backend-exhaustion path this test exists to make impossible.
+    const abs = try writeTmp(allocator, &tmp, "huge.png", png_bytes);
+    defer allocator.free(abs);
+    {
+        const file = try std.Io.Dir.cwd().createFile(std.testing.io, abs, .{});
+        defer file.close(std.testing.io);
+        try file.writePositionalAll(std.testing.io, png_bytes, 0);
+        try file.writePositionalAll(std.testing.io, "x", 64 * 1024 * 1024);
+    }
+
+    var counting = CountingAllocator{ .child = allocator };
+    try std.testing.expectError(
+        error.ImageTooLarge,
+        readFile(counting.allocator(), std.testing.io, abs, .{}),
+    );
+    try std.testing.expectEqual(@as(usize, 0), counting.live);
+    try std.testing.expect(counting.peak < 64 * 1024);
 }
 
 test "the image payload names the path, the mime and the byte count" {
