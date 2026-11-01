@@ -214,7 +214,16 @@ pub const SearchMatch = struct {
     line_number: usize,
     file_total_lines: usize,
     snippet: []const u8,
+    /// True when the row is a `-A`/`-B`/`-C` context line rather than a
+    /// match. Context rows never count toward `total_matches` and never
+    /// consume the row cap.
+    is_context: bool = false,
 };
+
+/// How the tool renders its result. `text` is the compact `path:line:text`
+/// form — one line per match, byte-for-byte what rg prints, ~1/4 of the JSON
+/// envelope. `json` is the nested envelope older callers parse; it is opt-in.
+pub const SearchOutputFormat = enum { text, json };
 
 /// Default byte length of a rendered snippet. See
 /// SearchInput.snippet_max_chars.
@@ -249,6 +258,24 @@ pub const SearchInput = struct {
     /// When true, only the matched substring is shown per line (instead of
     /// the full line content). Maps to rg's `-o` / `--only-matching`.
     only_matching: bool = false,
+    /// Symmetric context window: N lines before AND after every match. Maps
+    /// to rg's `-C N`. `before_context` / `after_context` override one side.
+    context: ?usize = null,
+    /// Lines of context BEFORE each match (rg `-B N`). Overrides `context`.
+    before_context: ?usize = null,
+    /// Lines of context AFTER each match (rg `-A N`). Overrides `context`.
+    after_context: ?usize = null,
+    /// Case-insensitive matching. Maps to rg's `-i` / `--ignore-case`.
+    ignore_case: bool = false,
+    /// Report the lines that do NOT match. Maps to rg's `-v` / `--invert-match`.
+    invert: bool = false,
+    /// Count-only: render rg's `-c` output (per-file match counts) and no
+    /// matching lines. Forces the text renderer — `-c` cannot share the
+    /// `--json` event stream.
+    count_only: bool = false,
+    /// Renderer choice. Defaults to the compact `text` form; see
+    /// SearchOutputFormat.
+    output_format: SearchOutputFormat = .text,
     /// Long-line window, in bytes. rg's `lines.text` is the ENTIRE line — not
     /// a preview — so one minified bundle / single-line JSON blob match can
     /// be megabytes and swallow the whole tool-output budget (the agent loop
@@ -288,6 +315,10 @@ pub const SearchResult = struct {
     /// Number of raw stdout bytes observed, including bytes drained after
     /// max_output was reached.
     output_bytes: u64 = 0,
+    /// Verbatim rg stdout for the `count_only` shape. `-c` prints
+    /// `path:count` lines and cannot share the `--json` event stream, so that
+    /// shape bypasses the match list entirely. Null everywhere else.
+    raw_text: ?[]const u8 = null,
 
     pub fn deinit(self: *SearchResult, allocator: std.mem.Allocator) void {
         for (self.matches.items) |m| {
@@ -296,6 +327,7 @@ pub const SearchResult = struct {
         }
         self.matches.deinit(allocator);
         allocator.free(self.warning);
+        if (self.raw_text) |raw| allocator.free(raw);
     }
 };
 
@@ -754,7 +786,13 @@ pub fn executeSearchWithCancel(
     defer if (glob_arg) |owned| allocator.free(owned);
 
     try args.append(allocator, rg_binary);
-    try args.append(allocator, "--json");
+    // `-c` prints `path:count` lines and cannot coexist with the `--json`
+    // event stream, so the count shape picks its own output mode.
+    if (input.count_only) {
+        try args.append(allocator, "-c");
+    } else {
+        try args.append(allocator, "--json");
+    }
     try args.append(allocator, "--line-number");
     try args.append(allocator, "--no-config");
     try args.append(allocator, "--no-messages");
@@ -788,6 +826,38 @@ pub fn executeSearchWithCancel(
         // -o / --only-matching: rg emits ONLY the matched substring per line
         // (via data.submatches[]), NOT the full surrounding line.
         try args.append(allocator, "-o");
+    }
+    if (input.ignore_case) {
+        // -i: case-insensitive matching.
+        try args.append(allocator, "-i");
+    }
+    if (input.invert) {
+        // -v: report the lines that do NOT match.
+        try args.append(allocator, "-v");
+    }
+    // Context window. rg takes the count as a separate argv element (`-A 3`),
+    // so each number is heap-formatted and freed after the spawn.
+    const ctx_before = input.before_context orelse input.context;
+    const ctx_after = input.after_context orelse input.context;
+    var owned_ctx: [2]?[]u8 = .{ null, null };
+    defer {
+        for (owned_ctx) |maybe| {
+            if (maybe) |owned| allocator.free(owned);
+        }
+    }
+    if (ctx_before) |n| {
+        if (n > 0) {
+            try args.append(allocator, "-B");
+            owned_ctx[0] = try std.fmt.allocPrint(allocator, "{d}", .{n});
+            try args.append(allocator, owned_ctx[0].?);
+        }
+    }
+    if (ctx_after) |n| {
+        if (n > 0) {
+            try args.append(allocator, "-A");
+            owned_ctx[1] = try std.fmt.allocPrint(allocator, "{d}", .{n});
+            try args.append(allocator, owned_ctx[1].?);
+        }
     }
     try args.append(allocator, "-e");
     try args.append(allocator, input.pattern);
@@ -831,6 +901,17 @@ pub fn executeSearchWithCancel(
     } else try spawnAndCollect(allocator, io, args.items, input.cwd orelse cwd, rg_binary, max_output, timeout_ns, cancel_hook);
     defer captured.deinit(allocator);
 
+    // Count-only shape: `-c` already wrote the answer as `path:count` text, so
+    // there is no event stream to parse — hand the bytes back verbatim.
+    if (input.count_only) {
+        return SearchResult{
+            .matches = std.ArrayList(SearchMatch).empty,
+            .raw_text = try allocator.dupe(u8, captured.stdout),
+            .truncated = captured.capped,
+            .output_truncated = captured.capped,
+            .output_bytes = captured.bytes,
+        };
+    }
 
     var matches = std.ArrayList(SearchMatch).empty;
     errdefer {
@@ -855,6 +936,13 @@ pub fn executeSearchWithCancel(
     // Match EVENTS seen (not rows kept) — the honest denominator for
     // `total=`/`truncated=` in the rendered envelope.
     var seen_total: usize = 0;
+    // Non-context rows kept. Context rows ride along without consuming the
+    // caller's row budget, so `max_results: 5` with `after_context: 3` still
+    // means five MATCHES.
+    var shown_rows: usize = 0;
+    // True when a context window was requested; rg only emits `context`
+    // records in that case, so the branch stays inert otherwise.
+    const wants_context = input.context != null or input.before_context != null or input.after_context != null;
     // Cleared once row_cap rows are collected; from then on the loop only
     // counts match events instead of JSON-parsing every remaining line.
     var collecting = true;
@@ -1033,20 +1121,54 @@ pub fn executeSearchWithCancel(
                                     // Last-N semantics: keep the NEWEST
                                     // row_cap rows and evict the oldest, so
                                     // `tail` means "last N of the whole
-                                    if (matches.items.len == row_cap) {
+                                    if (shown_rows >= row_cap and matches.items.len > 0) {
                                         allocator.free(matches.items[0].file);
                                         allocator.free(matches.items[0].snippet);
                                         _ = matches.orderedRemove(0);
+                                    } else {
+                                        shown_rows += 1;
                                     }
                                     try matches.append(allocator, match);
                                 } else {
                                     try matches.append(allocator, match);
-                                    if (matches.items.len >= row_cap) {
+                                    shown_rows += 1;
+                                    if (shown_rows >= row_cap) {
                                         // Row cap reached: stop JSON-parsing
                                         // the rest of rg's (already buffered)
                                         // output.
                                         collecting = false;
                                     }
+                                }
+                            }
+                        }
+                    }
+                } else if (type_val == .string and std.mem.eql(u8, type_val.string, "context")) {
+                    // A `-A`/`-B`/`-C` window line. Kept as its own row so
+                    // both renderers can print it in rg's own convention
+                    // (`path-line-text`), without pretending it is a match.
+                    if (wants_context and collecting) {
+                        if (parsed.value.object.get("data")) |data| {
+                            if (data == .object) {
+                                const ctx_file = getTextFromJson(&data.object, "path") orelse "";
+                                const ctx_text = getTextFromJson(&data.object, "lines") orelse "";
+                                var ctx_line: usize = 0;
+                                if (data.object.get("line_number")) |ln| {
+                                    if (ln == .integer and ln.integer >= 1 and ln.integer <= std.math.maxInt(usize)) {
+                                        ctx_line = @intCast(ln.integer);
+                                    }
+                                }
+                                if (ctx_file.len > 0 and ctx_line > 0) {
+                                    if (sanitize.sanitizeUtf8(allocator, ctx_text)) |sanitized_ctx| {
+                                        const owned_ctx_file = try allocator.dupe(u8, ctx_file);
+                                        errdefer allocator.free(owned_ctx_file);
+                                        try matches.append(allocator, .{
+                                            .file = owned_ctx_file,
+                                            .line_number = ctx_line,
+                                            .file_total_lines = 0,
+                                            .snippet = sanitized_ctx,
+                                            .is_context = true,
+                                        });
+                                    } else |_| {}
                                 }
                             }
                         }
@@ -1302,6 +1424,84 @@ pub fn search_result_to_json_flat(allocator: std.mem.Allocator, result: SearchRe
     return try std.json.Stringify.valueAlloc(allocator, payload, .{});
 }
 
+/// Compact text render: `path:line:text` per match, `path-line-text` per
+/// context line — rg's own convention, no per-match keys. Default because the
+/// JSON envelope costs ~3.8x the bytes (2,279 B vs 595 B for five rows).
+pub fn search_result_to_text(
+    allocator: std.mem.Allocator,
+    result: SearchResult,
+    pattern: []const u8,
+    search_path: []const u8,
+) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    // count_only: rg already printed the answer (`path:count` or a bare
+    // count) and there is no event stream behind it.
+    if (result.raw_text) |raw| {
+        const clean_raw = try sanitizeControlChars(allocator, raw);
+        defer allocator.free(clean_raw);
+        try out.appendSlice(allocator, std.mem.trimEnd(u8, clean_raw, "\r\n"));
+        if (result.truncated) {
+            try out.appendSlice(allocator, "\n[count truncated — raise max_output]");
+        }
+        return try out.toOwnedSlice(allocator);
+    }
+
+    var match_rows: usize = 0;
+    for (result.matches.items) |m| {
+        if (!m.is_context) match_rows += 1;
+    }
+
+    if (match_rows == 0) {
+        if (try cleanWarningText(allocator, result.warning)) |warning_text| {
+            defer allocator.free(warning_text);
+            try out.appendSlice(allocator, warning_text);
+        } else {
+            const empty_note = try std.fmt.allocPrint(
+                allocator,
+                "<warning>no matches for pattern \"{s}\" in path \"{s}\"</warning>",
+                .{ pattern, search_path },
+            );
+            defer allocator.free(empty_note);
+            try out.appendSlice(allocator, empty_note);
+        }
+        return try out.toOwnedSlice(allocator);
+    }
+
+    for (result.matches.items) |m| {
+        const clean_file = try sanitizeControlChars(allocator, std.mem.trim(u8, m.file, &std.ascii.whitespace));
+        defer allocator.free(clean_file);
+        const clean_line = try sanitizeControlChars(allocator, std.mem.trimEnd(u8, m.snippet, "\r\n"));
+        defer allocator.free(clean_line);
+        // ':` marks a match, '`-` marks context — exactly what rg prints.
+        const separator: u8 = if (m.is_context) '-' else ':';
+        const rendered = try std.fmt.allocPrint(allocator, "{s}{c}{d}{c}{s}\n", .{
+            clean_file,
+            separator,
+            m.line_number,
+            separator,
+            clean_line,
+        });
+        defer allocator.free(rendered);
+        try out.appendSlice(allocator, rendered);
+    }
+
+    // The truncation note is the whole honesty budget of this format: without
+    // it a capped result reads as a complete one.
+    if (result.truncated) {
+        const note = try std.fmt.allocPrint(
+            allocator,
+            "[truncated: showing {d} of {d} matches — raise max_results, add `glob`, or narrow the path]\n",
+            .{ match_rows, result.total_matches },
+        );
+        defer allocator.free(note);
+        try out.appendSlice(allocator, note);
+    }
+
+    return try out.toOwnedSlice(allocator);
+}
+
 /// Replace JSON-hostile control bytes (NUL/C0 except tab/LF/CR, plus DEL)
 /// with U+FFFD. File-local: shared helpers are frozen for this migration.
 fn sanitizeControlChars(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
@@ -1390,16 +1590,25 @@ pub const search_tool = AgentTool{
         \\NOT this tool:
         \\- You already know the exact file path → `read_file`.
         \\- You want files BY NAME (not by content) → `glob`.
-        \\- You need a ripgrep flag this tool does not expose → run `rg` through `command`.
+        \\- You need a flag this tool genuinely does not expose → run `rg` through `command`.
         \\
-        \\WHY over a shell `rg`: structured JSON with line numbers and paths (no flag-juggling); .gitignore/.ignore/.rgignore honored automatically; pattern passed via argv (no shell quoting or escaping); output capped by `max_results` + `max_output`.
+        \\WHY over a shell `rg`: line numbers and paths with no flag-juggling; .gitignore/.ignore/.rgignore honored automatically; pattern passed via argv (no shell quoting or escaping); output capped by `max_results` + `max_output`; and the default `text` format is the SAME bytes as `rg -n`, so it is never the expensive choice.
         \\
-        \\RESPONSE FORMAT — JSON carrying the args plus the collection summary:
-        \\- `returned` = rows in this response; `total` = matched lines rg found in the WHOLE search; `truncated` = true when max_output, max_results, head or tail cut the visible rows; `output_truncated` = the raw rg JSON stream exceeded max_output (a successful partial result from the retained prefix); `output_bytes` = stdout bytes observed while draining. ALWAYS check `truncated` and `truncated_hint`: when true the result is a window, not the complete answer; the hint names the active limit and is null otherwise.
-        \\- `files[]` entries carry `path`, `total` (matched lines in that file for THIS search — not the file's line count, and a lower bound when output_truncated=true), `count` (rows shown), `matches[]` with `line` (1-indexed) + `text` (windowed to snippet_max_chars, default 240, "..." when the line is longer).
-        \\- No matches returns `files: []` (or `matches: []` when `group_by_file` is false) plus a `warning` naming the pattern and path that were searched. Values are plain JSON strings (control bytes sanitized) — a snippet containing "</s></m>" comes back verbatim in `text`.
+        \\RESPONSE FORMAT — `output_format: "text"` (the default), one line per row, exactly rg's convention:
+        \\- a MATCH is `path:line:text`; a CONTEXT line (from `context`/`after_context`/`before_context`) is `path-line-text`, so `rg -C 3` reads naturally.
+        \\- a trailing `[truncated: showing N of M matches …]` line appears ONLY when the window was cut — treat the result as incomplete then and raise `max_results`, add `glob`, or narrow the path.
+        \\- no matches returns `<warning>no matches for pattern "…" in path "…"</warning>`.
+        \\- a row's text is windowed to `snippet_max_chars` (default 240) and control-char sanitized, so one minified bundle line is cut short instead of swallowing the result budget.
+        \\`output_format: "json"` instead returns the nested envelope (`returned`/`total`/`truncated`/`output_truncated`/`output_bytes`, `files[]` with `path`/`total`/`count`/`matches[{line,text}]`, plus `truncated_hint` and `warning`) — use it only when you need the programmatic shape; it costs ~3.8x the bytes for the same matches.
         \\
-        \\`word_boundary` / `literal` / `only_matching` map to rg's -w / -F / -o and combine freely.
+        \\SHELL EQUIVALENTS — every common `rg`/`grep` idiom has a parameter, so there is no reason to pipe into `head`:
+        \\- `rg -n "p" dir` → `search(pattern:"p", path:"/abs/dir")`
+        \\- `rg -A 20 "p" f` → `search(pattern:"p", path:"/abs/f", after_context:20)`  (also `before_context`, `context`)
+        \\- `rg -i "p"` → `ignore_case:true`   · `rg -v "p"` → `invert:true`
+        \\- `rg -c "p"` / `grep -c` → `count_only:true`
+        \\- `rg -w` / `-F` / `-o` → `word_boundary` / `literal` / `only_matching`
+        \\- `rg "p" dir | head -10` → `max_results:10`
+        \\- `rg -l` → `group_by_file:false` with `output_format:"json"`, or `count_only:true`
         \\PIPELINE: search for candidate file:line, then `read_file` with offset/limit — faster and more accurate than reading whole files blind.
         \\EDGE: a pattern starting with `-` is treated as a literal (rg's `-e` is used internally), so searching for "--help" needs no escaping.
         ,
@@ -1465,6 +1674,41 @@ pub const search_tool = AgentTool{
                     .name = "only_matching",
                     .type = "boolean",
                     .description = "Return only the matched substring (-o flag), not the full surrounding line — for short tokens in noisy lines. Default: false.",
+                },
+                .{
+                    .name = "context",
+                    .type = "number",
+                    .description = "Lines of context BEFORE and AFTER each match (-C flag). Use this instead of shelling out to `rg -C N`. Context lines are rendered with `-` separators, matches with `:`.",
+                },
+                .{
+                    .name = "before_context",
+                    .type = "number",
+                    .description = "Lines of context BEFORE each match (-B flag). Overrides `context` for that side.",
+                },
+                .{
+                    .name = "after_context",
+                    .type = "number",
+                    .description = "Lines of context AFTER each match (-A flag) — the replacement for `grep -A 20`. Overrides `context` for that side.",
+                },
+                .{
+                    .name = "ignore_case",
+                    .type = "boolean",
+                    .description = "Case-insensitive match (-i flag). Default: false.",
+                },
+                .{
+                    .name = "invert",
+                    .type = "boolean",
+                    .description = "Return the lines that do NOT match (-v flag). Default: false.",
+                },
+                .{
+                    .name = "count_only",
+                    .type = "boolean",
+                    .description = "Return only match counts per file (-c flag), no matching lines — the replacement for `grep -c` / `rg -c | wc -l`. Default: false.",
+                },
+                .{
+                    .name = "output_format",
+                    .type = "string",
+                    .description = "`text` (default) renders one `path:line:text` line per match — compact, rg-shaped, cheapest in tokens. `json` renders the nested envelope with `files[]`/`matches[]` and per-file totals; use it only when you need the programmatic shape.",
                 },
                 .{
                     .name = "snippet_max_chars",
@@ -4206,23 +4450,31 @@ pub fn execSearch(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     };
     defer search_result.deinit(ctx.allocator);
 
-    // Honor group_by_file flag — use the flat variant when requested. Both
-    // formatters carry the same truncation metadata, including a successful
-    // partial result when max_output was reached.
-    const inner = if (parsed.value.group_by_file)
-        try search_tool_mod.search_result_to_json_grouped(
+    // Renderer choice. `text` (default) is the compact rg-shaped output: ~1/4
+    // the bytes of the JSON envelope, which is what makes this tool cheaper
+    // than piping a shell `rg` into `head`. `json` keeps the nested envelope.
+    const inner = switch (parsed.value.output_format) {
+        .text => try search_tool_mod.search_result_to_text(
             ctx.allocator,
             search_result,
             parsed.value.pattern,
             parsed.value.path,
-        )
-    else
-        try search_tool_mod.search_result_to_json_flat(
-            ctx.allocator,
-            search_result,
-            parsed.value.pattern,
-            parsed.value.path,
-        );
+        ),
+        .json => if (parsed.value.group_by_file)
+            try search_tool_mod.search_result_to_json_grouped(
+                ctx.allocator,
+                search_result,
+                parsed.value.pattern,
+                parsed.value.path,
+            )
+        else
+            try search_tool_mod.search_result_to_json_flat(
+                ctx.allocator,
+                search_result,
+                parsed.value.pattern,
+                parsed.value.path,
+            ),
+    };
     defer ctx.allocator.free(inner);
     const output = try wrapToolOutput(ctx.allocator, "search", tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
@@ -4274,6 +4526,8 @@ test "TDD: execSearch accepts head=100 with tail=0 and returns a successful matc
         .tail = 0,
         .max_output = 20_000,
         .group_by_file = true,
+        // This test pins the JSON envelope; `text` is the tool's default now.
+        .output_format = "json",
         .respect_ignore_files = true,
         .word_boundary = false,
         .literal = true,
@@ -4354,6 +4608,8 @@ test "execSearch returns success for an oversized stdout search with a truncatio
         .max_output = 1,
         .group_by_file = true,
         .literal = true,
+        // This test pins the JSON envelope; `text` is the tool's default now.
+        .output_format = "json",
     }, .{});
     defer allocator.free(args_json);
 
@@ -4420,7 +4676,6 @@ test "search JSON parser preserves positive head and tail for strict validation"
     try std.testing.expectEqual(@as(usize, 5), parsed.value.tail.?);
 }
 
-
 // ─── Stop reaches a running ripgrep ────────────────────────────────────────
 
 /// The dispatch probe, faked: the first poll says "cancelled".
@@ -4444,4 +4699,237 @@ test "search: a cancelled session kills ripgrep instead of waiting out its timeo
     }, null, .{ .ctx = &state, .is_cancelled = StopRequested.isCancelled });
 
     try testing.expectError(error.Cancelled, result);
+}
+
+// ─── Compact text output + the grep flags that made `command` win ───────────
+
+/// A fake ripgrep that records the argv it was handed. Every string is COPIED
+/// out during the call: the caller frees its own argv entries (the glob filter
+/// and the context numbers are heap-formatted) the moment the run returns.
+const ArgvRecorder = struct {
+    joined: std.ArrayList(u8) = .empty,
+    stdout: []const u8 = "",
+
+    fn run(
+        ctx: *const anyopaque,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        cwd: []const u8,
+        argv: []const []const u8,
+        timeout_ms: u64,
+        max_output: usize,
+    ) anyerror!Run {
+        _ = io;
+        _ = cwd;
+        _ = timeout_ms;
+        _ = max_output;
+        const self: *ArgvRecorder = @ptrCast(@alignCast(@constCast(ctx)));
+        self.joined.clearRetainingCapacity();
+        for (argv) |arg| {
+            if (self.joined.items.len > 0) try self.joined.append(allocator, ' ');
+            try self.joined.appendSlice(allocator, arg);
+        }
+        return .{
+            .stdout = try allocator.dupe(u8, self.stdout),
+            .stderr = try allocator.dupe(u8, ""),
+            .code = if (self.stdout.len == 0) 1 else 0,
+            .timed_out = false,
+            .truncated = false,
+        };
+    }
+};
+
+test "search: context maps to -B/-A and the explicit side beats the symmetric -C" {
+    const allocator = testing.allocator;
+    var recorder: ArgvRecorder = .{};
+    defer recorder.joined.deinit(allocator);
+
+    var result = try executeSearchWith(allocator, testing.io, "/tmp", .{
+        .pattern = "needle",
+        .path = "/tmp/x.zig",
+        .context = 3,
+        .after_context = 20,
+    }, .{ .ctx = &recorder, .runFn = ArgvRecorder.run });
+    defer result.deinit(allocator);
+
+    try testing.expect(std.mem.indexOf(u8, recorder.joined.items, "-B 3") != null);
+    try testing.expect(std.mem.indexOf(u8, recorder.joined.items, "-A 20") != null);
+}
+
+test "search: ignore_case, invert and count_only reach ripgrep as -i / -v / -c" {
+    const allocator = testing.allocator;
+    var recorder: ArgvRecorder = .{};
+    defer recorder.joined.deinit(allocator);
+
+    var result = try executeSearchWith(allocator, testing.io, "/tmp", .{
+        .pattern = "needle",
+        .path = "/tmp/x.zig",
+        .ignore_case = true,
+        .invert = true,
+    }, .{ .ctx = &recorder, .runFn = ArgvRecorder.run });
+    defer result.deinit(allocator);
+
+    try testing.expect(std.mem.indexOf(u8, recorder.joined.items, " -i") != null);
+    try testing.expect(std.mem.indexOf(u8, recorder.joined.items, " -v") != null);
+
+    // `-c` cannot share the --json event stream: the count shape must drop it.
+    var counted = try executeSearchWith(allocator, testing.io, "/tmp", .{
+        .pattern = "needle",
+        .path = "/tmp/x.zig",
+        .count_only = true,
+    }, .{ .ctx = &recorder, .runFn = ArgvRecorder.run });
+    defer counted.deinit(allocator);
+
+    try testing.expect(std.mem.indexOf(u8, recorder.joined.items, " -c") != null);
+    try testing.expect(std.mem.indexOf(u8, recorder.joined.items, "--json") == null);
+}
+
+test "search: text renderer writes path:line:text for matches and path-line-text for context" {
+    const allocator = testing.allocator;
+    var matches: std.ArrayList(SearchMatch) = .empty;
+    try matches.append(allocator, .{
+        .file = try allocator.dupe(u8, "src/a.zig"),
+        .line_number = 7,
+        .file_total_lines = 0,
+        .snippet = try allocator.dupe(u8, "matched line"),
+    });
+    try matches.append(allocator, .{
+        .file = try allocator.dupe(u8, "src/a.zig"),
+        .line_number = 8,
+        .file_total_lines = 0,
+        .snippet = try allocator.dupe(u8, "after line\n"),
+        .is_context = true,
+    });
+    var result = SearchResult{ .matches = matches, .total_matches = 1 };
+    defer result.deinit(allocator);
+
+    const text = try search_result_to_text(allocator, result, "needle", "/abs/src");
+    defer allocator.free(text);
+
+    try testing.expectEqualStrings("src/a.zig:7:matched line\nsrc/a.zig-8-after line\n", text);
+}
+
+test "search: text renderer appends the truncation note only when the window was cut" {
+    const allocator = testing.allocator;
+    var matches: std.ArrayList(SearchMatch) = .empty;
+    try matches.append(allocator, .{
+        .file = try allocator.dupe(u8, "src/a.zig"),
+        .line_number = 3,
+        .file_total_lines = 0,
+        .snippet = try allocator.dupe(u8, "one"),
+    });
+
+    var complete = SearchResult{ .matches = matches, .total_matches = 1 };
+    defer complete.deinit(allocator);
+    const complete_text = try search_result_to_text(allocator, complete, "p", "/abs");
+    defer allocator.free(complete_text);
+    try testing.expectEqualStrings("src/a.zig:3:one\n", complete_text);
+
+    var cut: std.ArrayList(SearchMatch) = .empty;
+    try cut.append(allocator, .{
+        .file = try allocator.dupe(u8, "src/a.zig"),
+        .line_number = 3,
+        .file_total_lines = 0,
+        .snippet = try allocator.dupe(u8, "one"),
+    });
+    var truncated = SearchResult{ .matches = cut, .total_matches = 4338, .truncated = true };
+    defer truncated.deinit(allocator);
+    const cut_text = try search_result_to_text(allocator, truncated, "p", "/abs");
+    defer allocator.free(cut_text);
+    try testing.expect(std.mem.indexOf(u8, cut_text, "[truncated: showing 1 of 4338 matches") != null);
+}
+
+test "search: count_only renders rg's -c output verbatim with no per-match keys" {
+    const allocator = testing.allocator;
+    var result = SearchResult{
+        .matches = .empty,
+        .raw_text = try allocator.dupe(u8, "src/a.zig:12\nsrc/b.zig:3\n"),
+    };
+    defer result.deinit(allocator);
+
+    const text = try search_result_to_text(allocator, result, "p", "/abs");
+    defer allocator.free(text);
+    try testing.expectEqualStrings("src/a.zig:12\nsrc/b.zig:3", text);
+}
+
+test "search: a no-match in text mode still names the pattern and the path" {
+    const allocator = testing.allocator;
+    var result = SearchResult{ .matches = .empty, .warning = "" };
+    defer result.deinit(allocator);
+
+    const text = try search_result_to_text(allocator, result, "absent", "/abs/src");
+    defer allocator.free(text);
+    try testing.expect(std.mem.indexOf(u8, text, "no matches for pattern \"absent\"") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "/abs/src") != null);
+}
+
+test "search: after_context returns the following lines as context rows, not as matches" {
+    if (!requiresRg()) return;
+    const allocator = testing.allocator;
+    const io = testing.io;
+
+    var tmpdir = testing.tmpDir(.{});
+    defer tmpdir.cleanup();
+    try tmpdir.dir.writeFile(io, .{
+        .sub_path = "ctx.txt",
+        .data = "needle here\nafter one\nafter two\nafter three\n",
+    });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path_len = try tmpdir.dir.realPath(io, &path_buf);
+    const tmpdir_path: []const u8 = path_buf[0..path_len];
+
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
+        .pattern = "needle",
+        .path = ".",
+        .after_context = 2,
+    });
+    defer result.deinit(allocator);
+
+    // ONE match, TWO context rows — context never inflates `total_matches`.
+    try testing.expectEqual(@as(usize, 1), result.total_matches);
+    try testing.expectEqual(@as(usize, 3), result.matches.items.len);
+    try testing.expect(!result.matches.items[0].is_context);
+    try testing.expect(result.matches.items[1].is_context);
+    try testing.expect(result.matches.items[2].is_context);
+    try testing.expectEqual(@as(usize, 2), result.matches.items[1].line_number);
+    try testing.expect(std.mem.indexOf(u8, result.matches.items[1].snippet, "after one") != null);
+
+    const text = try search_result_to_text(allocator, result, "needle", tmpdir_path);
+    defer allocator.free(text);
+    // rg's own convention: ':' marks a match, '-' marks a context line.
+    try testing.expect(std.mem.indexOf(u8, text, ":1:needle here") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "-2-after one") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "-3-after two") != null);
+}
+
+test "search: count_only hands back rg's -c counts with no match rows" {
+    if (!requiresRg()) return;
+    const allocator = testing.allocator;
+    const io = testing.io;
+
+    var tmpdir = testing.tmpDir(.{});
+    defer tmpdir.cleanup();
+    try tmpdir.dir.writeFile(io, .{
+        .sub_path = "counts.txt",
+        .data = "needle here\nneedle again\nnothing to see\n",
+    });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const path_len = try tmpdir.dir.realPath(io, &path_buf);
+    const tmpdir_path: []const u8 = path_buf[0..path_len];
+
+    var result = try executeSearch(allocator, io, tmpdir_path, .{
+        .pattern = "needle",
+        .path = ".",
+        .count_only = true,
+    });
+    defer result.deinit(allocator);
+
+    try testing.expectEqual(@as(usize, 0), result.matches.items.len);
+    try testing.expect(result.raw_text != null);
+
+    const text = try search_result_to_text(allocator, result, "needle", tmpdir_path);
+    defer allocator.free(text);
+    // Two matching lines, and not one of them is echoed back.
+    try testing.expect(std.mem.indexOf(u8, text, "2") != null);
+    try testing.expect(std.mem.indexOf(u8, text, "needle") == null);
 }

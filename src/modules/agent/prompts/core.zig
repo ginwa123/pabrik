@@ -27,20 +27,23 @@ pub const PromptAutoFix =
 pub const SearchToolRule =
     \\## Search Tool Preference (MANDATORY)
     \\
-    \\To find text in the codebase, **always use the `search` tool**. Do NOT run `rg`, `grep`, or `find` through the `command` tool. The `search` tool returns structured XML with file paths + line numbers, auto-respects `.gitignore`, and avoids shell escaping hell for regex/quotes/backticks.
+    \\To find text in the codebase, **always use the `search` tool**. Do NOT run `rg`, `grep`, or `find` through the `command` tool. Its default `text` output is the same `path:line:text` lines rg prints, at the same size, and it honors `.gitignore` without shell quoting.
     \\
-    \\**Mapped equivalents:**
+    \\**Mapped equivalents — every common idiom has a parameter:**
     \\- `rg -n "pattern" file.zig` → `search(pattern="pattern", path="/abs/file.zig")`
     \\- `rg -n "A|B" src/` → `search(pattern="A|B", path="/abs/src")`
-    \\- `rg -l "pattern"` → `search(..., group_by_file: false)`
-    \\- `rg -nw "word"` → `search(..., word_boundary: true)`
-    \\- `rg -F "literal"` → `search(..., literal: true)`
-    \\- `rg -o "match"` → `search(..., only_matching: true)`
-    \\- `rg ... | head -n 15` → `search(..., max_results: 15)`
+    \\- `rg -A 20 "p" f` / `-B` / `-C` → `after_context: 20` / `before_context: N` / `context: N`
+    \\- `rg -i "p"` → `ignore_case: true`   · `rg -v "p"` → `invert: true`
+    \\- `rg -c "p"` → `count_only: true`
+    \\- `rg -nw "word"` → `word_boundary: true`
+    \\- `rg -F "literal"` → `literal: true`
+    \\- `rg -o "match"` → `only_matching: true`
+    \\- `rg ... | head -n 15` → `max_results: 15`
+    \\- `rg -l "pattern"` → `count_only: true`, or `group_by_file: false` with `output_format: "json"`
     \\
-    \\**When a shell `rg` IS allowed** (rare, opt-in, run through `command`): context lines (`rg -C N`, `-A N`, `-B N`), multiline regex (`-U`, `-z`), count-only (`-c`), piping into another command (`| wc -l`, `| xargs`), JSON output (`rg --json`).
+    \\**The only reasons left to run `rg` through `command`:** you must pipe the matches INTO another command (`| wc -l`, `| xargs`, `| sort -u`), or you need multiline regex (`-U`/`-z`). "The target is outside my tree" is NOT a reason — `path` accepts any file or directory, including `/tmp/build.log`.
     \\
-    \\**Self-check:** before reaching for a shell `rg`, ask "Is this a code/text search?" If yes, use `search`.
+    \\**Self-check:** before reaching for a shell `rg`, ask "does `search` have the flag?" For context, case, invert, count and row caps it now does.
 ;
 
 pub const ReadWorkspaceSessionToolRule =

@@ -134,10 +134,28 @@ const SHAPE_SCOPE =
     \\WHERE s.workspace_id = ? AND h.created_at_nano > CAST(? AS INTEGER)
 ;
 
+/// Every distinct `tool_name` in range, ungrouped beyond that: the handler
+/// splits comma-joined parallel batches and aggregates them itself, so a
+/// batch can never become its own bar.
 const TOOLS_SQL =
     "SELECT h.tool_name, COUNT(*) " ++ SHAPE_SCOPE ++
     "  AND h.role = 'tool' AND h.tool_name IS NOT NULL AND h.tool_name <> '' " ++
-    "GROUP BY 1 ORDER BY 2 DESC LIMIT 8";
+    "GROUP BY 1";
+
+/// How many tool bars the payload carries. The total is not truncated.
+const max_tool_rows: usize = 8;
+
+fn findToolRow(rows: []const ToolRow, name: []const u8) ?usize {
+    for (rows, 0..) |row, i| {
+        if (std.mem.eql(u8, row.tool_name, name)) return i;
+    }
+    return null;
+}
+
+fn toolRowLessThan(_: void, a: ToolRow, b: ToolRow) bool {
+    if (a.calls != b.calls) return a.calls > b.calls;
+    return std.mem.lessThan(u8, a.tool_name, b.tool_name);
+}
 
 const REASONS_SQL =
     "SELECT COALESCE(h.finish_reason, ''), COUNT(*) " ++ SHAPE_SCOPE ++
@@ -146,9 +164,6 @@ const REASONS_SQL =
 const LATEST_CACHED_SESSION_SQL =
     "SELECT h.session_id " ++ SCOPE ++
     "  AND h.cache_read_input_tokens > 0 ORDER BY h.created_at_nano DESC LIMIT 1";
-
-const TOOL_TOTAL_SQL =
-    "SELECT COUNT(*)" ++ SHAPE_SCOPE ++ "  AND h.role = 'tool' AND h.tool_name IS NOT NULL AND h.tool_name <> ''";
 
 const SERIES_SQL =
     \\SELECT COALESCE(h.created_iso, ''), h.prompt_tokens, COALESCE(h.cache_read_input_tokens, 0)
@@ -261,24 +276,38 @@ pub fn useCase(
             }
         }
         {
-            var rows = db.query(allocator, TOOL_TOTAL_SQL, &.{ workspace_id, cutoff }) catch return error.QueryFailed;
-            defer rows.deinit();
-            if (rows.next() catch return error.QueryFailed) |row| {
-                defer row.deinit(allocator);
-                if (row.values.len >= 1) totals.tool_calls = colInt(row.values[0]);
-            }
-        }
-        {
+            // Tool histogram. A row can store a PARALLEL BATCH as one
+            // comma-joined name ("command,command"); split it, or the batch
+            // becomes its own bar and hides the tools inside it.
             var rows = db.query(allocator, TOOLS_SQL, &.{ workspace_id, cutoff }) catch return error.QueryFailed;
             defer rows.deinit();
             while (rows.next() catch return error.QueryFailed) |row| {
                 defer row.deinit(allocator);
                 if (row.values.len < 2) continue;
-                tools.append(allocator, .{
-                    .tool_name = try dupe(allocator, row.values[0]),
-                    .calls = colInt(row.values[1]),
-                }) catch return error.OutOfMemory;
+                const calls = colInt(row.values[1]);
+                var parts = std.mem.splitScalar(u8, row.values[0], ',');
+                while (parts.next()) |part| {
+                    const name = std.mem.trim(u8, part, &std.ascii.whitespace);
+                    if (name.len == 0) continue;
+                    if (findToolRow(tools.items, name)) |idx| {
+                        tools.items[idx].calls += calls;
+                        continue;
+                    }
+                    tools.append(allocator, .{
+                        .tool_name = try dupe(allocator, name),
+                        .calls = calls,
+                    }) catch return error.OutOfMemory;
+                }
             }
+
+            // The total counts every call, batches included, so "8 of N"
+            // always agrees with the bars it summarizes.
+            var total_calls: i64 = 0;
+            for (tools.items) |tool| total_calls += tool.calls;
+            totals.tool_calls = total_calls;
+
+            std.mem.sort(ToolRow, tools.items, {}, toolRowLessThan);
+            if (tools.items.len > max_tool_rows) tools.shrinkRetainingCapacity(max_tool_rows);
         }
         {
             var rows = db.query(allocator, REASONS_SQL, &.{ workspace_id, cutoff }) catch return error.QueryFailed;
@@ -645,6 +674,34 @@ test "daily, models, tools and finish reasons stay under eight rows and keep the
     try testing.expectEqualStrings("tool_calls", reasons.items[0].object.get("reason").?.string);
     try testing.expectEqual(@as(i64, 2), reasons.items[0].object.get("calls").?.integer);
     try testing.expectEqualStrings("none", reasons.items[1].object.get("reason").?.string);
+}
+
+test "tool bars merge parallel batches instead of fragmenting the chart" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    try insertWorkspace(&ctx, "s1", "ws_a");
+
+    // A batch row stores "command,command" as ONE tool_name: two calls of the
+    // same tool. Unsplit, it became its own bar while still counting toward
+    // the total.
+    try insertRow(&ctx, .{ .id = "b1", .session_id = "s1", .role = "tool", .tool = "command,command", .iso = "2026-10-21 10:00:01", .at = 2000 });
+    try insertRow(&ctx, .{ .id = "b2", .session_id = "s1", .role = "tool", .tool = "command", .iso = "2026-10-21 10:00:02", .at = 2000 });
+    try insertRow(&ctx, .{ .id = "b3", .session_id = "s1", .role = "tool", .tool = "read_file,search", .iso = "2026-10-21 10:00:03", .at = 2000 });
+
+    const parsed = try run(&ctx, "ws_a", .{ .days = 30, .label = "30d" }, 1000);
+    defer parsed.deinit();
+
+    const tools = at(parsed.value, "tools").array;
+    try testing.expectEqual(@as(usize, 3), tools.items.len);
+    try testing.expectEqualStrings("command", tools.items[0].object.get("tool_name").?.string);
+    try testing.expectEqual(@as(i64, 3), tools.items[0].object.get("calls").?.integer);
+    // read_file and search tie at 1: the tie breaks on name so the order is
+    // deterministic instead of depending on row order.
+    try testing.expectEqualStrings("read_file", tools.items[1].object.get("tool_name").?.string);
+    try testing.expectEqualStrings("search", tools.items[2].object.get("tool_name").?.string);
+
+    // Five CALLS in three rows — a batch is calls, not a call.
+    try testing.expectEqual(@as(i64, 5), at(parsed.value, "totals.tool_calls").integer);
 }
 
 test "cache_series is the most recent session that reported cache, with its own rate" {

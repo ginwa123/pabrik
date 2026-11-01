@@ -1125,13 +1125,15 @@ test "build_agent_prompt always renders Search Tool Preference (unconditional)" 
     try std.testing.expect(contains(prompt, "group_by_file: false"));
     try std.testing.expect(contains(prompt, "word_boundary: true"));
     try std.testing.expect(contains(prompt, "literal: true"));
-    // The opt-in rg fallback list is also present so agents know when a shell
-    // `rg` (via `command`) is OK.
-    try std.testing.expect(contains(prompt, "When a shell `rg` IS allowed"));
-    try std.testing.expect(contains(prompt, "rg -C N"));
-    try std.testing.expect(contains(prompt, "rg --json"));
+    // The flags that used to be the documented reason to shell out are now
+    // tool parameters, and the prompt must teach them.
+    try std.testing.expect(contains(prompt, "after_context: 20"));
+    try std.testing.expect(contains(prompt, "ignore_case: true"));
+    try std.testing.expect(contains(prompt, "count_only: true"));
+    // The escape hatch is now narrow and honest: piping into another command.
+    try std.testing.expect(contains(prompt, "The only reasons left to run `rg` through `command`"));
     // Self-check is the closing reinforcement.
-    try std.testing.expect(contains(prompt, "code/text search"));
+    try std.testing.expect(contains(prompt, "does `search` have the flag"));
 }
 
 test "build_agent_prompt Search Tool Preference appears even with non-empty tool list" {
