@@ -4,9 +4,89 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const config_mod = @import("../modules/config/Config.zig");
+const secrets_store = @import("secrets_store.zig");
+const secrets_substitution = @import("secrets_substitution.zig");
 const workspace_config = @import("workspace_config.zig");
 const workspace_settings_store = @import("workspace_settings_store.zig");
 const workspace_scope = @import("workspace_scope.zig");
+
+const placeholder_prefix = "{" ++ "{SECRETS:";
+
+/// Maps a placeholder name onto this workspace's stored credential, one query
+/// per distinct name. Owns the values it looked up, because the substitution
+/// reads them after this returns.
+const CredentialResolver = struct {
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.database.Db,
+    workspace_id: []const u8,
+    values: std.StringHashMapUnmanaged([]const u8) = .empty,
+
+    fn deinit(self: *CredentialResolver) void {
+        var it = self.values.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.values.deinit(self.allocator);
+    }
+
+    fn resolve(self: *CredentialResolver, name: []const u8) ?[]const u8 {
+        if (self.values.get(name)) |hit| return if (hit.len == 0) null else hit;
+
+        const wanted = [_][]const u8{name};
+        const rows = secrets_store.loadSecretValues(self.allocator, self.db, self.workspace_id, &wanted) catch
+            return null;
+        defer secrets_store.freeSecretValueRows(self.allocator, rows);
+
+        for (rows) |row| {
+            const key = self.allocator.dupe(u8, row.name) catch return null;
+            const value = self.allocator.dupe(u8, row.value) catch {
+                self.allocator.free(key);
+                return null;
+            };
+            self.values.put(self.allocator, key, value) catch {
+                self.allocator.free(key);
+                self.allocator.free(value);
+                return null;
+            };
+        }
+        return self.values.get(name);
+    }
+
+    fn lookup(ctx: ?*const anyopaque, name: []const u8) ?[]const u8 {
+        const self: *CredentialResolver = @ptrCast(@alignCast(@constCast(ctx orelse return null)));
+        return self.resolve(name);
+    }
+};
+
+/// The merged config with `{` `{SECRETS:NAME}` `}` resolved in its credential
+/// fields, so a saved placeholder is what a run authenticates with. Takes
+/// ownership of `text`; with nothing to resolve the same slice comes back.
+fn resolveCredentialPlaceholders(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.database.Db,
+    workspace_id: []const u8,
+    text: []u8,
+) []u8 {
+    if (workspace_id.len == 0) return text;
+    if (std.mem.indexOf(u8, text, placeholder_prefix) == null) return text;
+
+    var resolver = CredentialResolver{
+        .allocator = allocator,
+        .db = db,
+        .workspace_id = workspace_id,
+    };
+    defer resolver.deinit();
+
+    const substituted = secrets_substitution.substituteConfigCredentials(
+        allocator,
+        text,
+        CredentialResolver.lookup,
+        &resolver,
+    ) catch return text;
+    allocator.free(text);
+    return substituted;
+}
 
 /// The `LlmConfig` in force for `session_id`, or null when the process-global
 /// singleton should be read instead.
@@ -31,7 +111,7 @@ pub fn forSession(
     const workspace_id = sessionWorkspace(allocator, db, session_id) catch return null;
     defer allocator.free(workspace_id);
 
-    const text = mergedConfigTextFor(
+    const merged = mergedConfigTextFor(
         allocator,
         di.io,
         db,
@@ -40,6 +120,7 @@ pub fn forSession(
         owner,
         workspace_id,
     ) orelse return null;
+    const text = resolveCredentialPlaceholders(allocator, db, workspace_id, merged);
     defer allocator.free(text);
     return fromJsonText(allocator, text);
 }
@@ -147,7 +228,7 @@ pub fn forOwnerAndWorkspace(
     // file-mode bucket.
     if (auth_enabled and owner.len == 0) return null;
     if (workspace_id.len == 0) return forOwner(allocator, db, owner);
-    const text = mergedConfigTextFor(
+    const merged = mergedConfigTextFor(
         allocator,
         io,
         db,
@@ -156,6 +237,7 @@ pub fn forOwnerAndWorkspace(
         owner,
         workspace_id,
     ) orelse return null;
+    const text = resolveCredentialPlaceholders(allocator, db, workspace_id, merged);
     defer allocator.free(text);
     return fromJsonText(allocator, text);
 }
@@ -211,6 +293,7 @@ const TestCtx = struct {
 
 fn setupDb() !TestCtx {
     const alloc = testing.allocator;
+    workspace_settings_store.installTestKey();
     var threaded = std.Io.Threaded.init(alloc, .{});
     errdefer threaded.deinit();
     var db: database.Db = .{};
@@ -687,4 +770,104 @@ test "forOwnerAndWorkspace: the workspace's own active_profile and profiles win"
     // No identity in auth mode: nothing scoped, so the caller falls back to
     // the singleton rather than to the shared file-mode bucket.
     try testing.expect(forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "", "ws_a") == null);
+}
+
+// ─── Credential placeholders in a saved config ─────────────────────────────
+// A picker in the UI writes the placeholder into the api_key field. These pin
+// that a RUN resolves it, and that the stored document is not rewritten.
+
+const secrets_at_rest = @import("secrets_at_rest.zig");
+
+const test_key = [_]u8{7} ** secrets_at_rest.KEY_LEN;
+
+fn placeholder(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, "{s}{s}{s}{s}", .{ "{", "{SECRETS:", name, "}" ++ "}" });
+}
+
+test "forOwnerAndWorkspace: an api_key placeholder resolves, and a model placeholder does not" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    defer secrets_at_rest.setKey(null);
+    secrets_at_rest.setKey(test_key);
+
+    try insertUser(&ctx.db, "u_1", "{\"retry_delay_ms\":1234}");
+
+    const key_ph = try placeholder(alloc, "API_KEY");
+    defer alloc.free(key_ph);
+    const missing_ph = try placeholder(alloc, "NOT_STORED");
+    defer alloc.free(missing_ph);
+
+    const row = try secrets_store.createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "API_KEY",
+        .value = "sk-live-secret",
+    });
+    defer secrets_store.freeSecretRow(alloc, row);
+
+    const overlay = try std.fmt.allocPrint(
+        alloc,
+        "{{\"profiles_models\":{{" ++
+            "\"resolved\":{{\"model\":\"{s}\",\"base_url\":\"https://api.example.com\",\"api_key\":\"{s}\"}}," ++
+            "\"unresolved\":{{\"model\":\"m\",\"base_url\":\"https://api.example.com\",\"api_key\":\"{s}\"}}" ++
+            "}},\"active_profile\":\"resolved\"}}",
+        .{ key_ph, key_ph, missing_ph },
+    );
+    defer alloc.free(overlay);
+    try putOverlay(&ctx.db, "u_1", "ws_a", overlay);
+
+    const cfg = forOwnerAndWorkspace(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
+        return error.ScopedConfigMissing;
+    defer freeResolved(cfg);
+
+    const resolved = cfg.resolveEffectiveAgent("resolved");
+    try testing.expectEqualStrings("sk-live-secret", resolved.api_key);
+    // A non-credential field keeps the literal placeholder: substituting it
+    // would rename the model to the secret.
+    try testing.expectEqualStrings(key_ph, resolved.model);
+
+    // A name this workspace does not store is NOT blanked, so adding the
+    // secret later makes the same saved document work.
+    const unresolved = cfg.resolveEffectiveAgent("unresolved");
+    try testing.expectEqualStrings(missing_ph, unresolved.api_key);
+
+    // The stored row still holds the placeholder: the run resolved a COPY.
+    const stored = (try store.loadRaw(alloc, &ctx.db, "u_1", "ws_a")) orelse
+        return error.OverlayMissing;
+    defer alloc.free(stored);
+    try testing.expect(std.mem.indexOf(u8, stored, key_ph) != null);
+    try testing.expect(std.mem.indexOf(u8, stored, "sk-live-secret") == null);
+}
+
+test "resolveCredentialPlaceholders: no workspace means the text is passed through untouched" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const key_ph = try placeholder(alloc, "API_KEY");
+    defer alloc.free(key_ph);
+
+    // No workspace, no secrets to resolve against: the caller keeps its own
+    // slice, so a config outside any workspace cannot resolve anything.
+    const own = try alloc.dupe(u8, key_ph);
+    const same = resolveCredentialPlaceholders(alloc, &ctx.db, "", own);
+    defer alloc.free(same);
+    try testing.expectEqualStrings(key_ph, same);
+}
+
+test "resolveCredentialPlaceholders: a document without a placeholder is not copied twice" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const plain = try alloc.dupe(u8, "{\"retry_delay_ms\":2000}");
+    const out = resolveCredentialPlaceholders(alloc, &ctx.db, "ws_a", plain);
+    defer alloc.free(out);
+    // Same bytes AND the same allocation: the fast path allocates nothing, so
+    // freeing `out` is the same as freeing `plain`.
+    try testing.expectEqualStrings("{\"retry_delay_ms\":2000}", out);
+    try testing.expectEqual(@intFromPtr(plain.ptr), @intFromPtr(out.ptr));
 }

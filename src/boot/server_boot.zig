@@ -17,6 +17,7 @@ const db_target = @import("db_target.zig");
 const static_serve = @import("../http_static/static_serve.zig");
 const model_catalog_refresh = @import("../agentic_loop/model_catalog_refresh.zig");
 const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
+const workspace_settings_store = @import("../agentic_loop/workspace_settings_store.zig");
 const secrets_key = @import("secrets_key.zig");
 
 /// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write
@@ -252,12 +253,17 @@ pub fn installSecretsKey(
     }
     std.log.info("{s}", .{status.describe()});
 
-    const sealed = secrets_at_rest.sealLegacyRows(allocator, db) catch |err| {
+    const sealed = secrets_at_rest.sealLegacyRows(allocator, db) catch |err| blk: {
         std.log.warn("workspace secrets: sealing legacy rows failed ({s})", .{@errorName(err)});
-        return;
+        break :blk 0;
     };
-    if (sealed == 0) return;
-    std.log.info("workspace secrets: sealed {d} legacy plaintext value(s)", .{sealed});
+    const sealed_settings = workspace_settings_store.sealLegacySettingsRows(allocator, db) catch |err| blk: {
+        std.log.warn("workspace config: sealing legacy rows failed ({s})", .{@errorName(err)});
+        break :blk 0;
+    };
+    if (sealed == 0 and sealed_settings == 0) return;
+    if (sealed > 0) std.log.info("workspace secrets: sealed {d} legacy plaintext value(s)", .{sealed});
+    if (sealed_settings > 0) std.log.info("workspace config: sealed {d} legacy plaintext row(s)", .{sealed_settings});
     // Only the sqlite backend has a file whose free pages can still hold the
     // pre-seal bytes.
     if (sqlite_path.len == 0) return;

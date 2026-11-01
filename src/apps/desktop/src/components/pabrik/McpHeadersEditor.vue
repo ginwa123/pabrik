@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+
+import { useSecretAutocomplete } from '../../composables/useSecretAutocomplete'
+import { useSecretNames } from '../../helpers/secretNames'
+import SecretSuggestionMenu from './SecretSuggestionMenu.vue'
+
 export interface McpHeader { key: string; value: string }
 
 const props = defineProps<{ modelValue: McpHeader[] }>()
@@ -20,6 +26,43 @@ const inputStyle = {
   backgroundColor: 'var(--semantic-content-bg)',
   color: 'var(--semantic-text)',
   borderColor: 'var(--color-border)',
+}
+
+const secretRow = ref(-1)
+const valueFields = ref<Array<HTMLInputElement | null>>([])
+
+const {
+  open: secretMenuOpen,
+  items: secretMenuItems,
+  active: secretMenuActive,
+  onInput: onSecretInput,
+  onKeydown: onSecretKeydown,
+  choose: chooseSecret,
+  close: closeSecretMenu,
+} = useSecretAutocomplete({
+  names: useSecretNames(),
+  commit: (text: string) => {
+    if (secretRow.value >= 0) update(secretRow.value, 'value', text)
+  },
+})
+
+function setValueField(idx: number, el: unknown): void {
+  valueFields.value[idx] = (el as HTMLInputElement | null) ?? null
+}
+
+function onValueInput(idx: number, field: HTMLInputElement): void {
+  secretRow.value = idx
+  update(idx, 'value', field.value)
+  onSecretInput(field)
+}
+
+function onValueKeydown(event: KeyboardEvent, field: HTMLInputElement): void {
+  if (onSecretKeydown(event, field)) event.preventDefault()
+}
+
+function onSecretPick(name: string): void {
+  const field = valueFields.value[secretRow.value]
+  if (field) chooseSecret(name, field)
 }
 </script>
 
@@ -55,14 +98,28 @@ const inputStyle = {
           :class="inputBase"
           :style="inputStyle"
         />
-        <input
-          :value="h.value"
-          @input="update(idx, 'value', ($event.target as HTMLInputElement).value)"
-          type="text"
-          placeholder="value"
-          :class="inputBase"
-          :style="inputStyle"
-        />
+        <div class="flex-1">
+          <input
+            :ref="(el) => setValueField(idx, el)"
+            :value="h.value"
+            @input="onValueInput(idx, $event.target as HTMLInputElement)"
+            @keydown="onValueKeydown($event, $event.target as HTMLInputElement)"
+            @blur="closeSecretMenu()"
+            type="text"
+            placeholder="value, or use a workspace secret"
+            autocomplete="off"
+            class="w-full px-3 h-8 rounded-md border text-body font-mono"
+            :style="inputStyle"
+            data-testid="header-value-input"
+          />
+          <SecretSuggestionMenu
+            v-if="secretMenuOpen && secretRow === idx"
+            :items="secretMenuItems"
+            :active="secretMenuActive"
+            @pick="onSecretPick"
+            @hover="(index: number) => (secretMenuActive = index)"
+          />
+        </div>
         <button
           type="button"
           data-testid="remove-header"
