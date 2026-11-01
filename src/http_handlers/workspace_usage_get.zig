@@ -157,7 +157,10 @@ const SERIES_SQL =
 ;
 
 const SERIES_META_SQL =
-    "SELECT COALESCE(h.model, ''), COUNT(*), " ++
+    "SELECT COALESCE((SELECT h2.model FROM llm_history h2 " ++
+    "                 WHERE h2.session_id = ? AND h2.model IS NOT NULL AND h2.model <> '' " ++
+    "                 ORDER BY h2.created_at_nano DESC LIMIT 1), ''), " ++
+    "       COUNT(*), " ++
     "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens <= h.prompt_tokens THEN h.prompt_tokens ELSE 0 END), 0), " ++
     "       COALESCE(SUM(" ++ RATED_READ ++ "), 0) " ++
     "FROM llm_history h WHERE h.session_id = ?";
@@ -308,7 +311,7 @@ pub fn useCase(
             var total_calls: i64 = 0;
             var total_rate: ?f64 = null;
             {
-                var rows = db.query(allocator, SERIES_META_SQL, &.{session_id}) catch return error.QueryFailed;
+                var rows = db.query(allocator, SERIES_META_SQL, &.{ session_id, session_id }) catch return error.QueryFailed;
                 defer rows.deinit();
                 if (rows.next() catch return error.QueryFailed) |row| {
                     defer row.deinit(allocator);
