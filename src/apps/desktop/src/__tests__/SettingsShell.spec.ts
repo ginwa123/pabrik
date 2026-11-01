@@ -115,6 +115,7 @@ describe('SettingsShell', () => {
     const labels = wrapper.findAll('nav [role="tab"]').map((b) => b.text().trim())
     expect(labels).toEqual([
       'Overview',
+      'Usage',
       'Members',
       'Secrets',
       'Skills',
