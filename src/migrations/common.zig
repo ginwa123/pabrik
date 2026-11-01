@@ -34,7 +34,7 @@ pub const MigrationManager = struct {
     }
 
     pub fn runMigrations(self: *MigrationManager) !void {
-        try self.db.exec(self.allocator, "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL)", &[_][]const u8{});
+        try self.db.exec(self.allocator, "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMP)", &[_][]const u8{});
 
         const currentVersion = self.getCurrentVersion();
 
@@ -45,11 +45,20 @@ pub const MigrationManager = struct {
                 try migration.up(self.db, self.allocator);
                 const versionStr = try std.fmt.allocPrint(self.allocator, "{}", .{migration.version});
                 defer self.allocator.free(versionStr);
-                try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name) VALUES (?, ?)", &.{ versionStr, migration.name });
+                try self.recordApplied(versionStr, migration.name);
                 self.running_version = 0;
                 self.running_name = "";
             }
         }
+    }
+
+    fn recordApplied(self: *MigrationManager, versionStr: []const u8, name: []const u8) !void {
+        const has_applied_at = dialect.columnExists(.{ .db = self.db }, self.allocator, "schema_migrations", "applied_at") catch false;
+        if (has_applied_at) {
+            try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, CURRENT_TIMESTAMP)", &.{ versionStr, name });
+            return;
+        }
+        try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name) VALUES (?, ?)", &.{ versionStr, name });
     }
 
     fn getCurrentVersion(self: *MigrationManager) u32 {
