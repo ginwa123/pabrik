@@ -315,6 +315,10 @@ fn registerWorkspaceRoutes(authed: *Group) !void {
     try authed.post("/api/workspaces/:workspace_id/items/kanban", ai_mod.http_handlers.workspaceItemsCreateKanbanHandler);
     // Design workspace-item endpoint (item_type='design').
     try authed.post("/api/workspaces/:workspace_id/items/design", ai_mod.http_handlers.workspaceItemsCreateDesignHandler);
+
+    // Token, cache and tool totals for one workspace, derived from llm_history
+    // at request time. A `usage` tail cannot be captured by `:id` above.
+    try authed.get("/api/workspaces/:workspace_id/usage", ai_mod.http_handlers.workspaceUsageHandler);
 }
 
 fn registerAgentRoutes(authed: *Group) !void {
