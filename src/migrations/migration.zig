@@ -140,6 +140,7 @@ const migration_124 = @import("migration_124.zig");
 const migration_125 = @import("migration_125.zig");
 const migration_126 = @import("migration_126.zig");
 const migration_127 = @import("migration_127.zig");
+const migration_128 = @import("migration_128.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -269,6 +270,7 @@ pub const Migration124AddRoutineSelectedProfileModel = migration_124.Migration12
 pub const Migration125IndexHygiene = migration_125.Migration125IndexHygiene;
 pub const Migration126AddMigrationAppliedAt = migration_126.Migration126AddMigrationAppliedAt;
 pub const Migration127BackfillSessionTimestamps = migration_127.Migration127BackfillSessionTimestamps;
+pub const Migration128FtsExternalContent = migration_128.Migration128FtsExternalContent;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -511,6 +513,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration125IndexHygiene.version, .name = Migration125IndexHygiene.name, .up = Migration125IndexHygiene.up },
     .{ .version = Migration126AddMigrationAppliedAt.version, .name = Migration126AddMigrationAppliedAt.name, .up = Migration126AddMigrationAppliedAt.up },
     .{ .version = Migration127BackfillSessionTimestamps.version, .name = Migration127BackfillSessionTimestamps.name, .up = Migration127BackfillSessionTimestamps.up },
+    .{ .version = Migration128FtsExternalContent.version, .name = Migration128FtsExternalContent.name, .up = Migration128FtsExternalContent.up },
 };
 
 /// Register all migrations with a MigrationManager
