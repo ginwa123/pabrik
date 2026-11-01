@@ -69,39 +69,39 @@ export function parseSearchText(raw: string): ParsedSearchText {
     if (warning === null) {
       const warned = TEXT_WARNING.exec(line)
       if (warned) {
-        warning = warned[1].trim()
+        warning = (warned[1] ?? '').trim()
         continue
       }
     }
 
     const truncated = TEXT_TRUNCATED.exec(line)
     if (truncated) {
-      returned = Number(truncated[1])
-      total = Number(truncated[2])
+      returned = Number(truncated[1] ?? 0)
+      total = Number(truncated[2] ?? 0)
       hint = line.trim()
       continue
     }
 
     const match = TEXT_MATCH_ROW.exec(line)
     if (match) {
-      const file = groupFor(match[1])
-      file.matches.push({ lineNumber: Number(match[2]), snippet: match[3] })
+      const file = groupFor(match[1] ?? '')
+      file.matches.push({ lineNumber: Number(match[2] ?? 0), snippet: match[3] ?? '' })
       file.count += 1
       continue
     }
 
     const counted = TEXT_COUNT_ROW.exec(line)
     if (counted) {
-      const file = groupFor(counted[1])
-      const n = Number(counted[2])
+      const file = groupFor(counted[1] ?? '')
+      const n = Number(counted[2] ?? 0)
       file.count += n
       continue
     }
 
     const context = TEXT_CONTEXT_ROW.exec(line)
     if (context) {
-      const file = groupFor(context[1])
-      file.matches.push({ lineNumber: Number(context[2]), snippet: context[3] })
+      const file = groupFor(context[1] ?? '')
+      file.matches.push({ lineNumber: Number(context[2] ?? 0), snippet: context[3] ?? '' })
       continue
     }
   }

@@ -37,6 +37,19 @@ describe('Search.vue — the default text payload', () => {
     expect(text).toContain('127')
   })
 
+  it('opens on the header click and lists every matched line', async () => {
+    const wrapper = mount(Search, { props: { content: textPayload as never } })
+    expect(wrapper.text()).not.toContain('Python ALSO covered a symlink')
+
+    await wrapper.find('[role="button"]').trigger('click')
+
+    const text = wrapper.text()
+    expect(text).toContain('/repo/a.zig')
+    expect(text).toContain('127')
+    expect(text).toContain('Python ALSO covered a symlink')
+    expect(text).toContain('2/2')
+  })
+
   it('shows the tool warning instead of a zero count when nothing matched', () => {
     const wrapper = mount(Search, {
       props: {
