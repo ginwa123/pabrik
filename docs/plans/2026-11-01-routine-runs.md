@@ -88,7 +88,7 @@ Three questions came out of review: *can a run just be a `workspace_item_tasks` 
 | `sessions` (`id` is the chat id) | **reused as the run** | §3.2: four nullable-by-default columns, no new table |
 | `workspace_item_tasks` (id **is** the session id) | **not used for runs** | §3.4 |
 | `agent_configs` (`item_type='routine'`) | **unchanged** | already the routine's knowledge, tools and system prompts (migration 116) |
-| `workspace_routines` | **kept, 13 columns → 7** | §3.3: cron state has no other home, but four of its columns are duplicates or derivable |
+| `workspace_routines` | **kept here at 7 columns; mergeable into `agent_configs` later** | §3.3: cron state has no other home, but four of its columns are duplicates or derivable. §11 is the refactor that removes the table entirely |
 | `routine_runs` (revision 1 of this doc) | **dropped** | every field it held was already on the session, or derivable from it |
 
 ### 3.2 The run is a session row with four extra columns (migration 125)
@@ -386,3 +386,92 @@ Deliberately not in this design:
 - **Catch-up fires** missed while the server was down. Today they are silently dropped (PR #1114 made that visible, not repaired).
 - **Retry policy** for a failed run. The run is visible and re-fireable; automatic retries are a separate decision (`is_auto_retry_until_stop` must stay `0` for routines).
 - **Per-routine conversation continuity** (a "continue the previous run's chat" toggle). Fresh session per run is the honest default; with runs as sessions the toggle is one predicate, not a schema change.
+
+---
+
+## 11. The merge review asked for: `workspace_routines` → `agent_configs`
+
+Asked in review: *"can we refactor so `workspace_routines` merges with `workspace_item_tasks`?"* The intent — one fewer table — is right, and the answer is yes with a different partner. The two candidates are not equivalent, and the difference is cardinality.
+
+### 11.1 Not `workspace_item_tasks`
+
+| | `workspace_routines` | `workspace_item_tasks` |
+| --- | --- | --- |
+| cardinality to the item | **1 : 1** — `workspace_item_id TEXT NOT NULL UNIQUE` (migration 84) | **1 : N** — many tasks per item, by design |
+| what `id` means | the routine item id, by convention | **the session id** (migration 52 *dropped* `session_id` for exactly this) |
+| row count | one per routine | one per chat, thousands |
+
+A routine's config row is one per item. `workspace_item_tasks` has no unique item column, so a config row would have to impersonate a task — and its `id` would then be either the routine item id (claiming a session id: this is precisely the §1.2 bug) or a synthetic id that every task query returns as a task the user can rename, pin and delete. The five routine-only columns would also be `NULL` on every human chat row, which is bloat in the wrong direction.
+
+### 11.2 Yes to `agent_configs`
+
+`agent_configs` is already the per-item config table and already the routine's config home:
+
+- `id TEXT PRIMARY KEY, workspace_item_id TEXT NOT NULL UNIQUE, item_type TEXT NOT NULL, description TEXT…` (migration 116) — **the same cardinality and the same key** as `workspace_routines`.
+- It already holds the routine's `description`, plus its knowledge, tools and system prompts in the three child tables (`agent_config_knowledge`, `agent_config_tools`, `agent_config_system_prompt`), all `item_type='routine'`.
+- `workspace_routines.description` is already a duplicate of it (§3.3), which is the strongest hint that these two tables are one table.
+
+Target shape, after migration 127:
+
+```sql
+ALTER TABLE agent_configs ADD COLUMN instruction      TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_configs ADD COLUMN schedule         TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_configs ADD COLUMN enabled          INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE agent_configs ADD COLUMN next_run_at      TIMESTAMP;
+ALTER TABLE agent_configs ADD COLUMN selected_profile_model TEXT NOT NULL DEFAULT '';
+ALTER TABLE agent_configs ADD COLUMN run_lock         TEXT NOT NULL DEFAULT '';  -- was last_status
+
+CREATE INDEX idx_agent_configs_routine_due
+    ON agent_configs(next_run_at) WHERE item_type = 'routine';
+-- partial index: the scheduler scans only routine rows. Verify the postgres parity
+-- of the predicate through the dialect layer before shipping.
+```
+
+`enabled` defaults to `0` here, not `1`: an `agent_configs` row exists for plenty of items that are not routines, and a routine is only enabled when a human says so.
+
+Backfill, in the same migration, before any code changes:
+
+```sql
+INSERT INTO agent_configs (id, workspace_item_id, item_type, description,
+                           instruction, schedule, enabled, next_run_at,
+                           selected_profile_model, run_lock)
+SELECT r.id, r.workspace_item_id, 'routine', r.description,
+       r.instruction, r.schedule, r.enabled, r.next_run_at,
+       r.selected_profile_model, r.last_status
+FROM workspace_routines r
+WHERE NOT EXISTS (SELECT 1 FROM agent_configs a WHERE a.workspace_item_id = r.workspace_item_id);
+```
+
+Then `DROP TABLE workspace_routines` in migration 128, once nothing reads it.
+
+### 11.3 What that touches
+
+Six files read the routine's columns today, so the sweep is contained:
+
+| File | Change |
+| --- | --- |
+| `routines/model.zig` | the loader and the insert read `agent_configs` with `item_type = 'routine'` |
+| `routines/Scheduler.zig` | the due-scan becomes `WHERE item_type='routine' AND enabled=1 AND next_run_at<=?` on the partial index |
+| `routines/fire.zig` | loads the same record; no structural change |
+| `http_handlers/workspace_routines_get.zig` | joins the config row instead of the routine row |
+| `http_handlers/workspace_routines_update.zig` | writes the config row; ensure-it-exists, then update |
+| `http_handlers/workspace_items_create_routine.zig` | creates the `agent_configs` row in the same transaction as the item |
+
+The one trap: **`agent_configs` rows are created lazily**, at six or more call sites that insert on demand (`agent_tools_allowed.zig:65`, `agent_kanban_tools_allowed.zig:63`, `prompts_make_agent_routine_knowledge.zig:257`, `prompts_make_agent_routine_system_prompt.zig:219`, …). So after the merge the scheduler must not assume a config row exists for every routine item — the migration backfills every existing routine, and `workspace_items_create_routine` writes the row eagerly, which together make the invariant true. Say it out loud in the code, because a routine whose row is missing would silently stop firing.
+
+### 11.4 The trade-off, stated plainly
+
+Migration 116 unified the three families into one config table **on purpose**, and it kept that table family-neutral: `description` plus three child tables, nothing that only one family needs. Adding five routine-only columns reverses part of that. The cost is a table whose shape is family-dependent; the gain is deleting a table, a join from the routine load, and a second write path for `description`.
+
+### 11.5 Recommendation and sequencing
+
+**Do it — as migration 127, in its own task, after the runs fix lands.** Not inside this change: the runs fix is a behaviour fix with a 4-line migration, and mixing a config-table merge into it would put the scheduler, the agent-config read paths for all three families, and a backfill all in one review. The end state is worth the separate PR, and it is where the instinct behind this review question lands:
+
+```
+workspace_items    identity      id, workspace_id, item_type, name, path
+agent_configs      config        instruction, schedule, enabled, next_run_at,
+                                 selected_profile_model, + knowledge/tools/prompts
+sessions           every run     routine_id <> '' , run_trigger, run_due_at, run_error
+```
+
+Three tables, two of which every other item type already uses. No routine-specific table at all.
