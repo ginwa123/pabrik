@@ -6,7 +6,7 @@ const emit = defineEmits<{ pick: [name: string]; hover: [index: number] }>()
 <template>
   <div
     data-testid="secret-suggestions"
-    class="absolute left-0 right-0 top-full mt-1 z-30 rounded-md border overflow-hidden"
+    class="mt-1.5 rounded-md border overflow-hidden"
     style="background-color: var(--semantic-card-bg); border-color: var(--color-border)"
     role="listbox"
     aria-label="Workspace secrets"

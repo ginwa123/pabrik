@@ -657,7 +657,7 @@ defineExpose({ onSave })
               Environment
               <span style="color: var(--semantic-text-dim)">(KEY=VALUE, one per line)</span>
             </label>
-            <div class="relative">
+            <div>
               <textarea
                 ref="envField"
                 :value="envText"

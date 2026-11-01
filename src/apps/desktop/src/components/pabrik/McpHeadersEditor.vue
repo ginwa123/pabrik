@@ -98,7 +98,7 @@ function onSecretPick(name: string): void {
           :class="inputBase"
           :style="inputStyle"
         />
-        <div class="relative flex-1">
+        <div class="flex-1">
           <input
             :ref="(el) => setValueField(idx, el)"
             :value="h.value"
