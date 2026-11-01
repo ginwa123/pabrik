@@ -18,6 +18,7 @@ const UpdateRoutineBody = struct {
     description: ?[]const u8 = null,
     instruction: ?[]const u8 = null,
     schedule: ?[]const u8 = null,
+    selected_profile_model: ?[]const u8 = null,
     enabled: ?bool = null,
 };
 
@@ -70,7 +71,7 @@ fn useCase(
     // Load existing values so absent fields keep their current state
     // (effective_* pattern from the deleted task_update routine branch).
     var qr = db.query(allocator,
-        "SELECT description, instruction, schedule, enabled FROM workspace_routines WHERE id = ?",
+        "SELECT description, instruction, schedule, enabled, selected_profile_model FROM workspace_routines WHERE id = ?",
         &[_][]const u8{input.item_id},
     ) catch return error.LookupFailed;
     defer qr.deinit();
@@ -85,11 +86,18 @@ fn useCase(
     defer allocator.free(existing_schedule);
     const existing_enabled_int = std.fmt.parseInt(i64, erow.values[3], 10) catch 0;
     const existing_enabled = existing_enabled_int == 1;
+    const existing_profile_model = try allocator.dupe(u8, erow.values[4]);
+    defer allocator.free(existing_profile_model);
 
     const effective_description = input.body.description orelse existing_description;
     const effective_instruction = input.body.instruction orelse existing_instruction;
     const effective_schedule = std.mem.trim(u8, input.body.schedule orelse existing_schedule, " \t\n\r");
     const effective_enabled = input.body.enabled orelse existing_enabled;
+    const effective_profile_model = std.mem.trim(
+        u8,
+        input.body.selected_profile_model orelse existing_profile_model,
+        " \t\n\r",
+    );
 
     if (effective_schedule.len > 0) {
         cron.validate(effective_schedule) catch return error.InvalidSchedule;
@@ -115,10 +123,11 @@ fn useCase(
         \\       schedule = COALESCE(NULLIF(?, ''), ''),
         \\       enabled = ?,
         \\       next_run_at = ?,
+        \\       selected_profile_model = COALESCE(NULLIF(?, ''), ''),
         \\       updated_at = datetime('now')
         \\ WHERE id = ?
     ,
-        &.{ effective_description, effective_instruction, effective_schedule, enabled_str, next_run_at, input.item_id },
+        &.{ effective_description, effective_instruction, effective_schedule, enabled_str, next_run_at, effective_profile_model, input.item_id },
     ) catch return error.UpdateFailed;
 
     // Refetch via the GET use-case's row shape. The GET module's
@@ -127,7 +136,8 @@ fn useCase(
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
         \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
         \\       last_status, COALESCE(CAST(last_error AS TEXT), ''),
-        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
+        \\       COALESCE(CAST(selected_profile_model AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.RefetchFailed;
     defer q2.deinit();
@@ -148,6 +158,7 @@ fn useCase(
         .last_error = try allocator.dupe(u8, urow.values[9]),
         .created_at = try allocator.dupe(u8, urow.values[10]),
         .updated_at = try allocator.dupe(u8, urow.values[11]),
+        .selected_profile_model = try allocator.dupe(u8, urow.values[12]),
     } };
 }
 
@@ -224,6 +235,7 @@ const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
+const Migration124AddRoutineSelectedProfileModel = @import("../migrations/migration.zig").Migration124AddRoutineSelectedProfileModel;
 
 const TestCtx = struct {
     db: database.Db,
@@ -247,6 +259,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, testing.allocator);
+    try Migration124AddRoutineSelectedProfileModel.up(&db, testing.allocator);
 
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'routine', 'Nightly')",
@@ -257,6 +270,16 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     return .{ .db = db, .threaded = threaded };
+}
+
+fn queryRoutineModel(alloc: std.mem.Allocator, db: *database.Db, id: []const u8) ![]u8 {
+    var row = try db.queryRow(
+        alloc,
+        "SELECT selected_profile_model FROM workspace_routines WHERE id = ?",
+        &[_][]const u8{id},
+    );
+    defer row.deinit(alloc);
+    return try alloc.dupe(u8, row.values[0]);
 }
 
 fn freeOutput(allocator: std.mem.Allocator, output: RoutineUpdateOutput) void {
@@ -271,6 +294,7 @@ fn freeOutput(allocator: std.mem.Allocator, output: RoutineUpdateOutput) void {
     allocator.free(output.routine.last_error);
     allocator.free(output.routine.created_at);
     allocator.free(output.routine.updated_at);
+    allocator.free(output.routine.selected_profile_model);
 }
 
 test "update routine: instruction patch keeps schedule" {
@@ -356,4 +380,71 @@ test "update routine: invalid schedule returns InvalidSchedule" {
             .body = .{ .schedule = "bogus" },
         }),
     );
+}
+
+test "update routine: choosing an agent model stores the model the fire will use" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const output = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .selected_profile_model = "900ribu" },
+    });
+    defer freeOutput(alloc, output);
+
+    try testing.expectEqualStrings("900ribu", output.routine.selected_profile_model);
+
+    const stored = try queryRoutineModel(alloc, &ctx.db, "ws_item_1");
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("900ribu", stored);
+}
+
+test "update routine: an instruction patch keeps the chosen agent model" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .selected_profile_model = "900ribu" },
+    });
+    freeOutput(alloc, first);
+
+    const second = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .instruction = "do other things" },
+    });
+    defer freeOutput(alloc, second);
+
+    try testing.expectEqualStrings("do other things", second.routine.instruction);
+    try testing.expectEqualStrings("900ribu", second.routine.selected_profile_model);
+}
+
+test "update routine: clearing the agent model returns the routine to the backend cascade" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .selected_profile_model = "900ribu" },
+    });
+    freeOutput(alloc, first);
+
+    const second = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .selected_profile_model = "" },
+    });
+    defer freeOutput(alloc, second);
+
+    try testing.expectEqualStrings("", second.routine.selected_profile_model);
 }

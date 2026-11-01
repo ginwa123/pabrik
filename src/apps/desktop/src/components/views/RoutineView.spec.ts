@@ -5,12 +5,16 @@ import { createPinia, setActivePinia } from 'pinia'
 import RoutineView from './RoutineView.vue'
 import * as api from '../../api'
 
+const { replaceMock } = vi.hoisted(() => ({ replaceMock: vi.fn() }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ replace: replaceMock }) }))
+
 const routineFixture = {
   id: 'item_r_1',
   workspace_item_id: 'item_r_1',
   description: 'nightly things',
   instruction: 'do things',
   schedule: '0 9 * * *',
+  selected_profile_model: '',
   enabled: true,
   last_run_at: '',
   next_run_at: '2026-01-02 09:00:00',
@@ -19,6 +23,13 @@ const routineFixture = {
   created_at: '',
   updated_at: '',
 }
+
+const agentProfiles = {
+  '900ribu': { model: 'deepseek/deepseek-v4.1-flash', base_url: 'https://api.example/v1' },
+  switched_off: { model: 'gpt-x', base_url: 'https://off.example', enabled: false },
+}
+
+const noWorkers = { workers: [], count: 0 }
 
 function mountView() {
   return mount(RoutineView, {
@@ -35,14 +46,23 @@ async function settle() {
   await nextTick()
 }
 
+async function flush() {
+  await nextTick()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await nextTick()
+}
+
 describe('RoutineView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.restoreAllMocks()
+    replaceMock.mockReset()
     vi.spyOn(api, 'getRoutineItem').mockResolvedValue({ routine: { ...routineFixture } })
     vi.spyOn(api, 'updateRoutineItem').mockImplementation(async (_ws, _item, data) => ({
       routine: { ...routineFixture, ...data },
     }))
+    vi.spyOn(api, 'getWorkspaceConfig').mockResolvedValue({ profiles: agentProfiles })
+    vi.spyOn(api, 'getWorkers').mockResolvedValue(noWorkers)
   })
 
   afterEach(() => {
@@ -152,5 +172,163 @@ describe('RoutineView', () => {
       schedule: '0 9 * * *',
       enabled: true,
     })
+  })
+
+  it('shows the agent model the routine already fires under', async () => {
+    vi.mocked(api.getRoutineItem).mockResolvedValue({
+      routine: { ...routineFixture, selected_profile_model: '900ribu' },
+    })
+    const wrapper = mountView()
+    await settle()
+    expect(wrapper.find('[data-testid="routine-agent-model-picker"]').text()).toContain('900ribu')
+  })
+
+  it('offers the workspace agents that are switched on, not the disabled ones', async () => {
+    const wrapper = mountView()
+    await settle()
+    await wrapper.find('[data-testid="routine-agent-model-picker"]').trigger('click')
+    const options = wrapper.findAll('[data-testid="routine-agent-model-option"]')
+    const labels = options.map((o) => o.text())
+    expect(labels.some((l) => l.includes('900ribu'))).toBe(true)
+    expect(labels.some((l) => l.includes('switched_off'))).toBe(false)
+  })
+
+  it('persists the picked agent model on the routine as soon as it is picked', async () => {
+    const wrapper = mountView()
+    await settle()
+    await wrapper.find('[data-testid="routine-agent-model-picker"]').trigger('click')
+    const option = wrapper
+      .findAll('[data-testid="routine-agent-model-option"]')
+      .find((o) => o.text().includes('900ribu'))
+    await option!.trigger('click')
+    await nextTick()
+
+    expect(api.updateRoutineItem).toHaveBeenCalledWith('ws_1', 'item_r_1', {
+      selected_profile_model: '900ribu',
+    })
+    expect(wrapper.find('[data-testid="routine-agent-model-picker"]').text()).toContain('900ribu')
+  })
+
+  it('keeps the previous agent model when the server rejects the new one', async () => {
+    vi.mocked(api.getRoutineItem).mockResolvedValue({
+      routine: { ...routineFixture, selected_profile_model: '900ribu' },
+    })
+    vi.mocked(api.updateRoutineItem).mockRejectedValue(new Error('HTTP 500'))
+    const wrapper = mountView()
+    await settle()
+    await wrapper.find('[data-testid="routine-agent-model-picker"]').trigger('click')
+    const option = wrapper
+      .findAll('[data-testid="routine-agent-model-option"]')
+      .find((o) => o.text().includes('Default'))
+    await option!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="routine-agent-model-picker"]').text()).toContain('900ribu')
+    expect(wrapper.find('[data-testid="routine-agent-model-error"]').text()).toContain('HTTP 500')
+  })
+
+  it('lists the chat session that is running so it can be opened', async () => {
+    vi.mocked(api.getRoutineItem).mockResolvedValue({
+      routine: { ...routineFixture, last_status: 'running' },
+    })
+    vi.mocked(api.getWorkers).mockResolvedValue({
+      workers: [
+        {
+          id: 'item_r_1',
+          session_id: 'item_r_1',
+          working_directory: '',
+          last_activity: '1793536000',
+          last_activity_description: 'read_file src/app.zig',
+          created_at: '2026-11-01 12:00:00',
+          status: 'running',
+          is_running: true,
+          queue_count: 0,
+        },
+      ],
+      count: 1,
+    })
+    const wrapper = mountView()
+    await settle()
+
+    const row = wrapper.find('[data-testid="routine-running-session"]')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('Nightly')
+    expect(row.text()).toContain('read_file src/app.zig')
+
+    await row.trigger('click')
+    expect(replaceMock).toHaveBeenCalledWith({
+      path: '/app/ws_1/chat/item_r_1',
+      query: {},
+    })
+  })
+
+  it('shows the running session right after Run now', async () => {
+    vi.spyOn(api, 'runWorkspaceRoutine').mockResolvedValue({ session_id: 'item_r_1' })
+    vi.mocked(api.getRoutineItem)
+      .mockResolvedValueOnce({ routine: { ...routineFixture } })
+      .mockResolvedValue({ routine: { ...routineFixture, last_status: 'running' } })
+    vi.mocked(api.getWorkers).mockResolvedValue({
+      workers: [
+        {
+          id: 'item_r_1',
+          session_id: 'item_r_1',
+          working_directory: '',
+          last_activity: '1793536000',
+          last_activity_description: 'grep -r TODO src',
+          created_at: '2026-11-01 12:00:00',
+          status: 'running',
+          is_running: true,
+          queue_count: 0,
+        },
+      ],
+      count: 1,
+    })
+    const wrapper = mountView()
+    await settle()
+    expect(wrapper.find('[data-testid="routine-running-sessions"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="routine-run"]').trigger('click')
+    await flush()
+
+    expect(api.runWorkspaceRoutine).toHaveBeenCalledWith('ws_1', 'item_r_1', 'item_r_1')
+    const row = wrapper.find('[data-testid="routine-running-session"]')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('grep -r TODO src')
+    wrapper.unmount()
+  })
+
+  it('clears the running session once the run settles', async () => {
+    vi.useFakeTimers()
+    vi.mocked(api.getRoutineItem).mockResolvedValue({
+      routine: { ...routineFixture, last_status: 'running' },
+    })
+    vi.mocked(api.getWorkers).mockResolvedValue({
+      workers: [
+        {
+          id: 'item_r_1',
+          session_id: 'item_r_1',
+          working_directory: '',
+          last_activity: '1793536000',
+          last_activity_description: '',
+          created_at: '2026-11-01 12:00:00',
+          status: 'running',
+          is_running: true,
+          queue_count: 0,
+        },
+      ],
+      count: 1,
+    })
+    const wrapper = mountView()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(wrapper.find('[data-testid="routine-running-sessions"]').exists()).toBe(true)
+
+    vi.mocked(api.getRoutineItem).mockResolvedValue({
+      routine: { ...routineFixture, last_status: 'success' },
+    })
+    vi.mocked(api.getWorkers).mockResolvedValue(noWorkers)
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(wrapper.find('[data-testid="routine-running-sessions"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

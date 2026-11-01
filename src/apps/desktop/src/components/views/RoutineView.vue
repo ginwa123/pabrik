@@ -23,6 +23,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount, onMounted, onUpdated } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   getRoutineItem,
   updateRoutineItem,
@@ -40,6 +41,7 @@ import AgentKnowledgeDetailDialog from '../dialogs/AgentKnowledgeDetailDialog.vu
 import AgentSystemPromptDialog from '../dialogs/AgentSystemPromptDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import { ROUTINE_PRESETS, ROUTINE_CRON_FIELDS, routinePresetFor } from '../../helpers/routinePresets'
+import { buildAppUrl } from '../../helpers/appUrl'
 
 const props = defineProps<{
   item: WorkspaceItem
@@ -68,6 +70,27 @@ const lastRunAt = ref('')
 const nextRunAt = ref('')
 const lastError = ref('')
 
+const router = useRouter()
+
+interface AgentModel {
+  name: string
+  model: string
+  base_url: string
+}
+
+const agentModels = ref<AgentModel[]>([])
+const modelsLoading = ref(false)
+const isModelPickerOpen = ref(false)
+const selectedProfileModel = ref('')
+const profileModelError = ref<string | null>(null)
+
+interface RunningSession {
+  sessionId: string
+  description: string
+}
+
+const runningSessions = ref<RunningSession[]>([])
+
 async function load() {
   loading.value = true
   loadError.value = null
@@ -90,8 +113,72 @@ function applyRoutine(routine: WorkspaceRoutine) {
   lastRunAt.value = routine.last_run_at ?? ''
   nextRunAt.value = routine.next_run_at ?? ''
   lastError.value = routine.last_error ?? ''
+  selectedProfileModel.value = routine.selected_profile_model ?? ''
   if (lastStatus.value === 'running') startStatusPoll()
-  else stopStatusPoll()
+  else {
+    stopStatusPoll()
+    runningSessions.value = []
+  }
+}
+
+async function loadAgentModels() {
+  const wsId = props.workspaceId
+  if (!wsId) return
+  modelsLoading.value = true
+  try {
+    const config = await api.getWorkspaceConfig(wsId)
+    const profiles = (config.profiles ?? {}) as Record<
+      string,
+      { model?: string; base_url?: string; enabled?: boolean }
+    >
+    agentModels.value = Object.entries(profiles)
+      .filter(([, p]) => p.enabled !== false)
+      .map(([name, p]) => ({ name, model: p.model ?? '', base_url: p.base_url ?? '' }))
+  } catch (e) {
+    console.error('[RoutineView] failed to load agent models:', e)
+    agentModels.value = []
+  } finally {
+    modelsLoading.value = false
+  }
+}
+
+async function selectProfileModel(name: string) {
+  isModelPickerOpen.value = false
+  if (name === selectedProfileModel.value) return
+  const previous = selectedProfileModel.value
+  selectedProfileModel.value = name
+  profileModelError.value = null
+  try {
+    const { routine } = await api.updateRoutineItem(props.workspaceId, props.itemId, {
+      selected_profile_model: name,
+    })
+    selectedProfileModel.value = routine.selected_profile_model ?? ''
+  } catch (e) {
+    selectedProfileModel.value = previous
+    profileModelError.value = e instanceof Error ? e.message : 'Failed to save the agent model'
+  }
+}
+
+const selectedModelDetail = computed(() => {
+  const chosen = agentModels.value.find((m) => m.name === selectedProfileModel.value)
+  return chosen ? chosen.model : ''
+})
+
+async function refreshRunningSessions() {
+  try {
+    const { workers } = await api.getWorkers(undefined, 50, props.itemId)
+    runningSessions.value = workers.map((w) => ({
+      sessionId: w.session_id || w.id,
+      description: w.last_activity_description ?? '',
+    }))
+  } catch (e) {
+    console.error('[RoutineView] failed to load running sessions:', e)
+    runningSessions.value = []
+  }
+}
+
+function openRunningSession(sessionId: string) {
+  router.replace(buildAppUrl({ workspaceId: props.workspaceId, chatSessionId: sessionId }))
 }
 
 // Compact 5-field cron check (empty = manual-only, always valid).
@@ -183,12 +270,14 @@ function stopStatusPoll() {
 
 function startStatusPoll() {
   stopStatusPoll()
+  void refreshRunningSessions()
   statusPoll = setInterval(() => {
     if (lastStatus.value !== 'running') {
       stopStatusPoll()
       return
     }
     void load()
+    void refreshRunningSessions()
   }, 5000)
 }
 
@@ -472,6 +561,7 @@ async function handleRoutineToggleToolsBulk(toolNames: string[], enabled: boolea
 onMounted(() => {
   void load()
   void loadRoutineAgent()
+  void loadAgentModels()
 })
 
 onBeforeUnmount(() => {
@@ -486,8 +576,11 @@ onUpdated(() => {
   prevRoutineItemId = props.itemId
   activeTab.value = 'routine'
   stopStatusPoll()
+  runningSessions.value = []
+  isModelPickerOpen.value = false
   void load()
   void loadRoutineAgent()
+  void loadAgentModels()
 })
 </script>
 
@@ -648,6 +741,96 @@ onUpdated(() => {
           <section
             class="rounded-xl p-4"
             style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+            data-testid="routine-agent-model-section"
+          >
+            <div class="flex items-center gap-2 mb-3">
+              <h2 class="text-dense font-semibold" style="color: var(--semantic-text-dim)">
+                Which agent runs it
+              </h2>
+              <span class="ml-auto text-micro" style="color: var(--semantic-text-dim)">
+                {{ selectedModelDetail }}
+              </span>
+            </div>
+            <button
+              type="button"
+              class="w-full flex items-center gap-1.5 px-3 py-2 rounded-lg text-body text-left transition-opacity duration-200"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+              :title="
+                selectedProfileModel
+                  ? `Every fire runs under agent: ${selectedProfileModel}`
+                  : 'Every fire uses the active profile'
+              "
+              data-testid="routine-agent-model-picker"
+              @click.stop="isModelPickerOpen = !isModelPickerOpen"
+            >
+              <UiIcon name="robot" size-class="w-3.5 h-3.5" />
+              <span class="font-medium">{{ selectedProfileModel || 'Default' }}</span>
+              <span class="ml-auto text-micro shrink-0" style="color: var(--semantic-text-dim)"
+                >▾</span
+              >
+            </button>
+            <div
+              v-if="isModelPickerOpen"
+              class="mt-1 rounded-lg overflow-hidden"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+              "
+              data-testid="routine-agent-model-list"
+            >
+              <button
+                type="button"
+                class="w-full text-left px-3 py-2 text-dense flex items-center justify-between hover:opacity-80"
+                style="color: var(--semantic-text)"
+                data-testid="routine-agent-model-option"
+                @click="selectProfileModel('')"
+              >
+                <span class="font-medium">Default (active profile)</span>
+                <span v-if="selectedProfileModel === ''">✓</span>
+              </button>
+              <button
+                v-for="m in agentModels"
+                :key="m.name"
+                type="button"
+                class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
+                style="color: var(--semantic-text); border-top: 1px solid var(--color-border)"
+                data-testid="routine-agent-model-option"
+                @click="selectProfileModel(m.name)"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="font-medium">{{ m.name }}</span>
+                  <span v-if="selectedProfileModel === m.name">✓</span>
+                </div>
+                <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
+                  {{ m.model }}
+                </div>
+              </button>
+              <div
+                v-if="!modelsLoading && agentModels.length === 0"
+                class="px-3 py-2 text-dense"
+                style="color: var(--semantic-text-muted)"
+                data-testid="routine-agent-model-empty"
+              >
+                No agents configured. Add one in Settings.
+              </div>
+            </div>
+            <p
+              v-if="profileModelError"
+              class="text-dense mt-2"
+              style="color: var(--color-red)"
+              data-testid="routine-agent-model-error"
+            >
+              {{ profileModelError }}
+            </p>
+          </section>
+
+          <section
+            class="rounded-xl p-4"
+            style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
           >
             <div class="flex items-center gap-2 mb-3">
               <h2 class="text-dense font-semibold" style="color: var(--semantic-text-dim)">
@@ -748,6 +931,61 @@ onUpdated(() => {
             <p v-if="saveError" class="text-dense mt-3" style="color: var(--color-red)">
               {{ saveError }}
             </p>
+          </section>
+
+          <section
+            v-if="runningSessions.length > 0"
+            class="rounded-xl p-4"
+            style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+            data-testid="routine-running-sessions"
+          >
+            <div class="flex items-center gap-2 mb-3">
+              <h2 class="text-dense font-semibold" style="color: var(--semantic-text-dim)">
+                Running now
+              </h2>
+              <span
+                class="text-micro px-1.5 py-0.5 rounded"
+                style="
+                  color: var(--color-green);
+                  background-color: rgba(135, 169, 135, 0.12);
+                  border: 1px solid rgba(135, 169, 135, 0.4);
+                "
+                data-testid="routine-running-session-count"
+              >
+                {{ runningSessions.length }}
+              </span>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <button
+                v-for="session in runningSessions"
+                :key="session.sessionId"
+                type="button"
+                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-dense text-left hover:opacity-80 transition-opacity duration-200"
+                style="
+                  background-color: var(--semantic-sidebar-bg);
+                  border: 1px solid var(--color-border);
+                  color: var(--semantic-text);
+                "
+                :title="`Open the chat for session ${session.sessionId}`"
+                data-testid="routine-running-session"
+                @click="openRunningSession(session.sessionId)"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full shrink-0"
+                  style="background-color: var(--color-green)"
+                />
+                <span class="font-medium truncate">{{ item.name ?? session.sessionId }}</span>
+                <span
+                  v-if="session.description"
+                  class="truncate text-micro"
+                  style="color: var(--semantic-text-muted)"
+                  data-testid="routine-running-session-activity"
+                >
+                  {{ session.description }}
+                </span>
+                <span class="ml-auto shrink-0" style="color: var(--color-blue)">Open chat →</span>
+              </button>
+            </div>
           </section>
 
           <div
