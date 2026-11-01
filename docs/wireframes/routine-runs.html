@@ -801,7 +801,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_routine ON sessions(routine_id, created_
                           selected_profile_model, is_auto_retry_until_stop, user_id,
                           routine_id, run_trigger, run_due_at)
     broadcast sessions.created                       the run is in the sidebar before the agent starts
- 5  workspace_routines: next_run_at = nextFireTime(now)
+ 5  workspace_items: routine_next_run_at = nextFireTime(now)
  6  di.emit_run_agent(...)                           the chat funnel, not a raw event
       insert_worker: INSERT INTO sessions ... ON CONFLICT DO NOTHING   no-op, no second broadcast
                      INSERT INTO worker                               running is now observable
@@ -809,7 +809,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_routine ON sessions(routine_id, created_
  7  the loop finishes; emit is synchronous, so we are back here
     reason = sessions.last_finish_reason
     if reason not in ('stop','awaiting_user'): UPDATE sessions SET run_error = ?
-    workspace_routines: last_status = success | failed   the pill stops lying</pre>
+    workspace_items: routine_run_lock = success | failed   the pill stops lying</pre>
 
     <p>Order matters. Inserting the session ourselves is what lets it carry the workspace, and because that insert is <code>ON CONFLICT DO NOTHING</code> with the broadcast gated on <code>db.changes() &gt; 0</code>, <code>insert_worker</code> stays a silent no-op afterwards: one broadcast, one sidebar row, no fight.</p>
   </section>
@@ -886,7 +886,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_routine ON sessions(routine_id, created_
       <li><b>The run is a session, not a table.</b> This document's first revision added a <code>routine_runs</code> table. Every field it held was either already on the session or derivable from the <code>worker</code> row and <code>last_finish_reason</code>, so it is gone: four columns instead.</li>
       <li><b>Runs are still not <code>workspace_item_tasks</code> rows.</b> They follow that table's id convention, but no query in the repo filters <code>task_type</code>, so a run row would surface as a task in the item's list, the workspace counts, run-all-agents and the agent's kanban tool, and there is no way to prune it without deleting something the user can see.</li>
       <li><b>The overlap guard stays <code>claimForRun</code>.</b> <code>last_status</code> stops being a reported outcome and becomes the lock it already was; each run's state is derived per session instead of stored once.</li>
-      <li><b><code>workspace_routines</code> shrinks but stays.</b> Its <code>description</code> duplicates <code>agent_configs.description</code>, <code>last_run_at</code> and <code>last_error</code> are derivable, and <code>id</code> equals <code>workspace_item_id</code>: thirteen columns to seven, in a migration of its own. Cron state has no other home here. §11 of the design shows the table disappearing into <code>agent_configs</code>, which already holds the routine's description, knowledge, tools and prompts.</li>
+      <li><b><code>workspace_routines</code> is not needed at all.</b> A routine <b>is</b> a <code>workspace_items</code> row with <code>item_type='routine'</code>: its six settings become <code>routine_*</code> columns on that row, and its runs are sessions pointing back at it, one item to many runs. The table's other seven columns were a duplicate description, two derivable fields, a second id, and a status that becomes the fire lock.</li>
       <li><b>Scheduling arithmetic is untouched.</b> Next fire is still computed from completion time. Changing that changes behaviour for every existing routine and deserves its own proof.</li>
       <li><b>Routines still do not set <code>is_auto_retry_until_stop</code>.</b> A routine that retries itself until it stops is an unattended loop, which is exactly what that flag is not for.</li>
     </ol>
