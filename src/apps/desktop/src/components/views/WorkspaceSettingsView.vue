@@ -28,6 +28,7 @@ import MembersSection from '../workspace/MembersSection.vue'
 import SecretsSection from '../workspace/SecretsSection.vue'
 import SkillsSettings from '../preview/SkillsSettings.vue'
 import WorkspaceMemoriesSection from '../workspace/WorkspaceMemoriesSection.vue'
+import WorkspaceUsageSection from '../workspace/WorkspaceUsageSection.vue'
 import { provideSecretNames } from '../../helpers/secretNames'
 
 const route = useRoute()
@@ -174,6 +175,10 @@ function handleRetry(): void {
               }}</span>
             </div>
           </section>
+        </div>
+
+        <div v-else-if="section === 'usage'">
+          <WorkspaceUsageSection :key="workspaceId" :workspace-id="workspaceId" />
         </div>
 
         <div v-else-if="section === 'members'" class="mx-auto w-full max-w-3xl">
