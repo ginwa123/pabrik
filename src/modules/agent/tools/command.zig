@@ -102,7 +102,7 @@ pub const command_tool = AgentTool{
         \\## Rules (enforced in code — violations return errors)
         \\- `timeout`: REQUIRED, the ONLY deadline. No shell `timeout` prefix — do not add one.
         \\- Bound output: `| head -n <N>` / `| tail -n <N>` (bash) or `| Select-Object -First <N>` (pwsh); under cmd.exe use max_lines / findstr / more.
-        \\- Prefer `search` / `read_file` / `glob` over shell rg/grep/find; inside a shell use `rg` / `fd` / `tree`.
+        \\- Code/text discovery is NOT a `command` job: use the `search` tool (it has `context`/`after_context`, `ignore_case`, `invert`, `count_only`, `max_results` — the flags you would reach for), `glob` for file NAMES, `read_file` for a known path. Do not grep the tree with `rg`/`grep`/`find` inside this tool.
         \\- No unbounded output, no destructive commands. Long work goes in `mode` (see below).
         \\- Web fetch: use the `agent-browser` CLI.
         \\- End your turn with `is_stop=true`; kills nothing.
