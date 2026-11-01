@@ -565,7 +565,7 @@
       </div>
     </div>
 
-    <p class="verdict">5.51 billion input tokens, and not one call reported cache.</p>
+    <p class="verdict">5.56 billion input tokens, and not one call reported cache.</p>
 
     <p class="verdict-note">The rate is unknown, not zero. Three models ran here and none of them returned <code>cache_read_input_tokens</code>, so every figure below that depends on cache is a dash. A usage page has to get that right: a dash, and a line saying which calls it stands for.</p>
 
@@ -574,22 +574,22 @@
         <div class="figure">
           <dt>Cache read rate</dt>
           <dd class="value dash">–</dd>
-          <dd class="note">0 of 19,787 calls reported a cache counter</dd>
+          <dd class="note">0 of 20,026 calls reported a cache counter</dd>
         </div>
         <div class="figure">
           <dt>Input tokens</dt>
-          <dd class="value">5.51B</dd>
+          <dd class="value">5.56B</dd>
           <dd class="note">278k per call, against 862 output</dd>
         </div>
         <div class="figure">
           <dt>Calls</dt>
-          <dd class="value">19,787</dd>
+          <dd class="value">20,026</dd>
           <dd class="note">across 89 sessions</dd>
         </div>
         <div class="figure">
           <dt>Tool calls</dt>
-          <dd class="value">42,803</dd>
-          <dd class="note">356 distinct tool_name values</dd>
+          <dd class="value">23,474</dd>
+          <dd class="note">one row per tool result</dd>
         </div>
         <div class="figure">
           <dt>Cache counters</dt>
@@ -660,8 +660,8 @@
             </thead>
             <tbody>
               <tr><td class="model">deepseek-v4.1-flash</td><td class="num">8,799</td><td class="num">2.27B</td><td class="num unknown">–</td><td class="num">0 of 8,799</td></tr>
-              <tr><td class="model">deepseek/deepseek-v4.1-flash</td><td class="num">5,629</td><td class="num">1.40B</td><td class="num unknown">–</td><td class="num">0 of 5,629</td></tr>
               <tr><td class="model">minimax-m3.1-flash-free</td><td class="num">5,383</td><td class="num">1.84B</td><td class="num unknown">–</td><td class="num">0 of 5,383</td></tr>
+              <tr><td class="model">deepseek/deepseek-v4.1-flash</td><td class="num">5,844</td><td class="num">1.41B</td><td class="num unknown">–</td><td class="num">0 of 5,844</td></tr>
             </tbody>
           </table>
 
@@ -688,9 +688,9 @@
     <section class="panel" data-ui="panel-daily">
       <div class="panel-head">
         <h3>Input tokens per day</h3>
-        <span class="tag">peak 840.6M on 20 Oct</span>
+        <span class="tag">5.56B over 14 active days</span>
       </div>
-      <p class="panel-sub">Fifteen days, not fourteen: 19 Oct has no LLM call at all. Today's bar is still growing.</p>
+      <p class="panel-sub">Fifteen slots, fourteen with a call: 19 Oct has none, and the page draws that slot empty rather than skipping it.</p>
 
       <div class="chart-wrap">
         <div class="y-axis" style="padding-top:0"><span>800M</span><span>400M</span><span>0</span></div>
@@ -728,45 +728,41 @@
     <section class="panel" data-ui="panel-work">
       <div class="panel-head">
         <h3>Where the work went</h3>
-        <span class="tag">42,803 tool calls · 43,602 rows</span>
+        <span class="tag">23,474 tool calls · 20,026 turns</span>
       </div>
 
       <div class="two-up" style="margin-top:20px">
         <div>
           <p class="panel-sub">Tool calls by name, top seven</p>
           <div class="bars">
-            <div class="bar-row"><span class="name">command</span><span class="track"><span class="lead" style="width:100%"></span></span><span class="count">28,448</span></div>
-            <div class="bar-row"><span class="name">read_file</span><span class="track"><span class="rest" style="width:10.4%"></span></span><span class="count">2,947</span></div>
-            <div class="bar-row"><span class="name">text_replace</span><span class="track"><span class="rest" style="width:5.9%"></span></span><span class="count">1,677</span></div>
-            <div class="bar-row"><span class="name">write_file</span><span class="track"><span class="rest" style="width:4.3%"></span></span><span class="count">1,223</span></div>
-            <div class="bar-row"><span class="name">use_tool</span><span class="track"><span class="rest" style="width:3.4%"></span></span><span class="count">977</span></div>
-            <div class="bar-row"><span class="name">command,command</span><span class="track"><span class="rest" style="width:3.1%"></span></span><span class="count">877</span></div>
-            <div class="bar-row"><span class="name">update_plan</span><span class="track"><span class="rest" style="width:2.6%"></span></span><span class="count">733</span></div>
+            <div class="bar-row"><span class="name">command</span><span class="track"><span class="lead" style="width:100%"></span></span><span class="count">15,645</span></div>
+            <div class="bar-row"><span class="name">read_file</span><span class="track"><span class="rest" style="width:12.5%"></span></span><span class="count">1,956</span></div>
+            <div class="bar-row"><span class="name">text_replace</span><span class="track"><span class="rest" style="width:7.1%"></span></span><span class="count">1,113</span></div>
+            <div class="bar-row"><span class="name">use_tool</span><span class="track"><span class="rest" style="width:5.8%"></span></span><span class="count">903</span></div>
+            <div class="bar-row"><span class="name">write_file</span><span class="track"><span class="rest" style="width:4.1%"></span></span><span class="count">648</span></div>
+            <div class="bar-row"><span class="name">search</span><span class="track"><span class="rest" style="width:3.6%"></span></span><span class="count">570</span></div>
+            <div class="bar-row"><span class="name">update_plan</span><span class="track"><span class="rest" style="width:3.2%"></span></span><span class="count">506</span></div>
           </div>
         </div>
 
         <div>
           <p class="panel-sub">How turns ended</p>
           <div class="split">
-            <span style="width:53.2%;background:#8ba4b0"></span>
-            <span style="width:44.8%;background:#62727a"></span>
-            <span style="width:1.4%;background:#4a4a46"></span>
-            <span style="width:0.6%;background:#87a987"></span>
+            <span style="width:98.7%;background:#8ba4b0"></span>
+            <span style="width:1.3%;background:#87a987"></span>
           </div>
           <div class="split-legend">
-            <div><p class="k"><span class="dot" style="background:#8ba4b0"></span>tool</p><p class="v">23,211</p></div>
-            <div><p class="k"><span class="dot" style="background:#62727a"></span>tool_calls</p><p class="v">19,536</p></div>
-            <div><p class="k"><span class="dot" style="background:#4a4a46"></span>no reason</p><p class="v">604</p></div>
-            <div><p class="k"><span class="dot" style="background:#87a987"></span>stop</p><p class="v">251</p></div>
+            <div><p class="k"><span class="dot" style="background:#8ba4b0"></span>tool_calls</p><p class="v">19,772</p></div>
+            <div><p class="k"><span class="dot" style="background:#87a987"></span>stop</p><p class="v">254</p></div>
           </div>
           <div class="caveat" style="margin-top:20px">
-            <b>One event, two spellings.</b> <code>tool</code> and <code>tool_calls</code> are the same finish reason under two providers and cover 42,747 of 43,602 rows. Normalise them in the query, or this bar means nothing across models.
+            <b>Counted on assistant rows only.</b> A <code>tool</code> result row carries the tool's output and ends nothing, so including it would double every call: 23,474 tool rows against 20,026 turns.
           </div>
         </div>
       </div>
 
       <div class="caveat">
-        <b>356 distinct tool_name values for 42,803 calls.</b> A row that carried two calls stores both names joined, which is where <code>command,command</code> comes from. Split those rows before any per-tool chart claims to be a ranking.
+        <b>50 distinct tool names for 23,474 tool calls</b>, counted on the result rows. Counting <code>tool_name</code> across every role gives 356 instead, because an assistant row that carried two calls stores both names joined (<code>command,command</code>) and is then counted a second time. The definition is the difference between a histogram and a doubling.
       </div>
     </section>
 
@@ -779,13 +775,13 @@
       <div class="states">
         <div class="state">
           <p class="kind">No data</p>
-          <p class="headline">No call in the last 30 days.</p>
+          <p class="headline">No LLM call in the last 30 days.</p>
           <p class="body">The range control stays where it is. A workspace that has never run anything should not look broken.</p>
         </div>
         <div class="state">
           <p class="kind">No telemetry</p>
           <p class="big">–</p>
-          <p class="body">0 of 19,787 calls reported a cache counter. Today's live state, drawn as a dash and a count, never as 0%.</p>
+          <p class="body">0 of 20,026 calls reported a cache counter. The live state today, drawn as a dash and a count, never as 0%.</p>
         </div>
         <div class="state">
           <p class="kind">Error</p>
@@ -831,25 +827,23 @@
       <pre>{
   "workspace_id": "ws_1785055733544_28e79c9db8950100",
   "range": "30d",
-  "totals":  { "calls": 19787, "sessions": 89,
-               "input_tokens": 5508012669, "output_tokens": 17059754,
+  "totals":  { "calls": 20026, "sessions": 89,
+               "input_tokens": 5559477914, "output_tokens": 17262188,
                "cache_read_tokens": 0, "cache_creation_tokens": 0,
-               "calls_with_cache": 0, "cache_hit_rate": null },
+               "calls_with_cache": 0, "excluded_calls": 0,
+               "tool_calls": 23474, "cache_hit_rate": null },
   "daily":   [ { "day": "2026-10-20", "calls": 2367,
-                 "input_tokens": 840592805, "cache_read_tokens": 0 } ],
+                 "input_tokens": 840592805, "cache_read_tokens": 0,
+                 "cache_hit_rate": null } ],
   "models":  [ { "model": "deepseek-v4.1-flash", "calls": 8799,
                  "input_tokens": 2265987319, "calls_with_cache": 0,
                  "cache_hit_rate": null } ],
-  "tools":   [ { "tool_name": "command", "calls": 28448 } ],
-  "finish_reasons": [ { "reason": "tool", "calls": 23211 } ],
-  "cache_series": { "session_id": "task_1789841543583_1",
-                    "model": "muse-spark-1.3-contributor",
-                    "calls": [ { "i": 1, "at": "2026-09-08T18:12",
-                                 "input_tokens": 14124,
-                                 "cache_read_tokens": 0, "rate": 0 } ] }
+  "tools":   [ { "tool_name": "command", "calls": 15645 } ],
+  "finish_reasons": [ { "reason": "tool_calls", "calls": 19772 } ],
+  "cache_series": null
 }</pre>
 
-      <p><code>cache_hit_rate</code> is <b>null</b>, never 0, when nothing divided into it. <code>cache_series</code> is the most recent session in range that reported cache, capped at 120 calls, and null when there is none; that is the panel that is worth a dash because it is the one that explains itself.</p>
+      <p><code>cache_hit_rate</code> is <b>null</b>, never 0, when nothing divided into it: no call in the bucket returned a counter, or there was no input token to divide by. <code>cache_series</code> is the most recent session in range that reported cache, capped at 120 calls, and null when there is none. <code>excluded_calls</code> counts the rows whose <code>cache_read</code> exceeded their own <code>prompt</code>, which are left out of every rate so none can pass 100%.</p>
 
       <p>The four aggregates, workspace-scoped through <code>sessions</code>:</p>
 
@@ -876,27 +870,27 @@ GROUP BY h.model ORDER BY SUM(h.prompt_tokens) DESC;</pre>
 
       <p>Every column is wrapped in <code>COALESCE</code>: this backend reads a SQL NULL as an empty slice, which is indistinguishable from the string <code>""</code>. The same rule the shipped session handler follows.</p>
 
-      <p><b>Cost of the read,</b> measured on this machine against the live 570,865-row table: <b>306 ms</b> for the five queries over 43,665 rows in range. Workspace scoping starts from <code>sessions</code> and rides <code>idx_llm_history_session_created</code>, which is why it is fast. The all-workspace variant of the same question takes <b>3.1 s</b> because it scans by date; if a user-level dashboard is ever wanted it needs a daily rollup, not an index.</p>
+      <p><b>Cost of the read,</b> measured on this machine against the 570,865-row table: <b>0.32 s</b> warm for the six queries over 43,665 rows in range, and <b>3.0 s</b> on the first request after boot. Workspace scoping starts from <code>sessions</code> and rides <code>idx_llm_history_session_created</code>, which is why it is fast. The all-workspace variant of the same question takes <b>3.1 s</b> warm, because it scans by date; a user-level dashboard would need a daily rollup, not an index.</p>
 
       <h2 style="margin-top:44px">Files</h2>
       <div class="files">
-        <div><span>src/http_handlers/workspace_usage_get.zig</span><span>new handler, wire struct, the five queries; mirrors session_usage_get.zig, including the byte-pinned body test</span></div>
-        <div><span>src/http_handlers/mod.zig, src/http_routes.zig</span><span>export and route under authed, plus a route-table test for the new tail</span></div>
-        <div><span>src/apps/desktop/src/api/workspaceUsage.ts</span><span>typed wire shape and the fetch</span></div>
-        <div><span>src/apps/desktop/src/composables/useWorkspaceUsage.ts</span><span>range state, abort on range change, the four states</span></div>
-        <div><span>src/apps/desktop/src/components/workspace/WorkspaceUsageSection.vue</span><span>the page: figures, panels, states</span></div>
-        <div><span>src/apps/desktop/src/components/workspace/UsageChart.vue</span><span>inline SVG line and bar; no chart dependency is in package.json and none is needed</span></div>
-        <div><span>src/apps/desktop/src/components/settings/SettingsShell.vue</span><span>one line: the Usage section, between Overview and Members</span></div>
-        <div><span>src/apps/desktop/src/components/ui/icons.ts</span><span>a chart glyph on the existing 16px grid</span></div>
+        <div><span>src/http_handlers/workspace_usage_get.zig</span><span>the handler, the six queries, and eight tests: the empty answer byte-pinned, the workspace and range filters, the over-100% clamp, the series pick, the null rate</span></div>
+        <div><span>src/http_handlers/mod.zig, src/http_routes.zig</span><span>export and route under authed on <code>/api/workspaces/:workspace_id/usage</code></span></div>
+        <div><span>src/apps/desktop/src/api/workspaceUsage.ts</span><span>the wire types, including which fields the server promises to send as null</span></div>
+        <div><span>src/apps/desktop/src/stores/workspaceUsage.ts</span><span>range state, the error channel, and the rule that a failure is never an empty page</span></div>
+        <div><span>src/apps/desktop/src/components/workspace/WorkspaceUsageSection.vue</span><span>the page: figures, panels, the four states, the range switch</span></div>
+        <div><span>.../UsageCacheChart.vue, UsageDailyChart.vue, UsageToolBreakdown.vue</span><span>inline SVG on the app's own tokens; no chart dependency exists in package.json and none was added</span></div>
+        <div><span>src/apps/desktop/src/components/settings/SettingsShell.vue</span><span>one line in the workspace nav, and the <code>chart</code> glyph in <code>components/ui/icons.ts</code></span></div>
+        <div><span>src/apps/desktop/src/components/views/WorkspaceSettingsView.vue</span><span>the section mounted with the route workspace, keyed so a switch remounts it</span></div>
+        <div><span>src/apps/desktop/src/__tests__/WorkspaceUsageSection.spec.ts</span><span>seven tests: dash not 0%, totals, excluded rows, no data, error plus retry, range refetch, workspace isolation</span></div>
       </div>
 
-      <h2 style="margin-top:44px">Five decisions before code</h2>
+      <h2 style="margin-top:44px">What shipped, and what is still open</h2>
       <ol class="decisions">
-        <li><b>A section of its own, or the top half of Overview?</b> This wireframe takes the section, because Overview is three fields and a chart inside it would be the only thing in it.</li>
-        <li><b>Default range.</b> 30 days here. 7 days has too few sessions to say anything; 90 days crosses a provider change.</li>
-        <li><b>Does the per-call chart live here or only in the session drawer?</b> Here it is the argument of the page. The drawer already has a handler to call: <code>GET /api/session/:session_id/usage</code> shipped in #938 and nothing in the app calls it yet.</li>
-        <li><b>Fix the chat-completions cache mapping first?</b> If yes, this page has real numbers on day one for three of its four providers. If no, the page ships honest and empty, and the fix lands later with no retroactive data either way.</li>
-        <li><b>Cost or no cost?</b> No cost tile until <code>cost_usd</code> is written on the row.</li>
+        <li><b>Shipped as a section of its own,</b> between Overview and Members, 30 days by default, with the per-call curve on the page and the range switch above it.</li>
+        <li><b>Shipped without a cost tile.</b> <code>llm_history</code> still has no provider column, so a price join would be a guess. The tile waits for <code>cost_usd</code> written at call time.</li>
+        <li><b>Still open: the chat-completions cache mapping.</b> Until <code>Agent.zig:2152</code> reads <code>prompt_cache_hit_tokens</code> and <code>prompt_tokens_details.cached_tokens</code>, this page shows a dash for every DeepSeek and MiniMax call. No earlier data can be recovered: <code>usage_json</code> was never written.</li>
+        <li><b>Still open: the opencode mapping</b> that produces the three rows above 100%. The page survives it (they are excluded and counted), the source does not.</li>
       </ol>
     </section>
 
@@ -912,7 +906,7 @@ GROUP BY h.model ORDER BY SUM(h.prompt_tokens) DESC;</pre>
       </div>
     </section>
 
-    <p class="provenance">Wireframe, not shipped. The rail, the six workspace sections and the Agent group are the app's current Settings shell, screenshot-matched at 240px; the seven panels are new. Numbers measured from <code>~/.config/pabrik/agent.db</code> on 1 November 2026.</p>
+    <p class="provenance">Wireframe, now shipped: the numbers on this page were re-measured from the live endpoint after it landed. The rail, the six workspace sections and the Agent group are the app's current Settings shell, screenshot-matched at 240px; the seven panels are new. Numbers measured from <code>~/.config/pabrik/agent.db</code> on 1 November 2026.</p>
 
   </main>
 </div>
