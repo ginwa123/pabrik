@@ -1030,12 +1030,84 @@ pub const Usage = struct {
     prompt_tokens: usize = 0,
     completion_tokens: usize = 0,
     total_tokens: usize = 0,
-    /// Anthropic-only: tokens used to write a cache entry on this call.
-    /// Billed at the cache-write rate (typically ~1.25× input rate), so
-    /// DO add this to any billing formula. 0 for non-Anthropic profiles.
+    /// Tokens spent writing a cache entry, billed at ~1.25× the input rate.
+    /// Anthropic only; elsewhere 0 means "not reported", never "no write".
     cache_creation_input_tokens: usize = 0,
-    /// Anthropic-only: tokens read from a cache entry on this call.
+    /// Tokens served from a provider cache on this call, for every wire style.
+    /// The `prompt_tokens` beside it ALWAYS includes them (Anthropic's parser
+    /// adds them in), so cache_read / prompt_tokens is the rate, max 100%.
     cache_read_input_tokens: usize = 0,
+};
+
+/// The `usage` object as the wire declares it: one struct for all three styles,
+/// where a field a style omits stays null and unknown fields are dropped.
+const WireUsage = struct {
+    prompt_tokens: ?i64 = null,
+    completion_tokens: ?i64 = null,
+    total_tokens: ?i64 = null,
+    input_tokens: ?i64 = null,
+    output_tokens: ?i64 = null,
+    prompt_tokens_details: ?Details = null,
+    input_tokens_details: ?Details = null,
+    prompt_cache_hit_tokens: ?i64 = null,
+    cached_tokens: ?i64 = null,
+
+    const Details = struct { cached_tokens: ?i64 = null };
+
+    /// A wrong-typed field costs the whole usage, never the chunk.
+    fn fromValue(arena: std.mem.Allocator, value: json.Value) ?WireUsage {
+        const options: json.ParseOptions = .{ .ignore_unknown_fields = true };
+        return json.parseFromValueLeaky(WireUsage, arena, value, options) catch null;
+    }
+
+    /// The total is never derived from the parts: a provider that omits it
+    /// reports 0, not an invented sum.
+    fn toChatCompletionsUsage(self: WireUsage) Usage {
+        return .{
+            .prompt_tokens = count(self.prompt_tokens),
+            .completion_tokens = count(self.completion_tokens),
+            .total_tokens = count(self.total_tokens),
+            .cache_read_input_tokens = self.cacheRead(),
+        };
+    }
+
+    /// The total is its parts' sum when the provider leaves it out.
+    fn toResponsesUsage(self: WireUsage) Usage {
+        const prompt_count = self.input_tokens orelse self.prompt_tokens;
+        const completion_count = self.output_tokens orelse self.completion_tokens;
+        return .{
+            .prompt_tokens = count(prompt_count),
+            .completion_tokens = count(completion_count),
+            .total_tokens = if (count(self.total_tokens) != 0)
+                count(self.total_tokens)
+            else
+                count(prompt_count) + count(completion_count),
+            .cache_read_input_tokens = self.cacheRead(),
+        };
+    }
+
+    /// Whichever spelling the provider used; 0 when it reported none. Each is a
+    /// subset of the prompt, so this is never an addend to a total.
+    fn cacheRead(self: WireUsage) u32 {
+        const reported = [_]?i64{
+            if (self.prompt_tokens_details) |details| details.cached_tokens else null,
+            if (self.input_tokens_details) |details| details.cached_tokens else null,
+            self.prompt_cache_hit_tokens,
+            self.cached_tokens,
+        };
+        for (reported) |maybe| {
+            const value = maybe orelse continue;
+            if (value > 0) return count(value);
+        }
+        return 0;
+    }
+
+    fn count(maybe: ?i64) u32 {
+        const value = maybe orelse return 0;
+        if (value <= 0) return 0;
+        if (value > std.math.maxInt(u32)) return std.math.maxInt(u32);
+        return @intCast(value);
+    }
 };
 
 pub const CliToolCall = struct {
@@ -2147,18 +2219,8 @@ pub const Agent = struct {
         }
 
         if (root.object.get("usage")) |usage_val| {
-            if (usage_val == .object) {
-                var usage: Usage = .{};
-                if (usage_val.object.get("prompt_tokens")) |pt| {
-                    if (pt == .integer) usage.prompt_tokens = @intCast(pt.integer);
-                }
-                if (usage_val.object.get("completion_tokens")) |ct| {
-                    if (ct == .integer) usage.completion_tokens = @intCast(ct.integer);
-                }
-                if (usage_val.object.get("total_tokens")) |tt| {
-                    if (tt == .integer) usage.total_tokens = @intCast(tt.integer);
-                }
-                chunk.usage = usage;
+            if (WireUsage.fromValue(arena, usage_val)) |wire| {
+                chunk.usage = wire.toChatCompletionsUsage();
             }
         }
 
@@ -2621,32 +2683,8 @@ pub const Agent = struct {
             }
 
             if (response.object.get("usage")) |usage_val| {
-                if (usage_val == .object) {
-                    var usage: Usage = .{};
-                    if (usage_val.object.get("input_tokens")) |pt| {
-                        if (pt == .integer) usage.prompt_tokens = @intCast(pt.integer);
-                    } else if (usage_val.object.get("prompt_tokens")) |pt| {
-                        if (pt == .integer) usage.prompt_tokens = @intCast(pt.integer);
-                    }
-                    if (usage_val.object.get("output_tokens")) |ct| {
-                        if (ct == .integer) usage.completion_tokens = @intCast(ct.integer);
-                    } else if (usage_val.object.get("completion_tokens")) |ct| {
-                        if (ct == .integer) usage.completion_tokens = @intCast(ct.integer);
-                    }
-                    if (usage_val.object.get("total_tokens")) |tt| {
-                        if (tt == .integer) usage.total_tokens = @intCast(tt.integer);
-                    } else {
-                        usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
-                    }
-                    // preserve cache fields if relay adds them
-                    if (usage_val.object.get("input_tokens_details")) |details| {
-                        if (details == .object) {
-                            if (details.object.get("cached_tokens")) |ct| {
-                                if (ct == .integer) usage.cache_read_input_tokens = @intCast(ct.integer);
-                            }
-                        }
-                    }
-                    chunk.usage = usage;
+                if (WireUsage.fromValue(arena, usage_val)) |wire| {
+                    chunk.usage = wire.toResponsesUsage();
                 }
             }
             // If no explicit finish_reason yet but we have usage, default to stop
@@ -6141,6 +6179,102 @@ test "parse_stream_chunk dispatches to OpenAI parser when UrlStyle is openai" {
     const chunk = a.parse_stream_chunk(data, arena.allocator());
     try testing.expect(chunk != null);
     try testing.expectEqualStrings("hello", chunk.?.content.?);
+}
+
+test "parse_stream_chunk (openai): records the cache-read count a chat-completions provider reports" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // The documented OpenAI chat-completions shape: cached tokens are a SUBSET
+    // of prompt_tokens (2006 = 1920 cached + 86 fresh), which is exactly what
+    // makes them a rate rather than an extra charge.
+    const data =
+        "{\"id\":\"chatcmpl-x\",\"object\":\"chat.completion.chunk\",\"choices\":[]," ++
+        "\"usage\":{\"prompt_tokens\":2006,\"completion_tokens\":300,\"total_tokens\":2306," ++
+        "\"prompt_tokens_details\":{\"cached_tokens\":1920,\"audio_tokens\":0}}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 2006), usage.prompt_tokens);
+    try testing.expectEqual(@as(usize, 300), usage.completion_tokens);
+    try testing.expectEqual(@as(usize, 2306), usage.total_tokens);
+    try testing.expectEqual(@as(usize, 1920), usage.cache_read_input_tokens);
+}
+
+test "parse_stream_chunk (openai): records the count DeepSeek reports as prompt_cache_hit_tokens" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // DeepSeek/MiniMax spell it at the top level: prompt_tokens = hit + miss.
+    const data =
+        "{\"id\":\"chatcmpl-x\",\"object\":\"chat.completion.chunk\",\"choices\":[]," ++
+        "\"usage\":{\"prompt_tokens\":2006,\"completion_tokens\":300,\"total_tokens\":2306," ++
+        "\"prompt_cache_hit_tokens\":1920,\"prompt_cache_miss_tokens\":86}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 2006), usage.prompt_tokens);
+    try testing.expectEqual(@as(usize, 1920), usage.cache_read_input_tokens);
+}
+
+test "parse_stream_chunk (openai): records no cache read when the provider reports no counter" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // 0 here is "the provider said nothing", which the usage endpoints render
+    // as a dash. It must never be read as a measured 0% hit rate.
+    const data =
+        "{\"id\":\"chatcmpl-x\",\"choices\":[]," ++
+        "\"usage\":{\"prompt_tokens\":2006,\"completion_tokens\":300,\"total_tokens\":2306}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 2006), usage.prompt_tokens);
+    try testing.expectEqual(@as(usize, 0), usage.cache_read_input_tokens);
+}
+
+test "parse_stream_chunk (openai): clamps a negative cache counter instead of storing it" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // A negative count would corrupt the stored rate; the rest survives.
+    const data =
+        "{\"choices\":[],\"usage\":{\"prompt_tokens\":10," ++
+        "\"prompt_tokens_details\":{\"cached_tokens\":-5}}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 10), usage.prompt_tokens);
+    try testing.expectEqual(@as(usize, 0), usage.cache_read_input_tokens);
+}
+
+test "parse_stream_chunk (openai): records no usage rather than a broken one when a count is not a number" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // The wrong-typed field costs the call its usage, never its content.
+    const data =
+        "{\"choices\":[{\"delta\":{\"content\":\"hi\"}}],\"usage\":{\"prompt_tokens\":10," ++
+        "\"prompt_cache_hit_tokens\":\"not a number\"}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqualStrings("hi", chunk.?.content.?);
+    try testing.expect(chunk.?.usage == null);
 }
 
 // ---------------------------------------------------------------------------
