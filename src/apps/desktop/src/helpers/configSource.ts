@@ -28,6 +28,10 @@ export function isWorkspaceAgentSection(id: string): boolean {
 export interface PabrikConfigSource {
   /** Which scope this source edits. Drives labels, not requests. */
   readonly scope: ConfigScope
+  /** The workspace this source edits, when the scope has one. The "Test"
+   * probes send it so a credential stored as a `{` `{SECRETS:NAME}` `}`
+   * placeholder is resolved against THIS workspace's secrets. */
+  readonly workspaceId?: string
   /** Load the config to edit. User scope swallows a transport failure into `{}` (pre-existing
    * behaviour: the page still renders defaults). */
   load(): Promise<PabrikConfig>
@@ -55,6 +59,7 @@ export function userConfigSource(): PabrikConfigSource {
 export function workspaceConfigSource(workspaceId: string): PabrikConfigSource {
   return {
     scope: 'workspace',
+    workspaceId,
     load: () => getWorkspaceConfig(workspaceId),
     save: async (config) => {
       await saveWorkspaceConfig(workspaceId, config)

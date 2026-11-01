@@ -496,6 +496,8 @@ const custom_http_client = @import("kabelweb").client;
 const helpers = @import("helpers");
 const claude_code = @import("../agentic_loop/claude_code.zig");
 const opencode = @import("../agentic_loop/opencode.zig");
+const secrets_substitution = @import("../agentic_loop/secrets_substitution.zig");
+const probe_credentials = @import("probe_credentials.zig");
 
 /// Per-call deadline for the probe (libcurl has OS-level timeout support).
 const TEST_LLM_TIMEOUT_MS: u32 = 15_000;
@@ -531,6 +533,9 @@ const LlmTestRequest = struct {
     /// Claude Code only: `CLAUDE_CONFIG_DIR`, so the probe checks the same
     /// login the run would use.
     config_dir: []const u8 = "",
+    /// The workspace whose secrets `api_key` may reference. Empty means the
+    /// request named none, so a placeholder cannot be resolved.
+    workspace_id: []const u8 = "",
 };
 
 // ─── Error mapping ──────────────────────────────────────────────────────────
@@ -1119,7 +1124,44 @@ pub fn llmTestHandler(
     };
     const logger = di.logger;
 
-    const parsed = std.json.parseFromSliceLeaky(LlmTestRequest, allocator, req.body, .{
+    const candidate = std.json.parseFromSliceLeaky(LlmTestRequest, allocator, req.body, .{
+        .ignore_unknown_fields = true,
+    }) catch {
+        return res.jsonResponse(.{
+            .status_code = 400,
+            .data = try std.fmt.allocPrint(allocator, "{{\"error\":\"invalid JSON body\"}}", .{}),
+        });
+    };
+
+    var missing_name: ?[]const u8 = null;
+    defer if (missing_name) |name| allocator.free(name);
+    const credentials = probe_credentials.resolve(
+        allocator,
+        di.db,
+        di.auth_enabled,
+        req.headers,
+        candidate.workspace_id,
+        req.body,
+        &.{"api_key"},
+        &missing_name,
+    ) catch |err| {
+        const described = probe_credentials.describe(allocator, err, missing_name) catch null;
+        defer if (described) |text| allocator.free(text);
+        const data = std.fmt.allocPrint(
+            allocator,
+            "{{\"ok\":false,\"error\":{f}}}",
+            .{std.json.fmt(described orelse "out of memory", .{})},
+        ) catch {
+            return res.jsonResponse(.{
+                .status_code = 500,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Out of memory" }),
+            });
+        };
+        return res.jsonResponse(.{ .status_code = 200, .data = data });
+    };
+    defer credentials.deinit(allocator);
+
+    const parsed = std.json.parseFromSliceLeaky(LlmTestRequest, allocator, credentials.body, .{
         .ignore_unknown_fields = true,
     }) catch {
         return res.jsonResponse(.{
@@ -1131,6 +1173,13 @@ pub fn llmTestHandler(
     var err_detail: ?[]const u8 = null;
     defer if (err_detail) |d| allocator.free(d);
     const outcome = llmTestUseCase(allocator, logger, di.io, parsed, &err_detail) catch |err| {
+        if (err_detail) |detail| {
+            const safe: ?[]u8 = secrets_substitution.redactOutput(allocator, detail, credentials.resolved) catch null;
+            if (safe) |scrubbed| {
+                allocator.free(detail);
+                err_detail = scrubbed;
+            }
+        }
         const message: []const u8 = switch (err) {
             error.MissingModel => "model is required",
             error.MissingBaseUrl => "base_url is required",
@@ -1162,11 +1211,16 @@ pub fn llmTestHandler(
         return res.jsonResponse(.{ .status_code = 200, .data = data });
     };
     defer allocator.free(outcome.reply);
+    // The provider's reply is somebody else's text: put the placeholder back
+    // over any credential this probe resolved, so the modal cannot echo one.
+    const reply = secrets_substitution.redactOutput(allocator, outcome.reply, credentials.resolved) catch
+        try allocator.dupe(u8, outcome.reply);
+    defer allocator.free(reply);
 
     const data = std.fmt.allocPrint(
         allocator,
         "{{\"ok\":true,\"model\":{f},\"reply\":{f},\"latency_ms\":{d}}}",
-        .{ std.json.fmt(outcome.model, .{}), std.json.fmt(outcome.reply, .{}), outcome.latency_ms },
+        .{ std.json.fmt(outcome.model, .{}), std.json.fmt(reply, .{}), outcome.latency_ms },
     ) catch {
         return res.jsonResponse(.{
             .status_code = 500,
@@ -1467,6 +1521,9 @@ const McpTestRequest = struct {
     /// http-only fields
     url: []const u8 = "",
     headers: ?std.json.Value = null,
+    /// The workspace whose secrets the headers and env may reference. Empty
+    /// means the request named none, so a placeholder cannot be resolved.
+    workspace_id: []const u8 = "",
 };
 
 // ─── Error mapping ──────────────────────────────────────────────────────────
@@ -2134,7 +2191,44 @@ pub fn mcpTestHandler(
     };
     const logger = di.logger;
 
-    const parsed = std.json.parseFromSliceLeaky(McpTestRequest, allocator, req.body, .{
+    const candidate = std.json.parseFromSliceLeaky(McpTestRequest, allocator, req.body, .{
+        .ignore_unknown_fields = true,
+    }) catch {
+        return res.jsonResponse(.{
+            .status_code = 400,
+            .data = try std.fmt.allocPrint(allocator, "{{\"error\":\"invalid JSON body\"}}", .{}),
+        });
+    };
+
+    var missing_name: ?[]const u8 = null;
+    defer if (missing_name) |name| allocator.free(name);
+    const credentials = probe_credentials.resolve(
+        allocator,
+        di.db,
+        di.auth_enabled,
+        req.headers,
+        candidate.workspace_id,
+        req.body,
+        &.{ "headers", "env" },
+        &missing_name,
+    ) catch |err| {
+        const described = probe_credentials.describe(allocator, err, missing_name) catch null;
+        defer if (described) |text| allocator.free(text);
+        const data = std.fmt.allocPrint(
+            allocator,
+            "{{\"ok\":false,\"error\":{f}}}",
+            .{std.json.fmt(described orelse "out of memory", .{})},
+        ) catch {
+            return res.jsonResponse(.{
+                .status_code = 500,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Out of memory" }),
+            });
+        };
+        return res.jsonResponse(.{ .status_code = 200, .data = data });
+    };
+    defer credentials.deinit(allocator);
+
+    const parsed = std.json.parseFromSliceLeaky(McpTestRequest, allocator, credentials.body, .{
         .ignore_unknown_fields = true,
     }) catch {
         return res.jsonResponse(.{
@@ -2146,6 +2240,13 @@ pub fn mcpTestHandler(
     var err_detail: ?[]const u8 = null;
     defer if (err_detail) |d| allocator.free(d);
     const outcome = mcpTestUseCase(allocator, io, logger, parsed, &err_detail) catch |err| {
+        if (err_detail) |detail| {
+            const safe: ?[]u8 = secrets_substitution.redactOutput(allocator, detail, credentials.resolved) catch null;
+            if (safe) |scrubbed| {
+                allocator.free(detail);
+                err_detail = scrubbed;
+            }
+        }
         const message: []const u8 = switch (err) {
             error.MissingTransport => "transport is required (stdio or http)",
             error.UnsupportedTransport => "transport must be 'stdio' or 'http'",
@@ -2182,7 +2283,15 @@ pub fn mcpTestHandler(
         try buf.print(allocator, "{{\"name\":{f},\"description\":{f}}}", .{ std.json.fmt(tool.name, .{}), std.json.fmt(tool.description, .{}) });
     }
     try buf.appendSlice(allocator, "]}");
-    const data = try buf.toOwnedSlice(allocator);
+    var data = try buf.toOwnedSlice(allocator);
+    // Tool names and descriptions are the server's own text: put the
+    // placeholder back over any credential this probe resolved.
+    if (credentials.resolved.len > 0) {
+        if (secrets_substitution.redactOutput(allocator, data, credentials.resolved) catch null) |scrubbed| {
+            allocator.free(data);
+            data = scrubbed;
+        }
+    }
 
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }

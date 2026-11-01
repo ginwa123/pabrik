@@ -28,6 +28,9 @@ const props = withDefaults(
     nameEditable: boolean
     /** Optional slot name to render after the LLM config form (e.g. 'extra'). */
     extraSlotName?: string
+    /** The workspace whose secrets the Test probe resolves `api_key` against.
+     * Absent in user scope, where a placeholder cannot be resolved. */
+    workspaceId?: string
     /** Tailwind max-width class for the dialog. Default `max-w-md` (28rem). */
     maxWidthClass?: 'max-w-md' | 'max-w-lg' | 'max-w-xl' | 'max-w-2xl' | 'max-w-3xl'
   }>(),
@@ -87,6 +90,7 @@ async function onTest() {
       base_url: cfg.base_url.trim(),
       api_key: cfg.api_key,
       url_style: cfg.url_style,
+      workspace_id: props.workspaceId,
     })
   } catch (err) {
     // `testLlmProfile` always returns an `LlmTestResult`; this catch

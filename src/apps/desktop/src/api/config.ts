@@ -278,6 +278,9 @@ export async function testMcpServer(body: {
   cwd?: string
   url?: string
   headers?: Record<string, string>
+  /** The workspace whose secrets the headers/env may reference. Without it a
+   * placeholder cannot be resolved and the backend refuses the probe. */
+  workspace_id?: string
 }): Promise<McpTestResult> {
   // We deliberately DON'T use the shared `apiFetch` wrapper here because (a) the endpoint always
   // returns HTTP 200 with a payload that may carry `{ ok: false, ... }`, and (b) we want the
@@ -311,6 +314,9 @@ export interface LlmTestRequest {
   base_url: string
   api_key: string
   url_style: string
+  /** The workspace whose secrets `api_key` may reference. Without it a
+   * placeholder cannot be resolved and the backend refuses the probe. */
+  workspace_id?: string
 }
 export type LlmTestResult =
   | { ok: true; model: string; reply: string; latency_ms: number }

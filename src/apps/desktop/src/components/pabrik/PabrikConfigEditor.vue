@@ -1344,6 +1344,7 @@ const isLoading = computed(() => !loaded.value)
       v-model="agentModal.value"
       :errors="agentErrors"
       :mode="agentModal.mode"
+      :workspace-id="source.workspaceId"
       @cancel="closeAgentModal"
       @save="saveAgent"
     />
@@ -1353,6 +1354,7 @@ const isLoading = computed(() => !loaded.value)
       v-model="mcpServerModal.value"
       :errors="mcpServerErrors"
       :mode="mcpServerModal.mode"
+      :workspace-id="source.workspaceId"
       @cancel="closeMcpServerModal"
       @save="saveMcpServer"
     />
