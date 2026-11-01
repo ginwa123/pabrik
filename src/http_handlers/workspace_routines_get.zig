@@ -15,6 +15,7 @@ pub const RoutineRow = struct {
     description: []const u8,
     instruction: []const u8,
     schedule: []const u8,
+    selected_profile_model: []const u8,
     enabled: bool,
     last_run_at: []const u8,
     next_run_at: []const u8,
@@ -69,7 +70,8 @@ fn useCase(
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled,
         \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
         \\       last_status, COALESCE(CAST(last_error AS TEXT), ''),
-        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '')
+        \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
+        \\       COALESCE(CAST(selected_profile_model AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.DatabaseError;
     defer qr.deinit();
@@ -90,6 +92,7 @@ fn useCase(
         .last_error = try allocator.dupe(u8, rrow.values[9]),
         .created_at = try allocator.dupe(u8, rrow.values[10]),
         .updated_at = try allocator.dupe(u8, rrow.values[11]),
+        .selected_profile_model = try allocator.dupe(u8, rrow.values[12]),
     } };
 }
 
@@ -145,6 +148,7 @@ const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
+const Migration124AddRoutineSelectedProfileModel = @import("../migrations/migration.zig").Migration124AddRoutineSelectedProfileModel;
 
 const TestCtx = struct {
     db: database.Db,
@@ -168,6 +172,7 @@ fn setupDb() !TestCtx {
         &[_][]const u8{},
     );
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, testing.allocator);
+    try Migration124AddRoutineSelectedProfileModel.up(&db, testing.allocator);
 
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'routine', 'Nightly')",
@@ -196,6 +201,7 @@ fn freeOutput(allocator: std.mem.Allocator, output: RoutineGetOutput) void {
     allocator.free(output.routine.last_error);
     allocator.free(output.routine.created_at);
     allocator.free(output.routine.updated_at);
+    allocator.free(output.routine.selected_profile_model);
 }
 
 test "useCase: empty ids return IdsRequired" {
@@ -232,6 +238,24 @@ test "useCase: non-routine item returns ItemNotRoutine" {
         error.ItemNotRoutine,
         useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .item_id = "ws_item_agent" }),
     );
+}
+
+test "useCase: the routine carries the agent model it will fire under" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(
+        alloc,
+        "UPDATE workspace_routines SET selected_profile_model = '900ribu' WHERE id = 'ws_item_1'",
+        &[_][]const u8{},
+    );
+
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .item_id = "ws_item_1" });
+    defer freeOutput(alloc, output);
+
+    try testing.expectEqualStrings("900ribu", output.routine.selected_profile_model);
 }
 
 test "useCase: happy path returns routine row" {

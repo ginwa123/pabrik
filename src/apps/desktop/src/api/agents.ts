@@ -112,6 +112,8 @@ export interface WorkspaceRoutine {
   instruction: string
   /** 5-field cron. '' = manual-run only (no auto-fire). */
   schedule: string
+  /** The profile name this routine fires under. '' = the backend's active-profile cascade. */
+  selected_profile_model: string
   enabled: boolean
   last_run_at: string
   /** '' when manual-only or disabled. */
@@ -171,6 +173,7 @@ export async function updateRoutineItem(
     description?: string
     instruction?: string
     schedule?: string
+    selected_profile_model?: string
     enabled?: boolean
   },
 ): Promise<{ routine: WorkspaceRoutine }> {

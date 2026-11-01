@@ -6,6 +6,9 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { ref, type Ref } from 'vue'
 
+const { replaceMock } = vi.hoisted(() => ({ replaceMock: vi.fn() }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ replace: replaceMock }) }))
+
 import RoutineView from '@/components/views/RoutineView.vue'
 import * as api from '@/api'
 import type { WorkspaceItem } from '@/stores/workspaces'
@@ -53,6 +56,7 @@ describe('RoutineView tabs', () => {
         description: 'desc',
         instruction: 'do things',
         schedule: '',
+        selected_profile_model: '',
         enabled: true,
         last_run_at: '',
         next_run_at: '',
@@ -75,6 +79,8 @@ describe('RoutineView tabs', () => {
       system_prompts: [],
     })
     vi.spyOn(api, 'getAgentToolsRegistry').mockResolvedValue({ tools: [] })
+    vi.spyOn(api, 'getWorkspaceConfig').mockResolvedValue({ profiles: {} })
+    vi.spyOn(api, 'getWorkers').mockResolvedValue({ workers: [], count: 0 })
   })
 
   afterEach(() => {

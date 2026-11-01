@@ -46,9 +46,8 @@ pub fn fireWorkspaceRoutine(
 
     const sid = try di.allocator.dupe(u8, routine.id);
     errdefer di.allocator.free(sid);
-    const schedule_label = if (routine.schedule.len > 0) routine.schedule else "(manual)";
-    const qmsg = try formatRoutineMessage(di.allocator, schedule_label, routine.instruction, next_sqlite);
-    errdefer di.allocator.free(qmsg);
+    const payload = try buildPayload(di.allocator, routine, next_sqlite);
+    errdefer payload.deinit(di.allocator);
     const cwd = try di.allocator.dupe(u8, "");
     errdefer di.allocator.free(cwd);
     const bmsg = try di.allocator.dupe(u8, "");
@@ -57,14 +56,38 @@ pub fn fireWorkspaceRoutine(
     errdefer di.allocator.free(atools);
     const iurls = try di.allocator.dupe(u8, "");
     errdefer di.allocator.free(iurls);
-    const spm = try di.allocator.dupe(u8, "");
-    errdefer di.allocator.free(spm);
 
     try di.group_emit_session_create.concurrent(
         io,
         runFire,
-        .{ di, sid, qmsg, cwd, bmsg, atools, iurls, spm },
+        .{ di, sid, payload.message, cwd, bmsg, atools, iurls, payload.selected_profile_model },
     );
+}
+
+/// The two slices are allocator-owned: free them with deinit, or hand them to
+/// the fire — which frees them itself. Never both.
+pub const Payload = struct {
+    message: []u8,
+    selected_profile_model: []u8,
+
+    pub fn deinit(self: Payload, allocator: std.mem.Allocator) void {
+        allocator.free(self.message);
+        allocator.free(self.selected_profile_model);
+    }
+};
+
+pub fn buildPayload(
+    allocator: std.mem.Allocator,
+    routine: model.Routine,
+    next_run_at_sqlite: []const u8,
+) !Payload {
+    const schedule_label = if (routine.schedule.len > 0) routine.schedule else "(manual)";
+    const message = try formatRoutineMessage(allocator, schedule_label, routine.instruction, next_run_at_sqlite);
+    errdefer allocator.free(message);
+    return .{
+        .message = message,
+        .selected_profile_model = try allocator.dupe(u8, routine.selected_profile_model),
+    };
 }
 
 fn runFire(
@@ -167,6 +190,7 @@ const testing = std.testing;
 
 const migration = pabrikcore.migrations_mod.migration;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084ReplaceRoutinesWithWorkspaceRoutines;
+const Migration124AddRoutineSelectedProfileModel = migration.Migration124AddRoutineSelectedProfileModel;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
@@ -202,14 +226,13 @@ fn setupDb() !struct {
     , &.{});
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
+    try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
 
     return .{ .db = db, .threaded = threaded };
 }
 
 fn insertParentItem(db: *database.Db, alloc: std.mem.Allocator, id: []const u8) !void {
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')",
-        &.{id});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')", &.{id});
 }
 
 // ─── Test 1: atomic claim (second fire returns AlreadyRunning) ────────────
@@ -358,6 +381,37 @@ test "formatRoutineMessage places metadata header first and instruction last" {
 
     // A blank line separates the meta block from the task.
     try testing.expect(std.mem.indexOf(u8, msg, "\n\n") != null);
+}
+
+test "a fire under a routine that chose a model hands that model to the agent workflow" {
+    const alloc = testing.allocator;
+    const payload = try buildPayload(alloc, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "collect the security issues",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .selected_profile_model = "900ribu",
+    }, "2025-01-16 09:00:00");
+    defer payload.deinit(alloc);
+
+    try testing.expectEqualStrings("900ribu", payload.selected_profile_model);
+    try testing.expect(std.mem.endsWith(u8, payload.message, "collect the security issues"));
+}
+
+test "a fire under a routine with no chosen model leaves the agent on the backend cascade" {
+    const alloc = testing.allocator;
+    const payload = try buildPayload(alloc, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "collect the security issues",
+        .schedule = "",
+        .enabled = true,
+    }, "");
+    defer payload.deinit(alloc);
+
+    try testing.expectEqualStrings("", payload.selected_profile_model);
+    try testing.expect(std.mem.indexOf(u8, payload.message, "- Schedule: (manual)") != null);
 }
 
 test "markRunFinished records success and schedules the next fire from the completion time" {

@@ -34,6 +34,9 @@ pub const Routine = struct {
     description: []const u8 = "",
     instruction: []const u8 = "",
     schedule: []const u8 = "",
+    /// The profile name this routine fires under. Empty = the backend's
+    /// `active_agent` → top-level-config cascade.
+    selected_profile_model: []const u8 = "",
     enabled: bool,
     next_run_at: ?[]const u8 = null,
     last_run_at: ?[]const u8 = null,
@@ -48,6 +51,7 @@ pub const Routine = struct {
         if (self.description.len > 0) allocator.free(self.description);
         if (self.instruction.len > 0) allocator.free(self.instruction);
         if (self.schedule.len > 0) allocator.free(self.schedule);
+        if (self.selected_profile_model.len > 0) allocator.free(self.selected_profile_model);
         if (self.next_run_at) |v| allocator.free(v);
         if (self.last_run_at) |v| allocator.free(v);
         if (self.last_error) |v| allocator.free(v);
@@ -58,8 +62,8 @@ pub const Routine = struct {
 
 pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Routine) !void {
     _ = try db.exec(allocator,
-        \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?)
+        \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at, selected_profile_model)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?, COALESCE(NULLIF(?, ''), ''))
     , &.{
         r.id,
         r.workspace_item_id,
@@ -68,13 +72,15 @@ pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Rou
         r.schedule,
         if (r.enabled) "1" else "0",
         r.next_run_at orelse "",
+        r.selected_profile_model,
     });
 }
 
 pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: []const u8) !Routine {
     var q = try db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled, next_run_at,
-        \\       last_run_at, last_status, last_error, created_at, updated_at
+        \\       last_run_at, last_status, last_error, created_at, updated_at,
+        \\       COALESCE(CAST(selected_profile_model AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &.{id});
     defer q.deinit();
@@ -97,6 +103,7 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: 
         .last_error = try nullIfEmpty(allocator, row.values[9]),
         .created_at = try nullIfEmpty(allocator, row.values[10]),
         .updated_at = try nullIfEmpty(allocator, row.values[11]),
+        .selected_profile_model = try allocator.dupe(u8, row.values[12]),
     };
 }
 
@@ -195,6 +202,7 @@ const database = pabrikcore.database;
 
 const migration = pabrikcore.migrations_mod.migration;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084ReplaceRoutinesWithWorkspaceRoutines;
+const Migration124AddRoutineSelectedProfileModel = migration.Migration124AddRoutineSelectedProfileModel;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
@@ -232,6 +240,7 @@ fn setupDb() !struct {
     , &.{});
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
+    try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
 
     return .{ .db = db, .threaded = threaded };
 }
@@ -251,9 +260,7 @@ fn scalarText(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args:
 
 /// Insert a parent workspace_item row.
 fn insertParentItem(db: *database.Db, alloc: std.mem.Allocator, id: []const u8) !void {
-    try db.exec(alloc,
-        "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')",
-        &.{id});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')", &.{id});
 }
 
 // ─── Test 1: insert + load round-trip ─────────────────────────────────────
@@ -293,6 +300,53 @@ test "Routine: insert + load round-trip" {
     // defaults, so they should be non-null.
     try testing.expect(loaded.created_at != null);
     try testing.expect(loaded.updated_at != null);
+}
+
+test "Routine: the agent model it chose survives an insert and a load" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "do the thing",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = "2099-01-01 00:00:00",
+        .selected_profile_model = "900ribu",
+    });
+
+    var loaded = try loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+
+    try testing.expectEqualStrings("900ribu", loaded.selected_profile_model);
+}
+
+test "Routine: a routine with no chosen model loads an empty model, not a stale one" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "do the thing",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = "2099-01-01 00:00:00",
+    });
+
+    var loaded = try loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+
+    try testing.expectEqualStrings("", loaded.selected_profile_model);
 }
 
 // ─── Test 2: listDueWorkspaceRoutineIds filters correctly ────────────────
@@ -382,8 +436,7 @@ test "Routine: claimForRun atomically transitions to running" {
     try testing.expect(!second);
 
     // Sanity-check the row was actually updated.
-    const status = try scalarText(alloc, &ctx.db,
-        "SELECT last_status FROM workspace_routines WHERE id = 'item_1'", &.{});
+    const status = try scalarText(alloc, &ctx.db, "SELECT last_status FROM workspace_routines WHERE id = 'item_1'", &.{});
     defer if (status) |s| alloc.free(s);
     try testing.expect(status != null);
     try testing.expectEqualStrings("running", status.?);
@@ -499,9 +552,7 @@ test "Routine: reclaimStaleRuns fails only the runs that outlived the timeout" {
     });
     _ = try claimForRun(alloc, &ctx.db, "item_1");
     _ = try claimForRun(alloc, &ctx.db, "item_2");
-    try ctx.db.exec(alloc,
-        "UPDATE workspace_routines SET updated_at = datetime('now', '-2 hours') WHERE id = 'item_1'",
-        &.{});
+    try ctx.db.exec(alloc, "UPDATE workspace_routines SET updated_at = datetime('now', '-2 hours') WHERE id = 'item_1'", &.{});
 
     const reclaimed = try reclaimStaleRuns(alloc, &ctx.db, 30 * 60);
 

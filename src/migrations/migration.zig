@@ -136,6 +136,7 @@ const migration_120 = @import("migration_120.zig");
 const migration_121 = @import("migration_121.zig");
 const migration_122 = @import("migration_122.zig");
 const migration_123 = @import("migration_123.zig");
+const migration_124 = @import("migration_124.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -261,6 +262,7 @@ pub const Migration120GrantSetSkillMetadata = migration_120.Migration120GrantSet
 pub const Migration121AddSqliteTimeFunctions = migration_121.Migration121AddSqliteTimeFunctions;
 pub const Migration122AddDocumentPosition = migration_122.Migration122AddDocumentPosition;
 pub const Migration123AddWorkspaceInvitations = migration_123.Migration123AddWorkspaceInvitations;
+pub const Migration124AddRoutineSelectedProfileModel = migration_124.Migration124AddRoutineSelectedProfileModel;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -498,6 +500,8 @@ pub const allMigrations: []const Migration = &.{
     // Migration 123 — a pending invitation is a ROW, and the membership row is only written when
     // the invitee accepts it. Nothing can drop a workspace into a stranger's sidebar.
     .{ .version = Migration123AddWorkspaceInvitations.version, .name = Migration123AddWorkspaceInvitations.name, .up = Migration123AddWorkspaceInvitations.up },
+    // Migration 124 — the column defaults to '', so every pre-existing row keeps the cascade.
+    .{ .version = Migration124AddRoutineSelectedProfileModel.version, .name = Migration124AddRoutineSelectedProfileModel.name, .up = Migration124AddRoutineSelectedProfileModel.up },
 };
 
 /// Register all migrations with a MigrationManager
