@@ -50,6 +50,19 @@ describe('Search.vue — the default text payload', () => {
     expect(text).toContain('2/2')
   })
 
+  it('names the pattern and path the app hands it, not "unknown"', () => {
+    const wrapper = mount(Search, {
+      props: {
+        content: textPayload as never,
+        parameters: '<pattern>TODO|FIXME</pattern><path>/home/ginwa/pabrik</path>',
+      },
+    })
+    const text = wrapper.text()
+    expect(text).toContain('TODO|FIXME')
+    expect(text).toContain('/home/ginwa/pabrik')
+    expect(text).not.toContain('unknown')
+  })
+
   it('shows the tool warning instead of a zero count when nothing matched', () => {
     const wrapper = mount(Search, {
       props: {
