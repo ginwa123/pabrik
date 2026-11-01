@@ -1110,6 +1110,41 @@ const WireUsage = struct {
     }
 };
 
+/// One `chat.completion.chunk` SSE payload, declared so the parser maps fields
+/// instead of probing a Value tree. A chunk carries either a `delta` or a full
+/// `message`, and `content` may be text or an array of parts.
+const WireChatChunk = struct {
+    choices: []const WireChoice = &.{},
+    usage: ?json.Value = null,
+
+    const WireChoice = struct {
+        finish_reason: ?[]const u8 = null,
+        delta: ?WireMessage = null,
+        message: ?WireMessage = null,
+    };
+
+    const WireMessage = struct {
+        content: ?json.Value = null,
+        reasoning_content: ?[]const u8 = null,
+        tool_calls: []const WireToolCall = &.{},
+    };
+
+    const WireToolCall = struct {
+        index: ?usize = null,
+        id: ?[]const u8 = null,
+        function: ?WireFunction = null,
+    };
+
+    const WireFunction = struct { name: ?[]const u8 = null, arguments: ?[]const u8 = null };
+};
+
+/// Providers use "" and an absent field interchangeably, and neither may
+/// overwrite a real delta.
+fn nonEmpty(maybe: ?[]const u8) ?[]const u8 {
+    const text = maybe orelse return null;
+    return if (text.len > 0) text else null;
+}
+
 pub const CliToolCall = struct {
     name: []const u8,
     arguments: []const u8,
@@ -2145,7 +2180,7 @@ pub const Agent = struct {
         if (std.mem.eql(u8, self.UrlStyle, "anthropic")) {
             return self.parse_anthropic_stream_chunk(data, arena);
         }
-        const parsed = json.parseFromSlice(json.Value, arena, data, .{}) catch |err| {
+        const wire = json.parseFromSliceLeaky(WireChatChunk, arena, data, .{ .ignore_unknown_fields = true }) catch |err| {
             const max_data_len = 200;
             const truncated = data.len > max_data_len;
             const data_to_log = if (truncated) data[0..max_data_len] else data;
@@ -2156,72 +2191,40 @@ pub const Agent = struct {
             }
             return null;
         };
-        defer parsed.deinit();
-        const root = parsed.value;
 
         var chunk: StreamChunk = .{};
 
-        if (root.object.get("choices")) |choices| {
-            if (choices.array.items.len > 0) {
-                const first_choice = choices.array.items[0];
-
-                if (first_choice.object.get("finish_reason")) |fr| {
-                    if (fr == .string) {
-                        chunk.finish_reason = FinishReason.from_str(fr.string);
-                    }
+        if (wire.choices.len > 0) {
+            const choice = wire.choices[0];
+            if (choice.finish_reason) |reason| chunk.finish_reason = FinishReason.from_str(reason);
+            if (choice.delta orelse choice.message) |message| {
+                // An array-shaped `content` is parts, not text tokens.
+                if (message.content) |content| {
+                    if (content == .string) chunk.content = nonEmpty(content.string);
                 }
-
-                const msg_field = first_choice.object.get("delta") orelse first_choice.object.get("message");
-                if (msg_field) |delta| {
-                    if (delta.object.get("content")) |content| {
-                        if (content == .string and content.string.len > 0) {
-                            chunk.content = content.string;
-                        }
+                chunk.reasoning_content = nonEmpty(message.reasoning_content);
+                if (message.tool_calls.len > 0) {
+                    const deltas = arena.alloc(ToolCallDelta, message.tool_calls.len) catch |err| {
+                        self.log_fmt(.err, "Error allocating ToolCallDelta: {s}", .{@errorName(err)});
+                        return null;
+                    };
+                    for (message.tool_calls, 0..) |call, i| {
+                        deltas[i] = .{
+                            .index = call.index orelse i,
+                            .id = nonEmpty(call.id),
+                            .function_name = nonEmpty(if (call.function) |func| func.name else null),
+                            .function_arguments = nonEmpty(if (call.function) |func| func.arguments else null),
+                        };
                     }
-                    if (delta.object.get("reasoning_content")) |rc| {
-                        if (rc == .string and rc.string.len > 0) {
-                            chunk.reasoning_content = rc.string;
-                        }
-                    }
-                    if (delta.object.get("tool_calls")) |tc_delta| {
-                        if (tc_delta == .array and tc_delta.array.items.len > 0) {
-                            var deltas = arena.alloc(ToolCallDelta, tc_delta.array.items.len) catch |err| {
-                                self.log_fmt(.err, "Error allocating ToolCallDelta: {s}", .{@errorName(err)});
-                                return null;
-                            };
-                            for (tc_delta.array.items, 0..) |tc_item, i| {
-                                var delta_item: ToolCallDelta = .{ .index = i };
-                                if (tc_item == .object) {
-                                    if (tc_item.object.get("index")) |idx| {
-                                        if (idx == .integer) delta_item.index = @intCast(idx.integer);
-                                    }
-                                    if (tc_item.object.get("id")) |id| {
-                                        if (id == .string and id.string.len > 0) delta_item.id = id.string;
-                                    }
-                                    if (tc_item.object.get("function")) |func| {
-                                        if (func == .object) {
-                                            if (func.object.get("name")) |name| {
-                                                if (name == .string and name.string.len > 0) delta_item.function_name = name.string;
-                                            }
-                                            if (func.object.get("arguments")) |args| {
-                                                if (args == .string and args.string.len > 0) delta_item.function_arguments = args.string;
-                                            }
-                                        }
-                                    }
-                                }
-                                deltas[i] = delta_item;
-                            }
-                            chunk.tool_calls_delta = deltas;
-                        }
-                    }
+                    chunk.tool_calls_delta = deltas;
                 }
             }
         }
 
-        if (root.object.get("usage")) |usage_val| {
-            if (WireUsage.fromValue(arena, usage_val)) |wire| {
-                chunk.usage = wire.toChatCompletionsUsage();
-            }
+        // `usage` stays a Value so a malformed counter costs the call its
+        // usage, not its content; the typed struct reads it below.
+        if (wire.usage) |usage_value| {
+            if (WireUsage.fromValue(arena, usage_value)) |usage| chunk.usage = usage.toChatCompletionsUsage();
         }
 
         return chunk;
