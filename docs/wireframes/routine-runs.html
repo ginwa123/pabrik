@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Routine runs — pabrik wireframe</title>
+<style>
+  :root {
+    --bg-page: #12120f;
+    --bg-frame: #181616;
+    --bg-panel: #1D1C19;
+    --bg-panel-2: #22211e;
+    --bg-strip: #262421;
+    --bg-active: #2e2d2a;
+    --border: #282727;
+    --fg: #c5c9c5;
+    --fg-muted: #a6a69c;
+    --fg-dim: #7a8382;
+    --blue: #8ba4b0;
+    --green: #87a987;
+    --yellow: #c4b28a;
+    --red: #c4746e;
+    --violet: #8992a7;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --glyph: "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { background: var(--bg-page); }
+
+  body {
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--fg);
+    background: var(--bg-page);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre { font-family: var(--glyph); }
+
+  main { max-width: 1060px; margin: 0 auto; padding: 0 32px 72px; }
+
+  /* ─── masthead ─────────────────────────────────────────────── */
+  .masthead { padding: 68px 0 40px; }
+
+  h1 {
+    font-size: 34px;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+    font-weight: 600;
+    max-width: 20ch;
+  }
+
+  .lead { margin-top: 18px; max-width: 58ch; }
+
+  .masthead .action {
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+    margin-top: 26px;
+    padding: 0 20px;
+    border-radius: 8px;
+    background: var(--bg-active);
+    color: var(--fg);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .masthead .action:hover { background: var(--bg-panel-2); }
+  .masthead .action:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+  .masthead .meta { margin-top: 18px; color: var(--fg-muted); font-size: 14px; }
+
+  /* ─── document sections ────────────────────────────────────── */
+  section + section { margin-top: 54px; }
+
+  h2 {
+    font-size: 25px;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+    max-width: 28ch;
+  }
+
+  section p { margin-top: 14px; max-width: 62ch; }
+  section p + p { margin-top: 12px; }
+
+  .caption {
+    margin-top: 14px;
+    max-width: 62ch;
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--fg-muted);
+  }
+
+  .caption b { color: var(--fg); font-weight: 600; }
+
+  code {
+    font-size: 13.5px;
+    background: var(--bg-panel-2);
+    border-radius: 4px;
+    padding: 1px 5px;
+    overflow-wrap: anywhere;
+  }
+
+  pre {
+    margin-top: 18px;
+    padding: 18px 20px;
+    background: var(--bg-frame);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--fg);
+    overflow-x: auto;
+  }
+
+  /* ─── one mock frame ───────────────────────────────────────── */
+  .frame {
+    margin-top: 24px;
+    background: var(--bg-frame);
+    border-radius: 10px;
+    overflow: hidden;
+    color: var(--fg);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .frame-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--bg-panel);
+  }
+
+  .frame-head .title { font-size: 14px; font-weight: 600; }
+
+  .frame-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* ─── mock chrome (interface fragment) ─────────────────────── */
+  [data-ui] .glyph { width: 15px; height: 15px; flex: none; color: var(--fg-muted); }
+
+  [data-ui] .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .pill.live { color: var(--yellow); border-color: rgba(196, 178, 138, 0.4); background: rgba(196, 178, 138, 0.1); }
+  [data-ui] .pill.ok { color: var(--green); border-color: rgba(135, 169, 135, 0.4); background: rgba(135, 169, 135, 0.1); }
+
+  [data-ui] .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--fg-dim); }
+  [data-ui] .dot.live { background: var(--yellow); animation: pulse 1.8s ease-in-out infinite; }
+  [data-ui] .dot.ok { background: var(--green); }
+  [data-ui] .dot.bad { background: var(--red); }
+  [data-ui] .dot.off { background: var(--fg-muted); }
+
+  [data-ui] .btn {
+    padding: 5px 11px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--fg);
+    white-space: nowrap;
+  }
+
+  [data-ui] .btn.primary { background: var(--bg-active); border-color: transparent; }
+  [data-ui] .btn.ghost { background: transparent; color: var(--fg-muted); }
+  [data-ui] .btn[aria-disabled="true"] { color: var(--fg-muted); opacity: 0.6; }
+
+  [data-ui] .tabs { display: flex; gap: 4px; margin-top: 4px; }
+
+  [data-ui] .tab {
+    padding: 6px 12px;
+    font-size: 12.5px;
+    color: var(--fg-muted);
+    border-radius: 7px 7px 0 0;
+    border: 1px solid transparent;
+  }
+
+  [data-ui] .tab.on { background: var(--bg-panel); color: var(--fg); border-color: var(--border); border-bottom-color: var(--bg-panel); }
+
+  [data-ui] .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 13px 14px;
+    min-width: 0;
+  }
+
+  [data-ui] .card h4 { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+
+  [data-ui] .plain { min-width: 0; }
+
+  [data-ui] .plain h4 { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+
+  [data-ui] .field {
+    margin-top: 8px;
+    padding: 6px 9px;
+    border-radius: 7px;
+    background: var(--bg-frame);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  [data-ui] .field.multi { white-space: normal; line-height: 1.5; }
+
+  [data-ui] .field-label { display: block; margin-top: 10px; font-size: 12px; color: var(--fg-muted); }
+
+  [data-ui] .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+  [data-ui] .push { margin-left: auto; }
+
+  [data-ui] .muted { color: var(--fg-muted); }
+  [data-ui] .small { font-size: 12px; }
+  [data-ui] .truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  [data-ui] .ghost-block {
+    border: 1px dashed var(--border);
+    border-radius: 9px;
+    padding: 12px 14px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* run header strip, above a chat transcript */
+  [data-ui] .runhead {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 14px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+
+  [data-ui] .chip {
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    background: var(--bg-strip);
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .elapsed {
+    font-size: 12px;
+    color: var(--yellow);
+    background: rgba(196, 178, 138, 0.12);
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+
+  /* transcript */
+  [data-ui] .thread { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; }
+
+  [data-ui] .instr {
+    border-radius: 9px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    padding: 11px 13px;
+  }
+
+  [data-ui] .instr .who {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--violet);
+    margin-bottom: 7px;
+  }
+
+  [data-ui] .instr pre {
+    background: none;
+    padding: 0;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  [data-ui] .bubble { max-width: 60ch; }
+
+  [data-ui] .tool {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    background: var(--bg-panel-2);
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .tool .name { color: var(--blue); }
+
+  [data-ui] .composer {
+    margin: 0 18px 16px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+    font-size: 12.5px;
+  }
+
+  /* runs list */
+  [data-ui] .runs { display: flex; flex-direction: column; }
+
+  [data-ui] .run-row {
+    display: grid;
+    grid-template-columns: 104px 116px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 4px;
+    border-top: 1px solid var(--border);
+    font-size: 12.5px;
+    min-width: 0;
+  }
+
+  [data-ui] .run-row:first-of-type { border-top: 0; }
+
+  [data-ui] .run-row .when { color: var(--fg-muted); }
+  [data-ui] .run-row .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+  [data-ui] .run-row .acts { display: flex; gap: 6px; }
+
+  /* sidebar mock */
+  [data-ui] .app-mock { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 420px; }
+
+  [data-ui] .side { background: var(--bg-page); padding: 12px 10px; min-width: 0; }
+
+  [data-ui] .side-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    min-width: 0;
+  }
+
+  [data-ui] .side-group { margin-top: 12px; }
+
+  [data-ui] .side-group > .lab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .chat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    color: var(--fg-muted);
+    min-width: 0;
+  }
+
+  [data-ui] .chat-row.on { background: var(--bg-panel); color: var(--fg); }
+
+  [data-ui] .live-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 7px;
+    background: var(--bg-panel);
+    min-width: 0;
+  }
+
+  [data-ui] .live-row .stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+  [data-ui] .state-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+
+  [data-ui] .state-table th {
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .state-table td {
+    padding: 9px 10px;
+    font-size: 12.5px;
+    vertical-align: top;
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .state-table tbody tr:nth-child(odd) { background: var(--bg-panel-2); }
+  [data-ui] .state-table td:first-child { color: var(--fg); font-weight: 500; }
+  [data-ui] .state-table code { font-size: 12px; background: none; padding: 0; }
+
+  /* doc tables */
+  table { width: 100%; border-collapse: collapse; margin-top: 22px; }
+
+  caption { text-align: left; padding-bottom: 9px; font-size: 13.5px; color: var(--fg-muted); }
+
+  th {
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--fg-muted);
+  }
+
+  td {
+    padding: 10px;
+    font-size: 13.5px;
+    vertical-align: top;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+  }
+
+  tbody tr:nth-child(odd) { background: var(--bg-frame); }
+  td code { font-size: 13px; }
+
+  .files { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+
+  .files div { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 20px; }
+
+  .files span:first-child { font-size: 16px; color: var(--fg); overflow-wrap: anywhere; }
+
+  .files span:last-child { font-size: 16px; color: var(--fg-muted); }
+
+  .checks { margin-top: 22px; display: grid; gap: 11px; max-width: 64ch; }
+
+  .checks div { font-size: 16px; color: var(--fg-muted); }
+
+  .checks b { color: var(--fg); font-weight: 600; }
+
+  ol.decisions { margin-top: 20px; padding-left: 22px; max-width: 62ch; }
+
+  ol.decisions li { margin-top: 11px; font-size: 15px; color: var(--fg); }
+
+  ol.decisions b { font-weight: 600; }
+
+  .provenance {
+    margin-top: 34px;
+    padding-top: 20px;
+    color: var(--fg-muted);
+    font-size: 15px;
+    max-width: 64ch;
+    line-height: 1.6;
+  }
+
+  /* ─── motion: a section rises once as it enters, nothing else moves ─── */
+  .motion .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+  }
+
+  .motion .reveal.is-in { opacity: 1; transform: none; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-ui] .dot.live { animation: none; }
+    .motion .reveal { opacity: 1; transform: none; transition: none; }
+  }
+
+  @media (max-width: 820px) {
+    main { padding: 0 20px 80px; }
+    .masthead { padding: 44px 0 32px; }
+    h1 { font-size: 27px; max-width: 24ch; }
+    h2 { font-size: 21px; }
+    [data-ui] .run-row { grid-template-columns: 96px 1fr auto; }
+    [data-ui] .run-row .what { display: none; }
+    [data-ui] .app-mock { grid-template-columns: minmax(0, 1fr); }
+    [data-ui] .app-mock .wide-only { display: none; }
+    .files div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  }
+</style>
+<script>
+  document.documentElement.classList.add('motion');
+</script>
+</head>
+<body>
+<main>
+
+  <header class="masthead reveal">
+    <h1>Routine runs: a real chat per fire</h1>
+    <p class="lead">A routine fires, the pill says Success, and there is nothing to open. This is the design and the wireframe for giving every fire a run, its own chat session, and a place in the list of what is running now.</p>
+    <a class="action" href="../plans/2026-11-01-routine-runs.md">Read the design doc</a>
+    <p class="meta">pabrik, workspace Collecting security Issuess. Design for task_1793556739964_1, 1 November 2026.</p>
+  </header>
+
+  <section class="doc reveal">
+    <h2>What happens today</h2>
+
+    <p>The routine below ran at 18:09. The agent read files, wrote output and finished. Nothing else exists: no chat in the sidebar, no worker, no run. The panel called <b>Running now</b> is in the component source and has never rendered once, because the query behind it is filtered on a worker row that the fire path never inserts.</p>
+
+    <div class="frame" data-ui="routine-today">
+      <div class="frame-head">
+        <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.8" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 6.2v2.9l1.8 1.1M6.4 1.6h3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="title">Collecting security Issuess</span>
+        <span class="push"></span>
+        <span class="pill ok"><span class="dot ok"></span>Success</span>
+        <span class="btn">Run now</span>
+        <span class="btn primary">Save</span>
+      </div>
+      <div class="frame-body">
+        <div class="tabs">
+          <span class="tab on">Routine</span>
+          <span class="tab">Agent</span>
+        </div>
+
+        <div class="card">
+          <h4>What it does</h4>
+          <span class="field-label">Description</span>
+          <div class="field">Collect security Issues and write to SECURITY_ISSUES.md</div>
+          <span class="field-label">Instruction, sent on every fire</span>
+          <div class="field multi">Collect security Issues and write to SECURITY_ISSUES.md</div>
+        </div>
+
+        <div class="plain">
+          <h4>When it runs</h4>
+          <div class="row" style="margin-top:9px">
+            <div class="field" style="flex:1">manual only</div>
+            <span class="btn ghost">Manual only</span>
+            <span class="btn ghost">Every hour</span>
+            <span class="btn ghost">Daily 09:00</span>
+          </div>
+          <div class="row small muted" style="margin-top:9px">
+            <span>last ran 2026-11-01 18:09:56 UTC</span>
+            <span>·</span>
+            <span>no next fire</span>
+          </div>
+        </div>
+
+        <div class="ghost-block">
+          <b>Running now</b>: this block is in RoutineView.vue and has never rendered. It is gated on a non-empty worker list, and a fire inserts no worker row and no session row, so the list is always empty.
+        </div>
+      </div>
+    </div>
+
+    <p class="caption"><b>Today.</b> The fire leaves <code>llm_history</code> rows and nothing else. The routine item id is used as the session id, so even a session row would not give you a run to open.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>Why no chat exists</h2>
+
+    <p>Firing takes a shortcut around the only funnel that creates a session. A chat send goes through <code>App.emit_run_agent</code> and then <code>insert_worker</code>. The fire emits the run-params event itself, one layer below both.</p>
+
+    <table>
+      <caption>One column is the shipped chat path, the other is the shipped routine path.</caption>
+      <thead>
+        <tr><th>Step</th><th>A chat send</th><th>A routine fire</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Who inserts the sessions row</td><td><code>App.insert_worker</code>, <code>src/app.zig:236</code></td><td>nobody</td></tr>
+        <tr><td>Who inserts the worker row</td><td><code>App.insert_worker</code></td><td>nobody</td></tr>
+        <tr><td>Who broadcasts <code>sessions.created</code></td><td><code>App.insert_worker</code>, <code>src/app.zig:277</code></td><td>nobody</td></tr>
+        <tr><td>Who emits <code>RunParamsNew</code></td><td>inside <code>insert_worker</code></td><td><code>routines/fire.zig:95</code>, directly</td></tr>
+        <tr><td>The session id</td><td>one per chat</td><td>the routine item id, every fire, <code>fire.zig:48</code></td></tr>
+        <tr><td>The outcome written</td><td>the loop writes <code>last_finish_reason</code></td><td><code>markSuccess</code>, unconditionally, <code>fire.zig:120</code></td></tr>
+      </tbody>
+    </table>
+
+    <p>Every list in the product reads that missing row. <code>GET /api/sessions</code> selects <code>FROM sessions s</code> (<code>agentic_loop/llm_history.zig:387</code>), and <code>GET /api/workers</code> filters <code>w.session_id</code> (<code>http_handlers/worker_list.zig:69</code>). The agent runs, the tokens are spent, and there is nothing to click.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>The run is a chat, and the chat has a run</h2>
+
+    <p>Every fire gets a fresh session id and a row in a new <code>routine_runs</code> table whose <code>session_id</code> is that session. The session is inserted by us before the agent starts, stamped with the workspace and the routine's directory, so the run is in the sidebar while the first token is still streaming.</p>
+
+    <div class="frame" data-ui="run-chat">
+      <div class="runhead">
+        <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.6a5.4 5.4 0 1 1-5.4 5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2.6 2.6v3.1h3.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="title">Collecting security Issuess</span>
+        <span class="chip">Manual</span>
+        <span class="muted small">started 18:09</span>
+        <span class="elapsed">0:41</span>
+        <span class="push"></span>
+        <span class="btn">Stop</span>
+        <span class="btn ghost">Routine</span>
+      </div>
+      <div class="thread">
+        <div class="instr">
+          <div class="who">
+            <span class="dot" style="background:var(--violet)"></span>
+            Routine instruction, sent on every fire
+          </div>
+          <pre>This is an automated workspace-routine fire.
+- Schedule: (manual)
+- Next fire:
+Collect security Issues and write to SECURITY_ISSUES.md</pre>
+        </div>
+        <div class="bubble">Scanning the repository for unvalidated input paths and any handler that skips the owner check. Three candidates so far.</div>
+        <div class="tool">
+          <span class="name">Read</span>
+          <span class="truncate">src/http_handlers/worker_list.zig</span>
+          <span class="push">1.2 KB</span>
+        </div>
+        <div class="row small muted">
+          <span class="dot live"></span>
+          <span>Working, updating SECURITY_ISSUES.md</span>
+        </div>
+      </div>
+      <div class="composer">Reply to continue this run…</div>
+    </div>
+
+    <p class="caption"><b>The run's chat.</b> The header strip is the run: trigger, start, live elapsed, Stop, and a way back to the routine. The fire message is rendered as a routine instruction rather than a user bubble. Nobody typed it, and reading it as a human message is what makes an automated run confusing to scroll back through.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>The routine view keeps its runs</h2>
+
+    <p>The dead panel becomes a section that is always mounted: the live run pinned at the top with its elapsed time and the worker's last activity, the last five finished runs underneath, and one sentence when the routine has never fired. The header pill is the live run, and it opens the chat.</p>
+
+    <div class="frame" data-ui="routine-runs">
+      <div class="frame-head">
+        <svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.8" r="5.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 6.2v2.9l1.8 1.1M6.4 1.6h3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span class="title">Collecting security Issuess</span>
+        <span class="push"></span>
+        <span class="pill live"><span class="dot live"></span>Running</span>
+        <span class="btn" aria-disabled="true">Run now</span>
+        <span class="btn primary">Open chat</span>
+      </div>
+      <div class="frame-body">
+        <div class="tabs">
+          <span class="tab on">Routine</span>
+          <span class="tab">Agent</span>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <h4>Runs</h4>
+            <span class="push"></span>
+            <span class="btn ghost">Show all 12</span>
+          </div>
+          <div class="runs" style="margin-top:8px">
+            <div class="run-row" style="border-top:0">
+              <span class="row"><span class="dot live"></span><span>running</span></span>
+              <span class="when">started 18:09</span>
+              <span class="what">Reading src/http_handlers/worker_list.zig</span>
+              <span class="acts"><span class="btn">Open chat</span><span class="btn ghost">Stop</span></span>
+            </div>
+            <div class="run-row">
+              <span class="row"><span class="dot ok"></span><span>success</span></span>
+              <span class="when">17:09 · 2m 14s</span>
+              <span class="what">Scheduled, 9 files changed</span>
+              <span class="acts"><span class="btn ghost">Open</span></span>
+            </div>
+            <div class="run-row">
+              <span class="row"><span class="dot bad"></span><span>failed</span></span>
+              <span class="when">16:09 · 0m 08s</span>
+              <span class="what">Scheduled, no API key for profile 900ribu</span>
+              <span class="acts"><span class="btn ghost">Open</span></span>
+            </div>
+            <div class="run-row">
+              <span class="row"><span class="dot" style="background:var(--yellow)"></span><span>needs you</span></span>
+              <span class="when">15:42 · 1m 02s</span>
+              <span class="what">Manual, asked which branch to write to</span>
+              <span class="acts"><span class="btn ghost">Open</span></span>
+            </div>
+            <div class="run-row">
+              <span class="row"><span class="dot off"></span><span>cancelled</span></span>
+              <span class="when">15:20</span>
+              <span class="what">Manual, stopped by you</span>
+              <span class="acts"><span class="btn ghost">Open</span></span>
+            </div>
+          </div>
+          <div class="small muted" style="margin-top:10px">A run keeps its chat after it ends. Open it any time to read what the agent did, or reply to a run that asked a question.</div>
+        </div>
+
+        <div class="plain">
+          <h4>What it does</h4>
+          <div class="field">Collect security Issues and write to SECURITY_ISSUES.md</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="caption"><b>The routine view.</b> Run now now navigates. The endpoint answers with the new run's session id and the view opens it. The old behaviour awaited the call, refreshed the pill, and threw the run away.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>The list of what is running</h2>
+
+    <p>A group above the chats, one row per live run across the workspace, gone when nothing is live. It polls only while it has rows, and the <code>sessions.created</code> broadcast inserts the row the moment a fire starts, so a scheduled run appears without waiting for a tick.</p>
+
+    <div class="frame" data-ui="sidebar-group">
+      <div class="app-mock">
+        <div class="side">
+          <div class="side-title">
+            <span class="dot" style="background:var(--blue)"></span>
+            <span class="truncate">Collecting security Issuess</span>
+          </div>
+          <div class="side-group">
+            <div class="lab"><span class="dot live"></span><span>Running now</span><span class="push">1</span></div>
+            <div class="live-row">
+              <span class="dot live" style="margin-top:5px"></span>
+              <span class="stack">
+                <span class="row"><span class="truncate">Collecting security Issuess</span><span class="push"></span><span class="elapsed">0:41</span></span>
+                <span class="small muted truncate">Routine · manual · worker_list.zig</span>
+              </span>
+            </div>
+          </div>
+          <div class="side-group">
+            <div class="lab">Chats</div>
+            <div class="chat-row"><span class="dot ok"></span><span class="truncate">Collect security issues</span></div>
+            <div class="chat-row"><span class="dot"></span><span class="truncate">Routine 17:09</span><span class="chip">Routine</span></div>
+            <div class="chat-row"><span class="dot"></span><span class="truncate">Audit the auth middleware</span></div>
+            <div class="chat-row"><span class="dot"></span><span class="truncate">Routine 16:09</span><span class="chip">Routine</span></div>
+            <div class="chat-row"><span class="dot"></span><span class="truncate">Fix the flaky lazy-prefetch spec</span></div>
+          </div>
+        </div>
+        <div class="wide-only" style="padding:14px 16px;background:var(--bg-frame);min-width:0">
+          <div class="row small muted"><span class="dot live"></span><span>Collecting security Issuess</span><span class="chip">Manual</span><span class="elapsed">0:41</span></div>
+          <div class="instr" style="margin-top:12px">
+            <div class="who"><span class="dot" style="background:var(--violet)"></span>Routine instruction, sent on every fire</div>
+            <pre>This is an automated workspace-routine fire.
+- Schedule: (manual)
+Collect security Issues and write to SECURITY_ISSUES.md</pre>
+          </div>
+          <div class="bubble" style="margin-top:12px">Scanning the repository for unvalidated input paths and any handler that skips the owner check.</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="caption"><b>The sidebar.</b> The group is a live view of the same rows the routine view shows, so a run started by the clock surfaces without anyone opening the routine. Finished runs fall into the chat list, badged, and stay findable.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>Eight states, and what each one has to say</h2>
+
+    <div class="frame" data-ui="state-table-wrap">
+      <table class="state-table">
+        <thead>
+          <tr><th>State</th><th>What the row shows</th><th>The action</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Never run</td><td>One sentence in the panel: no runs yet, Run now fires it once, a schedule fires it on its own.</td><td>Run now</td></tr>
+          <tr><td><code>queued</code></td><td>The row exists, no worker yet: starting.</td><td>Open chat, Stop</td></tr>
+          <tr><td><code>running</code></td><td>Live elapsed, the worker's last activity line.</td><td>Open chat, Stop</td></tr>
+          <tr><td><code>success</code></td><td>Duration, trigger, and what it touched.</td><td>Open</td></tr>
+          <tr><td><code>failed</code></td><td>The error, on its own line, truncated, full text on hover.</td><td>Open, Retry run</td></tr>
+          <tr><td><code>needs you</code></td><td>Asked a question: the run ended in <code>awaiting_user</code>.</td><td>Open and answer</td></tr>
+          <tr><td><code>cancelled</code></td><td>When it was stopped.</td><td>Open</td></tr>
+          <tr><td><code>stale</code></td><td>No activity for 30 minutes, for one tick, then failed.</td><td>Open, Retry run</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="caption"><b>States.</b> A failure is never an empty list and never a green pill. That single mistake, an errored run reporting success, is what makes a routine silently useless today.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>The data model: no new table</h2>
+
+    <p>A run <b>is</b> a chat session. Four columns on <code>sessions</code> carry the three things a session cannot infer, plus the error text the product throws away today. No new table, and nothing added to <code>workspace_item_tasks</code>, which is referenced by roughly 120 files and would put every run in the item's task list, the workspace counts and the agent's kanban tool.</p>
+
+    <pre>-- Migration 125. One guarded addColumnIfMissing each, so a replay is a no-op.
+ALTER TABLE sessions ADD COLUMN routine_id  TEXT NOT NULL DEFAULT '';  -- '' = an ordinary chat
+ALTER TABLE sessions ADD COLUMN run_trigger TEXT NOT NULL DEFAULT '';  -- 'schedule' | 'manual'
+ALTER TABLE sessions ADD COLUMN run_due_at  TEXT NOT NULL DEFAULT '';  -- the scheduled slot; '' for manual
+ALTER TABLE sessions ADD COLUMN run_error   TEXT NOT NULL DEFAULT '';  -- why it failed, if it did
+
+CREATE INDEX IF NOT EXISTS idx_sessions_routine ON sessions(routine_id, created_at DESC);</pre>
+
+    <p>State is <b>derived, never stored</b>: a live <code>worker</code> row means running, <code>last_finish_reason</code> is <code>stop</code> or <code>awaiting_user</code>, <code>sessions.status</code> is cancelled, and no worker with no stop is a failure with <code>run_error</code> in hand. One predicate keeps runs out of the chat list, beside the one that already hides sub-agent sessions. Retention is deleting the session, which is a thing you already understand.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>The fire, end to end</h2>
+
+    <pre>fireWorkspaceRoutine(routine_id, trigger, due_at)
+ 1  routine = loadWorkspaceRoutineById(...)          the existing load
+    context = loadRoutineContext(...)                NEW: workspace_id, item path, name, owner
+ 2  if (!claimForRun(routine_id)) return AlreadyRunning
+                                                     unchanged atomic UPDATE; a boolean, not a status string
+ 3  run_id = session_id = run_&lt;secs&gt;_&lt;suffix&gt;
+ 4  INSERT INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at,
+                          selected_profile_model, is_auto_retry_until_stop, user_id,
+                          routine_id, run_trigger, run_due_at)
+    broadcast sessions.created                       the run is in the sidebar before the agent starts
+ 5  workspace_items: routine_next_run_at = nextFireTime(now)
+ 6  di.emit_run_agent(...)                           the chat funnel, not a raw event
+      insert_worker: INSERT INTO sessions ... ON CONFLICT DO NOTHING   no-op, no second broadcast
+                     INSERT INTO worker                               running is now observable
+                     emit RunParamsNew                                worker slot, queue, agent loop
+ 7  the loop finishes; emit is synchronous, so we are back here
+    reason = sessions.last_finish_reason
+    if reason not in ('stop','awaiting_user'): UPDATE sessions SET run_error = ?
+    workspace_items: routine_run_lock = success | failed   the pill stops lying</pre>
+
+    <p>Order matters. Inserting the session ourselves is what lets it carry the workspace, and because that insert is <code>ON CONFLICT DO NOTHING</code> with the broadcast gated on <code>db.changes() &gt; 0</code>, <code>insert_worker</code> stays a silent no-op afterwards: one broadcast, one sidebar row, no fight.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>The API</h2>
+
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Change</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>POST …/routines/:routine_id/run</code></td><td>202 with <code>{ session_id, status }</code>. There is no separate run id: the run id is the session id. The 409 carries the session in flight, so the UI can offer to open it.</td></tr>
+        <tr><td><code>GET /api/workspaces/:ws/routine-runs?status=live|all</code></td><td>New. The workspace-wide running list.</td></tr>
+        <tr><td><code>GET …/routines/:routine_id/runs?limit=20</code></td><td>New. One routine's history.</td></tr>
+        <tr><td><code>POST /api/routine-runs/:session_id/stop</code></td><td>New. Cancels through the existing worker-cancel path and sets <code>sessions.status = 'cancelled'</code>.</td></tr>
+        <tr><td><code>GET /api/sessions</code></td><td>Routine runs excluded by default (<code>routine_id = ''</code>), reachable with <code>?include=routine_runs</code>; each row gains <code>routine_id</code> and <code>routine_name</code> so a run can be badged.</td></tr>
+      </tbody>
+    </table>
+
+    <pre>{
+  "session_id": "run_1793556739_1793535810996950572",
+  "routine_id": "item_1793535810996950572",
+  "routine_name": "Collecting security Issuess",
+  "status": "running",
+  "trigger": "manual",
+  "due_at": null,
+  "started_at": "2026-11-01 18:09:56",
+  "finished_at": null,
+  "elapsed_ms": 41000,
+  "error": null,
+  "last_activity_description": "Read src/http_handlers/worker_list.zig"
+}</pre>
+
+    <p>Both list endpoints return the same row, so one store and one component serve the routine view and the sidebar. The activity line comes from the worker row and is <code>null</code> the moment the loop ends; the panel then shows the finished duration instead of a line that stopped being true.</p>
+  </section>
+
+  <section class="doc reveal">
+    <h2>Files</h2>
+
+    <div class="files">
+      <div><span><code>src/migrations/migration_125.zig</code></span><span>four guarded columns on <code>sessions</code> and one index, plus a replay test; registered in <code>migration.zig</code></span></div>
+      <div><span><code>routines/model.zig</code></span><span>the derived RunState, makeRunId, insertRunSession, listRuns, finishRun, pruneRuns, loadRoutineContext</span></div>
+      <div><span><code>routines/fire.zig</code></span><span>the sequence above; the direct event emit and the unconditional markSuccess both go</span></div>
+      <div><span><code>routines/Scheduler.zig</code></span><span>close open runs at boot, stale run to failed on the tick, trigger and due_at on a scheduled fire</span></div>
+      <div><span><code>http_handlers/workspace_routines_run.zig</code></span><span>202 with the run id; the 409 carries the open run</span></div>
+      <div><span><code>http_handlers/workspace_routine_runs_list.zig</code></span><span>new: both list endpoints, one use case, workspace scoped</span></div>
+      <div><span><code>http_handlers/routine_run_stop.zig</code></span><span>new: stop a run</span></div>
+      <div><span><code>agentic_loop/llm_history.zig</code></span><span>the <code>routine_id = ''</code> predicate plus an <code>include</code> opt-in; <code>routine_id</code> and <code>routine_name</code> on the row</span></div>
+      <div><span><code>src/api/routineRuns.ts</code>, <code>stores/routineRuns.ts</code></span><span>wire types, the live list, the poll lifecycle, stop</span></div>
+      <div><span><code>views/RoutineView.vue</code></span><span>the Runs section, the pill opens the run, Run now navigates</span></div>
+      <div><span><code>views/chatsList/RunningRunsGroup.vue</code></span><span>new: the sidebar group</span></div>
+      <div><span><code>views/chat/RunHeader.vue</code></span><span>new: the strip above the transcript</span></div>
+    </div>
+  </section>
+
+  <section class="doc reveal">
+    <h2>What the gate said</h2>
+
+    <div class="checks">
+      <div><b>lint.mjs</b>: 0 FAIL, 0 WARN, 1 file. The first pass found 21 em dashes and one monospace leak in the file list; both were fixed at the source, not silenced.</div>
+      <div><b>inspect.mjs</b>: 0 FAIL, 2 WARN across 1440, 768 and 390.</div>
+      <div><b>The two warnings, defended.</b> <code>no-real-pictures</code> and <code>no-footage</code>: an internal app screen has no photography, and a stock photograph would be a lie about what the product is. The picture floor is met by five interface fragments marked <code>data-ui</code>, measured at 996 by 420 to 538 pixels, which the inspector counts for software.</div>
+      <div><b>What moved:</b> 13 sections rise once as they enter the viewport (transform and opacity, one 0.5s transition, a <code>prefers-reduced-motion</code> path that keeps the content and drops the travel), plus the four live-run dots. Nothing is hidden if the observer never fires: a 1.5s timer reveals everything.</div>
+      <div><b>The screenshots were not looked at.</b> <code>read_file</code> on a .jpg returns bytes, not pixels, so the witness for the render is the DOM: 13 of 13 reveal targets carry <code>is-in</code> after load, zero horizontal overflow at 1280, and every frame's bounding box reported above. Claiming a visual review would be a claim about a check I cannot run.</div>
+      <div><b>The copy is the product's own.</b> Routine name, instruction, schedule and the 18:09 last-run time come from the task's screenshot; the file and line references come from the repository at this branch.</div>
+    </div>
+  </section>
+
+  <section class="doc reveal">
+    <h2>Decisions worth re-reading before the build</h2>
+
+    <ol class="decisions">
+      <li><b>The run is a session, not a table.</b> This document's first revision added a <code>routine_runs</code> table. Every field it held was either already on the session or derivable from the <code>worker</code> row and <code>last_finish_reason</code>, so it is gone: four columns instead.</li>
+      <li><b>Runs are still not <code>workspace_item_tasks</code> rows.</b> They follow that table's id convention, but no query in the repo filters <code>task_type</code>, so a run row would surface as a task in the item's list, the workspace counts, run-all-agents and the agent's kanban tool, and there is no way to prune it without deleting something the user can see.</li>
+      <li><b>The overlap guard stays <code>claimForRun</code>.</b> <code>last_status</code> stops being a reported outcome and becomes the lock it already was; each run's state is derived per session instead of stored once.</li>
+      <li><b><code>workspace_routines</code> is not needed at all.</b> A routine <b>is</b> a <code>workspace_items</code> row with <code>item_type='routine'</code>: its six settings become <code>routine_*</code> columns on that row, and its runs are sessions pointing back at it, one item to many runs. The table's other seven columns were a duplicate description, two derivable fields, a second id, and a status that becomes the fire lock.</li>
+      <li><b>Scheduling arithmetic is untouched.</b> Next fire is still computed from completion time. Changing that changes behaviour for every existing routine and deserves its own proof.</li>
+      <li><b>Routines still do not set <code>is_auto_retry_until_stop</code>.</b> A routine that retries itself until it stops is an unattended loop, which is exactly what that flag is not for.</li>
+    </ol>
+
+    <p class="provenance">Wireframe and design, revision 2 after review, not shipped. Every interface frame above uses the app's own dark palette and type scale, drawn at the current 240px sidebar width; the five states are new. The file and line references were read from the repository on the branch that carries this document. The routine's name, instruction and last-run time are the ones in the task's screenshot.</p>
+  </section>
+
+</main>
+<script>
+  (function () {
+    var targets = document.querySelectorAll('.reveal');
+    var show = function (el) { el.classList.add('is-in'); };
+    if (!('IntersectionObserver' in window)) {
+      for (var i = 0; i < targets.length; i++) show(targets[i]);
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { show(e.target); io.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -6% 0px' });
+    targets.forEach(function (el) { io.observe(el); });
+    // Nothing stays hidden if the observer never fires.
+    window.setTimeout(function () { targets.forEach(show); }, 1500);
+  })();
+</script>
+</body>
+</html>
