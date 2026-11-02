@@ -29,7 +29,7 @@ const micros_per_second: i64 = 1_000_000;
 /// own magnitude instead of trusting the column. P4 is where the units unify.
 const older_than_cutoff =
     "created_at_nano < CASE WHEN created_at_nano >= 100000000000000000 " ++
-    "THEN CAST(? AS INTEGER) * 1000 ELSE CAST(? AS INTEGER) END";
+    "THEN CAST(? AS BIGINT) * 1000 ELSE CAST(? AS BIGINT) END";
 
 pub const PruneLogsInput = struct {
     allocator: std.mem.Allocator,
@@ -133,7 +133,7 @@ fn setupCtx() !Ctx {
     try db.exec(a,
         \\CREATE TABLE logs (
         \\  id TEXT PRIMARY KEY,
-        \\  created_at_nano INTEGER NOT NULL,
+        \\  created_at_nano BIGINT NOT NULL,
         \\  level TEXT NOT NULL,
         \\  kind TEXT NOT NULL,
         \\  message TEXT NOT NULL,

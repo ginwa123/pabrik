@@ -49,7 +49,7 @@ fn openDb(alloc: std.mem.Allocator) !struct { db: Backend, threaded: std.Io.Thre
 fn archivedAtOf(alloc: std.mem.Allocator, db: *Backend, id: []const u8) !?[]u8 {
     var row = try db.queryRow(
         alloc,
-        "SELECT COALESCE(transcript_archived_at, '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(transcript_archived_at AS TEXT), '') FROM sessions WHERE id = ?",
         &[_][]const u8{id},
     );
     defer row.deinit(alloc);

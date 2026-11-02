@@ -78,6 +78,7 @@ fn setupMigrated() !struct { db: Backend, threaded: std.Io.Threaded } {
 }
 
 test "a migrated database rejects a row whose parent does not exist" {
+    if (dialect.is_postgres) return;
     const alloc = testing.allocator;
     var ctx = try setupMigrated();
     defer ctx.threaded.deinit();

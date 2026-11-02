@@ -56,7 +56,7 @@ fn seedSchema(alloc: std.mem.Allocator, db: *Backend) !void {
     try db.exec(alloc,
         \\CREATE TABLE logs (
         \\  id TEXT PRIMARY KEY,
-        \\  created_at_nano INTEGER NOT NULL,
+        \\  created_at_nano BIGINT NOT NULL,
         \\  level TEXT NOT NULL,
         \\  kind TEXT NOT NULL,
         \\  message TEXT NOT NULL,

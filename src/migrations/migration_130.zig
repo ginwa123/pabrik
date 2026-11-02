@@ -36,7 +36,7 @@ fn openDb(alloc: std.mem.Allocator) !struct { db: Backend, threaded: std.Io.Thre
     try db.exec(alloc,
         \\CREATE TABLE logs (
         \\  id TEXT PRIMARY KEY,
-        \\  created_at_nano INTEGER NOT NULL,
+        \\  created_at_nano BIGINT NOT NULL,
         \\  level TEXT NOT NULL,
         \\  kind TEXT NOT NULL,
         \\  message TEXT NOT NULL,

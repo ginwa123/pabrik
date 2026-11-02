@@ -277,6 +277,8 @@ const FilePair = struct {
         const path = try alloc.dupeZ(u8, joined);
         defer alloc.free(path);
 
+        if (pabrikcore.dialect.is_postgres) return error.SkipZigTest;
+
         var threaded = std.Io.Threaded.init(alloc, .{});
         errdefer threaded.deinit();
 

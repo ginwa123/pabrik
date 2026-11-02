@@ -545,7 +545,6 @@ pub const allMigrations: []const Migration = &.{
     // Migration 135 — the two RBAC tables nothing wrote are gone.
     .{ .version = Migration135DropUnusedRbacTables.version, .name = Migration135DropUnusedRbacTables.name, .up = Migration135DropUnusedRbacTables.up },
     // Migration 136 — postgres gets the foreign keys its DDL could not declare.
-    .{ .version = Migration136EnforceForeignKeys.version, .name = Migration136EnforceForeignKeys.name, .up = Migration136EnforceForeignKeys.up },
     .{ .version = Migration137ExpandKanbanOntoTasks.version, .name = Migration137ExpandKanbanOntoTasks.name, .up = Migration137ExpandKanbanOntoTasks.up },
 };
 

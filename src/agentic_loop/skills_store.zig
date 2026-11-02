@@ -388,6 +388,16 @@ pub fn deleteSkill(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
+    for ([_][]const u8{ "skill_metadata", "skill_assets" }) |child| {
+        var sql_buf: [192]u8 = undefined;
+        const sql = std.fmt.bufPrint(
+            &sql_buf,
+            "DELETE FROM {s} WHERE skill_id IN (SELECT id FROM skills WHERE workspace_id = ? AND name = ?)",
+            .{child},
+        ) catch return error.DeleteFailed;
+        tx.exec(allocator, sql, &[_][]const u8{ workspace_id, name }) catch return error.DeleteFailed;
+    }
+
     tx.exec(
         allocator,
         "DELETE FROM skills WHERE workspace_id = ? AND name = ?",

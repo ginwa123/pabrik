@@ -471,7 +471,7 @@ fn setupDb() !TestCtx {
         \\  completion_tokens INTEGER NOT NULL DEFAULT 0,
         \\  cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
         \\  cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
-        \\  created_at_nano INTEGER NOT NULL DEFAULT 0,
+        \\  created_at_nano BIGINT NOT NULL DEFAULT 0,
         \\  created_iso TEXT,
         \\  tool_name TEXT,
         \\  finish_reason TEXT,

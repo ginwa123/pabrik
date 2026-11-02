@@ -62,7 +62,7 @@ fn openDb(alloc: std.mem.Allocator) !struct { db: Backend, threaded: std.Io.Thre
         \\CREATE TABLE llm_history (
         \\    id TEXT PRIMARY KEY,
         \\    session_id TEXT NOT NULL,
-        \\    created_at_nano INTEGER
+        \\    created_at_nano BIGINT
         \\)
     , &[_][]const u8{});
     return .{ .db = db, .threaded = threaded };
