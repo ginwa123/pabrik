@@ -5,16 +5,19 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 
 /// Migration 136 - the foreign keys postgres never declared: its `CREATE TABLE`
-/// carries a no-op check instead (`dialect.foreignKey`), because a child can be
-/// created before its parent; migration 129 removed the rows that would fail.
+/// carries a no-op check instead, because a child can be created before its
+/// parent. A session survives its workspace; every other child goes with it.
 pub const Migration136EnforceForeignKeys = struct {
     pub const version: u32 = 136;
     pub const name = "enforce_foreign_keys";
+
+    const Action = enum { cascade, set_null };
 
     const ForeignKey = struct {
         table: []const u8,
         column: []const u8,
         parent: []const u8,
+        action: Action = .cascade,
     };
 
     const foreign_keys = [_]ForeignKey{
@@ -33,6 +36,10 @@ pub const Migration136EnforceForeignKeys = struct {
         .{ .table = "workspace_secrets", .column = "workspace_id", .parent = "workspaces" },
         .{ .table = "workspace_settings", .column = "workspace_id", .parent = "workspaces" },
         .{ .table = "auth_sessions", .column = "user_id", .parent = "users" },
+        .{ .table = "workspace_items", .column = "workspace_id", .parent = "workspaces" },
+        .{ .table = "workspace_members", .column = "workspace_id", .parent = "workspaces" },
+        .{ .table = "workspace_invitations", .column = "workspace_id", .parent = "workspaces" },
+        .{ .table = "sessions", .column = "workspace_id", .parent = "workspaces", .action = .set_null },
     };
 
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
@@ -41,8 +48,8 @@ pub const Migration136EnforceForeignKeys = struct {
         for (foreign_keys) |fk| {
             const ddl = try std.fmt.allocPrint(
                 allocator,
-                "ALTER TABLE {s} ADD CONSTRAINT {s}_{s}_fkey FOREIGN KEY ({s}) REFERENCES {s}(id) ON DELETE CASCADE",
-                .{ fk.table, fk.table, fk.column, fk.column, fk.parent },
+                "ALTER TABLE {s} ADD CONSTRAINT {s}_{s}_fkey FOREIGN KEY ({s}) REFERENCES {s}(id) ON DELETE {s}",
+                .{ fk.table, fk.table, fk.column, fk.column, fk.parent, if (fk.action == .set_null) "SET NULL" else "CASCADE" },
             );
             defer allocator.free(ddl);
             try db.exec(allocator, ddl, &[_][]const u8{});
@@ -102,4 +109,13 @@ test "every constraint this migration adds names a table and column the chain st
             return error.ForeignKeyIsStale;
         }
     }
+}
+
+test "a workspace delete keeps its sessions and drops their workspace link" {
+    for (Migration136EnforceForeignKeys.foreign_keys) |fk| {
+        if (!std.mem.eql(u8, fk.table, "sessions")) continue;
+        try testing.expectEqual(Migration136EnforceForeignKeys.Action.set_null, fk.action);
+        return;
+    }
+    return error.SessionsWorkspaceKeyMissing;
 }
