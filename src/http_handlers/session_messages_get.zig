@@ -85,6 +85,9 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     const pr_url_final: ?[]const u8 = msg_response.pr_url orelse (if (pr_fields.pr_url.len > 0) pr_fields.pr_url else null);
     const pr_provider_final: ?[]const u8 = msg_response.pr_provider orelse (if (pr_fields.pr_provider.len > 0) pr_fields.pr_provider else null);
 
+    const archived_at = llm_history.getSessionTranscriptArchivedAt(allocator, sqlite_db, session_id) catch "";
+    const transcript_archived_at: ?[]const u8 = if (archived_at.len > 0) archived_at else null;
+
     // Convert llm_history.SessionMessageResponse to http_response.SessionMessagesResponse
     var messages: []http_response.SessionMessage = try allocator.alloc(http_response.SessionMessage, msg_response.messages.len);
     for (msg_response.messages, 0..) |msg, idx| {
@@ -146,6 +149,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         .git_worktree_cwd = msg_response.git_worktree_cwd,
         .pr_url = pr_url_final,
         .pr_provider = pr_provider_final,
+        .transcript_archived_at = transcript_archived_at,
         // 2026-08-07-profile-persist-read — pass the per-session selected
         // profile name through so the frontend's profile chip survives a page
         // refresh.
@@ -228,7 +232,8 @@ fn setupDb() !TestCtx {
         \\    is_auto_retry_until_stop INTEGER NOT NULL DEFAULT 0,
         \\    last_finish_reason TEXT,
         \\    pr_url TEXT,
-        \\    pr_provider TEXT
+        \\    pr_provider TEXT,
+        \\    transcript_archived_at TIMESTAMP
         \\)
     , &.{});
 
@@ -544,4 +549,38 @@ test "getSessionPrFields reads pr_url + pr_provider straight from sessions row" 
     const missing = try llm_history.getSessionPrFields(alloc, &ctx.db, "s_nope");
     try testing.expectEqualStrings("", missing.pr_url);
     try testing.expectEqualStrings("", missing.pr_provider);
+}
+
+test "getSessionTranscriptArchivedAt reports when the transcript moved file" {
+    const alloc = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try seedSession(&ctx, a, "s_archived", "");
+    try ctx.db.exec(a, "UPDATE sessions SET transcript_archived_at = '2026-11-02 03:00:00' WHERE id = 's_archived'", &.{});
+
+    const stamp = try llm_history.getSessionTranscriptArchivedAt(a, &ctx.db, "s_archived");
+    try testing.expectEqualStrings("2026-11-02 03:00:00", stamp);
+}
+
+test "getSessionTranscriptArchivedAt is empty for a chat still in this database" {
+    const alloc = testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try seedSession(&ctx, a, "s_live", "");
+    try seedMessage(&ctx, a, "m1", "s_live", "still here");
+
+    const stamp = try llm_history.getSessionTranscriptArchivedAt(a, &ctx.db, "s_live");
+    try testing.expectEqualStrings("", stamp);
 }
