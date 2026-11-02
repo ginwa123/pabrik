@@ -16,12 +16,17 @@ const static_files = pabrikcore.static_files;
 // directly (dual-module error — see root.zig).
 const cleanup_stale_worker = pabrikcore.cleanup_stale_worker;
 const cleanup_stale_background_process = pabrikcore.cleanup_stale_background_process;
+// Retention crons: `logs` keeps 30 days; a transcript whose newest message is
+// 90 days old moves to the sibling archive.db.
+const prune_logs = pabrikcore.prune_logs;
+const archive_transcripts = pabrikcore.archive_transcripts;
 const background_process = pabrikcore.ai_mod.background_process;
 
 // Boot phases (extracted from this file): the exe module reaches them via
 // pabrikcore.* for the same dual-module reason as above.
 const shutdown = pabrikcore.boot_shutdown;
 const cli_dispatch = pabrikcore.boot_cli_dispatch;
+const db_cli = pabrikcore.boot_db_cli;
 const headless_dispatch = pabrikcore.boot_headless_dispatch;
 const server_boot = pabrikcore.boot_server_boot;
 // The DB policy and its `--db-*` overrides, plus the reader-pool reaper that
@@ -51,6 +56,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
 
     if (try cli_dispatch.dispatchServiceSubcommand(allocator, io, environment, init)) return;
+    if (try db_cli.dispatchDbSubcommand(allocator, io, environment, init)) return;
     if (try cli_dispatch.dispatchCreateAdmin(allocator, io, environment, init)) return;
     // Headless mode boots the whole backend and runs a turn WITHOUT binding a
     // port.
@@ -234,6 +240,10 @@ pub fn main(init: std.process.Init) !void {
             std.log.info("serving installed webapp from {s}", .{dir});
         }
     }
+    // Where this database lives, so the transcript archiver puts `archive.db`
+    // beside it instead of guessing a directory. Empty on postgres.
+    ctxParent.db_path = if (db_handles.target.backend == .sqlite) db_handles.target.sqlite_path else "";
+
     ctxParent.auth_enabled = cli.auth_enabled;
     if (cli.auth_enabled) {
         std.log.info("--auth on: per-user LLM config comes from users.config_json; config.json is ignored.", .{});
@@ -400,6 +410,26 @@ pub fn main(init: std.process.Init) !void {
         boot_unix,
     ) catch |err| {
         std.log.err("Failed to register cleanup_stale_background_process cron: {s}", .{@errorName(err)});
+    };
+    // Retention runs daily, in the small hours, and the two never overlap: the
+    // archive frees rows first, the log prune then hands its own pages back.
+    _ = gs.cronjob_manager.register(
+        "0 4 * * *",
+        "prune_logs",
+        prune_logs.handle,
+        null,
+        boot_unix,
+    ) catch |err| {
+        std.log.err("Failed to register prune_logs cron: {s}", .{@errorName(err)});
+    };
+    _ = gs.cronjob_manager.register(
+        "15 4 * * *",
+        "archive_transcripts",
+        archive_transcripts.handle,
+        null,
+        boot_unix,
+    ) catch |err| {
+        std.log.err("Failed to register archive_transcripts cron: {s}", .{@errorName(err)});
     };
     try gs.listenEventLoop(.{ .dispatch_mode = .worker_pool });
 

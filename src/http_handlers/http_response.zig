@@ -218,6 +218,10 @@ pub const SessionMessagesResponse = struct {
     pr_url: ?[]const u8 = null,
     /// Effective PR provider. Mirrors `sessions.pr_provider`.
     pr_provider: ?[]const u8 = null,
+    /// When this session's transcript moved to the sibling `archive.db`
+    /// (`YYYY-MM-DD HH:MM:SS`). Non-null means `messages` is empty because the
+    /// chat is archived, not because it never had any.
+    transcript_archived_at: ?[]const u8 = null,
     /// Session's selected profile name (NULL/empty when no profile is
     /// selected). Mirrors `sessions.selected_profile_model`.
     selected_profile_model: ?[]const u8 = null,
