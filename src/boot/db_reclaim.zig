@@ -1,9 +1,6 @@
-//! The free pages a long-lived SQLite file hoards: how to hand the ones already
-//! allocated back to the filesystem, and how to set the mode that lets the next
-//! batch go without a full rebuild.
-//!
-//! Both need the file OUT of WAL mode for a few seconds, so they belong to a
-//! maintenance window and never to a boot.
+//! The free pages a long-lived SQLite file hoards: handing the ones already
+//! allocated back to the filesystem, and setting the mode that lets the next
+//! batch go without a full rebuild. Both need the file OUT of WAL mode.
 
 const std = @import("std");
 const databases = @import("databases");
@@ -97,13 +94,9 @@ pub fn journalMode(db: *database.Db, allocator: std.mem.Allocator) ![]u8 {
     return pragmaText(db, allocator, "PRAGMA journal_mode");
 }
 
-/// The maintenance-window pass: leave WAL, set the mode, `VACUUM` (the only
-/// statement that both applies the mode and truncates the file), go back to WAL.
-///
-/// A WAL database cannot change its auto_vacuum setting in place, and a `VACUUM`
-/// only applies the setting it finds — so the pragma has to land between the two
-/// journal switches. The switch back is unconditional: leaving a live database in
-/// DELETE mode serializes every reader behind the writer.
+/// Leave WAL, set the mode, `VACUUM` — which both applies the mode and truncates
+/// the file — then go back to WAL. The pragma has to land between the two
+/// switches, and the switch back is unconditional.
 pub fn reclaim(db: *database.Db, allocator: std.mem.Allocator) !ReclaimReport {
     var report = ReclaimReport{
         .mode_before = try mode(db, allocator),
@@ -144,12 +137,9 @@ pub fn releaseFreePages(db: *database.Db, allocator: std.mem.Allocator) !Release
     var report = ReleaseReport{ .pages_before = (try size(db, allocator)).pages };
     report.pages_after = report.pages_before;
 
-    // The pages a delete freed are still in frames of the log, and sqlite only
-    // truncates the file once the log is empty — a PASSIVE checkpoint, which does
-    // apply the frames, leaves the truncation with nothing to do. Measured: with
-    // PASSIVE the file stays the same size, with TRUNCATE it shrinks. A checkpoint
-    // that cannot take the lock is not an error: nothing shrinks, and the report
-    // says so.
+    // sqlite truncates the file only once the log is empty, so TRUNCATE — not
+    // PASSIVE — is what shrinks it. A checkpoint that cannot take the lock is not
+    // an error: nothing shrinks and the report says so.
     db.exec(allocator, "PRAGMA wal_checkpoint(TRUNCATE)", &.{}) catch {};
 
     while (report.steps < pages_per_release) {

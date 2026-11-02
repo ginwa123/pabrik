@@ -57,6 +57,48 @@ pub fn epochToText(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "datetime(CAST({s} AS INTEGER), 'unixepoch')", .{expr});
 }
 
+/// Column type for an epoch-MILLISECONDS column. Both engines need 64 bits —
+/// 1.7e12 does not fit postgres' 32-bit `INTEGER`.
+pub const epoch_ms_type: []const u8 = if (is_postgres) "BIGINT" else "INTEGER";
+
+/// The schema's one timestamp unit: unix epoch MILLISECONDS. `julianday` is a
+/// single call, so sqlite cannot take the seconds and the fraction from two
+/// different instants.
+pub const now_ms: []const u8 = if (is_postgres)
+    "CAST(EXTRACT(EPOCH FROM now()) * 1000 AS BIGINT)"
+else
+    "CAST(ROUND((julianday('now') - 2440587.5) * 86400000.0) AS INTEGER)";
+
+/// A dual-write's legacy seconds column: the unit the old writer used, derived
+/// from the millisecond value rather than from a second read of the clock.
+pub const now_ms_as_seconds: []const u8 = "(" ++ now_ms ++ ") / 1000";
+
+/// `expr`, an epoch-milliseconds SQL expression, rendered as the UTC
+/// `YYYY-MM-DD HH:MM:SS` text the wire carries — the job `created_iso` did.
+pub fn msToText(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
+    if (is_postgres) {
+        return std.fmt.allocPrint(
+            allocator,
+            "to_char(to_timestamp(CAST({s} AS BIGINT) / 1000) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')",
+            .{expr},
+        );
+    }
+    return std.fmt.allocPrint(allocator, "datetime(CAST({s} AS INTEGER) / 1000, 'unixepoch')", .{expr});
+}
+
+/// `expr`, epoch milliseconds, as the UTC `YYYY-MM-DD` day bucket a usage
+/// series groups by.
+pub fn msToDay(allocator: std.mem.Allocator, expr: []const u8) ![]u8 {
+    if (is_postgres) {
+        return std.fmt.allocPrint(
+            allocator,
+            "to_char(to_timestamp(CAST({s} AS BIGINT) / 1000) AT TIME ZONE 'UTC', 'YYYY-MM-DD')",
+            .{expr},
+        );
+    }
+    return std.fmt.allocPrint(allocator, "date(CAST({s} AS INTEGER) / 1000, 'unixepoch')", .{expr});
+}
+
 /// A `TIMESTAMP` column rendered as `YYYY-MM-DD HH24:MI:SS` text, so a read
 /// that returns it to Zig gets the same string from either engine. `column` is
 /// a column name, never a bind, so the fragment is fixed at compile time.
