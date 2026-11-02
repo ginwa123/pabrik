@@ -391,7 +391,12 @@ test "sessionOwner: owner is read from the session, absent owner is an error" {
 
 const store = @import("workspace_settings_store.zig");
 
+fn seedWorkspace(db: *database.Db, id: []const u8) !void {
+    try db.exec(testing.allocator, "INSERT INTO workspaces (id) VALUES (?) ON CONFLICT DO NOTHING", &[_][]const u8{id});
+}
+
 fn putOverlay(db: *database.Db, owner: []const u8, workspace_id: []const u8, body: []const u8) !void {
+    try seedWorkspace(db, workspace_id);
     try store.saveRaw(testing.allocator, db, owner, workspace_id, body);
 }
 
@@ -743,6 +748,7 @@ test "forOwnerAndWorkspace: an api_key placeholder resolves, and a model placeho
     secrets_at_rest.setKey(test_key);
 
     try insertUser(&ctx.db, "u_1", "{\"retry_delay_ms\":1234}");
+    try seedWorkspace(&ctx.db, "ws_a");
 
     const key_ph = try placeholder(alloc, "API_KEY");
     defer alloc.free(key_ph);

@@ -148,6 +148,7 @@ const migration_132 = @import("migration_132.zig");
 const migration_133 = @import("migration_133.zig");
 const migration_134 = @import("migration_134.zig");
 const migration_135 = @import("migration_135.zig");
+const migration_136 = @import("migration_136.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -285,6 +286,7 @@ pub const Migration132ExpandSessionPlan = migration_132.Migration132ExpandSessio
 pub const Migration133BackfillSessionPlan = migration_133.Migration133BackfillSessionPlan;
 pub const Migration134ContractSessionPlan = migration_134.Migration134ContractSessionPlan;
 pub const Migration135DropUnusedRbacTables = migration_135.Migration135DropUnusedRbacTables;
+pub const Migration136EnforceForeignKeys = migration_136.Migration136EnforceForeignKeys;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -540,6 +542,8 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration133BackfillSessionPlan.version, .name = Migration133BackfillSessionPlan.name, .up = Migration133BackfillSessionPlan.up },
     // Migration 135 — the two RBAC tables nothing wrote are gone.
     .{ .version = Migration135DropUnusedRbacTables.version, .name = Migration135DropUnusedRbacTables.name, .up = Migration135DropUnusedRbacTables.up },
+    // Migration 136 — postgres gets the foreign keys its DDL could not declare.
+    .{ .version = Migration136EnforceForeignKeys.version, .name = Migration136EnforceForeignKeys.name, .up = Migration136EnforceForeignKeys.up },
 };
 
 /// Register all migrations with a MigrationManager
