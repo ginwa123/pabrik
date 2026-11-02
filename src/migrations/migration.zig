@@ -144,6 +144,10 @@ const migration_128 = @import("migration_128.zig");
 const migration_129 = @import("migration_129.zig");
 const migration_130 = @import("migration_130.zig");
 const migration_131 = @import("migration_131.zig");
+const migration_132 = @import("migration_132.zig");
+const migration_133 = @import("migration_133.zig");
+const migration_134 = @import("migration_134.zig");
+const migration_135 = @import("migration_135.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -277,6 +281,10 @@ pub const Migration128FtsExternalContent = migration_128.Migration128FtsExternal
 pub const Migration129DeleteDanglingWorkspaceSubtree = migration_129.Migration129DeleteDanglingWorkspaceSubtree;
 pub const Migration130AddLogMessageTruncated = migration_130.Migration130AddLogMessageTruncated;
 pub const Migration131AddSessionTranscriptArchivedAt = migration_131.Migration131AddSessionTranscriptArchivedAt;
+pub const Migration132ExpandSessionPlan = migration_132.Migration132ExpandSessionPlan;
+pub const Migration133BackfillSessionPlan = migration_133.Migration133BackfillSessionPlan;
+pub const Migration134ContractSessionPlan = migration_134.Migration134ContractSessionPlan;
+pub const Migration135DropUnusedRbacTables = migration_135.Migration135DropUnusedRbacTables;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -525,6 +533,13 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration130AddLogMessageTruncated.version, .name = Migration130AddLogMessageTruncated.name, .up = Migration130AddLogMessageTruncated.up },
     // Migration 131 — a session remembers when its transcript moved to archive.db.
     .{ .version = Migration131AddSessionTranscriptArchivedAt.version, .name = Migration131AddSessionTranscriptArchivedAt.name, .up = Migration131AddSessionTranscriptArchivedAt.up },
+    // Migration 132 — `session_plan` merge, expand: the plan's two columns land
+    // on `sessions`. Migration 134's contract is deliberately absent.
+    .{ .version = Migration132ExpandSessionPlan.version, .name = Migration132ExpandSessionPlan.name, .up = Migration132ExpandSessionPlan.up },
+    // Migration 133 — `session_plan` merge, migrate: copy every plan across.
+    .{ .version = Migration133BackfillSessionPlan.version, .name = Migration133BackfillSessionPlan.name, .up = Migration133BackfillSessionPlan.up },
+    // Migration 135 — the two RBAC tables nothing wrote are gone.
+    .{ .version = Migration135DropUnusedRbacTables.version, .name = Migration135DropUnusedRbacTables.name, .up = Migration135DropUnusedRbacTables.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -7977,115 +7992,6 @@ test "Migration077 creates users table with all 9 columns" {
         idx += 1;
     }
     try testing.expectEqual(@as(usize, expected.len), idx);
-}
-
-// ============================================================================
-// Test 2 — `user_companies` table has all 8 columns with the right types +
-// defaults.
-
-test "Migration077 creates user_companies table with all 8 columns" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb077();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const expected = [_]struct { name: []const u8, type: []const u8, default: []const u8 }{
-        .{ .name = "id", .type = "TEXT", .default = "" },
-        .{ .name = "name", .type = "TEXT", .default = "" },
-        .{ .name = "slug", .type = "TEXT", .default = "" },
-        .{ .name = "description", .type = "TEXT", .default = "''" },
-        .{ .name = "is_active", .type = "INTEGER", .default = "1" },
-        .{ .name = "created_at", .type = "TIMESTAMP", .default = "CURRENT_TIMESTAMP" },
-        .{ .name = "updated_at", .type = "TIMESTAMP", .default = "CURRENT_TIMESTAMP" },
-        .{ .name = "created_by", .type = "TEXT", .default = "" },
-    };
-
-    var q = try ctx.db.query(alloc,
-        \\SELECT name, type, dflt_value FROM 
-    ++ comptime dialect.tableColumns("user_companies") ++
-        \\ ORDER BY cid
-    , &.{});
-    defer q.deinit();
-
-    var idx: usize = 0;
-    while (try q.next()) |row| {
-        defer row.deinit(alloc);
-        try testing.expect(idx < expected.len);
-        try testing.expectEqualStrings(expected[idx].name, row.values[0]);
-        try testing.expectEqualStrings(expected[idx].type, row.values[1]);
-        if (expected[idx].default.len > 0) {
-            try testing.expectEqualStrings(expected[idx].default, row.values[2]);
-        }
-        idx += 1;
-    }
-    try testing.expectEqual(@as(usize, expected.len), idx);
-}
-
-// ============================================================================
-// Test 3 — `user_company_members` join table has the composite PRIMARY KEY.
-// ============================================================================
-
-test "Migration077 creates user_company_members table with composite PK" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb077();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    // Verify the table exists with all 5 user-defined columns.
-    const expected = [_][]const u8{
-        "user_id", "user_company_id", "role", "joined_at", "invited_by",
-    };
-
-    var q = try ctx.db.query(alloc,
-        \\SELECT name FROM 
-    ++ comptime dialect.tableColumns("user_company_members") ++
-        \\ ORDER BY cid
-    , &.{});
-    defer q.deinit();
-
-    var idx: usize = 0;
-    while (try q.next()) |row| {
-        defer row.deinit(alloc);
-        try testing.expect(idx < expected.len);
-        try testing.expectEqualStrings(expected[idx], row.values[0]);
-        idx += 1;
-    }
-    try testing.expectEqual(@as(usize, expected.len), idx);
-
-    // Verify the composite PRIMARY KEY (user_id, user_company_id) is in
-    // place.
-    var pk_q = try ctx.db.query(alloc,
-        \\SELECT name, pk FROM 
-    ++ comptime dialect.tableColumns("user_company_members") ++
-        \\
-        \\WHERE pk > 0 ORDER BY pk
-    , &.{});
-    defer pk_q.deinit();
-
-    const expected_pk = [_][]const u8{ "user_id", "user_company_id" };
-    var pk_idx: usize = 0;
-    while (try pk_q.next()) |row| {
-        defer row.deinit(alloc);
-        try testing.expect(pk_idx < expected_pk.len);
-        try testing.expectEqualStrings(expected_pk[pk_idx], row.values[0]);
-        pk_idx += 1;
-    }
-    try testing.expectEqual(@as(usize, expected_pk.len), pk_idx);
-
-    // Verify the CHECK constraint on `role` rejects invalid values.
-    // `sqlite3_prepare_v2` will return an error if the constraint fails.
-    // Valid value: insert succeeds.
-    try ctx.db.exec(alloc, "INSERT INTO users (id, email, name, password_hash) VALUES ('u_pk', 'u_pk@x', 'U', 'h')", &.{});
-    try ctx.db.exec(alloc, "INSERT INTO user_companies (id, name, slug) VALUES ('c_pk', 'C', 'c-pk')", &.{});
-
-    // Valid role: 'member' (the default) — should succeed.
-    try ctx.db.exec(alloc, "INSERT INTO user_company_members (user_id, user_company_id, role) " ++
-        "VALUES ('u_pk', 'c_pk', 'member')", &.{});
-
-    // Invalid role: 'superuser' (not in the CHECK list) — should fail.
-    const result = ctx.db.exec(alloc, "INSERT INTO user_company_members (user_id, user_company_id, role) " ++
-        "VALUES ('u_pk', 'c_pk', 'superuser')", &.{});
-    try testing.expectError(error.ExecuteFailed, result);
 }
 
 // ============================================================================

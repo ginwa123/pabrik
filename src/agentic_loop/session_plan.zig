@@ -1,14 +1,17 @@
-//! Storage layer for the `update_plan` + `get_plan` agent tools.
+//! Storage layer for the `update_plan` + `get_plan` agent tools. The plan is a
+//! column pair on the session it belongs to (Migration 132); `session_plan` is
+//! mirrored on every save for one release so a rollback is a binary swap.
 
 const std = @import("std");
-const test_db = @import("pabrikcore").test_db;
+const pabrikcore = @import("pabrikcore");
+const test_db = pabrikcore.test_db;
 const testing = std.testing;
-const sqlite = @import("pabrikcore").sqlite;
-const database = @import("pabrikcore").database;
+const database = pabrikcore.database;
+const dialect = pabrikcore.dialect;
 const migration = @import("../migrations/migration.zig");
 
-/// One row in `session_plan`. All string fields are allocator-owned and
-/// must be freed by the caller via `deinit`.
+/// One session's plan. All string fields are allocator-owned and must be
+/// freed by the caller via `deinit`.
 pub const PlanRow = struct {
     session_id: []const u8,
     plan_md: []const u8,
@@ -32,7 +35,44 @@ pub const SavePlanArgs = struct {
 /// with prose, small enough to keep system-prompt injection bounded.
 pub const MAX_PLAN_BYTES: usize = 256 * 1024;
 
-/// Save (UPSERT) a plan. Overwrites any existing row for `session_id`.
+/// The legacy table still receiving every write until its contract migration
+/// ships; Postgres needs the conflict clause spelled out, sqlite's
+/// `INSERT OR REPLACE` already carries it.
+const MIRROR_TAIL = if (dialect.is_postgres)
+    " ON CONFLICT (session_id) DO UPDATE SET plan_md = excluded.plan_md, updated_at = CURRENT_TIMESTAMP"
+else
+    "";
+
+fn sessionExists(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    session_id: []const u8,
+) !bool {
+    var q = try db.query(
+        allocator,
+        "SELECT 1 FROM sessions WHERE id = ? LIMIT 1",
+        &.{session_id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return false;
+    row.deinit(allocator);
+    return true;
+}
+
+/// Keep the legacy row in step so the previous build still reads this plan
+/// after a rollback. It is the only reason `session_plan` still exists.
+fn mirrorLegacyRow(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    session_id: []const u8,
+    content: []const u8,
+) !void {
+    try db.exec(allocator, dialect.upsert_verb ++
+        " INTO session_plan (session_id, plan_md, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)" ++
+        MIRROR_TAIL, &.{ session_id, content });
+}
+
+/// Save (UPSERT) a plan. Overwrites the plan the session already carries.
 pub fn savePlan(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -41,19 +81,15 @@ pub fn savePlan(
     if (args.content.len == 0) return error.InvalidContent;
     if (args.content.len > MAX_PLAN_BYTES) return error.ContentTooLarge;
     if (args.session_id.len == 0) return error.InvalidSessionId;
+    if (!try sessionExists(allocator, db, args.session_id)) return error.SessionNotFound;
 
-    var binds: [2][]const u8 = .{ args.session_id, args.content };
     try db.exec(allocator,
-        \\INSERT INTO session_plan (session_id, plan_md, updated_at)
-        \\VALUES (?, ?, CURRENT_TIMESTAMP)
-        \\ON CONFLICT(session_id) DO UPDATE SET
-        \\    plan_md = excluded.plan_md,
-        \\    updated_at = CURRENT_TIMESTAMP
-    , &binds);
+        \\UPDATE sessions SET plan_md = ?, plan_updated_at = CURRENT_TIMESTAMP WHERE id = ?
+    , &.{ args.content, args.session_id });
 
-    var q = try db.query(allocator,
-        "SELECT updated_at FROM session_plan WHERE session_id = ?",
-        &.{args.session_id});
+    try mirrorLegacyRow(allocator, db, args.session_id, args.content);
+
+    var q = try db.query(allocator, "SELECT COALESCE(CAST(plan_updated_at AS TEXT), '') FROM sessions WHERE id = ?", &.{args.session_id});
     defer q.deinit();
     const row = (try q.next()) orelse return error.RowNotFoundAfterInsert;
     const ts = try allocator.dupe(u8, row.values[0]);
@@ -67,30 +103,28 @@ pub fn getPlan(
     db: *database.Db,
     session_id: []const u8,
 ) ![]const u8 {
-    var q = try db.query(allocator,
-        "SELECT plan_md FROM session_plan WHERE session_id = ?",
-        &.{session_id});
+    var q = try db.query(allocator, "SELECT COALESCE(CAST(plan_md AS TEXT), '') FROM sessions WHERE id = ?", &.{session_id});
     defer q.deinit();
 
     if (try q.next()) |row| {
         defer row.deinit(allocator);
-        if (row.values[0].len == 0) return allocator.dupe(u8, "");
         return allocator.dupe(u8, row.values[0]);
     }
     return allocator.dupe(u8, "");
 }
 
-/// Fetch the full `PlanRow` for `session_id`. Returns `null` when absent
-/// (matches `agent_memories.getMemoryById` convention). Used by the
-/// compaction enrichment to also carry the `updated_at` timestamp.
+/// Fetch the full `PlanRow` for `session_id`. Returns `null` when the session
+/// never wrote a plan — `plan_updated_at` stays NULL until the first save.
 pub fn getPlanOpt(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
 ) !?PlanRow {
     var q = try db.query(allocator,
-        "SELECT session_id, plan_md, COALESCE(CAST(updated_at AS TEXT), '') FROM session_plan WHERE session_id = ?",
-        &.{session_id});
+        \\SELECT id, COALESCE(CAST(plan_md AS TEXT), ''), COALESCE(CAST(plan_updated_at AS TEXT), '')
+        \\FROM sessions
+        \\WHERE id = ? AND plan_updated_at IS NOT NULL AND COALESCE(CAST(plan_md AS TEXT), '') <> ''
+    , &.{session_id});
     defer q.deinit();
 
     const row = (try q.next()) orelse return null;
@@ -108,6 +142,9 @@ pub fn getPlanOpt(
         .updated_at = updated_at_owned,
     };
 }
+
+// ===================================================================== Tests
+// In-memory SQLite against the real migration chain.
 
 const TestCtx = struct {
     db: database.Db,
@@ -130,7 +167,32 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
-// ─── Test 1: round-trip save + getPlan returns the same content ──────────
+fn seedSession(ctx: *TestCtx, session_id: []const u8) !void {
+    try ctx.db.exec(
+        testing.allocator,
+        "INSERT INTO sessions (id, name) VALUES (?, 'seeded')",
+        &.{session_id},
+    );
+}
+
+/// The column as SQL returns it, so an assertion about where the plan lives
+/// cannot be satisfied by the reader under test.
+fn rawSessionPlanMd(ctx: *TestCtx, session_id: []const u8) ![]u8 {
+    const alloc = testing.allocator;
+    var row = try ctx.db.queryRow(
+        alloc,
+        "SELECT COALESCE(CAST(plan_md AS TEXT), '') FROM sessions WHERE id = ?",
+        &.{session_id},
+    );
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
+}
+
+fn legacyRowCount(ctx: *TestCtx) !i64 {
+    var row = try ctx.db.queryRow(testing.allocator, "SELECT COUNT(*) FROM session_plan", &.{});
+    defer row.deinit(testing.allocator);
+    return std.fmt.parseInt(i64, row.values[0], 10);
+}
 
 test "savePlan + getPlan round-trip preserves content" {
     const allocator = testing.allocator;
@@ -139,20 +201,47 @@ test "savePlan + getPlan round-trip preserves content" {
     defer ctx.db.deinit();
 
     const session_id = "test_session_1";
-    {
-        const ts = try savePlan(allocator, &ctx.db, .{
-            .session_id = session_id,
-            .content = "# My Plan\n\n- [ ] step 1\n- [x] step 2\n",
-        });
-        defer allocator.free(ts);
-    }
+    try seedSession(&ctx, session_id);
+
+    const ts = try savePlan(allocator, &ctx.db, .{
+        .session_id = session_id,
+        .content = "# My Plan\n\n- [ ] step 1\n- [x] step 2\n",
+    });
+    defer allocator.free(ts);
+    try testing.expect(ts.len > 0);
 
     const got = try getPlan(allocator, &ctx.db, session_id);
     defer allocator.free(got);
     try testing.expectEqualStrings("# My Plan\n\n- [ ] step 1\n- [x] step 2\n", got);
 }
 
-// ─── Test 2: getPlan on missing session returns empty string ─────────────
+test "savePlan writes the plan onto the session row" {
+    const allocator = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSession(&ctx, "s_row");
+    const ts = try savePlan(allocator, &ctx.db, .{ .session_id = "s_row", .content = "on the row" });
+    defer allocator.free(ts);
+
+    const stored = try rawSessionPlanMd(&ctx, "s_row");
+    defer allocator.free(stored);
+    try testing.expectEqualStrings("on the row", stored);
+}
+
+test "savePlan refuses a session that does not exist and mirrors nothing" {
+    const allocator = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.SessionNotFound,
+        savePlan(allocator, &ctx.db, .{ .session_id = "s_ghost", .content = "a plan" }),
+    );
+    try testing.expectEqual(@as(i64, 0), try legacyRowCount(&ctx));
+}
 
 test "getPlan on missing session returns empty string" {
     const allocator = testing.allocator;
@@ -165,39 +254,27 @@ test "getPlan on missing session returns empty string" {
     try testing.expectEqualStrings("", got);
 }
 
-// ─── Test 3: UPSERT semantics — second save replaces the first ────────────
-
-test "savePlan overwrites existing row (UPSERT semantics)" {
+test "savePlan overwrites the plan the session already carries" {
     const allocator = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
     const sid = "upsert_test";
+    try seedSession(&ctx, sid);
 
-    {
-        const ts1 = try savePlan(allocator, &ctx.db, .{ .session_id = sid, .content = "v1" });
-        defer allocator.free(ts1);
-        const ts2 = try savePlan(allocator, &ctx.db, .{ .session_id = sid, .content = "v2 longer" });
-        defer allocator.free(ts2);
-    }
+    const ts1 = try savePlan(allocator, &ctx.db, .{ .session_id = sid, .content = "v1" });
+    defer allocator.free(ts1);
+    const ts2 = try savePlan(allocator, &ctx.db, .{ .session_id = sid, .content = "v2 longer" });
+    defer allocator.free(ts2);
 
     const got = try getPlan(allocator, &ctx.db, sid);
     defer allocator.free(got);
     try testing.expectEqualStrings("v2 longer", got);
 
-    // Confirm there is still exactly ONE row in the DB (UPSERT, not
-    // INSERT-OR-APPEND).
-    var q = try ctx.db.query(allocator,
-        "SELECT COUNT(*) FROM session_plan WHERE session_id = ?",
-        &.{sid});
-    defer q.deinit();
-    const row = (try q.next()) orelse return error.RowMissing;
-    defer row.deinit(allocator);
-    try testing.expectEqualStrings("1", row.values[0]);
+    // The mirror UPSERTs, it does not append: one legacy row per session.
+    try testing.expectEqual(@as(i64, 1), try legacyRowCount(&ctx));
 }
-
-// ─── Test 4: content > MAX_PLAN_BYTES returns ContentTooLarge ─────────────
 
 test "savePlan rejects content > 256 KiB with ContentTooLarge" {
     const allocator = testing.allocator;
@@ -210,12 +287,11 @@ test "savePlan rejects content > 256 KiB with ContentTooLarge" {
     @memset(big, 'a');
 
     const result = savePlan(allocator, &ctx.db, .{
-        .session_id = "big", .content = big,
+        .session_id = "big",
+        .content = big,
     });
     try testing.expectError(error.ContentTooLarge, result);
 }
-
-// ─── Test 5: empty content returns InvalidContent ─────────────────────────
 
 test "savePlan rejects empty content with InvalidContent" {
     const allocator = testing.allocator;
@@ -224,12 +300,11 @@ test "savePlan rejects empty content with InvalidContent" {
     defer ctx.db.deinit();
 
     const result = savePlan(allocator, &ctx.db, .{
-        .session_id = "empty", .content = "",
+        .session_id = "empty",
+        .content = "",
     });
     try testing.expectError(error.InvalidContent, result);
 }
-
-// ─── Test 6: getPlanOpt — null when absent, populated PlanRow when present
 
 test "getPlanOpt returns null when no row, populated struct when present" {
     const allocator = testing.allocator;
@@ -237,15 +312,13 @@ test "getPlanOpt returns null when no row, populated struct when present" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // absent
     const absent = try getPlanOpt(allocator, &ctx.db, "nope");
     try testing.expect(absent == null);
 
-    // present
-    {
-        const ts = try savePlan(allocator, &ctx.db, .{ .session_id = "s", .content = "hello" });
-        defer allocator.free(ts);
-    }
+    try seedSession(&ctx, "s");
+    const ts = try savePlan(allocator, &ctx.db, .{ .session_id = "s", .content = "hello" });
+    defer allocator.free(ts);
+
     const present = try getPlanOpt(allocator, &ctx.db, "s");
     try testing.expect(present != null);
     if (present) |row| {
@@ -253,4 +326,16 @@ test "getPlanOpt returns null when no row, populated struct when present" {
         try testing.expectEqualStrings("hello", row.plan_md);
         try testing.expect(row.updated_at.len > 0);
     }
+}
+
+test "getPlanOpt treats a session that never wrote a plan as absent" {
+    const allocator = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedSession(&ctx, "s_blank");
+
+    const row = try getPlanOpt(allocator, &ctx.db, "s_blank");
+    try testing.expect(row == null);
 }

@@ -22,8 +22,8 @@ const xml_escape = @import("helpers").xml_escape;
 const llm_history = @import("llm_history.zig");
 const insertLLMHistory = @import("insert_llm_histories.zig").inserLLMHistories;
 const event_bus_mod = pabrikcore.event_bus;
-// `fetchSessionPlan` reads the current plan row from `session_plan`
-// (Migration 076); the handoff envelope carries it as its leading section.
+// `fetchSessionPlan` reads the plan off the session row (`sessions.plan_md`,
+// Migration 132); the handoff envelope carries it as its leading section.
 const session_plan_mod = pabrikcore.session_plan;
 const git_state_mod = @import("git_state.zig");
 const envelope_mod = @import("compaction_envelope.zig");
