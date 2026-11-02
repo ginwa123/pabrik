@@ -1114,7 +1114,9 @@ const WireUsage = struct {
 /// instead of probing a Value tree. A chunk carries either a `delta` or a full
 /// `message`, and `content` may be text or an array of parts.
 const WireChatChunk = struct {
-    choices: []const WireChoice = &.{},
+    /// Optional, never a defaulted slice: a provider that spells an empty list
+    /// as `null` must not cost the chunk its body.
+    choices: ?[]const WireChoice = null,
     usage: ?json.Value = null,
 
     const WireChoice = struct {
@@ -1126,7 +1128,9 @@ const WireChatChunk = struct {
     const WireMessage = struct {
         content: ?json.Value = null,
         reasoning_content: ?[]const u8 = null,
-        tool_calls: []const WireToolCall = &.{},
+        /// DeepSeek sends `"tool_calls":null` on every content delta, and a
+        /// failed parse here discards that delta's content with it.
+        tool_calls: ?[]const WireToolCall = null,
     };
 
     const WireToolCall = struct {
@@ -2194,8 +2198,9 @@ pub const Agent = struct {
 
         var chunk: StreamChunk = .{};
 
-        if (wire.choices.len > 0) {
-            const choice = wire.choices[0];
+        const choices = wire.choices orelse &.{};
+        if (choices.len > 0) {
+            const choice = choices[0];
             if (choice.finish_reason) |reason| chunk.finish_reason = FinishReason.from_str(reason);
             if (choice.delta orelse choice.message) |message| {
                 // An array-shaped `content` is parts, not text tokens.
@@ -2203,12 +2208,13 @@ pub const Agent = struct {
                     if (content == .string) chunk.content = nonEmpty(content.string);
                 }
                 chunk.reasoning_content = nonEmpty(message.reasoning_content);
-                if (message.tool_calls.len > 0) {
-                    const deltas = arena.alloc(ToolCallDelta, message.tool_calls.len) catch |err| {
+                const tool_calls = message.tool_calls orelse &.{};
+                if (tool_calls.len > 0) {
+                    const deltas = arena.alloc(ToolCallDelta, tool_calls.len) catch |err| {
                         self.log_fmt(.err, "Error allocating ToolCallDelta: {s}", .{@errorName(err)});
                         return null;
                     };
-                    for (message.tool_calls, 0..) |call, i| {
+                    for (tool_calls, 0..) |call, i| {
                         deltas[i] = .{
                             .index = call.index orelse i,
                             .id = nonEmpty(call.id),
@@ -6278,6 +6284,157 @@ test "parse_stream_chunk (openai): records no usage rather than a broken one whe
     try testing.expect(chunk != null);
     try testing.expectEqualStrings("hi", chunk.?.content.?);
     try testing.expect(chunk.?.usage == null);
+}
+
+test "parse_stream_chunk (openai): a delta that spells tool_calls as null keeps its reasoning" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Verbatim DeepSeek v4.1 chunk: `"tool_calls":null` on a content delta.
+    const data =
+        "{\"id\":\"chatcmpl-ReC1Jd2lM8mIeeglLqWlKVCL\",\"object\":\"chat.completion.chunk\"," ++
+        "\"created\":1793612194,\"model\":\"deepseek-v4.1-flash\",\"choices\":[{\"index\":0," ++
+        "\"finish_reason\":null,\"logprobs\":null,\"delta\":{\"role\":null,\"content\":\"\"," ++
+        "\"reasoning_content\":\"\\\" --\",\"tool_calls\":null}}],\"usage\":null}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqualStrings("\" --", chunk.?.reasoning_content.?);
+    try testing.expect(chunk.?.content == null);
+    try testing.expect(chunk.?.tool_calls_delta == null);
+}
+
+test "parse_stream_chunk (openai): tool_calls null on a text delta does not drop the text" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const data = "{\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\",\"tool_calls\":null}}]}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqualStrings("hello", chunk.?.content.?);
+}
+
+test "parse_stream_chunk (openai): a real tool_calls array still emits a tool_calls_delta" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const data =
+        "{\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\"," ++
+        "\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"a\\\"}\"}}]}}]}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    const deltas = chunk.?.tool_calls_delta orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 1), deltas.len);
+    try testing.expectEqualStrings("call_1", deltas[0].id.?);
+    try testing.expectEqualStrings("read_file", deltas[0].function_name.?);
+    try testing.expectEqualStrings("{\"path\":\"a\"}", deltas[0].function_arguments.?);
+}
+
+test "parse_stream_chunk (openai): choices null yields a usage-only chunk, not a dropped one" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "openai";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const data =
+        "{\"choices\":null,\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":0," ++
+        "\"total_tokens\":10}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expect(chunk.?.content == null);
+    try testing.expect(chunk.?.tool_calls_delta == null);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 10), usage.prompt_tokens);
+}
+
+// ---------------------------------------------------------------------------
+// Parser: a null where a provider spells an empty list or object
+// ---------------------------------------------------------------------------
+
+test "parse_stream_chunk (anthropic): a text delta carrying nulls still yields its text" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "anthropic";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // The Value probe is what tolerates these nulls; the typed chat parser is not.
+    const data =
+        "{\"type\":\"content_block_delta\",\"index\":0,\"stop_reason\":null," ++
+        "\"usage\":null,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"," ++
+        "\"tool_calls\":null}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqualStrings("hi", chunk.?.content.?);
+    try testing.expect(chunk.?.tool_calls_delta == null);
+}
+
+test "parse_stream_chunk (anthropic): message_delta with null cache counters keeps the usage" {
+    var a = Agent.init(testing.allocator, std.testing.io);
+    defer a.deinit();
+    a.UrlStyle = "anthropic";
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const data =
+        "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"," ++
+        "\"stop_sequence\":null},\"usage\":{\"input_tokens\":100,\"output_tokens\":5," ++
+        "\"cache_read_input_tokens\":null,\"cache_creation_input_tokens\":null}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqual(@as(?FinishReason, .stop), chunk.?.finish_reason);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 100), usage.prompt_tokens);
+    try testing.expectEqual(@as(usize, 5), usage.completion_tokens);
+    try testing.expectEqual(@as(usize, 105), usage.total_tokens);
+    try testing.expectEqual(@as(usize, 0), usage.cache_read_input_tokens);
+}
+
+test "parse_stream_chunk (openai-response): a text delta carrying nulls still yields its text" {
+    var a = makeResponsesAgentOpenaiResponses(.{});
+    defer a.deinit();
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const data =
+        "{\"type\":\"response.output_text.delta\",\"delta\":\"hello\"," ++
+        "\"usage\":null,\"response\":null,\"tool_calls\":null}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqualStrings("hello", chunk.?.content.?);
+    try testing.expect(chunk.?.usage == null);
+    try testing.expect(chunk.?.finish_reason == null);
+}
+
+test "parse_stream_chunk (openai-response): terminal usage tolerates null detail objects" {
+    var a = makeResponsesAgentOpenaiResponses(.{});
+    defer a.deinit();
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // WireUsage declares every counter optional, so a null detail object costs
+    // the call none of its usage — the total is derived from the parts.
+    const data =
+        "{\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]," ++
+        "\"usage\":{\"input_tokens\":100,\"output_tokens\":20,\"total_tokens\":null," ++
+        "\"input_tokens_details\":null,\"prompt_tokens_details\":{\"cached_tokens\":null}}}}";
+    const chunk = a.parse_stream_chunk(data, arena.allocator());
+    try testing.expect(chunk != null);
+    try testing.expectEqual(@as(?FinishReason, .stop), chunk.?.finish_reason);
+    const usage = chunk.?.usage orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 100), usage.prompt_tokens);
+    try testing.expectEqual(@as(usize, 20), usage.completion_tokens);
+    try testing.expectEqual(@as(usize, 120), usage.total_tokens);
+    try testing.expectEqual(@as(usize, 0), usage.cache_read_input_tokens);
 }
 
 // ---------------------------------------------------------------------------
