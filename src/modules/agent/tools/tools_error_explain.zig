@@ -249,6 +249,16 @@ pub fn explain(allocator: std.mem.Allocator, err: anyerror, context: ?[]const u8
             u8,
             "`offset` was past the end of the file. Read the file without `offset` first to learn its length, then request a range inside it.",
         ),
+        error.BinaryFileNotText => try pathMsg(
+            allocator,
+            context,
+            "is a binary file, not text — its bytes are not readable as source. Only png/jpeg/gif/webp images can be read (they come back as a picture you can see); for anything else, run a tool on it instead (`pdftotext`, `unzip -p`, `strings`, or a project script).",
+        ),
+        error.ImageTooLarge => try pathMsg(
+            allocator,
+            context,
+            "is an image larger than the 4 MB inline cap. Downscale or re-capture it at a smaller size, then read it again.",
+        ),
         error.OldStrNotFound => try allocator.dupe(
             u8,
             "`old_str` was not found in the file. Read the file first and copy the text exactly — whitespace, indentation and line endings must match.",

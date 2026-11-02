@@ -3171,6 +3171,21 @@ pub fn updateToolResultById(
     try db.exec(allocator, sql, sqlArgs);
 }
 
+/// Attach an image to an already-persisted tool result, so the next turn hands
+/// the model the picture itself rather than a description of it.
+pub fn setToolResultImageUrl(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    id: []const u8,
+    image_url: []const u8,
+) !void {
+    try db.exec(
+        allocator,
+        "UPDATE llm_history SET image_url = ? WHERE id = ?",
+        &.{ image_url, id },
+    );
+}
+
 /// Replace every `is_loading=1` row in the session with a synthetic
 /// "<interrupted>...</interrupted>" message so the next LLM call's
 /// tool_call_id contract is satisfied after an agent crash.
@@ -9590,6 +9605,39 @@ test "updateToolResultById on a non-existent tool_call_id is a no-op (no error)"
     var q = try ctx.db.query(ctx.alloc, "SELECT 1 FROM llm_history WHERE tool_call_id = ?", &.{"tc_ghost"});
     defer q.deinit();
     try testing.expect((try q.next()) == null);
+}
+
+test "setToolResultImageUrl puts the picture on the tool result row and keeps its text" {
+    var ctx = try llmHistoryToolCallLoadingSetupDb();
+    defer llmHistoryToolCallLoadingTeardown(&ctx);
+    try llmHistoryToolCallLoadingCreateSession(&ctx, "sess_1");
+
+    const id = try saveToolResultPlaceholder(ctx.alloc, ctx.threaded.io(), &ctx.db, .{
+        .session_id = "sess_1",
+        .model = "test-model",
+        .tool_call_id = "tc_img",
+        .tool_name = "read_file",
+        .loop_index = 0,
+    });
+    defer ctx.alloc.free(id);
+    try updateToolResultById(ctx.alloc, ctx.threaded.io(), &ctx.db, id, .{
+        .content = "{\"path\":\"/a/shot.png\"}",
+        .diffview_before = null,
+        .diffview_after = null,
+    });
+
+    try setToolResultImageUrl(ctx.alloc, &ctx.db, id, "data:image/png;base64,AAA");
+
+    var q = try ctx.db.query(
+        ctx.alloc,
+        "SELECT COALESCE(CAST(image_url AS TEXT), ''), COALESCE(CAST(response_content AS TEXT), '') FROM llm_history WHERE id = ?",
+        &.{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.TestExpectedRow;
+    defer row.deinit(ctx.alloc);
+    try testing.expectEqualStrings("data:image/png;base64,AAA", row.values[0]);
+    try testing.expect(std.mem.indexOf(u8, row.values[1], "shot.png") != null);
 }
 
 test "resolveStaleLoadingToolResults replaces all stranded placeholders with interrupted" {
