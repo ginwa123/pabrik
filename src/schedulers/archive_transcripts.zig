@@ -1,10 +1,6 @@
 //! Moves the whole transcript of a session whose newest message is older than
 //! 90 days into a sibling `archive.db`, so `agent.db` keeps only the chats
 //! people still open.
-//!
-//! A session's messages move TOGETHER — the unit is the transcript, never the
-//! row — and the `sessions` row stays behind with `transcript_archived_at` set.
-//! Nothing a user wrote is deleted; it changes file.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -66,20 +62,17 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
     const db = input.db;
 
     try db.exec(allocator, "ATTACH DATABASE ? AS archive", &.{input.archive_path});
-    // Registered BEFORE the transaction's rollback defer, so it runs after it:
-    // `db.exec` while a transaction holds the backend mutex would deadlock. A
-    // detach that fails leaks the alias, and every later tick then fails on the
-    // ATTACH, so it is reported rather than swallowed.
+    // Registered before the transaction's rollback defer so it runs after it:
+    // `db.exec` under the transaction's mutex would deadlock. A failed detach
+    // leaks the alias, so it is reported rather than swallowed.
     defer if (db.exec(allocator, "DETACH DATABASE archive", &.{})) |_| {} else |err| {
         if (input.logger) |log| {
             log.errFmt("[archive_transcripts] detach failed: {s}\n", .{@errorName(err)});
         }
     };
 
-    // One transaction for the whole tick. It is also what makes the ATTACH
-    // visible: `db.query` is served by a pooled READ connection, and an alias
-    // attached on the write connection does not exist for those. Statement for
-    // statement, `tx` stays on the one connection the alias was attached to.
+    // One transaction for the whole tick: `db.query` is served by a pooled READ
+    // connection, which cannot see an alias attached on the write connection.
     var tx = try db.begin();
     errdefer tx.rollback() catch {};
 
@@ -92,9 +85,8 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
     defer allocator.free(limit_str);
 
     // A session qualifies only when its NEWEST message is past the window, so a
-    // chat somebody reopened stays whole. The three exclusions are the sessions a
-    // run is touching right now: a live turn, an unanswered question, and a
-    // message still waiting in the queue.
+    // reopened chat stays whole. Live turns, unanswered questions and queued
+    // messages are excluded.
     const candidates_sql =
         \\SELECT session_id FROM llm_history
         \\WHERE COALESCE(session_id, '') <> '' AND COALESCE(created_iso, '') <> ''
@@ -173,10 +165,9 @@ fn archiveOne(
     return @intCast(copied);
 }
 
-/// The archive's `llm_history` is a COLLECTION of what was archived, so it is
-/// copied from this database's own DDL — same columns as the rows arriving, and
-/// no FTS shadow table or sync triggers, which is why a search of `agent.db`
-/// cannot return an archived message.
+/// Copied from this database's own DDL — same columns as the arriving rows,
+/// and no FTS shadow table, which is why a search of `agent.db` cannot return
+/// an archived message.
 fn ensureArchiveTable(conn: database.DbOrTx, allocator: std.mem.Allocator) !void {
     const existing = try count(
         conn,

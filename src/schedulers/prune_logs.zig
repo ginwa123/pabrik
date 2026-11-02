@@ -1,7 +1,6 @@
-//! The 30-day retention pass over `logs`, the table `POST /api/logs` writes to.
-//! It is a debugging aid, not an audit log: on the live database 96% of its rows
-//! were warn-level frontend noise and 597 MB of its 600 MB of message text was
-//! past this window.
+//! The 30-day retention pass over `logs`. It is a debugging aid, not an audit
+//! log: 96% of its rows were warn-level noise, and 597 MB of its 600 MB of
+//! message text was past this window.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -25,11 +24,9 @@ pub const max_batches: usize = 200;
 const seconds_per_day: i64 = 86_400;
 const micros_per_second: i64 = 1_000_000;
 
-/// `logs.created_at_nano` holds MICROseconds — `frontend_log_post` stamps
-/// `microsecondsNow()` — even though migration 075 named it `_nano`. A row that
-/// really holds 19-digit nanos must not read as 1970, so the cutoff is scaled by
-/// the row's own magnitude instead of trusting the column name. Migration 075's
-/// rename is where the two units met; P4 is where they are meant to be unified.
+/// `logs.created_at_nano` holds MICROseconds (`frontend_log_post` stamps
+/// `microsecondsNow()`) despite the name, so the cutoff is scaled by the row's
+/// own magnitude instead of trusting the column. P4 is where the units unify.
 const older_than_cutoff =
     "created_at_nano < CASE WHEN created_at_nano >= 100000000000000000 " ++
     "THEN CAST(? AS INTEGER) * 1000 ELSE CAST(? AS INTEGER) END";

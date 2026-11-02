@@ -6,10 +6,9 @@ const Backend = common.Backend;
 const dialect = common.dialect;
 const addColumnIfMissing = common.addColumnIfMissing;
 
-/// Migration 132 — step 1 of 3 for `session_plan`: the plan moves onto the
-/// session it belongs to. `plan_updated_at` arrives nullable because sqlite
-/// refuses `ADD COLUMN … DEFAULT CURRENT_TIMESTAMP`; NULL is exactly "this
-/// session never wrote a plan".
+/// Step 1 of 3 for `session_plan`: the plan moves onto its session.
+/// `plan_updated_at` is nullable because sqlite refuses `ADD COLUMN …
+/// DEFAULT CURRENT_TIMESTAMP`; NULL means "this session never wrote a plan".
 pub const Migration132ExpandSessionPlan = struct {
     pub const version: u32 = 132;
     pub const name = "expand_session_plan_onto_sessions";

@@ -1,9 +1,6 @@
 //! The free pages a long-lived SQLite file hoards: how to hand the ones already
 //! allocated back to the filesystem, and how to set the mode that lets the next
 //! batch go without a full rebuild.
-//!
-//! Both need the file OUT of WAL mode for a few seconds, so they belong to a
-//! maintenance window and never to a boot.
 
 const std = @import("std");
 const databases = @import("databases");
@@ -100,10 +97,6 @@ pub fn journalMode(db: *database.Db, allocator: std.mem.Allocator) ![]u8 {
 /// The maintenance-window pass: leave WAL, set the mode, `VACUUM` (the only
 /// statement that both applies the mode and truncates the file), go back to WAL.
 ///
-/// A WAL database cannot change its auto_vacuum setting in place, and a `VACUUM`
-/// only applies the setting it finds — so the pragma has to land between the two
-/// journal switches. The switch back is unconditional: leaving a live database in
-/// DELETE mode serializes every reader behind the writer.
 pub fn reclaim(db: *database.Db, allocator: std.mem.Allocator) !ReclaimReport {
     var report = ReclaimReport{
         .mode_before = try mode(db, allocator),
@@ -144,12 +137,9 @@ pub fn releaseFreePages(db: *database.Db, allocator: std.mem.Allocator) !Release
     var report = ReleaseReport{ .pages_before = (try size(db, allocator)).pages };
     report.pages_after = report.pages_before;
 
-    // The pages a delete freed are still in frames of the log, and sqlite only
-    // truncates the file once the log is empty — a PASSIVE checkpoint, which does
-    // apply the frames, leaves the truncation with nothing to do. Measured: with
-    // PASSIVE the file stays the same size, with TRUNCATE it shrinks. A checkpoint
-    // that cannot take the lock is not an error: nothing shrinks, and the report
-    // says so.
+    // A PASSIVE checkpoint applies the frames but leaves truncation nothing to
+    // do; only TRUNCATE shrinks the file. A checkpoint that cannot take the lock
+    // is not an error — nothing shrinks, and the report says so.
     db.exec(allocator, "PRAGMA wal_checkpoint(TRUNCATE)", &.{}) catch {};
 
     while (report.steps < pages_per_release) {
@@ -162,9 +152,8 @@ pub fn releaseFreePages(db: *database.Db, allocator: std.mem.Allocator) !Release
     return report;
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────
-// Every one of these needs a REAL file: auto-vacuum, journal mode and
-// incremental truncation are file-header facts that `:memory:` cannot express.
+// Incremental truncation and the auto_vacuum mode are file-header facts that
+// `:memory:` cannot express, so these assertions run on a real file only.
 
 const FileDb = struct {
     threaded: std.Io.Threaded,

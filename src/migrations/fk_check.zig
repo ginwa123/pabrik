@@ -1,8 +1,6 @@
-//! `PRAGMA foreign_key_check` over a freshly migrated database.
-//!
-//! The hand-written cascade deletes are gone because the schema declares
-//! `ON DELETE CASCADE` and the pragma is on — that trade only holds while no
-//! child row outlives its parent. This is the gate that says so.
+//! `PRAGMA foreign_key_check` over a freshly migrated database: the
+//! hand-written cascades are gone because the schema declares them, and that
+//! trade only holds while no child row outlives its parent.
 
 const std = @import("std");
 const common = @import("common.zig");

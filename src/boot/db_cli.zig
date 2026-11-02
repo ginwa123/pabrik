@@ -91,11 +91,9 @@ pub fn dispatchDbSubcommand(
         return true;
     };
 
-    // The reclaim switches the journal mode, and sqlite refuses that while ANY
-    // other connection has the file open — idle or not. The pooled readers are
-    // the other connections, so this run opens with none. It is why the command
-    // must be run with the server stopped: that server's readers are not ours to
-    // close.
+    // Switching journal mode needs every other connection closed, so this run
+    // opens with no pooled readers. It is why the command requires a stopped
+    // server: that server's readers are not ours to close.
     overrides.append(allocator, .{ .knob = .read_conns, .raw = "0", .value = 0 }) catch
         return error.OutOfMemory;
 

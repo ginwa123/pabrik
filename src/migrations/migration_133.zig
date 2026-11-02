@@ -5,10 +5,9 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 133 — step 2 of 3 for `session_plan`: every plan the legacy table
-/// holds is copied onto its session. The `<> ''` guard is the whole safety
-/// property — an empty legacy row can never blank a plan the parent already
-/// carries.
+/// Step 2 of 3 for `session_plan`: copy every legacy plan onto its session.
+/// The `<> ''` guard is the safety property — an empty legacy row can never
+/// blank a plan the parent already carries.
 pub const Migration133BackfillSessionPlan = struct {
     pub const version: u32 = 133;
     pub const name = "backfill_session_plan_onto_sessions";
