@@ -100,6 +100,10 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
+fn seedWorkspace(db: *database.Db, id: []const u8) !void {
+    try db.exec(testing.allocator, "INSERT INTO workspaces (id) VALUES (?) ON CONFLICT DO NOTHING", &[_][]const u8{id});
+}
+
 fn placeholder(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}{s}{s}{s}", .{ "{", "{SECRETS:", name, "}" ++ "}" });
 }
@@ -109,6 +113,7 @@ test "credential resolver: a stored name resolves, and a repeated name costs one
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedWorkspace(&ctx.db, "ws_a");
 
     const row = try secrets_store.createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_a",
@@ -137,6 +142,8 @@ test "credential resolver: a name this workspace does not store is recorded, not
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedWorkspace(&ctx.db, "ws_a");
+    try seedWorkspace(&ctx.db, "ws_other");
 
     // The same NAME in another workspace must not answer: resolution is
     // scoped to the workspace the caller asked for.
@@ -159,6 +166,7 @@ test "credential resolver: no workspace in scope resolves nothing" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedWorkspace(&ctx.db, "ws_a");
 
     const row = try secrets_store.createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_a",
@@ -179,6 +187,7 @@ test "credential resolver: the placeholder round trip through lookup uses the sa
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedWorkspace(&ctx.db, "ws_a");
 
     const row = try secrets_store.createSecret(alloc, &ctx.db, .{
         .workspace_id = "ws_a",
