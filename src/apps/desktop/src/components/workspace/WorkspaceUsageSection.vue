@@ -336,13 +336,9 @@ onMounted(() => {
             class="text-dense mt-3 leading-relaxed max-w-[68ch]"
             style="color: var(--semantic-text-dim)"
           >
-            A dash in Cache rate means that model's calls carried no cache counter. The
-            chat-completions usage parser keeps prompt, completion and total tokens only, so a
-            provider that reports
-            <code class="px-1 rounded-sm" style="background: var(--color-bg-m3)"
-              >prompt_cache_hit_tokens</code
-            >
-            has its counter dropped before the row is written.
+            A dash in Cache rate means that model's calls carried no cache counter — not that we
+            dropped one. Chat-completions, Responses and Anthropic payloads are all read for it,
+            so a dash means the provider sent none.
           </p>
           <p
             v-if="(totals?.excluded_calls ?? 0) > 0"
