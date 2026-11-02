@@ -2945,13 +2945,6 @@ pub fn deletePage(
         }
     }
 
-    // The element rows go first: sqlite runs with `foreign_keys` off, so the
-    // schema's `ON DELETE CASCADE` never fires there (and postgres, at parity,
-    // declares no FK at all).
-    try db.exec(allocator,
-        "DELETE FROM design_page_elements WHERE page_id = ?",
-        &.{page_id});
-
     try db.exec(allocator,
         "DELETE FROM design_pages WHERE id = ?",
         &.{page_id});
@@ -5791,9 +5784,6 @@ fn deletePageSetupDb() !struct {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
-    // `deletePage` removes the element rows itself, so this test asserts the
-    // same thing on both engines and needs no sqlite-only pragma.
-
     try db.exec(alloc,
         \\CREATE TABLE workspace_items (
         \\    id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
@@ -5854,6 +5844,7 @@ fn deletePageSetupDb() !struct {
         "VALUES (?, 'ws_test', 'design', ?)",
         &.{ ITEM_ID, tmpdir_path });
 
+    try test_db.enableForeignKeys(alloc, &db);
     return .{ .db = db, .threaded = threaded, .item_path = tmpdir_path };
 }
 

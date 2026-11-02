@@ -367,9 +367,7 @@ pub fn updateSkill(
         return error.UpdateFailed;
 }
 
-/// Delete a skill AND its companion assets. Scoped like every other read: a
-/// foreign name reports `error.NotFound` and deletes nothing. The asset
-/// DELETE is explicit because `PRAGMA foreign_keys` is off project-wide.
+/// Delete a skill, plus the assets and metadata the schema cascades.
 pub fn deleteSkill(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -378,9 +376,8 @@ pub fn deleteSkill(
 ) DeleteSkillError!void {
     if (workspace_id.len == 0 or name.len == 0) return error.WorkspaceIdNameRequired;
 
-    // Resolve the id FIRST so the asset delete is scoped to THIS skill: a
-    // subquery on an unqualified name would clear another workspace's
-    // companions.
+    // The lookup is what turns a name belonging to another workspace into
+    // `error.NotFound` instead of a silent no-op.
     const row = getSkillByName(allocator, db, workspace_id, name) catch |err| switch (err) {
         error.NotFound, error.WorkspaceIdNameRequired => return error.NotFound,
         error.QueryFailed, error.OutOfMemory => return error.DeleteFailed,
@@ -391,12 +388,6 @@ pub fn deleteSkill(
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // Both children explicitly: `PRAGMA foreign_keys` is off project-wide, so
-    // the declared CASCADE never fires.
-    tx.exec(allocator, "DELETE FROM skill_metadata WHERE skill_id = ?", &[_][]const u8{row.id}) catch
-        return error.DeleteFailed;
-    tx.exec(allocator, "DELETE FROM skill_assets WHERE skill_id = ?", &[_][]const u8{row.id}) catch
-        return error.DeleteFailed;
     tx.exec(
         allocator,
         "DELETE FROM skills WHERE workspace_id = ? AND name = ?",
@@ -634,8 +625,13 @@ fn setupStoreDb() !StoreTestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
     errdefer db.deinit();
+    try db.exec(alloc, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &.{});
+    for ([_][]const u8{ "ws_a", "ws_b" }) |workspace| {
+        try db.exec(alloc, "INSERT INTO workspaces (id) VALUES (?)", &.{workspace});
+    }
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
+    try test_db.enableForeignKeys(alloc, &db);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -882,9 +878,6 @@ test "skills_store deleteSkill takes the skill's companions with it" {
 
     try deleteSkill(alloc, &ctx.db, "ws_a", "pdf");
 
-    // `PRAGMA foreign_keys` is off project-wide, so the declared CASCADE
-    // does nothing. If the explicit asset DELETE regressed, these rows
-    // would survive and a re-import of the name would collide on UNIQUE.
     try expectRowCount(&ctx, "SELECT COUNT(*) FROM skills", "0");
     try expectRowCount(&ctx, "SELECT COUNT(*) FROM skill_assets", "0");
 }
@@ -1240,8 +1233,5 @@ test "deleting a skill takes its metadata with it" {
 
     try deleteSkill(alloc, &ctx.db, "ws_a", "pdf");
 
-    // `PRAGMA foreign_keys` is off project-wide, so the declared CASCADE does
-    // nothing: an explicit DELETE is the only thing that stops a re-import of
-    // the same name from inheriting the old rows.
     try expectRowCount(&ctx, "SELECT COUNT(*) FROM skill_metadata", "0");
 }

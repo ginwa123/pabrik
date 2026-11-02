@@ -108,29 +108,6 @@ fn useCase(
         return error.DatabaseError;
     };
 
-    // `ON DELETE CASCADE` on `workspace_secrets` is documentation only — this
-    // project leaves `PRAGMA foreign_keys` off (Migration 072's tests), so
-    // the child rows have to go explicitly or a deleted workspace would leave
-    tx.exec(
-        allocator,
-        "DELETE FROM workspace_secrets WHERE workspace_id = ?",
-        &[_][]const u8{id},
-    ) catch {
-        std.log.warn("workspaceDelete: secret cleanup failed for {s}", .{id});
-        return error.DatabaseError;
-    };
-
-    // Same reason as the secrets above: `PRAGMA foreign_keys` is OFF, so
-    // Migration 105's `ON DELETE CASCADE` never fires.
-    tx.exec(
-        allocator,
-        "DELETE FROM workspace_settings WHERE workspace_id = ?",
-        &[_][]const u8{id},
-    ) catch {
-        std.log.warn("workspaceDelete: config overlay cleanup failed for {s}", .{id});
-        return error.DatabaseError;
-    };
-
     tx.commit() catch {
         std.log.warn("workspaceDelete: COMMIT failed for {s}", .{id});
         return error.DatabaseError;
@@ -188,7 +165,8 @@ fn setupDeleteDb() !DeleteCtx {
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
         \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
         \\)
     , &.{});
     // Mirrors Migration 105's `workspace_settings`.
@@ -199,9 +177,11 @@ fn setupDeleteDb() !DeleteCtx {
         \\  config_json TEXT,
         \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        \\  PRIMARY KEY (owner, workspace_id)
+        \\  PRIMARY KEY (owner, workspace_id),
+        \\  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
         \\)
     , &.{});
+    try test_db.enableForeignKeys(alloc, &db);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -238,15 +218,8 @@ test "workspaceDelete removes the membership rows, not just the workspace" {
     try testing.expectEqualStrings("ws_x", r.id);
 
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspaces WHERE id = 'ws_x'", &.{}));
-    // The assertion this whole use case was changed to make: `PRAGMA
-    // foreign_keys` is OFF, so nothing else would ever remove these.
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_members WHERE workspace_id = 'ws_x'", &.{}));
-    // The secrets cleanup (Migration 103): a deleted workspace leaves no
-    // credentials behind for a future workspace reusing the id.
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_secrets WHERE workspace_id = 'ws_x'", &.{}));
-    // The config-overlay cleanup (Migration 105) for the same reason, and
-    // with a sharper edge: an orphaned overlay holds PROFILES, which hold API
-    // keys, so a reused workspace id would come back pre-configured with a
     try testing.expectEqual(@as(u64, 0), try countRows(&ctx, "SELECT COUNT(*) FROM workspace_settings WHERE workspace_id = 'ws_x'", &.{}));
 }
 

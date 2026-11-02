@@ -1030,6 +1030,25 @@ jobs:
           bash scripts/check-zig-test-output-clean.sh \
             --summary "$RUNNER_TEMP/zig-test/summary.log"
 
+      - name: Foreign-key integrity (zig build db:fk-check)
+        # `PRAGMA foreign_keys` is per connection, and the schema now leans on
+        # `ON DELETE CASCADE` instead of the child DELETEs the product code
+        # used to spell out. An orphan row is the one way that trade goes
+        # wrong without a red test, so this runs `PRAGMA foreign_key_check`
+        # against a database the whole migration chain just built, seeded with
+        # one row per parent/child pair those DELETEs used to clean up.
+        #
+        # Its own step, not a shard inside `zig build test`, so a violation
+        # names itself in the check list instead of hiding in a shard's counts.
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then
+            export PATH="/c/vcpkg/installed/x64-windows/bin:$PATH"
+            export PATH="/c/Windows/System32/downlevel:$PATH"
+          fi
+          zig build db:fk-check --summary all -Dno-webapp-rebuild
+
       - name: Cross-target compile check (desktop app per-OS branches)
         # Compiles the desktop app's Windows + macOS branches FROM LINUX. A
         # per-OS branch is otherwise only ever compiled on that OS's runner, so

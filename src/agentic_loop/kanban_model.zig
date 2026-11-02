@@ -240,12 +240,6 @@ pub fn deleteColumn(
     column_id: []const u8,
 ) !void {
     _ = workspace_item_id;
-    // Tasks that were assigned to this column have their `kanban` card row
-    // DELETED (so the LEFT JOIN in list queries surfaces them as "task exists
-    // but is unassigned" — the same observable wire format as before).
-    try db.exec(allocator,
-        "DELETE FROM kanban WHERE kanban_column_id = ?",
-        &.{column_id});
     try db.exec(allocator,
         "DELETE FROM kanban_columns WHERE id = ?",
         &.{column_id});
@@ -708,9 +702,9 @@ test "renameColumn updates name" {
     try testing.expectEqualStrings("backlog", cols[0].name);
 }
 
-// ─── Test: deleteColumn nulls out the kanban row's kanban_column_id ──────
+// ─── Test: deleteColumn deletes the card rows and keeps the task ──────────
 
-test "deleteColumn nulls out the kanban row's kanban_column_id" {
+test "deleteColumn deletes the card rows and keeps the task" {
     const alloc = testing.allocator;
     var s = try setupDb();
     defer s.threaded.deinit();
@@ -735,8 +729,9 @@ test "deleteColumn nulls out the kanban row's kanban_column_id" {
         \\    workspace_item_task_id TEXT PRIMARY KEY, kanban_column_id TEXT NOT NULL,
         \\    kanban_position INTEGER NOT NULL DEFAULT 0,
         \\    FOREIGN KEY (workspace_item_task_id) REFERENCES workspace_item_tasks(id) ON DELETE CASCADE,
-        \\    FOREIGN KEY (kanban_column_id) REFERENCES kanban_columns(id) ON DELETE SET NULL)
+        \\    FOREIGN KEY (kanban_column_id) REFERENCES kanban_columns(id) ON DELETE CASCADE)
     , &.{});
+    try test_db.enableForeignKeys(alloc, &s.db);
     try s.db.exec(alloc,
         "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('item_1', 'ws_1', 'kanban')", &.{});
     try s.db.exec(alloc,
@@ -763,9 +758,8 @@ test "deleteColumn nulls out the kanban row's kanban_column_id" {
         try testing.expectEqualStrings("t1", row.values[0]);
     }
 
-    // The kanban card row is DELETED (no kanban row = "task exists but
-    // is unassigned" — the list-query LEFT JOIN surfaces this as
-    // kanban_column_id = NULL in the wire format).
+    // No card row left: the list-query LEFT JOIN surfaces the task as
+    // unassigned, which is the wire format callers already read.
     {
         var q = try s.db.query(alloc,
             "SELECT COUNT(*) FROM kanban k WHERE k.workspace_item_task_id = 't1'", &.{});
@@ -1254,6 +1248,8 @@ fn setupDbCopy() !struct { db: database.Db, threaded: std.Io.Threaded } {
     try migration.Migration072ExtractKanbanTable.up(&db, alloc);
     // Migration 111 — `listColumns` reads `is_done`, which 110 adds.
     try migration.Migration111AddKanbanTaskDependencies.up(&db, alloc);
+    try db.exec(alloc, "INSERT INTO workspace_items (id) VALUES ('wi_src'), ('wi_tgt')", &.{});
+    try test_db.enableForeignKeys(alloc, &db);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -1376,9 +1372,6 @@ test "replaceColumnsWith unassigns tasks on the deleted target columns" {
 
     try replaceColumnsWith(alloc, &ctx.db, "wi_src", "wi_tgt");
 
-    // Verify the kanban card row was DELETED when the column was replaced (FK
-    // CASCADE simulation — PRAGMA foreign_keys is off in this codebase, so we
-    // explicitly DELETE the kanban rows in deleteColumn).
     {
         var q = try ctx.db.query(alloc,
             "SELECT COUNT(*) FROM kanban k WHERE k.workspace_item_task_id = 'task_1'",

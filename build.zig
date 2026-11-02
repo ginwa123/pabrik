@@ -2719,6 +2719,19 @@ pub fn build(b: *std.Build) void {
     b.step("test:db", "Run the backend-agnostic database tests (--database=* resolution + temp-db harness); honours -Ddb_used")
         .dependOn(&run_db_tests.step);
 
+    // The referential-integrity gate: `PRAGMA foreign_key_check` over a
+    // freshly migrated database. Its own step so a violation names itself in
+    // CI instead of hiding inside a shard's counts.
+    const fk_check_tests = b.addTest(.{
+        .root_module = mod_tests_module,
+        .filters = &.{"foreign key check:"},
+    });
+    const run_fk_check = b.addRunArtifact(fk_check_tests);
+    run_fk_check.setName("test db foreign key check");
+    prependVcpkgBinToPath(b, run_fk_check);
+    b.step("db:fk-check", "Run PRAGMA foreign_key_check over a freshly migrated database")
+        .dependOn(&run_fk_check.step);
+
     // `run_captured.zig` lives in the standalone `helpers` PACKAGE, so its
     // inline tests are not reachable from `src/root.zig` and the mod_tests
     // binary above never compiles them.
