@@ -12,11 +12,11 @@ pub const Migration127BackfillSessionTimestamps = struct {
     pub fn up(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
         const from_history = if (dialect.is_postgres)
             \\UPDATE sessions SET created_at = (
-            \\    SELECT to_char(to_timestamp(MIN(h.created_at_nano) / 1000000000), 'YYYY-MM-DD HH24:MI:SS')
+            \\    SELECT to_timestamp(MIN(h.created_at_nano) / 1000000000) AT TIME ZONE 'UTC'
             \\    FROM llm_history h
             \\    WHERE h.session_id = sessions.id AND h.created_at_nano >= 1000000000000000
             \\)
-            \\WHERE (created_at IS NULL OR created_at = '')
+            \\WHERE created_at IS NULL
             \\  AND EXISTS (
             \\    SELECT 1 FROM llm_history h
             \\    WHERE h.session_id = sessions.id AND h.created_at_nano >= 1000000000000000
@@ -27,7 +27,7 @@ pub const Migration127BackfillSessionTimestamps = struct {
             \\    FROM llm_history h
             \\    WHERE h.session_id = sessions.id AND h.created_at_nano >= 1000000000000000
             \\)
-            \\WHERE (created_at IS NULL OR created_at = '')
+            \\WHERE created_at IS NULL
             \\  AND EXISTS (
             \\    SELECT 1 FROM llm_history h
             \\    WHERE h.session_id = sessions.id AND h.created_at_nano >= 1000000000000000
