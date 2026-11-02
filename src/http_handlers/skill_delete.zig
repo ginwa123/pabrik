@@ -129,8 +129,13 @@ fn setupDb() !TestCtx {
     errdefer db.deinit();
     try test_db.openMemory(&db, io);
 
+    try db.exec(testing.allocator, "CREATE TABLE workspaces (id TEXT PRIMARY KEY)", &.{});
+    for ([_][]const u8{ "ws_1", "ws_2" }) |workspace| {
+        try db.exec(testing.allocator, "INSERT INTO workspaces (id) VALUES (?)", &.{workspace});
+    }
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
     try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
+    try test_db.enableForeignKeys(testing.allocator, &db);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -181,9 +186,6 @@ test "useCase: deletes the skill and its companion assets" {
 
     try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .skill_name = "pdf" });
 
-    // `PRAGMA foreign_keys` is off project-wide, so the declared CASCADE
-    // does nothing — orphaned asset rows would collide with a re-import
-    // of the same name on UNIQUE (skill_id, rel_path).
     try testing.expectEqual(@as(usize, 0), try countRows(&ctx, "SELECT COUNT(*) FROM skills"));
     try testing.expectEqual(@as(usize, 0), try countRows(&ctx, "SELECT COUNT(*) FROM skill_assets"));
 }

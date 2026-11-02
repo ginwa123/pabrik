@@ -737,9 +737,6 @@ test "delete_removes_the_row_and_its_companions" {
 
     {
         const n = try rowCount(h.temp_dir, "skill_assets");
-        // PRAGMA foreign_keys is off project-wide, so the declared
-        // CASCADE does nothing — orphaned companion rows would collide
-        // with a re-import on UNIQUE (skill_id, rel_path).
         if (n != 0) {
             std.debug.print("skill_assets still has {d} rows after DELETE\n", .{n});
             return error.TestUnexpectedResult;
