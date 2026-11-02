@@ -5,15 +5,9 @@ const common = @import("common.zig");
 const Backend = common.Backend;
 const dialect = common.dialect;
 
-/// Migration 134 — step 3 of 3 for `session_plan`: drop the legacy table.
-///
-/// It is staged, not registered: `allMigrations` picks it up in the release
-/// AFTER the read switch, and only once `savePlan` stops mirroring into
-/// `session_plan`. Shipping it beside the switch would leave a rolled-back
-/// binary with no table to read.
-///
-/// It refuses to drop while a single legacy plan is missing from its session,
-/// so a contract can never be the thing that loses a row.
+/// Migration 134 — step 3 of 3 for `session_plan`, and staged: not in
+/// `allMigrations`, so it ships in the release AFTER the read switch. It refuses
+/// to drop a plan that never reached its session.
 pub const Migration134ContractSessionPlan = struct {
     pub const version: u32 = 134;
     pub const name = "contract_session_plan";

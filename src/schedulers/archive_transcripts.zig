@@ -1,10 +1,6 @@
-//! Moves the whole transcript of a session whose newest message is older than
-//! 90 days into a sibling `archive.db`, so `agent.db` keeps only the chats
-//! people still open.
-//!
-//! A session's messages move TOGETHER — the unit is the transcript, never the
-//! row — and the `sessions` row stays behind with `transcript_archived_at` set.
-//! Nothing a user wrote is deleted; it changes file.
+//! Moves a session's whole transcript into a sibling `archive.db` once its
+//! newest message is 90 days old. The unit is the transcript, never the row;
+//! nothing a user wrote is deleted, it changes file.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -67,19 +63,17 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
 
     try db.exec(allocator, "ATTACH DATABASE ? AS archive", &.{input.archive_path});
     // Registered BEFORE the transaction's rollback defer, so it runs after it:
-    // `db.exec` while a transaction holds the backend mutex would deadlock. A
-    // detach that fails leaks the alias, and every later tick then fails on the
-    // ATTACH, so it is reported rather than swallowed.
+    // `db.exec` while a transaction holds the mutex would deadlock, and a leaked
+    // alias makes every later tick fail on the ATTACH.
     defer if (db.exec(allocator, "DETACH DATABASE archive", &.{})) |_| {} else |err| {
         if (input.logger) |log| {
             log.errFmt("[archive_transcripts] detach failed: {s}\n", .{@errorName(err)});
         }
     };
 
-    // One transaction for the whole tick. It is also what makes the ATTACH
-    // visible: `db.query` is served by a pooled READ connection, and an alias
-    // attached on the write connection does not exist for those. Statement for
-    // statement, `tx` stays on the one connection the alias was attached to.
+    // One transaction for the whole tick, and the only place the ATTACH is
+    // visible: `db.query` is served by a pooled READ connection, which does not
+    // have the alias. `tx` stays on the connection it was attached to.
     var tx = try db.begin();
     errdefer tx.rollback() catch {};
 
@@ -92,9 +86,8 @@ fn archiveTranscriptsSqlite(input: ArchiveInput) anyerror!ArchiveResult {
     defer allocator.free(limit_str);
 
     // A session qualifies only when its NEWEST message is past the window, so a
-    // chat somebody reopened stays whole. The three exclusions are the sessions a
-    // run is touching right now: a live turn, an unanswered question, and a
-    // message still waiting in the queue.
+    // chat somebody reopened stays whole. The three exclusions are what a run is
+    // touching right now: a live turn, an unanswered question, a queued message.
     const candidates_sql =
         \\SELECT session_id FROM llm_history
         \\WHERE COALESCE(session_id, '') <> '' AND COALESCE(created_iso, '') <> ''
@@ -173,10 +166,9 @@ fn archiveOne(
     return @intCast(copied);
 }
 
-/// The archive's `llm_history` is a COLLECTION of what was archived, so it is
-/// copied from this database's own DDL — same columns as the rows arriving, and
-/// no FTS shadow table or sync triggers, which is why a search of `agent.db`
-/// cannot return an archived message.
+/// The archive's `llm_history` is copied from this database's own DDL — same
+/// columns as the rows arriving, no FTS shadow table and no sync triggers, so a
+/// search of `agent.db` cannot return an archived message.
 fn ensureArchiveTable(conn: database.DbOrTx, allocator: std.mem.Allocator) !void {
     const existing = try count(
         conn,

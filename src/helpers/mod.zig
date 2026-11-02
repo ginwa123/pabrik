@@ -161,6 +161,12 @@ pub fn unixTimestampNanos() i128 {
     };
 }
 
+/// Unix epoch MILLISECONDS — the one timestamp unit the database stores.
+/// Derived from `unixTimestampNanos` so no writer has its own conversion.
+pub fn unixTimestampMillis() i64 {
+    return @intCast(@divFloor(unixTimestampNanos(), std.time.ns_per_ms));
+}
+
 fn unixTimestampNanosPosix() i128 {
     var ts: PosixTimespec = undefined;
     const rc = clock_gettime(CLOCK_REALTIME, &ts);
