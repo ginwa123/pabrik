@@ -184,12 +184,14 @@ const GhPrView = struct {
     updatedAt: []const u8 = "",
     mergedAt: ?[]const u8 = null,
     closedAt: ?[]const u8 = null,
-    author: struct {
-        login: []const u8 = "",
-    } = .{},
+    /// Nullable on the wire: a PR whose author account was deleted comes back
+    /// as `author: null`, which a non-optional struct rejects outright.
+    author: ?Author = null,
     additions: i64 = 0,
     deletions: i64 = 0,
     changedFiles: i64 = 0,
+
+    const Author = struct { login: []const u8 = "" };
 };
 
 /// Build the success JSON from `gh pr view --json` stdout.
@@ -215,7 +217,7 @@ pub fn parseGithubStatus(allocator: std.mem.Allocator, provider: PrProvider, raw
         leaked.mergeStateStatus,
         leaked.headRefName,
         leaked.baseRefName,
-        leaked.author.login,
+        if (leaked.author) |author| author.login else "",
         leaked.additions,
         leaked.deletions,
         leaked.changedFiles,
@@ -541,6 +543,20 @@ test "parseGithubStatus survives a merged PR with null timestamps" {
     const parsed = try parseTestJson(alloc, out);
     defer parsed.deinit();
     try std.testing.expectEqualStrings("merged", parsed.value.object.get("status").?.string);
+}
+
+test "parseGithubStatus survives author:null, which gh types as nullable" {
+    const alloc = std.testing.allocator;
+    const raw =
+        \\{"number":8,"title":"Ghost","url":"https://github.com/acme/app/pull/8","state":"OPEN","author":null,"mergedAt":null,"closedAt":null}
+    ;
+    const out = try parseGithubStatus(alloc, .github, raw);
+    defer alloc.free(out);
+    const parsed = try parseTestJson(alloc, out);
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("open", parsed.value.object.get("status").?.string);
+    try std.testing.expectEqualStrings("", parsed.value.object.get("author").?.string);
+    try std.testing.expectEqual(@as(i64, 8), parsed.value.object.get("number").?.integer);
 }
 
 test "parseGitlabStatus maps a glab mr view payload onto the status shape" {
