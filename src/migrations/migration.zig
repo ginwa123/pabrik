@@ -142,6 +142,7 @@ const migration_126 = @import("migration_126.zig");
 const migration_127 = @import("migration_127.zig");
 const migration_128 = @import("migration_128.zig");
 const migration_129 = @import("migration_129.zig");
+const migration_137 = @import("migration_137.zig");
 const migration_130 = @import("migration_130.zig");
 const migration_131 = @import("migration_131.zig");
 const migration_132 = @import("migration_132.zig");
@@ -280,6 +281,7 @@ pub const Migration126AddMigrationAppliedAt = migration_126.Migration126AddMigra
 pub const Migration127BackfillSessionTimestamps = migration_127.Migration127BackfillSessionTimestamps;
 pub const Migration128FtsExternalContent = migration_128.Migration128FtsExternalContent;
 pub const Migration129DeleteDanglingWorkspaceSubtree = migration_129.Migration129DeleteDanglingWorkspaceSubtree;
+pub const Migration137ExpandKanbanOntoTasks = migration_137.Migration137ExpandKanbanOntoTasks;
 pub const Migration130AddLogMessageTruncated = migration_130.Migration130AddLogMessageTruncated;
 pub const Migration131AddSessionTranscriptArchivedAt = migration_131.Migration131AddSessionTranscriptArchivedAt;
 pub const Migration132ExpandSessionPlan = migration_132.Migration132ExpandSessionPlan;
@@ -531,6 +533,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration127BackfillSessionTimestamps.version, .name = Migration127BackfillSessionTimestamps.name, .up = Migration127BackfillSessionTimestamps.up },
     .{ .version = Migration128FtsExternalContent.version, .name = Migration128FtsExternalContent.name, .up = Migration128FtsExternalContent.up },
     .{ .version = Migration129DeleteDanglingWorkspaceSubtree.version, .name = Migration129DeleteDanglingWorkspaceSubtree.name, .up = Migration129DeleteDanglingWorkspaceSubtree.up },
+    .{ .version = Migration137ExpandKanbanOntoTasks.version, .name = Migration137ExpandKanbanOntoTasks.name, .up = Migration137ExpandKanbanOntoTasks.up },
     // Migration 130 — `logs` says whether the message it holds is the whole message.
     .{ .version = Migration130AddLogMessageTruncated.version, .name = Migration130AddLogMessageTruncated.name, .up = Migration130AddLogMessageTruncated.up },
     // Migration 131 — a session remembers when its transcript moved to archive.db.
