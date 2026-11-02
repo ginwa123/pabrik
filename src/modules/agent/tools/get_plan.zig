@@ -101,6 +101,16 @@ fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std
     return std.json.parseFromSlice(std.json.Value, alloc, out, .{});
 }
 
+/// `update_plan` writes the plan onto the session row, so a test that expects a
+/// plan to land needs the session it lands on.
+fn seedSession(db: *database.Db, session_id: []const u8) !void {
+    try db.exec(
+        testing.allocator,
+        "INSERT INTO sessions (id, name) VALUES (?, 'seeded')",
+        &.{session_id},
+    );
+}
+
 // ─── Test 1: present — returns the plan in the `plan` field ─────────────────
 
 test "executeGetPlan: returns the plan when present, in the plan field" {
@@ -108,6 +118,7 @@ test "executeGetPlan: returns the plan when present, in the plan field" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "test_session_present");
 
     // Seed a plan via update_plan (the same wire the agent will use).
     const session_id = "test_session_present";
@@ -140,7 +151,7 @@ test "executeGetPlan: returns empty:true when no plan exists (D6)" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // No prior update_plan call — session has no row in session_plan.
+    // No prior update_plan call — the session carries no plan.
     const result = try executeGetPlan(alloc, &ctx.db, "nonexistent");
     defer alloc.free(result);
 
@@ -160,6 +171,7 @@ test "executeGetPlan: JSON preserves raw special chars verbatim (no XML escape)"
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "test_session_escape");
 
     // Write a plan containing `<hello>` and `&` — these MUST survive
     // verbatim in the JSON string (no &lt; / &amp; substitution).
@@ -194,6 +206,7 @@ test "executeGetPlan: ]]> inside plan body round-trips verbatim" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "test_session_cdata");
 
     const session_id = "test_session_cdata";
     const seed_result = try update_plan_mod.executeUpdatePlan(alloc, &ctx.db, session_id, .{
@@ -352,6 +365,7 @@ test "execGetPlan: present plan returns wrapped envelope with plan field" {
     var ctx = try exec_setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "sess_with_plan");
 
     // Seed the plan via the pure-fn layer (mirrors production wiring: an
     // earlier update_plan call already populated the row).
@@ -386,4 +400,3 @@ test "execGetPlan: present plan returns wrapped envelope with plan field" {
     // No `empty` marker on the present branch.
     try exec_testing.expect(data.get("empty") == null);
 }
-

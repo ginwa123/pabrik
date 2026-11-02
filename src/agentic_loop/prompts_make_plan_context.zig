@@ -1,5 +1,5 @@
 //! Render the "## Current Plan" markdown block for the LLM's system prompt.
-//! Reads the session's `session_plan` row (Migration 076) and emits a fenced
+//! Reads the plan off the session row (`sessions.plan_md`, Migration 132) and emits a fenced
 //! markdown block plus the timestamp footer.
 
 const std = @import("std");
@@ -90,6 +90,16 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
+/// `update_plan` writes the plan onto the session row, so a test that expects a
+/// plan to land needs the session it lands on.
+fn seedSession(db: *database.Db, session_id: []const u8) !void {
+    try db.exec(
+        testing.allocator,
+        "INSERT INTO sessions (id, name) VALUES (?, 'seeded')",
+        &.{session_id},
+    );
+}
+
 // ─── Test 1: empty plan returns "" (silently omitted from system prompt) ──
 
 test "makePlanContext: empty plan returns empty string (silently omitted)" {
@@ -113,6 +123,7 @@ test "makePlanContext: present plan renders ## Current Plan markdown block" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_present");
 
     // Seed a plan via the same fn the LLM tool calls. We discard
     // the returned XML envelope — we just need the row to exist.
@@ -152,6 +163,7 @@ test "makePlanContext: plan survives DB read across calls (UPSERT consistency)" 
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_upsert");
 
     // Write v1, read
     {
