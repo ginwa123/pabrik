@@ -542,6 +542,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration132ExpandSessionPlan.version, .name = Migration132ExpandSessionPlan.name, .up = Migration132ExpandSessionPlan.up },
     // Migration 133 — `session_plan` merge, migrate: copy every plan across.
     .{ .version = Migration133BackfillSessionPlan.version, .name = Migration133BackfillSessionPlan.name, .up = Migration133BackfillSessionPlan.up },
+    .{ .version = Migration134ContractSessionPlan.version, .name = Migration134ContractSessionPlan.name, .up = Migration134ContractSessionPlan.up },
     // Migration 135 — the two RBAC tables nothing wrote are gone.
     .{ .version = Migration135DropUnusedRbacTables.version, .name = Migration135DropUnusedRbacTables.name, .up = Migration135DropUnusedRbacTables.up },
     // Migration 136 — postgres gets the foreign keys its DDL could not declare.

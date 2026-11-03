@@ -113,10 +113,30 @@ test "Migration134 is a no-op once the legacy table is gone" {
     try Migration134ContractSessionPlan.up(db, alloc);
 }
 
-test "Migration134 stays out of allMigrations until the release after the read switch" {
+test "Migration134 ships now the read switch has, and drops the legacy table" {
+    var registered = false;
     for (@import("migration.zig").allMigrations) |m| {
-        if (m.version == Migration134ContractSessionPlan.version) {
-            return error.ContractShippedWithReadSwitch;
-        }
+        if (m.version == Migration134ContractSessionPlan.version) registered = true;
     }
+    try testing.expect(registered);
+
+    const alloc = testing.allocator;
+    var ctx = try openDb(alloc);
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    const db = &ctx.db;
+
+    try db.exec(alloc, "INSERT INTO sessions (id, name, plan_md) VALUES ('s1', 'seeded', 'the plan')", &[_][]const u8{});
+    try db.exec(alloc, "INSERT INTO session_plan (session_id, plan_md) VALUES ('s1', 'the plan')", &[_][]const u8{});
+
+    try Migration134ContractSessionPlan.up(db, alloc);
+
+    var row = try db.queryRow(alloc, "SELECT COUNT(*) FROM " ++
+        comptime dialect.tables_source ++ " WHERE type = 'table' AND name = 'session_plan'", &[_][]const u8{});
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("0", row.values[0]);
+
+    var plan = try db.queryRow(alloc, "SELECT COALESCE(CAST(plan_md AS TEXT), '') FROM sessions WHERE id = 's1'", &[_][]const u8{});
+    defer plan.deinit(alloc);
+    try testing.expectEqualStrings("the plan", plan.values[0]);
 }

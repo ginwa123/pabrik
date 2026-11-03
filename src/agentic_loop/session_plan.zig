@@ -35,14 +35,6 @@ pub const SavePlanArgs = struct {
 /// with prose, small enough to keep system-prompt injection bounded.
 pub const MAX_PLAN_BYTES: usize = 256 * 1024;
 
-/// The legacy table still receiving every write until its contract migration
-/// ships; Postgres needs the conflict clause spelled out, sqlite's
-/// `INSERT OR REPLACE` already carries it.
-const MIRROR_TAIL = if (dialect.is_postgres)
-    " ON CONFLICT (session_id) DO UPDATE SET plan_md = excluded.plan_md, updated_at = CURRENT_TIMESTAMP"
-else
-    "";
-
 fn sessionExists(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -57,19 +49,6 @@ fn sessionExists(
     const row = (try q.next()) orelse return false;
     row.deinit(allocator);
     return true;
-}
-
-/// Keep the legacy row in step so the previous build still reads this plan
-/// after a rollback. It is the only reason `session_plan` still exists.
-fn mirrorLegacyRow(
-    allocator: std.mem.Allocator,
-    db: *database.Db,
-    session_id: []const u8,
-    content: []const u8,
-) !void {
-    try db.exec(allocator, dialect.upsert_verb ++
-        " INTO session_plan (session_id, plan_md, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)" ++
-        MIRROR_TAIL, &.{ session_id, content });
 }
 
 /// Save (UPSERT) a plan. Overwrites the plan the session already carries.
@@ -87,7 +66,6 @@ pub fn savePlan(
         \\UPDATE sessions SET plan_md = ?, plan_updated_at = CURRENT_TIMESTAMP WHERE id = ?
     , &.{ args.content, args.session_id });
 
-    try mirrorLegacyRow(allocator, db, args.session_id, args.content);
 
     var q = try db.query(allocator, "SELECT COALESCE(CAST(plan_updated_at AS TEXT), '') FROM sessions WHERE id = ?", &.{args.session_id});
     defer q.deinit();
@@ -188,12 +166,6 @@ fn rawSessionPlanMd(ctx: *TestCtx, session_id: []const u8) ![]u8 {
     return alloc.dupe(u8, row.values[0]);
 }
 
-fn legacyRowCount(ctx: *TestCtx) !i64 {
-    var row = try ctx.db.queryRow(testing.allocator, "SELECT COUNT(*) FROM session_plan", &.{});
-    defer row.deinit(testing.allocator);
-    return std.fmt.parseInt(i64, row.values[0], 10);
-}
-
 test "savePlan + getPlan round-trip preserves content" {
     const allocator = testing.allocator;
     var ctx = try setupDb();
@@ -240,7 +212,6 @@ test "savePlan refuses a session that does not exist and mirrors nothing" {
         error.SessionNotFound,
         savePlan(allocator, &ctx.db, .{ .session_id = "s_ghost", .content = "a plan" }),
     );
-    try testing.expectEqual(@as(i64, 0), try legacyRowCount(&ctx));
 }
 
 test "getPlan on missing session returns empty string" {
@@ -272,8 +243,6 @@ test "savePlan overwrites the plan the session already carries" {
     defer allocator.free(got);
     try testing.expectEqualStrings("v2 longer", got);
 
-    // The mirror UPSERTs, it does not append: one legacy row per session.
-    try testing.expectEqual(@as(i64, 1), try legacyRowCount(&ctx));
 }
 
 test "savePlan rejects content > 256 KiB with ContentTooLarge" {
