@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Shared by the VM smokes: remove a work dir that holds an extracted guest rootfs.
+# Shared by the VM smokes: remove a work dir that holds an extracted guest rootfs,
+# and keep the guest image cache out of that work dir.
 #
 # WHY A PLAIN `rm -rf` IS NOT ENOUGH
 # ----------------------------------
@@ -28,4 +29,31 @@ pabrik_wipe_workdir() {
   fi
   chmod -R u+rwX "$dir" 2>/dev/null || true
   rm -rf "$dir"
+}
+
+# Where `build-guest-image.sh` keeps the pinned rootfs, the rpms and the assembled
+# images (the same default it derives itself). A smoke resolves this BEFORE it
+# replaces HOME: the replacement HOME exists to keep pabrik's config and database
+# out of the run, and a cache derived from it is a cache inside the throwaway work
+# dir — every run then re-downloads the Fedora rootfs and the whole package set,
+# which is minutes of the runner's bandwidth for bytes already on its disk.
+pabrik_vm_cache_root() {
+  printf '%s\n' "${PABRIK_VM_CACHE:-$HOME/.cache/pabrik-vm}"
+}
+
+# Assemble the guest image and report the cache decision this run took. The build
+# prints `cache hit|miss` itself, and the two --saas smokes used to hide it behind
+# `tail -1` and `/dev/null`, so no CI log could say whether a job had downloaded
+# Fedora or reused the image it already had.
+pabrik_build_guest_image() { # <repo root> <out image>
+  local repo="${1:?pabrik_build_guest_image needs the repo root}"
+  local out="${2:?pabrik_build_guest_image needs an output image}"
+  local log state
+  log="$(dirname "$out")/guest-image.log"
+  "$repo/scripts/build-guest-image.sh" --out "$out" >"$log" 2>&1 || {
+    tail -n 25 "$log" >&2
+    return 1
+  }
+  state="$(grep -m1 -oE 'cache (hit|miss)' "$log" || true)"
+  printf '%s at %s\n' "${state:-image cache disabled}" "$(pabrik_vm_cache_root)"
 }

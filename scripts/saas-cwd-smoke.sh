@@ -59,7 +59,17 @@ host_release="$(uname -r)"
   fail "the guest kernel $guest_kernel reports the host's release ($host_release); nothing here would prove a VM ran"
 
 work="$(mktemp -d -t pabrik-saas-cwd-smoke-XXXXXX)"
+# The guest image cache belongs to the operator, so it is resolved BEFORE HOME
+# moves: a cache derived from the smoke's own HOME is deleted with it, and every
+# run then re-downloads the pinned Fedora rootfs and the package set.
+vm_cache="$(pabrik_vm_cache_root)"
+case "$vm_cache" in
+  "$work" | "$work"/*)
+    fail "the guest image cache resolves inside the smoke's work dir ($vm_cache): it is deleted with the run, so every run redownloads Fedora. Point PABRIK_VM_CACHE outside $work"
+    ;;
+esac
 export HOME="$work"
+export PABRIK_VM_CACHE="$vm_cache"
 # A self-hosted runner may export XDG_*: pin pabrik's config, data, state and
 # runtime dir to the smoke's HOME, or the smoke reads the operator's install
 # (their real config.json and agent.db) instead of its own.
@@ -76,7 +86,9 @@ trap cleanup EXIT
 
 say "guest kernel $guest_kernel -> release $kernel_release (host $host_release)"
 say "assembling the guest image"
-"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" | tail -1
+build_note="$(pabrik_build_guest_image "$repo_root" "$work/base.ext4")" ||
+  fail "the guest image build failed"
+say "$build_note"
 
 stub_record="$work/stub"
 python3 "$repo_root/scripts/stub_llm_server.py" \
