@@ -12,7 +12,10 @@ pub const guest_shell = "/bin/sh";
 /// The git and ripgrep the sealed image ships. `execve` searches no PATH, so
 /// a guest program is named by its absolute path or not at all.
 pub const guest_git = "/usr/bin/git";
-pub const guest_rg = "/usr/bin/rg";
+/// The BUNDLED ripgrep, the hash-pinned artifact the host release ships
+/// (scripts/stage-bundled-ripgrep.sh): a distro `ripgrep` moves version with the
+/// release, and `search` parses one version's output. Named like the host copy.
+pub const guest_rg = "/usr/bin/rg-pabrik";
 
 /// The id arrives from outside and is the ONLY input that reaches a path, so it
 /// must be inert: letters, digits, `_` and `-`, and never `.` or `..`.

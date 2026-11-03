@@ -17,6 +17,7 @@
 #
 # Usage: scripts/build-guest-image.sh --out IMG [--tier base|dev]
 #                                     [--agent BIN] [--probe BIN] [--netd BIN]
+#                                     [--rg BIN]
 #                                     [--size SIZE]
 #                                     [--payload DIR] [--zig-cache DIR] [--cache DIR]
 #                                     [--in-container] [--no-image-cache]
@@ -35,6 +36,7 @@ probe_bin=""
 probe_given=0
 netd_bin=""
 netd_given=0
+rg_bin=""
 payload=""
 zig_cache=""
 
@@ -128,6 +130,7 @@ image_cache_key() {
     cache_bin "$bootstrap_bin" "$repo_root/zig-out/bin/pabrik-vm-bootstrap"
     cache_bin "$agent_bin" "$repo_root/zig-out/bin/pabrik-vm-agent"
     cache_bin "$netd_bin" "$repo_root/zig-out/bin/pabrik-vm-netd"
+    cache_bin "$rg_bin" "$repo_root/zig-out/bin/rg-pabrik"
     cache_bin "$probe_bin" "$repo_root/zig-out/bin/pabrik-probe"
   } | sha256sum | cut -d' ' -f1
 }
@@ -139,6 +142,40 @@ cache_bin() { # <given path> <default path> -> "<path> <sha256|->"
   local path="${1:-$2}" sum=-
   [ ! -f "$path" ] || sum="$(sha256sum "$path" | cut -d' ' -f1)"
   printf '%s %s\n' "$path" "$sum"
+}
+
+# The ripgrep the image ships is the BUNDLED one — the same hash-pinned artifact
+# the host release puts beside `pabrik` (vmd_policy.guest_rg is
+# /usr/bin/rg-pabrik) — not a distro package, whose version moves with the
+# Fedora release while `search`'s argv and output parsing do not.
+rg_triple() {
+  case "$(uname -m)" in
+    x86_64 | amd64) printf 'x86_64-linux-gnu\n' ;;
+    aarch64 | arm64) printf 'aarch64-linux-gnu\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# A dev tree that already staged the release artifact is used as-is; anything
+# else stages the pin into the cache, which is the one directory the container
+# hop mounts writable. Staging happens HERE, before the hop: the builder has no
+# curl, and the repo is mounted read-only inside it.
+ensure_rg() {
+  [ -n "$rg_bin" ] || [ ! -f "$repo_root/zig-out/bin/rg-pabrik" ] \
+    || rg_bin="$repo_root/zig-out/bin/rg-pabrik"
+  if [ -z "$rg_bin" ]; then
+    rg_bin="$cache/rg-pabrik"
+    if [ ! -f "$rg_bin" ]; then
+      local triple
+      triple="$(rg_triple)" \
+        || fail "no bundled ripgrep is published for $(uname -m); pass --rg BIN"
+      say "staging the pinned ripgrep ($triple)"
+      "$repo_root/scripts/stage-bundled-ripgrep.sh" "$triple" "$rg_bin" \
+        || fail "could not stage the pinned ripgrep for $triple"
+    fi
+  fi
+  [ -f "$rg_bin" ] || fail "no bundled ripgrep at $rg_bin"
+  say "ripgrep $rg_bin ($("$rg_bin" --version | head -1))"
 }
 
 # A 1 GiB base image and a 2 GiB dev image per key, and every commit that
@@ -303,7 +340,7 @@ run_selftest() {
     "$(manifest_plan "$manifest" base | grep -c 'fedora.*\.oci\.tar\.xz$')"
   check "the base set carries git" "1" "$(tier_rpms base | grep -cx 'git-core')"
   check "the base set carries TLS trust" "1" "$(tier_rpms base | grep -cx 'ca-certificates')"
-  check "the base set carries ripgrep for the search tool" "1" \
+  check "the base set gives the workspace its own rg" "1" \
     "$(tier_rpms base | grep -cx 'ripgrep')"
 
   # The image cache is only as good as its key: it has to be a sha256 (so the
@@ -333,6 +370,7 @@ while [ $# -gt 0 ]; do
     --bootstrap) bootstrap_bin="$2"; shift 2 ;;
     --probe) probe_bin="$2"; probe_given=1; shift 2 ;;
     --netd) netd_bin="$2"; netd_given=1; shift 2 ;;
+    --rg) rg_bin="$2"; shift 2 ;;
     --payload) payload="$2"; shift 2 ;;
     --zig-cache) zig_cache="$2"; shift 2 ;;
     --size) size="$2"; shift 2 ;;
@@ -354,10 +392,12 @@ abs() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;
 [ -z "$bootstrap_bin" ] || bootstrap_bin="$(abs "$bootstrap_bin")"
 [ -z "$probe_bin" ] || probe_bin="$(abs "$probe_bin")"
 [ -z "$netd_bin" ] || netd_bin="$(abs "$netd_bin")"
+[ -z "$rg_bin" ] || rg_bin="$(abs "$rg_bin")"
 [ -z "$out" ] || out="$(abs "$out")"
 [ -z "$payload" ] || payload="$(abs "$payload")"
 [ -z "$zig_cache" ] || zig_cache="$(abs "$zig_cache")"
 [ -n "$out" ] || fail "--out IMG is required"
+ensure_rg
 
 # The cache is checked BEFORE the container hop, because a hit needs neither
 # dnf nor root: on a warm key this script never starts a container at all.
@@ -407,6 +447,7 @@ if [ "$(id -u)" != 0 ] && { [ "$in_container" = 1 ] || [ "$needs_builder" = 1 ];
   [ -z "$agent_bin" ] || args+=(--agent "$agent_bin")
   [ -z "$probe_bin" ] || args+=(--probe "$probe_bin")
   [ -z "$netd_bin" ] || args+=(--netd "$netd_bin")
+  [ -z "$rg_bin" ] || args+=(--rg "$rg_bin")
   [ -z "$payload" ] || args+=(--payload "$payload")
   [ -z "$zig_cache" ] || args+=(--zig-cache "$zig_cache")
   # The hop is a NEW process inside the container, so a decision taken up here
@@ -548,6 +589,14 @@ say "dnf installed $(rpm --root "$work" -qa | wc -l) packages in total"
 # packages are this list resolved against Fedora 41 on the day of the build.
 rpm --root "$work" -qa --qf '%{name}-%{version}-%{release}.%{arch}\n' | sort \
   >"$work/etc/pabrik-image-rpms"
+# The image ships the BUNDLED ripgrep at the path `search` execs
+# (/usr/bin/rg-pabrik — vmd_policy.guest_rg; execve searches no PATH). Same
+# hash-pinned artifact the host release ships, not the distro package: the
+# workspace's own `rg` is the package, and `search` must not follow it.
+mkdir -p "$work/usr/bin"
+cp "$rg_bin" "$work/usr/bin/rg-pabrik"
+chmod +x "$work/usr/bin/rg-pabrik"
+say "ripgrep   /usr/bin/rg-pabrik ($("$work/usr/bin/rg-pabrik" --version | head -1), from $rg_bin)"
 
 # ─── our own side ────────────────────────────────────────────────────────
 # /init is the BOOTSTRAP: it asks the host for the current agent and execs

@@ -108,6 +108,12 @@ fi
 # git is in EVERY tier: a workspace is a git checkout, and under --saas every
 # git command runs in the guest, so a base image without git cannot clone.
 payload+=(/usr/bin/git)
+# The BUNDLED ripgrep is in EVERY tier too, at exactly this path: under --saas
+# `search` execs vmd_policy.guest_rg (/usr/bin/rg-pabrik) in the guest, and
+# `execve` searches no PATH, so an image without it answers every search with
+# RgNotFound. It is the pinned artifact the host release ships, not the distro
+# package, so the guest runs the version `search` was written against.
+payload+=(/usr/bin/rg-pabrik)
 # dnf is what makes a workspace able to install anything of its own, and it is
 # the reason this image is a distribution rather than a static busybox.
 payload+=(/usr/bin/dnf)
