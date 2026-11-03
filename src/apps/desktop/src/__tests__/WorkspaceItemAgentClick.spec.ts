@@ -67,14 +67,17 @@ describe('WorkspaceItem — agent click is expand-only (no settings redirect)', 
     expect(wrapper.emitted('click')).toBeUndefined()
   })
 
-  it('routine left-click toggles expansion but does NOT emit click', async () => {
+  it('routine left-click toggles expansion AND emits click (RoutineView opens)', async () => {
+    // The routine item's main view IS its RoutineView, so a left-click must
+    // reach Sidebar's handleSelectItem — otherwise the row is dead and the
+    // page never changes when the user clicks the routine.
     wrapper = mountItem(makeItem('routine'))
     const button = wrapper.find('button.flex-1')
     expect(button.exists()).toBe(true)
     await button.trigger('click')
     const ws = useWorkspacesStore()
     expect(ws.expandedItemIds[ITEM_ID]).toBe(true)
-    expect(wrapper.emitted('click')).toBeUndefined()
+    expect(wrapper.emitted('click')).toEqual([[expect.objectContaining({ id: ITEM_ID })]])
   })
 
   it('kanban left-click still emits click exactly once (board opens)', async () => {

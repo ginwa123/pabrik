@@ -46,6 +46,10 @@ pub fn fireWorkspaceRoutine(
 
     const sid = try di.allocator.dupe(u8, routine.id);
     errdefer di.allocator.free(sid);
+    ensureRunSession(allocator, db, routine) catch |err| {
+        try model.markFailed(allocator, db, routine.id, "could not prepare the run session", "");
+        return err;
+    };
     const payload = try buildPayload(di.allocator, routine, next_sqlite);
     errdefer payload.deinit(di.allocator);
     const cwd = try di.allocator.dupe(u8, "");
@@ -62,6 +66,66 @@ pub fn fireWorkspaceRoutine(
         runFire,
         .{ di, sid, payload.message, cwd, bmsg, atools, iurls, payload.selected_profile_model },
     );
+}
+
+/// The workspace item a routine belongs to: what the run session is labelled
+/// with, and the workspace that must own that session.
+const RoutineItem = struct {
+    name: []u8,
+    workspace_id: []u8,
+    path: []u8,
+
+    fn deinit(self: RoutineItem, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.workspace_id);
+        allocator.free(self.path);
+    }
+};
+
+fn loadRoutineItem(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    item_id: []const u8,
+) !RoutineItem {
+    var q = try db.query(allocator,
+        \\SELECT COALESCE(CAST(name AS TEXT), ''), COALESCE(CAST(workspace_id AS TEXT), ''),
+        \\       COALESCE(CAST(path AS TEXT), '')
+        \\FROM workspace_items WHERE id = ? LIMIT 1
+    , &.{item_id});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RoutineItemNotFound;
+    defer row.deinit(allocator);
+    return .{
+        .name = try allocator.dupe(u8, row.values[0]),
+        .workspace_id = try allocator.dupe(u8, row.values[1]),
+        .path = try allocator.dupe(u8, row.values[2]),
+    };
+}
+
+/// Make the run's chat session real and put it in the routine's workspace:
+/// nothing else writes that row on the fire path, and a session without the
+/// workspace stamp is invisible to the sidebar's scoped list.
+pub fn ensureRunSession(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    routine: model.Routine,
+) !void {
+    const item = try loadRoutineItem(allocator, db, routine.workspace_item_id);
+    defer item.deinit(allocator);
+    const name = if (item.name.len > 0) item.name else routine.id;
+    // Only still-empty columns are filled (a renamed chat survives); `exec`
+    // binds an empty slice as NULL, so each NOT NULL column needs the COALESCE
+    // default — the idiom `model.insertWorkspaceRoutine` already uses.
+    try db.exec(allocator,
+        \\INSERT INTO sessions (id, name, status, cwd, workspace_id, created_at, updated_at, selected_profile_model)
+        \\VALUES (?, COALESCE(?, ''), 'active', COALESCE(?, ''), COALESCE(?, ''),
+        \\        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, COALESCE(?, ''))
+        \\ON CONFLICT(id) DO UPDATE SET
+        \\    updated_at = CURRENT_TIMESTAMP,
+        \\    name = CASE WHEN COALESCE(sessions.name, '') = '' THEN excluded.name ELSE sessions.name END,
+        \\    workspace_id = CASE WHEN COALESCE(sessions.workspace_id, '') = '' THEN excluded.workspace_id ELSE sessions.workspace_id END,
+        \\    cwd = CASE WHEN COALESCE(sessions.cwd, '') = '' THEN excluded.cwd ELSE sessions.cwd END
+    , &.{ routine.id, name, item.path, item.workspace_id, routine.selected_profile_model });
 }
 
 /// The two slices are allocator-owned: free them with deinit, or hand them to
@@ -221,7 +285,23 @@ fn setupDb() !struct {
         \\CREATE TABLE workspace_items (
         \\    id TEXT PRIMARY KEY,
         \\    workspace_id TEXT,
-        \\    item_type TEXT NOT NULL
+        \\    item_type TEXT NOT NULL,
+        \\    name TEXT NOT NULL DEFAULT '',
+        \\    path TEXT
+        \\)
+    , &.{});
+    // Only the columns `ensureRunSession` writes and the workspace scope
+    // reads — the real table carries dozens more.
+    try db.exec(alloc,
+        \\CREATE TABLE sessions (
+        \\    id TEXT PRIMARY KEY,
+        \\    name TEXT NOT NULL DEFAULT '',
+        \\    status TEXT NOT NULL DEFAULT 'active',
+        \\    cwd TEXT,
+        \\    workspace_id TEXT,
+        \\    created_at TEXT,
+        \\    updated_at TEXT,
+        \\    selected_profile_model TEXT NOT NULL DEFAULT ''
         \\)
     , &.{});
 
@@ -466,4 +546,134 @@ test "markRunFinished leaves a manual-only routine without a next fire" {
 
     try testing.expectEqual(model.RoutineRunStatus.success, loaded.last_status);
     try testing.expect(loaded.next_run_at == null);
+}
+
+// ─── ensureRunSession: the run's chat session is a real, listed session ────
+
+fn insertNamedParentItem(
+    db: *database.Db,
+    alloc: std.mem.Allocator,
+    id: []const u8,
+    name: []const u8,
+    path: []const u8,
+) !void {
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type, name, path) VALUES (?, 'ws1', 'routine', ?, ?)", &.{ id, name, path });
+}
+
+fn readSessionColumn(
+    db: *database.Db,
+    alloc: std.mem.Allocator,
+    id: []const u8,
+    column: []const u8,
+) ![]u8 {
+    const sql = try std.fmt.allocPrint(alloc, "SELECT COALESCE(CAST({s} AS TEXT), '') FROM sessions WHERE id = ?", .{column});
+    defer alloc.free(sql);
+    var q = try db.query(alloc, sql, &.{id});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.NoSessionRow;
+    defer row.deinit(alloc);
+    return try alloc.dupe(u8, row.values[0]);
+}
+
+fn idListContains(ids: [][]u8, wanted: []const u8) bool {
+    for (ids) |id| {
+        if (std.mem.eql(u8, id, wanted)) return true;
+    }
+    return false;
+}
+
+test "a fire stamps the run's chat session with the routine's name, dir and workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertNamedParentItem(&ctx.db, alloc, "item_1", "Collecting security Issues", "/proj/collect");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "collect the security issues",
+        .schedule = "",
+        .enabled = true,
+        .selected_profile_model = "SUB_AGENT",
+    });
+    var routine = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer routine.deinit(alloc);
+
+    try ensureRunSession(alloc, &ctx.db, routine);
+
+    const name = try readSessionColumn(&ctx.db, alloc, "item_1", "name");
+    defer alloc.free(name);
+    const wid = try readSessionColumn(&ctx.db, alloc, "item_1", "workspace_id");
+    defer alloc.free(wid);
+    const cwd = try readSessionColumn(&ctx.db, alloc, "item_1", "cwd");
+    defer alloc.free(cwd);
+    const profile = try readSessionColumn(&ctx.db, alloc, "item_1", "selected_profile_model");
+    defer alloc.free(profile);
+
+    try testing.expectEqualStrings("Collecting security Issues", name);
+    try testing.expectEqualStrings("ws1", wid);
+    try testing.expectEqualStrings("/proj/collect", cwd);
+    try testing.expectEqualStrings("SUB_AGENT", profile);
+}
+
+test "the run's chat session is listed by the workspace-scoped session list" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertNamedParentItem(&ctx.db, alloc, "item_1", "Collecting security Issues", "/proj/collect");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "",
+        .enabled = true,
+    });
+    var routine = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer routine.deinit(alloc);
+
+    try ensureRunSession(alloc, &ctx.db, routine);
+
+    // The exact resolution the sidebar's `GET /api/llm/session?workspace_id=…`
+    // runs: a session with no task link is only listed when it carries the
+    // workspace stamp, which is what the pre-fix fire never wrote.
+    const ids = try pabrikcore.workspace_scope.workspaceSessionIds(alloc, &ctx.db, "ws1");
+    defer pabrikcore.workspace_scope.freeSessionIds(alloc, ids);
+    try testing.expect(idListContains(ids, "item_1"));
+}
+
+test "a later fire bumps updated_at and keeps the name the session already has" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertNamedParentItem(&ctx.db, alloc, "item_1", "Collecting security Issues", "/proj/collect");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "",
+        .enabled = true,
+    });
+    var routine = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer routine.deinit(alloc);
+
+    try ensureRunSession(alloc, &ctx.db, routine);
+    // The user renamed the chat, then the routine fires again.
+    try ctx.db.exec(alloc, "UPDATE sessions SET name = 'renamed by hand', updated_at = '2000-01-01 00:00:00' WHERE id = 'item_1'", &.{});
+    try ensureRunSession(alloc, &ctx.db, routine);
+
+    const name = try readSessionColumn(&ctx.db, alloc, "item_1", "name");
+    defer alloc.free(name);
+    const updated = try readSessionColumn(&ctx.db, alloc, "item_1", "updated_at");
+    defer alloc.free(updated);
+    const wid = try readSessionColumn(&ctx.db, alloc, "item_1", "workspace_id");
+    defer alloc.free(wid);
+
+    try testing.expectEqualStrings("renamed by hand", name);
+    try testing.expect(!std.mem.eql(u8, updated, "2000-01-01 00:00:00"));
+    try testing.expectEqualStrings("ws1", wid);
 }
