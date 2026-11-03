@@ -6,6 +6,9 @@ import { apiFetch } from './client'
 export interface Secret {
   id: string
   name: string
+  /** What this credential is for, in the words the person who stored it chose. The agent reads
+   * this to pick the right name; `''` means nobody wrote one. */
+  description: string
   created_at: string
   updated_at: string
 }
@@ -29,10 +32,11 @@ export async function createSecret(
   workspaceId: string,
   name: string,
   value: string,
+  description = '',
 ): Promise<{ secret: Secret }> {
   return await apiFetch<{ secret: Secret }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/secrets`,
-    { method: 'POST', body: { name, value } },
+    { method: 'POST', body: { name, value, description } },
   )
 }
 
@@ -42,7 +46,7 @@ export async function createSecret(
 export async function updateSecret(
   workspaceId: string,
   secretId: string,
-  patch: { name?: string; value?: string },
+  patch: { name?: string; value?: string; description?: string },
 ): Promise<{ secret: Secret }> {
   return await apiFetch<{ secret: Secret }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(secretId)}`,

@@ -101,9 +101,24 @@ onBeforeRouteUpdate((to) => {
 /**  * Hand a new credential to the store, which forwards it to the API and keeps nothing. This handler
  * deliberately does not stash the payload on any reactive state — the emit already delivered it and
  * the component has already cleared its inputs. */
-async function handleAdd(payload: { name: string; value: string }): Promise<void> {
+async function handleAdd(payload: {
+  name: string
+  value: string
+  description: string
+}): Promise<void> {
   if (!workspaceId.value) return
-  await secretsStore.createSecret(workspaceId.value, payload.name, payload.value)
+  await secretsStore.createSecret(
+    workspaceId.value,
+    payload.name,
+    payload.value,
+    payload.description,
+  )
+}
+
+/** Write what a credential is for. Sends no value, so it can never rotate one. */
+async function handleDescribe(payload: { id: string; description: string }): Promise<void> {
+  if (!workspaceId.value) return
+  await secretsStore.describeSecret(workspaceId.value, payload.id, payload.description)
 }
 
 async function handleRotate(payload: { id: string; name: string; value: string }): Promise<void> {
@@ -202,6 +217,7 @@ function handleRetry(): void {
               @reveal="handleReveal"
               @hide="handleHide"
               @add="handleAdd"
+              @describe="handleDescribe"
               @rotate="handleRotate"
               @delete="handleDelete"
               @retry="handleRetry"

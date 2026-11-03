@@ -46,6 +46,7 @@ fn useCase(
         error.NameRequired,
         error.ValueRequired,
         error.InvalidName,
+        error.DescriptionTooLong,
         error.NameTaken,
         error.NotFound,
         error.InsertFailed,
@@ -131,6 +132,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration103CreateWorkspaceSecrets.up(&db, testing.allocator);
+    try migration.Migration138AddWorkspaceSecretDescription.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value) VALUES
         \\  ('sec_a', 'ws_1', 'APPLE', 'v_apple_do_not_leak'),
@@ -225,4 +227,29 @@ test "the list response body carries no stored value" {
     try testing.expect(std.mem.indexOf(u8, json, "v_apple_do_not_leak") == null);
     try testing.expect(std.mem.indexOf(u8, json, "v_zebra_do_not_leak") == null);
     try testing.expect(std.mem.indexOf(u8, json, "\"count\":2") != null);
+}
+
+test "the list response body carries each secret's description" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(
+        alloc,
+        "UPDATE workspace_secrets SET description = 'Read-only token for the PR bot' WHERE id = 'sec_a'",
+        &.{},
+    );
+
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
+    defer secrets_store.freeSecretRows(alloc, output.secrets);
+
+    try testing.expectEqualStrings("Read-only token for the PR bot", output.secrets[0].description);
+    // A secret nobody described answers with a string, not a null.
+    try testing.expectEqualStrings("", output.secrets[1].description);
+
+    const json = try http_response.makeSecretListResponse(alloc, output.secrets);
+    defer alloc.free(json);
+    try testing.expect(std.mem.indexOf(u8, json, "Read-only token for the PR bot") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "v_apple_do_not_leak") == null);
 }

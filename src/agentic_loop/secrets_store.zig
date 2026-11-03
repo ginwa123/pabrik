@@ -10,11 +10,17 @@ const secrets_at_rest = @import("secrets_at_rest.zig");
 /// Longest legal secret name.
 pub const MAX_NAME_LEN: usize = 64;
 
+/// Longest legal description, in bytes. The text is handed to the model on
+/// every `list_secrets` call, so an unbounded one would spend the prompt.
+pub const MAX_DESCRIPTION_LEN: usize = 500;
+
 /// One row in `workspace_secrets`, WITHOUT the value.
 pub const SecretRow = struct {
     id: []const u8,
     workspace_id: []const u8,
     name: []const u8,
+    /// Human prose: what this credential is for. Empty when nobody wrote one.
+    description: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
 };
@@ -33,6 +39,15 @@ pub const CreateSecretArgs = struct {
     workspace_id: []const u8,
     name: []const u8 = "",
     value: []const u8 = "",
+    description: []const u8 = "",
+};
+
+/// Describe shape. No `value`: describing a secret must never require
+/// supplying the credential again.
+pub const SetSecretDescriptionArgs = struct {
+    workspace_id: []const u8,
+    secret_id: []const u8,
+    description: []const u8 = "",
 };
 
 /// Rotation shape.
@@ -48,6 +63,7 @@ pub const SecretsError = error{
     NameRequired,
     ValueRequired,
     InvalidName,
+    DescriptionTooLong,
     NameTaken,
     NotFound,
     QueryFailed,
@@ -95,7 +111,7 @@ pub const RevealError = error{
 /// accidentally return a different projection. There is deliberately no
 /// `value` in this list — see the module header.
 const SELECT_COLUMNS =
-    "SELECT id, workspace_id, name, " ++
+    "SELECT id, workspace_id, name, COALESCE(description, ''), " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') " ++
     "FROM workspace_secrets";
 
@@ -114,8 +130,9 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Secr
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
         .name = try allocator.dupe(u8, values[2]),
-        .created_at = try allocator.dupe(u8, values[3]),
-        .updated_at = try allocator.dupe(u8, values[4]),
+        .description = try allocator.dupe(u8, values[3]),
+        .created_at = try allocator.dupe(u8, values[4]),
+        .updated_at = try allocator.dupe(u8, values[5]),
     };
 }
 
@@ -185,6 +202,9 @@ pub fn createSecret(
     // An empty value is rejected here rather than reaching the column.
     if (args.value.len == 0) return error.ValueRequired;
 
+    const description = std.mem.trim(u8, args.description, " \t\n\r");
+    if (description.len > MAX_DESCRIPTION_LEN) return error.DescriptionTooLong;
+
     // Pre-check so the ordinary duplicate is a clean NameTaken rather than a
     // constraint violation surfacing as a 500 at the HTTP layer.
     if (nameExists(db, allocator, args.workspace_id, name)) return error.NameTaken;
@@ -207,9 +227,9 @@ pub fn createSecret(
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column, for the
     // empty-slice-binds-as-NULL reason described above.
     db.exec(allocator,
-        \\INSERT INTO workspace_secrets (id, workspace_id, name, value, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    , &[_][]const u8{ secret_id, args.workspace_id, name, sealed }) catch |err| switch (err) {
+        \\INSERT INTO workspace_secrets (id, workspace_id, name, value, description, created_at, updated_at)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    , &[_][]const u8{ secret_id, args.workspace_id, name, sealed, description }) catch |err| switch (err) {
         error.ExecuteFailed => {
             // A failed INSERT is not automatically a taken name: it is also
             // what a same-nanosecond primary-key collision looks like.
@@ -272,6 +292,45 @@ pub fn updateSecret(
         \\SET value = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
         \\WHERE id = ? AND workspace_id = ?
     , &[_][]const u8{ sealed, args.secret_id, args.workspace_id }) catch
+        return error.UpdateFailed;
+
+    return getSecret(allocator, db, args.workspace_id, args.secret_id) catch
+        return error.UpdateFailed;
+}
+
+/// Write (or clear) a secret's description. `updated_at` is deliberately left
+/// alone: that column is the credential's rotation stamp, not the row's edit
+/// stamp, and `list_secrets` reports it to the model as "last rotated".
+pub fn setSecretDescription(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    args: SetSecretDescriptionArgs,
+) SecretsError!SecretRow {
+    if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
+    if (args.secret_id.len == 0) return error.IdsRequired;
+
+    // Trimmed first and validated at the edge, so the length the caller is
+    // told about is the length that would actually be stored.
+    const description = std.mem.trim(u8, args.description, " \t\n\r");
+    if (description.len > MAX_DESCRIPTION_LEN) return error.DescriptionTooLong;
+
+    // `db.exec` reports no row count, so existence is checked separately —
+    // and selecting only `id` keeps the credential out of this process.
+    var q = db.query(
+        allocator,
+        "SELECT id FROM workspace_secrets WHERE id = ? AND workspace_id = ?",
+        &[_][]const u8{ args.secret_id, args.workspace_id },
+    ) catch return error.QueryFailed;
+    defer q.deinit();
+    if (q.next() catch return error.QueryFailed) |r| {
+        r.deinit(allocator);
+    } else return error.NotFound;
+
+    db.exec(allocator,
+        \\UPDATE workspace_secrets
+        \\SET description = COALESCE(NULLIF(?, ''), '')
+        \\WHERE id = ? AND workspace_id = ?
+    , &[_][]const u8{ description, args.secret_id, args.workspace_id }) catch
         return error.UpdateFailed;
 
     return getSecret(allocator, db, args.workspace_id, args.secret_id) catch
@@ -455,6 +514,7 @@ pub fn freeSecretRow(allocator: std.mem.Allocator, row: SecretRow) void {
     allocator.free(row.id);
     allocator.free(row.workspace_id);
     allocator.free(row.name);
+    allocator.free(row.description);
     allocator.free(row.created_at);
     allocator.free(row.updated_at);
 }
@@ -517,6 +577,7 @@ fn setupDb() !TestCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
+        \\  description TEXT NOT NULL DEFAULT '',
         \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
@@ -1050,4 +1111,212 @@ test "a row sealed under a different key reports ValueUnreadable, not an empty v
     try testing.expectError(error.ValueUnreadable, revealSecret(alloc, &ctx.db, "ws_1", row.id));
     const names = [_][]const u8{"GH"};
     try testing.expectError(error.ValueUnreadable, loadSecretValues(alloc, &ctx.db, "ws_1", &names));
+}
+
+/// The description column straight from SQL, bypassing the store. A NULL
+/// reads back as `<null>` so a missing default cannot pass for an empty write.
+fn storedDescription(ctx: *TestCtx, id: []const u8) ![]u8 {
+    const alloc = testing.allocator;
+    var q = try ctx.db.query(
+        alloc,
+        "SELECT COALESCE(description, '<null>') FROM workspace_secrets WHERE id = ?",
+        &[_][]const u8{id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.SecretMissing;
+    defer row.deinit(alloc);
+    return alloc.dupe(u8, row.values[0]);
+}
+
+test "createSecret stores the description a human wrote, trimmed" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_1",
+        .description = "  Read-only GitHub token for the PR bot  ",
+    });
+    defer freeSecretRow(alloc, row);
+    try testing.expectEqualStrings("Read-only GitHub token for the PR bot", row.description);
+
+    // Read back through a different path than the one that wrote it.
+    const persisted = try storedDescription(&ctx, row.id);
+    defer alloc.free(persisted);
+    try testing.expectEqualStrings("Read-only GitHub token for the PR bot", persisted);
+
+    const rows = try listSecrets(alloc, &ctx.db, "ws_1");
+    defer freeSecretRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    try testing.expectEqualStrings("Read-only GitHub token for the PR bot", rows[0].description);
+}
+
+test "a secret created with no description reads back as an empty string, never NULL" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_1",
+    });
+    defer freeSecretRow(alloc, row);
+    try testing.expectEqualStrings("", row.description);
+
+    // An empty slice binds as SQL NULL, so without the store's COALESCE the
+    // column would be NULL and a reader would get a null where it declared
+    // a string.
+    const persisted = try storedDescription(&ctx, row.id);
+    defer alloc.free(persisted);
+    try testing.expectEqualStrings("", persisted);
+}
+
+test "a description longer than the cap is refused before it reaches the database" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    try testing.expectError(error.DescriptionTooLong, createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "v",
+        .description = "a" ** (MAX_DESCRIPTION_LEN + 1),
+    }));
+
+    const names = try listSecretNames(alloc, &ctx.db, "ws_1");
+    defer freeSecretNames(alloc, names);
+    try testing.expectEqual(@as(usize, 0), names.len);
+
+    // Exactly at the cap is legal, so the boundary is the cap and not one under it.
+    const at_cap = "b" ** MAX_DESCRIPTION_LEN;
+    const row = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "v",
+        .description = at_cap,
+    });
+    defer freeSecretRow(alloc, row);
+    try testing.expectEqualStrings(at_cap, row.description);
+}
+
+test "setSecretDescription edits the text and leaves the credential alone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const created = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_old",
+        .description = "placeholder",
+    });
+    defer freeSecretRow(alloc, created);
+
+    const described = try setSecretDescription(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = created.id,
+        .description = "Used by the release workflow",
+    });
+    defer freeSecretRow(alloc, described);
+
+    try testing.expectEqualStrings("Used by the release workflow", described.description);
+    // Describing is not renaming and not rotating.
+    try testing.expectEqualStrings("GH", described.name);
+    try testing.expectEqualStrings(created.id, described.id);
+
+    const kept = try openStored(&ctx, "GH");
+    defer alloc.free(kept);
+    try testing.expectEqualStrings("ghp_old", kept);
+}
+
+test "describing a secret does not move its rotation timestamp" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const created = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_1",
+    });
+    defer freeSecretRow(alloc, created);
+    try ctx.db.exec(
+        alloc,
+        "UPDATE workspace_secrets SET updated_at = '2000-01-01 00:00:00' WHERE id = ?",
+        &[_][]const u8{created.id},
+    );
+
+    const described = try setSecretDescription(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = created.id,
+        .description = "Reads the issue tracker",
+    });
+    defer freeSecretRow(alloc, described);
+
+    // `updated_at` is what `list_secrets` reports as "last rotated", so an
+    // edit to the prose must not make a stale credential look fresh.
+    try testing.expectEqualStrings("2000-01-01 00:00:00", described.updated_at);
+}
+
+test "clearing a description leaves an empty string, not a NULL" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const created = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_1",
+        .description = "temporary note",
+    });
+    defer freeSecretRow(alloc, created);
+
+    const cleared = try setSecretDescription(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = created.id,
+        .description = "   ",
+    });
+    defer freeSecretRow(alloc, cleared);
+    try testing.expectEqualStrings("", cleared.description);
+
+    const persisted = try storedDescription(&ctx, created.id);
+    defer alloc.free(persisted);
+    try testing.expectEqualStrings("", persisted);
+}
+
+test "setSecretDescription is scoped and validated, and a rejected write changes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+
+    const created = try createSecret(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .name = "GH",
+        .value = "ghp_1",
+        .description = "mine",
+    });
+    defer freeSecretRow(alloc, created);
+
+    try testing.expectError(error.NotFound, setSecretDescription(alloc, &ctx.db, .{
+        .workspace_id = "ws_2",
+        .secret_id = created.id,
+        .description = "stolen",
+    }));
+    try testing.expectError(error.DescriptionTooLong, setSecretDescription(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = created.id,
+        .description = "a" ** (MAX_DESCRIPTION_LEN + 1),
+    }));
+    try testing.expectError(error.IdsRequired, setSecretDescription(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = "",
+        .description = "x",
+    }));
+
+    const kept = try storedDescription(&ctx, created.id);
+    defer alloc.free(kept);
+    try testing.expectEqualStrings("mine", kept);
 }

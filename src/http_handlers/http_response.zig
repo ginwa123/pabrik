@@ -1357,6 +1357,7 @@ pub fn makeDocumentListResponse(allocator: std.mem.Allocator, documents: anytype
 pub const SecretResponse = struct {
     id: []const u8,
     name: []const u8,
+    description: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
 };
@@ -1368,6 +1369,7 @@ pub fn makeSecretResponse(secret: anytype) SecretResponse {
     return .{
         .id = secret.id,
         .name = secret.name,
+        .description = secret.description,
         .created_at = secret.created_at,
         .updated_at = secret.updated_at,
     };

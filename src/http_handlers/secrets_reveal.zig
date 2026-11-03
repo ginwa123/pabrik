@@ -209,6 +209,7 @@ fn setupDb() !TestCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
+        \\  description TEXT NOT NULL DEFAULT '',
         \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)

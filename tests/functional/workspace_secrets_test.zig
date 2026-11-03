@@ -221,9 +221,9 @@ fn listCount(h: *Harness, ws: []const u8) !i64 {
     };
 }
 
-/// `SecretResponse` is exactly {id, name, created_at, updated_at}.
+/// `SecretResponse` is exactly {description, id, name, created_at, updated_at}.
 fn assertWireShape(obj: std.json.ObjectMap, body: []const u8) !void {
-    const want = [_][]const u8{ "created_at", "id", "name", "updated_at" };
+    const want = [_][]const u8{ "created_at", "description", "id", "name", "updated_at" };
     if (obj.count() != want.len) {
         std.debug.print("unexpected SecretResponse key count {d}: {s}\n", .{ obj.count(), body });
         return error.TestUnexpectedResult;
@@ -234,9 +234,13 @@ fn assertWireShape(obj: std.json.ObjectMap, body: []const u8) !void {
             return error.TestUnexpectedResult;
         };
         switch (v) {
-            .string => |s| if (s.len == 0) {
-                std.debug.print("SecretResponse `{s}` is empty: {s}\n", .{ k, body });
-                return error.TestUnexpectedResult;
+            .string => |s| {
+                // An undescribed secret legitimately sends "". Every other key
+                // is an id or a timestamp, and those are never blank.
+                if (s.len == 0 and !std.mem.eql(u8, k, "description")) {
+                    std.debug.print("SecretResponse `{s}` is empty: {s}\n", .{ k, body });
+                    return error.TestUnexpectedResult;
+                }
             },
             else => {
                 std.debug.print("SecretResponse `{s}` is not a string: {s}\n", .{ k, body });
