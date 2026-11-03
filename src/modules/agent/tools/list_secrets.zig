@@ -1,5 +1,5 @@
 //! Agent-callable tool: `list_secrets` — the NAMES of the secrets stored in
-//! the calling session's workspace, and nothing else.
+//! the calling session's workspace, what each one is for, and nothing else.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -13,7 +13,11 @@ pub const list_secrets_tool_system_prompt =
     \\## List Secrets — discover the credential names in this workspace
     \\
     \\Call `list_secrets` with no arguments to learn which secret names this workspace stores.
-    \\It returns NAMES and rotation timestamps only, never the credential itself.
+    \\It returns NAMES, the description a human wrote for each, and rotation timestamps —
+    \\never the credential itself.
+    \\
+    \\Read the description before choosing a name: it is how the person who stored the
+    \\credential says what it is for, and two names can look equally plausible without it.
     \\
     \\Use a discovered name inside `{{SECRETS:NAME}}` in ANY tool parameter. The placeholder is
     \\replaced with the real credential immediately before the tool runs, and the value is
@@ -28,7 +32,7 @@ pub const list_secrets_tool = AgentTool{
     .function = .{
         .name = "list_secrets",
         .description =
-        \\List this workspace's secrets — Names only, never returned — with the timestamp each was last rotated. No parameters: the workspace is the calling session's. Call this before writing a {{SECRETS:NAME}} placeholder so you use a name that exists. Read-only, no side effects.
+        \\List this workspace's secrets — Names only, never returned — with what each one is for and the timestamp it was last rotated. No parameters: the workspace is the calling session's. Call this before writing a {{SECRETS:NAME}} placeholder so you use a name that exists, and read the description so you pick the right one. Read-only, no side effects.
         ,
         .parameters = .{
             .type = "object",
@@ -87,9 +91,11 @@ const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
-/// One disclosed secret.
+/// One disclosed secret. `description` is the human prose that says what the
+/// credential is for; it is empty when nobody wrote one.
 const SecretEntry = struct {
     name: []const u8,
+    description: []const u8,
     updated_at: []const u8,
 };
 
@@ -148,6 +154,7 @@ fn collectEntries(
     errdefer {
         for (out.items) |e| {
             allocator.free(e.name);
+            allocator.free(e.description);
             allocator.free(e.updated_at);
         }
         out.deinit(allocator);
@@ -160,6 +167,7 @@ fn collectEntries(
         if (!std.mem.eql(u8, names[i], row.name)) continue;
         try out.append(allocator, .{
             .name = try allocator.dupe(u8, row.name),
+            .description = try allocator.dupe(u8, row.description),
             .updated_at = try allocator.dupe(u8, row.updated_at),
         });
     }
@@ -169,6 +177,7 @@ fn collectEntries(
 fn freeSecretEntries(allocator: std.mem.Allocator, entries: []SecretEntry) void {
     for (entries) |e| {
         allocator.free(e.name);
+        allocator.free(e.description);
         allocator.free(e.updated_at);
     }
     allocator.free(entries);
@@ -226,6 +235,7 @@ fn setupDb() !TestCtx {
         \\  workspace_id TEXT NOT NULL,
         \\  name TEXT NOT NULL,
         \\  value TEXT NOT NULL,
+        \\  description TEXT NOT NULL DEFAULT '',
         \\  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \\  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         \\)
@@ -265,12 +275,23 @@ fn seedWorkspaces(alloc: std.mem.Allocator, ctx: *TestCtx) !void {
 }
 
 fn seedSecret(alloc: std.mem.Allocator, ctx: *TestCtx, workspace_id: []const u8, name: []const u8, value: []const u8) !void {
+    try seedDescribedSecret(alloc, ctx, workspace_id, name, value, "");
+}
+
+fn seedDescribedSecret(
+    alloc: std.mem.Allocator,
+    ctx: *TestCtx,
+    workspace_id: []const u8,
+    name: []const u8,
+    value: []const u8,
+    description: []const u8,
+) !void {
     const id = try std.fmt.allocPrint(alloc, "sec_{s}_{s}", .{ workspace_id, name });
     defer alloc.free(id);
     try ctx.db.exec(alloc,
-        \\INSERT INTO workspace_secrets (id, workspace_id, name, value, created_at, updated_at)
-        \\VALUES (?, ?, ?, ?, '2026-01-01 00:00:00', '2026-02-02 00:00:00')
-    , &[_][]const u8{ id, workspace_id, name, value });
+        \\INSERT INTO workspace_secrets (id, workspace_id, name, value, description, created_at, updated_at)
+        \\VALUES (?, ?, ?, ?, COALESCE(NULLIF(?, ''), ''), '2026-01-01 00:00:00', '2026-02-02 00:00:00')
+    , &[_][]const u8{ id, workspace_id, name, value, description });
 }
 
 fn testCtx(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
@@ -367,14 +388,45 @@ test "execListSecrets: the payload carries a rotation timestamp and never a stor
     // `updated_at` is what the brief asks for: enough to tell a stale
     // credential from a fresh one without disclosing anything.
     try exec_testing.expectEqualStrings("2026-02-02 00:00:00", entry.get("updated_at").?.string);
-    // Exactly two keys per entry — a `value` or a row `id` appearing here
+    // Exactly three keys per entry — a `value` or a row `id` appearing here
     // would be a leak even if it were masked.
-    try exec_testing.expectEqual(@as(usize, 2), entry.count());
+    try exec_testing.expectEqual(@as(usize, 3), entry.count());
 
     // The canary, and its distinctive tail, must appear nowhere.
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "ghp_Zqx7LEAKCANARY99") == null);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "LEAKCANARY") == null);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "99\"") == null);
+}
+
+test "execListSecrets: every name carries the description a human wrote for it" {
+    const alloc = exec_testing.allocator;
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    try seedWorkspaces(alloc, &ctx);
+
+    try seedDescribedSecret(alloc, &ctx, "ws_a", "GH_TOKEN", "ghp_a", "Read-only token for the PR bot");
+    try seedDescribedSecret(alloc, &ctx, "ws_a", "STRIPE_KEY", "sk_a", "");
+    try seedDescribedSecret(alloc, &ctx, "ws_b", "OTHER", "b_value", "belongs to the other workspace");
+
+    const result = try call(alloc, &ctx.db, "s_a", "{}");
+    defer if (result.output_allocated) alloc.free(result.output);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, alloc, result.output, .{});
+    defer parsed.deinit();
+    const items = parsed.value.object.get("data").?.object.get("secrets").?.array.items;
+    try exec_testing.expectEqual(@as(usize, 2), items.len);
+
+    try exec_testing.expectEqualStrings("GH_TOKEN", items[0].object.get("name").?.string);
+    try exec_testing.expectEqualStrings(
+        "Read-only token for the PR bot",
+        items[0].object.get("description").?.string,
+    );
+    // An undescribed secret still answers with a string, so the model never
+    // has to branch on a missing key.
+    try exec_testing.expectEqualStrings("", items[1].object.get("description").?.string);
+
+    // Descriptions are workspace-scoped like the names they belong to.
+    try exec_testing.expect(std.mem.indexOf(u8, result.output, "belongs to the other workspace") == null);
 }
 
 test "execListSecrets: a session with no workspace returns an empty list, never every workspace" {
@@ -459,4 +511,3 @@ test "execListSecrets: a disclosed name is one the names-only projection also re
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "fresh_value") == null);
     try exec_testing.expect(std.mem.indexOf(u8, result.output, "other_value") == null);
 }
-

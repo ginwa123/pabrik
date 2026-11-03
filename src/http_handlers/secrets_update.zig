@@ -9,12 +9,14 @@ const secrets_store = @import("../agentic_loop/secrets_store.zig");
 const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
 const gate = @import("workspace_members_gate.zig");
 
-/// PATCH body. Both fields default to `null` so an omitted field is
+/// PATCH body. Every field defaults to `null` so an omitted field is
 /// distinguishable from an explicit `""` — the latter is a real "send me an
 /// empty credential" request, and it is refused.
 const UpdateSecretBody = struct {
     name: ?[]const u8 = null,
     value: ?[]const u8 = null,
+    /// `null` keeps the stored text; `""` clears it.
+    description: ?[]const u8 = null,
 };
 
 pub const SecretsUpdateError = error{
@@ -22,6 +24,7 @@ pub const SecretsUpdateError = error{
     SecretIdRequired,
     InvalidName,
     ValueRequired,
+    DescriptionTooLong,
     NotFound,
     QueryFailed,
     UpdateFailed,
@@ -63,36 +66,54 @@ fn useCase(
         if (!std.mem.eql(u8, current.name, name)) return error.NotFound;
     }
 
-    // A PATCH with no value keeps the stored one, and the cheapest way to
-    // keep a credential is not to write it: no UPDATE means the row is
-    // returned as-is and `updated_at` does not advance either.
-    const value = input.body.value orelse return .{
-        .secret = try readRow(allocator, db, input.workspace_id, input.secret_id),
-    };
+    // The whole body is validated before the first write, so a body that
+    // cannot be stored never leaves the row half-applied.
+    if (input.body.value) |value| {
+        if (value.len == 0) return error.ValueRequired;
+    }
+    if (input.body.description) |description| {
+        if (std.mem.trim(u8, description, " \t\n\r").len > secrets_store.MAX_DESCRIPTION_LEN) {
+            return error.DescriptionTooLong;
+        }
+    }
 
-    const row = secrets_store.updateSecret(allocator, db, .{
-        .workspace_id = input.workspace_id,
-        .secret_id = input.secret_id,
-        .value = value,
-    }) catch |err| switch (err) {
-        error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
-        error.IdsRequired => return error.SecretIdRequired,
-        error.ValueRequired => return error.ValueRequired,
-        error.NotFound => return error.NotFound,
-        error.QueryFailed => return error.QueryFailed,
-        error.UpdateFailed => return error.UpdateFailed,
-        error.SealingUnavailable => return error.SealingUnavailable,
-        error.OutOfMemory => return error.OutOfMemory,
-        // The rest of the store's shared error set belongs to the create
-        // path, which this handler never calls.
-        error.NameRequired,
-        error.InvalidName,
-        error.NameTaken,
-        error.InsertFailed,
-        error.DeleteFailed,
-        => unreachable,
-    };
-    return .{ .secret = row };
+    if (input.body.value) |value| {
+        const rotated = secrets_store.updateSecret(allocator, db, .{
+            .workspace_id = input.workspace_id,
+            .secret_id = input.secret_id,
+            .value = value,
+        }) catch |err| switch (err) {
+            error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
+            error.IdsRequired => return error.SecretIdRequired,
+            error.ValueRequired => return error.ValueRequired,
+            error.NotFound => return error.NotFound,
+            error.QueryFailed => return error.QueryFailed,
+            error.UpdateFailed => return error.UpdateFailed,
+            error.SealingUnavailable => return error.SealingUnavailable,
+            error.OutOfMemory => return error.OutOfMemory,
+            // The rest of the store's shared error set belongs to the create
+            // and describe paths, which this call never reaches.
+            error.NameRequired,
+            error.InvalidName,
+            error.DescriptionTooLong,
+            error.NameTaken,
+            error.InsertFailed,
+            error.DeleteFailed,
+            => unreachable,
+        };
+        if (input.body.description) |description| {
+            secrets_store.freeSecretRow(allocator, rotated);
+            return .{ .secret = try describeRow(allocator, db, input.workspace_id, input.secret_id, description) };
+        }
+        return .{ .secret = rotated };
+    }
+
+    // Neither field present: the row is returned untouched, which is why
+    // `updated_at` does not advance either.
+    if (input.body.description) |description| {
+        return .{ .secret = try describeRow(allocator, db, input.workspace_id, input.secret_id, description) };
+    }
+    return .{ .secret = try readRow(allocator, db, input.workspace_id, input.secret_id) };
 }
 
 /// `secrets_store.getSecret` narrowed to this handler's error set. The read
@@ -113,9 +134,41 @@ fn readRow(
         error.NameRequired,
         error.ValueRequired,
         error.InvalidName,
+        error.DescriptionTooLong,
         error.NameTaken,
         error.InsertFailed,
         error.UpdateFailed,
+        error.DeleteFailed,
+        error.SealingUnavailable,
+        => unreachable,
+    };
+}
+
+/// `secrets_store.setSecretDescription` narrowed to this handler's error set.
+fn describeRow(
+    allocator: std.mem.Allocator,
+    db: *pabrikcore.database.Db,
+    workspace_id: []const u8,
+    secret_id: []const u8,
+    description: []const u8,
+) SecretsUpdateError!secrets_store.SecretRow {
+    return secrets_store.setSecretDescription(allocator, db, .{
+        .workspace_id = workspace_id,
+        .secret_id = secret_id,
+        .description = description,
+    }) catch |err| switch (err) {
+        error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
+        error.IdsRequired => return error.SecretIdRequired,
+        error.DescriptionTooLong => return error.DescriptionTooLong,
+        error.NotFound => return error.NotFound,
+        error.QueryFailed => return error.QueryFailed,
+        error.UpdateFailed => return error.UpdateFailed,
+        error.OutOfMemory => return error.OutOfMemory,
+        error.NameRequired,
+        error.ValueRequired,
+        error.InvalidName,
+        error.NameTaken,
+        error.InsertFailed,
         error.DeleteFailed,
         error.SealingUnavailable,
         => unreachable,
@@ -128,7 +181,12 @@ fn readRow(
 
 fn statusFor(err: SecretsUpdateError) u16 {
     return switch (err) {
-        error.WorkspaceIdRequired, error.SecretIdRequired, error.InvalidName, error.ValueRequired => 400,
+        error.WorkspaceIdRequired,
+        error.SecretIdRequired,
+        error.InvalidName,
+        error.ValueRequired,
+        error.DescriptionTooLong,
+        => 400,
         // 404, never 403: a 403 would confirm the id exists, which is the
         // one thing workspace scoping exists to withhold.
         error.NotFound => 404,
@@ -142,6 +200,7 @@ fn messageFor(err: SecretsUpdateError) []const u8 {
         error.SecretIdRequired => "secret_id required",
         error.InvalidName => "name must match [A-Za-z0-9_-]{1,64}",
         error.ValueRequired => "value is required",
+        error.DescriptionTooLong => "description is too long",
         error.NotFound => "secret not found",
         error.QueryFailed => "DB error",
         error.UpdateFailed => "DB error",
@@ -231,6 +290,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration103CreateWorkspaceSecrets.up(&db, testing.allocator);
+    try migration.Migration138AddWorkspaceSecretDescription.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value) VALUES
         \\  ('sec_a', 'ws_1', 'GITHUB_TOKEN', 'ghp_old_do_not_leak'),
@@ -379,6 +439,82 @@ test "useCase: a body with no value keeps the stored one, untouched" {
     try testing.expectEqualStrings("GITHUB_TOKEN", output.secret.name);
     try testing.expectEqualStrings("2000-01-01 00:00:00", output.secret.updated_at);
 
+    const kept = try storedValue(&ctx, "sec_a");
+    defer alloc.free(kept);
+    try testing.expectEqualStrings("ghp_old_do_not_leak", kept);
+}
+
+test "useCase: a description in the body is written without rotating the credential" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const output = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = "sec_a",
+        .body = .{ .description = "  Used by the release workflow  " },
+    });
+    defer secrets_store.freeSecretRow(alloc, output.secret);
+
+    try testing.expectEqualStrings("Used by the release workflow", output.secret.description);
+    try testing.expectEqualStrings("GITHUB_TOKEN", output.secret.name);
+    // Describing is not rotating: the stored value is untouched.
+    const kept = try storedValue(&ctx, "sec_a");
+    defer alloc.free(kept);
+    try testing.expectEqualStrings("ghp_old_do_not_leak", kept);
+
+    const json = try std.json.Stringify.valueAlloc(alloc, .{
+        .secret = http_response.makeSecretResponse(output.secret),
+    }, .{});
+    defer alloc.free(json);
+    try testing.expect(std.mem.indexOf(u8, json, "Used by the release workflow") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "ghp_old_do_not_leak") == null);
+}
+
+test "useCase: an empty description clears it rather than being ignored" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const seeded = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = "sec_a",
+        .body = .{ .description = "temporary note" },
+    });
+    secrets_store.freeSecretRow(alloc, seeded.secret);
+
+    const cleared = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .secret_id = "sec_a",
+        .body = .{ .description = "" },
+    });
+    defer secrets_store.freeSecretRow(alloc, cleared.secret);
+    try testing.expectEqualStrings("", cleared.secret.description);
+}
+
+test "useCase: a description over the cap is refused before the credential is replaced" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.DescriptionTooLong,
+        useCase(alloc, &ctx.db, .{
+            .workspace_id = "ws_1",
+            .secret_id = "sec_a",
+            .body = .{
+                .value = "ghp_never_applied",
+                .description = "a" ** (secrets_store.MAX_DESCRIPTION_LEN + 1),
+            },
+        }),
+    );
+    try testing.expectEqual(@as(u16, 400), statusFor(error.DescriptionTooLong));
+    try testing.expectEqualStrings("description is too long", messageFor(error.DescriptionTooLong));
+
+    // The whole body was refused, so the rotation in it did not happen either.
     const kept = try storedValue(&ctx, "sec_a");
     defer alloc.free(kept);
     try testing.expectEqualStrings("ghp_old_do_not_leak", kept);

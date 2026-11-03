@@ -37,6 +37,7 @@ const SECRET_VALUE = 'sk-live-DO-NOT-LEAK-4242'
 const baseSecret: Secret = {
   id: 'sec_1',
   name: 'STRIPE_API_KEY',
+  description: '',
   created_at: '2026-10-02T10:00:00Z',
   updated_at: '2026-10-02T11:00:00Z',
 }
@@ -188,10 +189,14 @@ describe('SecretsSection', () => {
     const wrapper = mountSection({ secrets: [] })
     await wrapper.find('[data-testid="name-input"]').setValue('STRIPE_API_KEY')
     await wrapper.find('[data-testid="value-input"]').setValue(SECRET_VALUE)
+    await wrapper.find('[data-testid="description-input"]').setValue('Charges subscriptions')
     await wrapper.find('[data-testid="add-btn"]').trigger('click')
 
     expect((wrapper.find('[data-testid="value-input"]').element as HTMLInputElement).value).toBe('')
     expect((wrapper.find('[data-testid="name-input"]').element as HTMLInputElement).value).toBe('')
+    expect(
+      (wrapper.find('[data-testid="description-input"]').element as HTMLInputElement).value,
+    ).toBe('')
     wrapper.unmount()
   })
 
@@ -221,13 +226,83 @@ describe('SecretsSection', () => {
     wrapper.unmount()
   })
 
-  it('emits add with the typed name and value', async () => {
+  it('emits add with the typed name, value and description', async () => {
     const wrapper = mountSection({ secrets: [] })
     await wrapper.find('[data-testid="name-input"]').setValue('STRIPE_API_KEY')
     await wrapper.find('[data-testid="value-input"]').setValue(SECRET_VALUE)
+    await wrapper.find('[data-testid="description-input"]').setValue('  Charges subscriptions  ')
     await wrapper.find('[data-testid="add-btn"]').trigger('click')
 
-    expect(wrapper.emitted('add')?.[0]).toEqual([{ name: 'STRIPE_API_KEY', value: SECRET_VALUE }])
+    // Trimmed: the agent reads this text, so stray padding is noise in its prompt.
+    expect(wrapper.emitted('add')?.[0]).toEqual([
+      { name: 'STRIPE_API_KEY', value: SECRET_VALUE, description: 'Charges subscriptions' },
+    ])
+    wrapper.unmount()
+  })
+
+  it('emits add with an empty description when the optional field is left alone', async () => {
+    const wrapper = mountSection({ secrets: [] })
+    await wrapper.find('[data-testid="name-input"]').setValue('GITHUB_TOKEN')
+    await wrapper.find('[data-testid="value-input"]').setValue(SECRET_VALUE)
+    await wrapper.find('[data-testid="add-btn"]').trigger('click')
+
+    expect(wrapper.emitted('add')?.[0]).toEqual([
+      { name: 'GITHUB_TOKEN', value: SECRET_VALUE, description: '' },
+    ])
+    wrapper.unmount()
+  })
+
+  it('shows what each secret is for, and invites a description when there is none', () => {
+    const wrapper = mountSection({
+      secrets: [
+        { ...baseSecret, description: 'Read-only token for the PR bot' },
+        { ...baseSecret, id: 'sec_2', name: 'PLAIN', description: '' },
+      ],
+    })
+    const rows = wrapper.findAll('[data-testid="secret-row"]')
+    expect(rows[0]?.find('[data-testid="secret-description"]').text()).toBe(
+      'Read-only token for the PR bot',
+    )
+    // An undescribed secret asks for one instead of rendering a blank line.
+    expect(rows[1]?.find('[data-testid="secret-description"]').text()).toContain(
+      'Add a description',
+    )
+    // ...and it still carries its own timestamps.
+    expect(rows[1]?.find('[data-testid="secret-updated-at"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('edits a description inline and emits only the id and the text', async () => {
+    const wrapper = mountSection({ secrets: [{ ...baseSecret, description: 'old text' }] })
+
+    await wrapper.find('[data-testid="secret-description"]').trigger('click')
+    await flushPromises()
+    const input = wrapper.find('[data-testid="description-edit-input"]')
+    expect(input.exists()).toBe(true)
+    // The editor opens on the stored text rather than an empty field.
+    expect((input.element as HTMLInputElement).value).toBe('old text')
+
+    await input.setValue('  charges subscriptions  ')
+    await wrapper.find('[data-testid="description-save-btn"]').trigger('click')
+
+    // No value in the payload: describing a secret must not rotate it.
+    expect(wrapper.emitted('describe')?.[0]).toEqual([
+      { id: 'sec_1', description: 'charges subscriptions' },
+    ])
+    expect(wrapper.find('[data-testid="description-edit-input"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('cancelling a description edit emits nothing and restores the row', async () => {
+    const wrapper = mountSection({ secrets: [{ ...baseSecret, description: 'kept' }] })
+
+    await wrapper.find('[data-testid="secret-description"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="description-edit-input"]').setValue('discarded')
+    await wrapper.find('[data-testid="description-cancel-btn"]').trigger('click')
+
+    expect(wrapper.emitted('describe')).toBeUndefined()
+    expect(wrapper.find('[data-testid="secret-description"]').text()).toBe('kept')
     wrapper.unmount()
   })
 

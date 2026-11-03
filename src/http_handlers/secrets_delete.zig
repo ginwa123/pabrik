@@ -43,6 +43,7 @@ fn useCase(
         error.NameRequired,
         error.ValueRequired,
         error.InvalidName,
+        error.DescriptionTooLong,
         error.NameTaken,
         error.QueryFailed,
         error.InsertFailed,
@@ -135,6 +136,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration103CreateWorkspaceSecrets.up(&db, testing.allocator);
+    try migration.Migration138AddWorkspaceSecretDescription.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_secrets (id, workspace_id, name, value) VALUES
         \\  ('sec_a', 'ws_1', 'GITHUB_TOKEN', 'ghp_a_do_not_leak'),

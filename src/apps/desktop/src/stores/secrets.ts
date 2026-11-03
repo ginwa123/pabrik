@@ -94,12 +94,13 @@ export const useSecretsStore = defineStore('secrets', () => {
     workspaceId: string,
     name: string,
     value: string,
+    description = '',
   ): Promise<Secret | null> {
     if (!workspaceId) return null
     saving.value = true
     error.value = null
     const result = await runRequest(
-      request('create', () => api.createSecret(workspaceId, name, value)),
+      request('create', () => api.createSecret(workspaceId, name, value, description)),
       'create',
     )
     saving.value = false
@@ -152,6 +153,31 @@ export const useSecretsStore = defineStore('secrets', () => {
     error.value = null
     const result = await runRequest(
       request('update', () => api.updateSecret(workspaceId, secretId, { value })),
+      'update',
+    )
+    saving.value = false
+    if (!result.ok) {
+      error.value = result.reason
+      return null
+    }
+    secrets.value = secrets.value.map((s) =>
+      s.id === result.value.secret.id ? result.value.secret : s,
+    )
+    return result.value.secret
+  }
+
+  /** Write or clear a secret's description. Only the prose is sent: describing a secret never
+   * re-supplies the credential and never rotates it. */
+  async function describeSecret(
+    workspaceId: string,
+    secretId: string,
+    description: string,
+  ): Promise<Secret | null> {
+    if (!workspaceId) return null
+    saving.value = true
+    error.value = null
+    const result = await runRequest(
+      request('update', () => api.updateSecret(workspaceId, secretId, { description })),
       'update',
     )
     saving.value = false
@@ -238,6 +264,7 @@ export const useSecretsStore = defineStore('secrets', () => {
     fetchSecrets,
     createSecret,
     renameSecret,
+    describeSecret,
     rotateSecret,
     deleteSecret,
     revealSecret,

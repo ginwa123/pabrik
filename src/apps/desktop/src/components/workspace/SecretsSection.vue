@@ -7,6 +7,7 @@ import type { Secret } from '../../api'
 import EmptyState from '../pabrik/EmptyState.vue'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import RotateSecretDialog from './RotateSecretDialog.vue'
+import SecretDescriptionField from './SecretDescriptionField.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -27,7 +28,9 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   /** New secret. The value is forwarded to the API and forgotten. */
-  add: [payload: { name: string; value: string }]
+  add: [payload: { name: string; value: string; description: string }]
+  /** Write or clear what this credential is for. Never touches the value. */
+  describe: [payload: { id: string; description: string }]
   /** Rotate in place: same id, brand-new credential. */
   rotate: [payload: { id: string; name: string; value: string }]
   /** Delete by NAME — the label the user sees, so the confirm reads right. */
@@ -39,8 +42,13 @@ const emit = defineEmits<{
   retry: []
 }>()
 
+/** Mirrors the server's cap, so an over-long description is stopped at the field instead of
+ * costing a round trip to be refused. */
+const MAX_DESCRIPTION_LEN = 500
+
 const nameInput = ref('')
 const valueInput = ref('')
+const descriptionInput = ref('')
 const addError = ref<string | null>(null)
 
 const rotateTarget = ref<Secret | null>(null)
@@ -58,12 +66,17 @@ function handleAdd(): void {
     return
   }
   addError.value = null
-  emit('add', { name, value })
+  emit('add', { name, value, description: descriptionInput.value.trim() })
   // Clear BEFORE the await — the caller may take a moment to answer, and a
   // credential sitting in a ref in the meantime is a credential sitting in
   // a ref. Nothing else reads these once the payload has been emitted.
   nameInput.value = ''
   valueInput.value = ''
+  descriptionInput.value = ''
+}
+
+function handleDescribeSave(payload: { id: string; description: string }): void {
+  emit('describe', payload)
 }
 
 function openRotate(secret: Secret): void {
@@ -128,7 +141,8 @@ function focusAddName(): void {
     <p class="text-dense leading-relaxed max-w-2xl" style="color: var(--semantic-text-muted)">
       Named credentials the agent's tools can substitute into requests made for this workspace.
       Values are encrypted on disk and never leave the server in a list; Reveal asks for one value
-      on demand, and only a member of this workspace can do that. Rotating a secret replaces it.
+      on demand, only a member of this workspace can do that, and rotating one replaces it.
+      Describe one and the agent reads that text — it is how it tells two similar keys apart.
     </p>
 
     <!-- Failure is NOT an empty list. This block is why the two look different. -->
@@ -224,6 +238,30 @@ function focusAddName(): void {
           + Add secret
         </button>
       </div>
+      <div>
+        <label
+          class="text-dense block mb-1"
+          style="color: var(--semantic-text-muted)"
+          for="secret-description"
+        >
+          Description <span style="color: var(--semantic-text-dim)">(optional, agent reads it)</span>
+        </label>
+        <input
+          id="secret-description"
+          v-model="descriptionInput"
+          data-testid="description-input"
+          type="text"
+          autocomplete="off"
+          :maxlength="MAX_DESCRIPTION_LEN"
+          placeholder="What is this credential for? e.g. Read-only GitHub token for the PR bot"
+          class="w-full px-3 h-8 rounded-md text-dense"
+          style="
+            background-color: var(--semantic-bg);
+            color: var(--semantic-text);
+            border: 1px solid var(--color-border);
+          "
+        />
+      </div>
       <p v-if="addError" data-testid="add-error" class="text-dense" style="color: var(--color-red)">
         {{ addError }}
       </p>
@@ -269,6 +307,12 @@ function focusAddName(): void {
                 >Configured</span
               >
             </div>
+            <SecretDescriptionField
+              :secret-id="secret.id"
+              :name="secret.name"
+              :description="secret.description"
+              @save="handleDescribeSave"
+            />
             <div
               data-testid="secret-updated-at"
               class="text-dense mt-0.5"

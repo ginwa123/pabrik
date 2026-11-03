@@ -150,6 +150,7 @@ const migration_133 = @import("migration_133.zig");
 const migration_134 = @import("migration_134.zig");
 const migration_135 = @import("migration_135.zig");
 const migration_136 = @import("migration_136.zig");
+const migration_138 = @import("migration_138.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -289,6 +290,7 @@ pub const Migration133BackfillSessionPlan = migration_133.Migration133BackfillSe
 pub const Migration134ContractSessionPlan = migration_134.Migration134ContractSessionPlan;
 pub const Migration135DropUnusedRbacTables = migration_135.Migration135DropUnusedRbacTables;
 pub const Migration136EnforceForeignKeys = migration_136.Migration136EnforceForeignKeys;
+pub const Migration138AddWorkspaceSecretDescription = migration_138.Migration138AddWorkspaceSecretDescription;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -546,6 +548,8 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration135DropUnusedRbacTables.version, .name = Migration135DropUnusedRbacTables.name, .up = Migration135DropUnusedRbacTables.up },
     // Migration 136 — postgres gets the foreign keys its DDL could not declare.
     .{ .version = Migration137ExpandKanbanOntoTasks.version, .name = Migration137ExpandKanbanOntoTasks.name, .up = Migration137ExpandKanbanOntoTasks.up },
+    // Migration 138 — `workspace_secrets` learns what a credential is for.
+    .{ .version = Migration138AddWorkspaceSecretDescription.version, .name = Migration138AddWorkspaceSecretDescription.name, .up = Migration138AddWorkspaceSecretDescription.up },
 };
 
 /// Register all migrations with a MigrationManager

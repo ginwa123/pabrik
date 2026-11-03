@@ -11,11 +11,13 @@ const secrets_store = @import("../agentic_loop/secrets_store.zig");
 const gate = @import("workspace_members_gate.zig");
 const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
 
-/// Request body. Both fields default to "" so an empty body parses and is
+/// Request body. Every field defaults to "" so an empty body parses and is
 /// then refused by validation rather than answering "Invalid JSON body".
 const CreateSecretBody = struct {
     name: []const u8 = "",
     value: []const u8 = "",
+    /// Optional prose for the agent: what this credential is for.
+    description: []const u8 = "",
 };
 
 pub const SecretsCreateError = error{
@@ -23,6 +25,7 @@ pub const SecretsCreateError = error{
     NameRequired,
     InvalidName,
     ValueRequired,
+    DescriptionTooLong,
     NameTaken,
     InsertFailed,
     /// No master key on this host: the value cannot be sealed, so nothing is
@@ -54,11 +57,13 @@ fn useCase(
         .workspace_id = input.workspace_id,
         .name = input.body.name,
         .value = input.body.value,
+        .description = input.body.description,
     }) catch |err| switch (err) {
         error.WorkspaceIdRequired => return error.WorkspaceIdRequired,
         error.NameRequired => return error.NameRequired,
         error.InvalidName => return error.InvalidName,
         error.ValueRequired => return error.ValueRequired,
+        error.DescriptionTooLong => return error.DescriptionTooLong,
         error.NameTaken => return error.NameTaken,
         error.InsertFailed => return error.InsertFailed,
         error.SealingUnavailable => return error.SealingUnavailable,
@@ -81,7 +86,12 @@ fn useCase(
 
 fn statusFor(err: SecretsCreateError) u16 {
     return switch (err) {
-        error.WorkspaceIdRequired, error.NameRequired, error.InvalidName, error.ValueRequired => 400,
+        error.WorkspaceIdRequired,
+        error.NameRequired,
+        error.InvalidName,
+        error.ValueRequired,
+        error.DescriptionTooLong,
+        => 400,
         error.NameTaken => 409,
         error.SealingUnavailable, error.InsertFailed, error.OutOfMemory => 500,
     };
@@ -99,6 +109,7 @@ fn messageFor(
         error.NameRequired => "name is required",
         error.InvalidName => "name must match [A-Za-z0-9_-]{1,64}",
         error.ValueRequired => "value is required",
+        error.DescriptionTooLong => "description is too long",
         // The key name is not itself a secret — it is what the model types
         // into a placeholder — so echoing it here discloses nothing.
         error.NameTaken => try std.fmt.allocPrint(
@@ -194,6 +205,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, io);
 
     try migration.Migration103CreateWorkspaceSecrets.up(&db, testing.allocator);
+    try migration.Migration138AddWorkspaceSecretDescription.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -256,6 +268,59 @@ test "useCase: creates a secret and stamps both timestamps" {
     try testing.expect(output.secret.id.len > 0);
     try testing.expect(output.secret.created_at.len > 0);
     try testing.expect(output.secret.updated_at.len > 0);
+}
+
+test "useCase: a description in the body is stored and travels back in the response" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const output = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .body = .{
+            .name = "STRIPE_KEY",
+            .value = "sk_live_do_not_leak",
+            .description = "  Charges subscriptions; test-mode key  ",
+        },
+    });
+    defer secrets_store.freeSecretRow(alloc, output.secret);
+    try testing.expectEqualStrings("Charges subscriptions; test-mode key", output.secret.description);
+
+    // ...and the wire shape carries it, so the Settings page can render it.
+    const json = try std.json.Stringify.valueAlloc(alloc, .{
+        .secret = http_response.makeSecretResponse(output.secret),
+    }, .{});
+    defer alloc.free(json);
+    try testing.expect(std.mem.indexOf(u8, json, "Charges subscriptions; test-mode key") != null);
+    // Describing a secret never discloses it.
+    try testing.expect(std.mem.indexOf(u8, json, "sk_live_do_not_leak") == null);
+}
+
+test "useCase: a description over the cap is a 400 and writes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.DescriptionTooLong,
+        useCase(alloc, &ctx.db, .{
+            .workspace_id = "ws_1",
+            .body = .{
+                .name = "GITHUB_TOKEN",
+                .value = "ghp_x",
+                .description = "a" ** (secrets_store.MAX_DESCRIPTION_LEN + 1),
+            },
+        }),
+    );
+    try testing.expectEqual(@as(u16, 400), statusFor(error.DescriptionTooLong));
+    try testing.expectEqualStrings("description is too long", messageFor(
+        error.DescriptionTooLong,
+        alloc,
+        "GITHUB_TOKEN",
+    ) catch @panic("allocPrint failed for the secrets_create message fixture"));
+    try testing.expectEqual(@as(usize, 0), try countRows(&ctx));
 }
 
 test "useCase: the created response carries no value" {
