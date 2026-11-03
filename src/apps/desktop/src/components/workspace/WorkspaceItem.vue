@@ -124,10 +124,10 @@ const handleClick = (event?: MouseEvent) => {
   if (props.item.item_type !== 'design' && props.item.item_type !== 'kanban') {
     workspacesStore.toggleExpandedItem(props.item.id)
   }
-  // Agent and routine items never navigate on plain left-click: their main view IS the config
-  // surface (Agent: Tools / System Prompt / Knowledge; Routine: description / instruction /
-  // schedule), so a click would yank the user into a settings-looking page.
-  if (props.item.item_type === 'agent' || props.item.item_type === 'routine') return
+  // Agent items never navigate on plain left-click — their main view is the
+  // AgentView config surface. A routine item's main view IS its RoutineView,
+  // so it navigates like any other project.
+  if (props.item.item_type === 'agent') return
   // Always emit click for external handling (e.g., navigation to
   // the kanban board via activeWorkspaceItemId).
   emit('click', props.item)
