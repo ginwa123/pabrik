@@ -367,14 +367,11 @@ test "saas mode refuses a hinted run on a host repository instead of reading it"
     runtime_mode.setCurrent(.saas);
     defer runtime_mode.setCurrent(.local);
 
-    // Naming a workspace never makes the host's copy reachable: with no
-    // workspace DB the hinted route still fails closed.
-    const expected: anyerror = if (runtime_mode.vm_backend_available)
-        error.GuestWorkspaceUnknown
-    else
-        error.GuestManagerUnavailable;
+    // Naming a workspace never makes the host's copy reachable: a unit test has
+    // no workspace DB, and the hint arm answers that before any backend
+    // question, so the refusal is the same on every platform.
     const opts = Options{ .workspace_id = "ws_1785055733544_28e79c9db8950100" };
-    try testing.expectError(expected, run(allocator, testing.io, repo.abs, &.{ "rev-parse", "--is-inside-work-tree" }, opts));
+    try testing.expectError(error.GuestWorkspaceUnknown, run(allocator, testing.io, repo.abs, &.{ "rev-parse", "--is-inside-work-tree" }, opts));
 }
 
 test "repeated runs cost no descriptors" {
