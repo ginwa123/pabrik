@@ -1117,10 +1117,10 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 .logger = logger,
                 .event_bus = event_bus,
                 .is_emit_sse = true,
-                // Hard-bail diagnostic should surface in the live chat stream
-                // but NOT pollute the persistent chat history — the workflow
-                // halts immediately after this call so the diagnostic is
-                .is_skip_db = true,
+                // Persisted: this is the ONLY record of a run that died, and an
+                // unattended routine has nobody watching the live stream. It
+                // stays out of the model's context (is_feed_to_llm=false).
+                .is_skip_db = false,
                 // Frontend AgentErrorCard routing (task_1787663566535_2).
                 .is_error = true,
                 .cwd = copy_cwd,

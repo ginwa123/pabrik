@@ -172,6 +172,11 @@ fn runFire(
     defer di.allocator.free(iurls);
     defer di.allocator.free(spm);
 
+    // The turn's start. A fire that cannot reach a model still writes its own
+    // prompt row, so "no assistant row since here" is the only signal that the
+    // run died — and the routine must not call that a success.
+    const started_nano: i128 = @intCast(std.Io.Timestamp.now(di.io, .real).nanoseconds);
+
     di.event_bus.emit(ai_workflow.RunParamsNew, "ai_worker_flow", .{
         .parent_session_id = sid,
         .session_id = sid,
@@ -184,11 +189,49 @@ fn runFire(
         .selected_profile_model = spm,
     });
 
-    markRunFinished(di.allocator, di.db, sid, @intCast(std.Io.Timestamp.now(di.io, .real).nanoseconds)) catch |err| {
+    const now_nano: i128 = @intCast(std.Io.Timestamp.now(di.io, .real).nanoseconds);
+    const replied = turnProducedReply(di.allocator, di.db, sid, started_nano) catch |err| blk: {
+        if (pabrikcore.loggermod.getGlobal()) |logger| {
+            logger.warnFmt("routine fire: cannot read the run outcome for {s}: {s}", .{ sid, @errorName(err) });
+        }
+        break :blk true; // unreadable is not proof of failure — keep today's behaviour
+    };
+
+    const recorded = if (replied)
+        markRunFinished(di.allocator, di.db, sid, now_nano)
+    else
+        markRunFailed(di.allocator, di.db, sid, now_nano, noReplyError);
+    recorded catch |err| {
         if (pabrikcore.loggermod.getGlobal()) |logger| {
             logger.warnFmt("routine fire: could not record the run outcome for {s}: {s}", .{ sid, @errorName(err) });
         }
     };
+}
+
+/// What the routine shows when a fire reached no model. The session's own
+/// error card carries the server's reason; this says where to look.
+pub const noReplyError = "the run produced no reply — check 'Which agent runs it' and the error card in the run's chat";
+
+/// Did the turn this fire just ran land an assistant message? `created_at_nano`
+/// is a BIGINT, so the bound timestamp is CAST rather than compared as text.
+fn turnProducedReply(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    session_id: []const u8,
+    since_unix_nanos: i128,
+) !bool {
+    const since = try std.fmt.allocPrint(allocator, "{d}", .{since_unix_nanos});
+    defer allocator.free(since);
+    var q = try db.query(allocator,
+        \\SELECT 1 FROM llm_history
+        \\WHERE session_id = ? AND role = 'assistant'
+        \\  AND created_at_nano >= CAST(? AS INTEGER)
+        \\LIMIT 1
+    , &.{ session_id, since });
+    defer q.deinit();
+    const hit = try q.next();
+    if (hit) |row| row.deinit(allocator);
+    return hit != null;
 }
 
 pub fn markRunFinished(
@@ -216,6 +259,40 @@ pub fn markRunFinished(
     }
 
     try model.markSuccess(allocator, db, routine_id, next_sqlite);
+}
+
+/// The mirror of `markRunFinished` for a fire whose turn produced nothing:
+/// `failed` + `last_error`, with the next scheduled fire still booked (the
+/// schedule must not stall because one run died) and `last_run_at` moved.
+pub fn markRunFailed(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    routine_id: []const u8,
+    now_unix_nanos: i128,
+    last_error: []const u8,
+) !void {
+    const routine = model.loadWorkspaceRoutineById(allocator, db, routine_id) catch |err| switch (err) {
+        error.RoutineNotFound => return,
+        else => return err,
+    };
+    defer routine.deinit(allocator);
+
+    var next_sqlite: []const u8 = "";
+    var next_sqlite_owned: ?[]u8 = null;
+    defer if (next_sqlite_owned) |b| allocator.free(b);
+    if (routine.enabled and routine.schedule.len > 0) {
+        const next_ns = cron.nextFireTime(routine.schedule, now_unix_nanos) catch {
+            next_sqlite = "";
+            return model.markFailed(allocator, db, routine_id, last_error, next_sqlite);
+        };
+        next_sqlite_owned = try formatSqliteDatetime(allocator, next_ns);
+        next_sqlite = next_sqlite_owned.?;
+    }
+
+    try model.markFailed(allocator, db, routine_id, last_error, next_sqlite);
+    // `markFailed` leaves `last_run_at` alone (an invalid cron never ran);
+    // this fire DID run, so the page's "last ran …" must move.
+    _ = try db.exec(allocator, "UPDATE workspace_routines SET last_run_at = datetime('now') WHERE id = ?", &.{routine_id});
 }
 
 pub fn formatRoutineMessage(
@@ -307,6 +384,16 @@ fn setupDb() !struct {
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
     try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
+    // Only the columns `turnProducedReply` reads.
+    try db.exec(alloc,
+        \\CREATE TABLE llm_history (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT NOT NULL,
+        \\    role TEXT NOT NULL,
+        \\    response_content TEXT,
+        \\    created_at_nano BIGINT NOT NULL
+        \\)
+    , &.{});
 
     return .{ .db = db, .threaded = threaded };
 }
@@ -676,4 +763,101 @@ test "a later fire bumps updated_at and keeps the name the session already has" 
     try testing.expectEqualStrings("renamed by hand", name);
     try testing.expect(!std.mem.eql(u8, updated, "2000-01-01 00:00:00"));
     try testing.expectEqualStrings("ws1", wid);
+}
+
+// ─── The run's outcome: a dead turn must not read as success ───────────────
+
+fn insertHistoryRow(
+    db: *database.Db,
+    alloc: std.mem.Allocator,
+    id: []const u8,
+    session_id: []const u8,
+    role: []const u8,
+    created_at_nano: i128,
+) !void {
+    const stamp = try std.fmt.allocPrint(alloc, "{d}", .{created_at_nano});
+    defer alloc.free(stamp);
+    try db.exec(alloc, "INSERT INTO llm_history (id, session_id, role, response_content, created_at_nano) VALUES (?, ?, ?, 'x', CAST(? AS INTEGER))", &.{ id, session_id, role, stamp });
+}
+
+test "a turn that wrote only its own prompt did not reply" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    // Exactly the shape a fire that cannot reach a model leaves behind.
+    try insertHistoryRow(&ctx.db, alloc, "h1", "item_1", "user", 1_000);
+
+    try testing.expect(!try turnProducedReply(alloc, &ctx.db, "item_1", 999));
+    try testing.expect(!try turnProducedReply(alloc, &ctx.db, "item_1", 1_000));
+}
+
+test "a turn that landed an assistant message replied" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertHistoryRow(&ctx.db, alloc, "h0", "item_1", "assistant", 500); // an earlier fire
+    try insertHistoryRow(&ctx.db, alloc, "h1", "item_1", "user", 1_000);
+    try insertHistoryRow(&ctx.db, alloc, "h2", "item_1", "assistant", 1_100);
+
+    // Replies older than the fire's own start do not count for this fire.
+    try testing.expect(!try turnProducedReply(alloc, &ctx.db, "item_1", 1_200));
+    try testing.expect(try turnProducedReply(alloc, &ctx.db, "item_1", 1_000));
+}
+
+test "markRunFailed records the failure, keeps the schedule, and moves last_run_at" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "0 9 * * *",
+        .enabled = true,
+        .next_run_at = "2025-06-13 09:00:00",
+    });
+    _ = try model.claimForRun(alloc, &ctx.db, "item_1");
+
+    try markRunFailed(alloc, &ctx.db, "item_1", 1749808800 * std.time.ns_per_s, noReplyError);
+
+    var loaded = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+
+    try testing.expectEqual(model.RoutineRunStatus.failed, loaded.last_status);
+    try testing.expectEqualStrings(noReplyError, loaded.last_error.?);
+    try testing.expectEqualStrings("2025-06-14 09:00:00", loaded.next_run_at.?);
+    try testing.expect(loaded.last_run_at != null);
+}
+
+test "markRunFailed on a manual-only routine leaves no next fire" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "",
+        .enabled = true,
+        .next_run_at = null,
+    });
+    _ = try model.claimForRun(alloc, &ctx.db, "item_1");
+
+    try markRunFailed(alloc, &ctx.db, "item_1", 1749808800 * std.time.ns_per_s, noReplyError);
+
+    var loaded = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+
+    try testing.expectEqual(model.RoutineRunStatus.failed, loaded.last_status);
+    try testing.expect(loaded.next_run_at == null);
 }
