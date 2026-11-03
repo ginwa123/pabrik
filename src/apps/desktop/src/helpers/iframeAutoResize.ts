@@ -35,9 +35,11 @@ export function growFrameToContent(height: number, min: number = MIN_FRAME_HEIGH
   return Math.max(min, height)
 }
 
-/** CSS snippet injected into every HTML srcdoc shell so the frame document itself never shows
- * scrollbars. */
+/** CSS shell for every content frame: no page-level scrollbars, and the frame's own viewport is
+ * never an input to its layout — `height:100%` resolves against the CONTENT, so a percentage-height
+ * document reports its real height instead of echoing the frame the parent is about to size. */
 export const FRAME_NO_SCROLLBAR_STYLE =
+  'html{height:auto!important}' +
   'html,body{overflow:hidden!important;scrollbar-width:none!important}' +
   'html::-webkit-scrollbar,body::-webkit-scrollbar{display:none!important}'
 
@@ -89,9 +91,9 @@ export function findSenderFrame(
   return null
 }
 
-/** Build the reporter script for a frame's srcdoc. Injected into the srcdoc document itself, so it
- * runs at parse time inside the sandbox, reporting on load / resize / mutation / resize-observer —
- * so the frame also SHRINKS when a scripted document collapses (a tab switch, a folded section). */
+/** Build the reporter script injected into a frame's srcdoc: reports on load / resize / mutation so
+ * the frame also SHRINKS. It measures the BODY content box only — `documentElement.scrollHeight` is
+ * floored by the frame's own height, so max-ing it in made every report resize its own input. */
 export function autoResizeScript(source: string): string {
   return (
     `<script>(function(){
@@ -108,10 +110,7 @@ function measure(){
     );
     w = Math.max(body.scrollWidth, body.offsetWidth);
   }
-  if (de) {
-    if (de.scrollHeight > window.innerHeight) h = Math.max(h, de.scrollHeight);
-    w = Math.max(w, de.scrollWidth);
-  }
+  if (de) w = Math.max(w, de.scrollWidth);
   if (h <= 0) h = de ? de.offsetHeight : 0;
   return { height: h, width: w };
 }

@@ -255,3 +255,167 @@ def test_unclosed_html_tag_degrades_safely(ui_harness: UIHarness, page) -> None:
     )
     # No uncaught page errors from the render path.
     assert not errors, f"page errors during unclosed-tag render: {errors}"
+
+
+# ─── Frame height: the report must describe the CONTENT, not the viewport ───
+#
+# 2026-11-03 (task_1793689343828): a long `<html>` report rendered as a ~150px
+# slab — the transcript showed the card's heading and the first lines of its
+# columns, and the rest was unreachable: the frame has no scrollbar (by design,
+# #574) and no expand affordance. Two payload shapes triggered it, both because
+# the frame's own viewport leaked into the height it reports about itself:
+#
+#   * percentage heights (`html,body{height:100%}` + a `flex:1;overflow:hidden`
+#     grid) resolve AGAINST the frame, so every document metric equalled the
+#     frame's current height and the report described the viewport, not the
+#     content — a self-consistent 120px frame over ~600px of content.
+#   * `min-height:100vh` grows with the frame, so each report raised the frame,
+#     which raised the report: a ratchet that reached 16k px and was still
+#     climbing when the tab closed.
+#
+# The fix makes the report the body's CONTENT box and pins
+# `html{height:auto!important}` in the frame shell, so the frame's height can
+# never be an input to its own layout.
+
+
+def _report_payload(body_css: str, *, wrap: str = "", rows: int = 14) -> str:
+    """A 3-column report card — the shape a real answer takes — plus the
+    viewport-coupled CSS under test wrapped around it."""
+    table_rows = "".join(
+        f"<tr><td>invoice {1000 + i}</td><td>5,000,000</td>"
+        f"<td>{i * 137:,}</td><td>line {i}</td></tr>"
+        for i in range(rows)
+    )
+    columns = "".join(
+        f'<div class="col"><div class="col-h">{title}</div>'
+        f"<table><tbody>{table_rows}</tbody></table></div>"
+        for title in ("AS BILLING SENDS IT TODAY", "WITH INVOICE_ID OMITTED", "AFTER SPLIT")
+    )
+    inner = (
+        '<div class="hdr">LOCAL-ONLY PROOF · BILLING PAYLOAD → REFERENCE CONSUMER</div>'
+        '<div class="hero" style="font-size:28px">Our real message, their real model</div>'
+        f'<div class="cols">{columns}</div>'
+    )
+    body = f'<div class="{wrap}">{inner}</div>' if wrap else inner
+    return (
+        "<style>"
+        ".cols{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}"
+        ".col{padding:8px;border:1px solid #282727}"
+        "table{width:100%;border-collapse:collapse;font-size:11px}"
+        "td{border:1px solid #282727;padding:3px 6px}"
+        ".col-h{font:11px monospace;margin-bottom:6px}"
+        f"{body_css}"
+        "</style>" + body
+    )
+
+
+def _seed_report_message(h: UIHarness, session_id: str, workspace_id: str, payload: str) -> None:
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Frame height")
+        bind_session_workspace(conn, workspace_id, session_id)
+        ts = DbSeed.baseline_timestamps(count=2, interval_seconds=30)
+        seed.seed_user_message(conn, session_id, "show me the report", created_at=ts[0])
+        seed.seed_assistant_message(
+            conn, session_id, f"<html>{payload}</html>", created_at=ts[1],
+        )
+
+
+def _frame_height(page) -> float:
+    """The rendered height of the chat's `<html>` frame, in page pixels."""
+    return float(
+        page.locator("iframe.chat-html-frame").first.evaluate(
+            "el => el.getBoundingClientRect().height"
+        )
+    )
+
+
+def _settled_frame_height(page, *, deadline_ms: int = 8000) -> float:
+    """Poll the frame height until two reads 250 ms apart agree.
+
+    Nothing is awaited on a fixed budget: the report arrives by postMessage and
+    may be re-sent when the frame re-lays-out, so the test waits for the value
+    to stop moving instead of guessing how long that takes."""
+    previous = _frame_height(page)
+    waited = 0
+    while waited < deadline_ms:
+        page.wait_for_timeout(250)
+        waited += 250
+        current = _frame_height(page)
+        if current == previous:
+            return current
+        previous = current
+    return previous
+
+
+def test_percentage_height_payload_reports_its_content_height(
+    ui_harness: UIHarness, page,
+) -> None:
+    """A card that sizes itself with percentage heights still lays out at its
+    CONTENT height: every row of the report ends up inside the frame.
+
+    The frame has no inner scrollbar, so a report that under-describes the
+    content is unreadable rather than merely ugly — that is the bug.
+    `html{height:auto!important}` in the frame shell keeps `height:100%` from
+    resolving against the frame the parent is about to size."""
+    h = ui_harness
+    session_id = "sess_html_tag_pct_height_001"
+    workspace_id = create_workspace(h)
+    _seed_report_message(
+        h, session_id, workspace_id,
+        _report_payload(
+            "html,body{height:100%;margin:0}"
+            ".shell{height:100%;display:flex;flex-direction:column;box-sizing:border-box}"
+            ".shell>.cols{flex:1;overflow:hidden}",
+            wrap="shell",
+        ),
+    )
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.wait_for_selector("iframe.chat-html-frame", timeout=15000)
+
+    height = _settled_frame_height(page)
+    frame = page.frame_locator("iframe.chat-html-frame")
+    content_bottom = float(
+        frame.locator("tbody tr").evaluate_all(
+            "els => Math.max(...els.map(e => e.getBoundingClientRect().bottom))"
+        )
+    )
+    assert content_bottom <= height + 2, (
+        f"the report's last row sits at {content_bottom:.0f}px inside a "
+        f"{height:.0f}px frame — the rest of the card is unreachable"
+    )
+
+
+def test_viewport_height_payload_settles_instead_of_ratcheting(
+    ui_harness: UIHarness, page,
+) -> None:
+    """`min-height:100vh` content reports its own height once and stops.
+
+    The frame's viewport is an output of the report; when the document measures
+    itself against that viewport every report grows the frame that produced it,
+    and a single message inflates the transcript without bound."""
+    h = ui_harness
+    session_id = "sess_html_tag_vh_height_001"
+    workspace_id = create_workspace(h)
+    _seed_report_message(
+        h, session_id, workspace_id,
+        _report_payload(".page{min-height:100vh;box-sizing:border-box}", wrap="page"),
+    )
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.wait_for_selector("iframe.chat-html-frame", timeout=15000)
+
+    height = _settled_frame_height(page)
+    content_bottom = float(
+        page.frame_locator("iframe.chat-html-frame")
+        .locator("tbody tr")
+        .evaluate_all("els => Math.max(...els.map(e => e.getBoundingClientRect().bottom))")
+    )
+    assert height < 2000, (
+        f"a `min-height:100vh` payload grew its frame to {height:.0f}px — the "
+        f"report is chasing the viewport it just resized"
+    )
+    assert content_bottom <= height + 2, (
+        f"content ends at {content_bottom:.0f}px inside a {height:.0f}px frame"
+    )
