@@ -66,12 +66,21 @@ const VALID_KINDS = [_][]const u8{
 // Use case
 // =====================================================================
 
-/// Persist one frontend log event. Steps: 1. Validate required fields and
-/// enum values. 2.
 fn useCase(
     allocator: std.mem.Allocator,
     db: *database.Db,
     body: FrontendLogBody.FrontendLogEvent,
+) FrontendLogPostError!void {
+    return useCaseAt(allocator, db, body, microsecondsNow());
+}
+
+/// `useCase` with the clock injected, so the 1-second dedup window is
+/// something a test sets rather than something it races.
+fn useCaseAt(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    body: FrontendLogBody.FrontendLogEvent,
+    now_us: i64,
 ) FrontendLogPostError!void {
     if (body.level.len == 0) return error.MissingLevel;
     if (!isValidLevel(body.level)) return error.InvalidLevel;
@@ -79,13 +88,15 @@ fn useCase(
     if (!isValidKind(body.kind)) return error.InvalidKind;
     if (body.message.len == 0) return error.MissingMessage;
 
+    // Capped BEFORE the dedup key is read, because the stored message IS the
+    // key: two 40 KB events that differ only past byte 8192 are one event here.
+    const capped = capMessage(body.message);
+
     // Row id = "log_<microseconds>". Allocates from the per-request
     // arena (the caller's `allocator`); freed at scope exit. On OOM,
     // surface 500 — the caller has no fallback id source.
     const id = idForRow(allocator) catch return error.IdAllocationFailed;
     defer allocator.free(id);
-
-    const now_us: i64 = microsecondsNow();
 
     // `db.exec` only binds text — integer values must be formatted as decimal
     // strings before binding.
@@ -112,7 +123,7 @@ fn useCase(
         dedup_sql,
         &.{
             body.kind,
-            body.message,
+            capped.text,
             body.stack orelse "",
             dedup_cutoff_str,
         },
@@ -137,9 +148,9 @@ fn useCase(
     // Fresh event — insert a new row.
     const insert_sql =
         \\INSERT INTO logs (
-        \\  id, created_at_nano, level, kind, message,
+        \\  id, created_at_nano, level, kind, message, message_truncated,
         \\  stack, source, line, route_path, session_id, count
-        \\) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        \\) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     ;
     // For nullable TEXT columns (stack/source/route_path/session_id),
     // `db.exec` binds empty slice as NULL (project memory
@@ -152,7 +163,8 @@ fn useCase(
             now_us_str,
             body.level,
             body.kind,
-            body.message,
+            capped.text,
+            if (capped.truncated) "1" else "0",
             body.stack orelse "",
             body.source orelse "",
             line_str,
@@ -253,6 +265,22 @@ pub fn frontendLogPostHandler(
 // Helpers
 // =====================================================================
 
+/// The bytes of `message` one `logs` row keeps. The live database averaged
+/// 10,832 bytes per row and peaked at 1,009,888 — one serialized error object
+/// or one component stack — and nothing reads past the first screen of it.
+pub const message_byte_cap: usize = 8 * 1024;
+
+pub const CappedMessage = struct { text: []const u8, truncated: bool };
+
+/// `message` cut to `message_byte_cap` bytes without splitting a UTF-8
+/// character, plus whether anything was cut.
+pub fn capMessage(message: []const u8) CappedMessage {
+    if (message.len <= message_byte_cap) return .{ .text = message, .truncated = false };
+    var end = message_byte_cap;
+    while (end > 0 and (message[end] & 0xC0) == 0x80) end -= 1;
+    return .{ .text = message[0..end], .truncated = true };
+}
+
 /// Returns true if `level` is one of the 4 whitelisted values.
 fn isValidLevel(level: []const u8) bool {
     for (VALID_LEVELS) |v| {
@@ -313,6 +341,7 @@ fn setupDbWithLogs() !struct {
     try test_db.openMemory(&db, io);
 
     try pabrikcore.migrations_mod.migration.Migration064AddFrontendLogs.up(&db, alloc);
+    try pabrikcore.migrations_mod.migration.Migration130AddLogMessageTruncated.up(&db, alloc);
     // Production DBs also run Migration 075, which renames `logs.created_at`
     // → `logs.created_at_nano`.
     try db.exec(alloc, "ALTER TABLE logs RENAME COLUMN created_at TO created_at_nano", &.{});
@@ -463,4 +492,108 @@ test "dedup SQL: same key but >1s apart does NOT match (no dedup across window)"
     const count_row = (try count_rows.next()) orelse return error.RowMissing;
     defer count_row.deinit(alloc);
     try testing.expectEqualStrings("1", count_row.values[0]);
+}
+
+test "capMessage keeps a message that is exactly the cap, unmarked" {
+    const at_cap = try testing.allocator.alloc(u8, message_byte_cap);
+    defer testing.allocator.free(at_cap);
+    @memset(at_cap, 'a');
+
+    const capped = capMessage(at_cap);
+
+    try testing.expect(!capped.truncated);
+    try testing.expectEqual(message_byte_cap, capped.text.len);
+}
+
+test "capMessage cuts a message one byte over the cap to the cap, and says so" {
+    const over = try testing.allocator.alloc(u8, message_byte_cap + 1);
+    defer testing.allocator.free(over);
+    @memset(over, 'a');
+
+    const capped = capMessage(over);
+
+    try testing.expect(capped.truncated);
+    try testing.expectEqual(message_byte_cap, capped.text.len);
+}
+
+test "capMessage never leaves half a multi-byte character at the cut" {
+    // '€' is three bytes (E2 82 AC); placing it so byte 8192 is its SECOND
+    // byte is the case a naive `message[0..8192]` gets wrong.
+    const message = try testing.allocator.alloc(u8, message_byte_cap + 8);
+    defer testing.allocator.free(message);
+    @memset(message, 'a');
+    @memcpy(message[message_byte_cap - 1 ..][0..3], "€");
+
+    const capped = capMessage(message);
+
+    try testing.expect(capped.truncated);
+    try testing.expectEqual(message_byte_cap - 1, capped.text.len);
+    try testing.expect(std.unicode.utf8ValidateSlice(capped.text));
+}
+
+test "a long message is stored at the cap and marked truncated" {
+    const alloc = testing.allocator;
+    var s = try setupDbWithLogs();
+    defer s.threaded.deinit();
+    defer s.db.deinit();
+
+    const long = try alloc.alloc(u8, 40 * 1024);
+    defer alloc.free(long);
+    @memset(long, 'x');
+
+    try useCaseAt(alloc, &s.db, .{
+        .level = "warn",
+        .kind = "console_warn",
+        .message = long,
+    }, 1_784_226_123_456_789);
+
+    var row = try s.db.queryRow(alloc, "SELECT LENGTH(message), message_truncated FROM logs", &.{});
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("8192", row.values[0]);
+    try testing.expectEqualStrings("1", row.values[1]);
+}
+
+test "a short message is stored whole and unmarked" {
+    const alloc = testing.allocator;
+    var s = try setupDbWithLogs();
+    defer s.threaded.deinit();
+    defer s.db.deinit();
+
+    try useCaseAt(alloc, &s.db, .{
+        .level = "error",
+        .kind = "console_error",
+        .message = "TypeError: x is not a function",
+    }, 1_784_226_123_456_789);
+
+    var row = try s.db.queryRow(alloc, "SELECT message, message_truncated FROM logs", &.{});
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("TypeError: x is not a function", row.values[0]);
+    try testing.expectEqualStrings("0", row.values[1]);
+}
+
+test "two events that differ only past the cap are one row, counted twice" {
+    const alloc = testing.allocator;
+    var s = try setupDbWithLogs();
+    defer s.threaded.deinit();
+    defer s.db.deinit();
+
+    const first = try alloc.alloc(u8, 40 * 1024);
+    defer alloc.free(first);
+    @memset(first, 'x');
+    const second = try alloc.alloc(u8, 40 * 1024);
+    defer alloc.free(second);
+    @memset(second, 'x');
+    // Both differences live beyond byte 8192, so both are cut away.
+    first[9000] = 'A';
+    second[9000] = 'B';
+    second[12000] = 'C';
+
+    const now_us: i64 = 1_784_226_123_456_789;
+    try useCaseAt(alloc, &s.db, .{ .level = "warn", .kind = "console_warn", .message = first }, now_us);
+    try useCaseAt(alloc, &s.db, .{ .level = "warn", .kind = "console_warn", .message = second }, now_us);
+
+    var row = try s.db.queryRow(alloc, "SELECT COUNT(*), COALESCE(SUM(count), 0) FROM logs", &.{});
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("1", row.values[0]);
+    try testing.expectEqualStrings("2", row.values[1]);
 }

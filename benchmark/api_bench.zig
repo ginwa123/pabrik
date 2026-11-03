@@ -2,7 +2,7 @@ const std = @import("std");
 const linux = std.os.linux;
 
 pub const expected_body = "{\"status\":\"ok\",\"timestamp\":<ts>}";
-pub const messages_body = "{\"messages\":[],\"has_more\":false,\"next_cursor\":null,\"cwd\":null,\"git_worktree_cwd\":null,\"pr_url\":null,\"pr_provider\":null,\"selected_profile_model\":null,\"sub_agent_name\":null,\"parent_session_id\":null,\"max_total_tokens\":0,\"max_capacity_total_tokens\":200000,\"total\":0,\"skills\":[]}";
+pub const messages_body = "{\"messages\":[],\"has_more\":false,\"next_cursor\":null,\"cwd\":null,\"git_worktree_cwd\":null,\"pr_url\":null,\"pr_provider\":null,\"transcript_archived_at\":null,\"selected_profile_model\":null,\"sub_agent_name\":null,\"parent_session_id\":null,\"max_total_tokens\":0,\"max_capacity_total_tokens\":200000,\"total\":0,\"skills\":[]}";
 pub const max_response_bytes = 64 * 1024;
 pub const phase_names = [2][]const u8{ "c1", "cN" };
 const zero_digest: [32]u8 = [_]u8{0} ** 32;

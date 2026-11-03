@@ -174,6 +174,7 @@ pub fn executeUpdatePlan(
             error.InvalidContent => "content must be non-empty (1 byte minimum)",
             error.ContentTooLarge => "content exceeds the 256 KiB per-plan cap",
             error.InvalidSessionId => "session_id is required (this is a bug — exec adapter should pass ctx.session_id)",
+            error.SessionNotFound => "this session does not exist in the database — update_plan stores the plan on the session row",
             error.RowNotFoundAfterInsert => "row missing after UPSERT (DB inconsistency)",
             else => @errorName(err),
         };
@@ -241,6 +242,7 @@ fn executeTextReplace(
             error.InvalidContent => "the replacement would empty the plan — a plan must stay non-empty",
             error.ContentTooLarge => "the replacement would exceed the 256 KiB per-plan cap",
             error.InvalidSessionId => "session_id is required (this is a bug — exec adapter should pass ctx.session_id)",
+            error.SessionNotFound => "this session does not exist in the database — update_plan stores the plan on the session row",
             error.RowNotFoundAfterInsert => "row missing after UPSERT (DB inconsistency)",
             else => @errorName(err),
         };
@@ -318,7 +320,6 @@ fn jsonError(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 
-
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -344,6 +345,16 @@ fn parseTestJson(alloc: std.mem.Allocator, out: []const u8) !std.json.Parsed(std
     return std.json.parseFromSlice(std.json.Value, alloc, out, .{});
 }
 
+/// `update_plan` writes onto the session row, so a test that expects a plan to
+/// land needs the session it lands on.
+fn seedSession(db: *database.Db, session_id: []const u8) !void {
+    try db.exec(
+        testing.allocator,
+        "INSERT INTO sessions (id, name) VALUES (?, 'seeded')",
+        &.{session_id},
+    );
+}
+
 // ─── Test 1: success path returns the success payload ──────────────────────
 
 test "executeUpdatePlan: success returns payload with session_id + updated_at + plan" {
@@ -351,6 +362,7 @@ test "executeUpdatePlan: success returns payload with session_id + updated_at + 
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "test_session_success");
 
     const session_id = "test_session_success";
     const content = "# My Plan\n\n- [ ] step 1\n- [x] step 2\n";
@@ -385,6 +397,7 @@ test "executeUpdatePlan: JSON preserves raw <, >, & inside plan body" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "cd_session");
 
     const content = "## Notes\nIf arr[i] > 0 && x < 10, then... & done.";
     const result = try executeUpdatePlan(alloc, &ctx.db, "cd_session", .{
@@ -415,6 +428,7 @@ test "executeUpdatePlan: ]]> inside plan body round-trips verbatim" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "cdata_split_session");
 
     const content = "before ]]> middle ]]> after";
     const result = try executeUpdatePlan(alloc, &ctx.db, "cdata_split_session", .{
@@ -507,6 +521,7 @@ test "update_plan: the text-replace mode flips one checklist item and leaves the
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_one");
 
     const original = "## Steps\n- [ ] 1. write the tool\n- [ ] 2. register it\n";
     {
@@ -548,6 +563,7 @@ test "update_plan: a text-replace whose old_text matches twice is refused and th
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_ambiguous");
 
     const original = "- [ ] step\n- [ ] step\n";
     {
@@ -580,6 +596,7 @@ test "update_plan: replace_all rewrites every occurrence" {
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_all");
 
     {
         const ts = try session_plan.savePlan(alloc, &ctx.db, .{
@@ -610,6 +627,7 @@ test "update_plan: a text-replace whose old_text is not in the plan leaves the p
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_missing");
 
     const original = "- [ ] only step\n";
     {
@@ -662,6 +680,7 @@ test "update_plan: a text-replace with an empty new_text deletes the matched tex
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "s_delete");
 
     {
         const ts = try session_plan.savePlan(alloc, &ctx.db, .{
@@ -817,11 +836,12 @@ fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
 
 // ─── Test 1: success path ──────────────────────────────────────────────────
 
-test "execUpdatePlan: writes to session_plan and returns wrapped success" {
+test "execUpdatePlan: writes the plan onto the session row and returns wrapped success" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "sess_exec");
 
     const tcx = makeTestCtx(alloc, &ctx.db);
     const tc = fakeToolCall("update_plan", "{\"content\":\"# Plan\\n- [ ] step\"}");
@@ -847,7 +867,7 @@ test "execUpdatePlan: writes to session_plan and returns wrapped success" {
     // field, NOT from the tool's input arguments.
     try exec_testing.expectEqualStrings("# Plan\n- [ ] step", data.get("plan").?.string);
 
-    // Verify the row landed in exec_session_plan.
+    // Verify the plan landed on the session row.
     const stored = try exec_session_plan.getPlan(alloc, &ctx.db, "sess_exec");
     defer alloc.free(stored);
     try exec_testing.expectEqualStrings("# Plan\n- [ ] step", stored);
@@ -922,6 +942,7 @@ test "execUpdatePlan: plan containing error-like text does not misfire" {
     var ctx = try exec_setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "sess_exec");
 
     const tcx = makeTestCtx(alloc, &ctx.db);
     const tc = fakeToolCall("update_plan", "{\"content\":\"# Plan\\nHandle <error> case\\n- [ ] step\"}");
@@ -948,6 +969,7 @@ test "execUpdatePlan: plan containing error-like JSON text still succeeds" {
     var ctx = try exec_setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "sess_exec");
 
     const tcx = makeTestCtx(alloc, &ctx.db);
     const tc = fakeToolCall("update_plan", "{\"content\":\"# Plan\\n<error>oops</error>\\n- [ ] step\"}");
@@ -966,6 +988,7 @@ test "execUpdatePlan: the text-replace mode edits the stored plan and reports su
     var ctx = try exec_setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "sess_exec");
 
     {
         const ts = try exec_session_plan.savePlan(alloc, &ctx.db, .{
@@ -1005,6 +1028,7 @@ test "execUpdatePlan: a text-replace that matches nothing comes back as a failed
     var ctx = try exec_setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedSession(&ctx.db, "sess_exec");
 
     {
         const ts = try exec_session_plan.savePlan(alloc, &ctx.db, .{

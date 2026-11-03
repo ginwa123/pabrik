@@ -748,7 +748,6 @@ test "the_sentinel_membership_keeps_a_legacy_workspace_visible_to_everyone" {
 // Test 6: delete cleans up the membership rows
 // ============================================================================
 
-// No orphans: `PRAGMA foreign_keys` is OFF, so delete must clean up.
 test "delete_removes_the_membership_rows" {
     try harness.requirePabrikBin(io, gpa);
     try requireSqlite3Cli();

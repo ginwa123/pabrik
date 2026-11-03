@@ -1105,6 +1105,24 @@ pub fn getSessionPrFields(
     return .{ .pr_url = "", .pr_provider = "" };
 }
 
+/// When this session's transcript moved to the sibling `archive.db`, as
+/// `YYYY-MM-DD HH:MM:SS`; empty while the messages are still in this database.
+pub fn getSessionTranscriptArchivedAt(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    session_id: []const u8,
+) ![]const u8 {
+    const sql = comptime "SELECT COALESCE(" ++ dialect.timestampText("transcript_archived_at") ++ ", '') FROM sessions WHERE id = ?";
+    var rows = try db.query(allocator, sql, &.{session_id});
+    defer rows.deinit();
+
+    if (try rows.next()) |row| {
+        defer row.deinit(allocator);
+        return allocator.dupe(u8, row.values[0]);
+    }
+    return allocator.dupe(u8, "");
+}
+
 /// Resolve the effective context window for a session view. Pure function
 /// over (config, profile, model) so tests can pin the cascade without the
 /// process-global singleton.

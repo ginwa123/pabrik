@@ -989,6 +989,7 @@ test "a skill in ANOTHER workspace is invisible to this session" {
     const io = ctx.threaded.io();
 
     try seedWorkspace(alloc, &ctx.db, "sess_a", "ws_a");
+    try seedWorkspaceRow(alloc, &ctx.db, "ws_b");
     try seedSkillRow(alloc, &ctx.db, "ws_b", "pdf", "---\nname: pdf\n---\nB's body");
     try seedLoaded(alloc, &ctx.db, io, "sess_a", "pdf");
 
@@ -1089,13 +1090,17 @@ test "max_skills = 0 evaluates nothing and does not crash" {
 // These need a skill that actually EXISTS in the session's workspace, because
 // every test above names one that does not and therefore exits at the "no
 
+fn seedWorkspaceRow(alloc: std.mem.Allocator, db: *database.Db, ws_id: []const u8) !void {
+    try db.exec(alloc,
+        \\INSERT INTO workspaces (id, name) VALUES (?, 'skill eval fixture') ON CONFLICT DO NOTHING
+    , &.{ws_id});
+}
+
 /// Give `session_id` a workspace through the exact task link a kanban task
 /// session has (`workspace_item_tasks.id` IS the session id) — the first
 /// branch of `workspace_scope.resolveWorkspaceId`.
 fn seedWorkspace(alloc: std.mem.Allocator, db: *database.Db, session_id: []const u8, ws_id: []const u8) !void {
-    try db.exec(alloc,
-        \\INSERT INTO workspaces (id, name) VALUES (?, 'skill eval fixture') ON CONFLICT DO NOTHING
-    , &.{ws_id});
+    try seedWorkspaceRow(alloc, db, ws_id);
     const item_id = try std.fmt.allocPrint(alloc, "wi_{s}", .{ws_id});
     defer alloc.free(item_id);
     try db.exec(alloc,

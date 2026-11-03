@@ -260,10 +260,21 @@ pub const cleanup_stale_worker = @import("schedulers/cleanup_stale_worker.zig");
 // Re-export cleanup_stale_background_process for the same reason as
 // above — see plan 2026-08-19-cleanup-stale-background-process.
 pub const cleanup_stale_background_process = @import("schedulers/cleanup_stale_background_process.zig");
+// Retention: `logs` keeps 30 days, a transcript whose newest message is 90 days
+// old moves to the sibling archive.db. Both are crons, so `main.zig` reaches
+// them through this re-export rather than the file (dual-module error above).
+pub const prune_logs = @import("schedulers/prune_logs.zig");
+pub const archive_transcripts = @import("schedulers/archive_transcripts.zig");
 // The DB connection policy (and its `--db-*` CLI overrides). Re-exported so
 // the exe module and the schedulers share ONE definition of the defaults.
 pub const boot_db_config = @import("boot/db_config.zig");
 pub const boot_db_target = @import("boot/db_target.zig");
+// Free-page bookkeeping: the auto_vacuum policy's readback, the one-shot
+// maintenance pass, and the incremental release the retention crons call.
+pub const boot_db_reclaim = @import("boot/db_reclaim.zig");
+// `pabrik db reclaim` — the maintenance-window pass, dispatched from `main`
+// before any server boot.
+pub const boot_db_cli = @import("boot/db_cli.zig");
 pub const test_db = @import("testing/test_db.zig");
 pub const workspace_items = @import("agentic_loop/llm_history.zig");
 pub const workspace_item_tasks = @import("agentic_loop/llm_history.zig");

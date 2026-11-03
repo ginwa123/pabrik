@@ -82,6 +82,11 @@ pub const App = struct {
 
     static_dir_path: ?[]const u8 = null,
 
+    /// The sqlite file this process opened, so a sibling file (the transcript
+    /// archive) lands beside it rather than in a guessed directory. Empty on
+    /// postgres, which has no file.
+    db_path: []const u8 = "",
+
     /// Opt-in auth enforcement, set from `--auth` CLI flag.
     /// When false, all endpoints are open (legacy single-user mode).
     /// When true, API + static + ws/sse require a valid `pabrik_session` cookie.

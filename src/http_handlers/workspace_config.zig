@@ -314,6 +314,10 @@ fn setupDb() !TestCtx {
     return .{ .db = db, .threaded = threaded };
 }
 
+fn seedWorkspace(db: *database.Db, id: []const u8) !void {
+    try db.exec(testing.allocator, "INSERT INTO workspaces (id) VALUES (?) ON CONFLICT DO NOTHING", &[_][]const u8{id});
+}
+
 const USER_CONFIG =
     \\{"profiles_models":{"claude":{"model":"opus","api_key":"sk-user"}},
     \\ "active_profile":"claude",
@@ -442,6 +446,7 @@ test "a workspace's overlay is invisible to another workspace over the store pat
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
+    try seedWorkspace(&ctx.db, "ws_a");
 
     try store.saveRaw(alloc, &ctx.db, store.FILE_MODE_OWNER, "ws_a", "{\"active_profile\":\"a\"}");
 

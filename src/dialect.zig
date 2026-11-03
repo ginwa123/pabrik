@@ -86,13 +86,13 @@ pub const conflict_ignore: []const u8 = if (is_postgres) " ON CONFLICT DO NOTHIN
 /// the write lock up front, postgres has no equivalent and rejects the word.
 pub const begin_write: []const u8 = if (is_postgres) "BEGIN" else "BEGIN IMMEDIATE";
 
-/// Postgres enforces the foreign keys the schema declares and sqlite (with
-/// its pragma off) does not, so a drop that leaves dependants behind needs
-/// `CASCADE` there and would be a syntax error on sqlite.
+/// A drop that leaves dependants behind needs `CASCADE` where the foreign keys
+/// are enforced, and `CASCADE` is a syntax error on sqlite.
 pub const drop_cascade: []const u8 = if (is_postgres) " CASCADE" else "";
 
-/// Postgres has real foreign keys and ignores the sqlite pragma; a sqlite
-/// build has to switch them on per connection.
+/// Foreign keys are per CONNECTION on sqlite and there is no postgres pragma:
+/// `MigrationManager.runMigrations` runs this once, after the chain, so every
+/// statement a process issues afterwards is checked.
 pub const enable_foreign_keys: []const u8 = if (is_postgres) "" else "PRAGMA foreign_keys = ON";
 
 /// Whether this backend can spell `MATCH`/`snippet()`/`rank` — the FTS5
@@ -154,9 +154,9 @@ pub const table_columns_of_bound_table: []const u8 = if (is_postgres)
 else
     "pragma_table_info(?)";
 
-/// sqlite runs with `PRAGMA foreign_keys` off, so an FK clause in its DDL is
-/// inert documentation. Postgres enforces it — which changes which inserts and
-/// deletes are legal — so it declares a no-op check in the same slot.
+/// The FK clause a CREATE TABLE declares: sqlite honours it as written, and
+/// postgres gets the same constraint from `Migration136EnforceForeignKeys` once
+/// the chain has run, because there a child may precede its parent.
 pub fn foreignKey(comptime clause: []const u8) []const u8 {
     return if (is_postgres) "CHECK (1 = 1)" else clause;
 }

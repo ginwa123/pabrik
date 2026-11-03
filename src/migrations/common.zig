@@ -34,7 +34,7 @@ pub const MigrationManager = struct {
     }
 
     pub fn runMigrations(self: *MigrationManager) !void {
-        try self.db.exec(self.allocator, "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL)", &[_][]const u8{});
+        try self.db.exec(self.allocator, "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMP)", &[_][]const u8{});
 
         const currentVersion = self.getCurrentVersion();
 
@@ -45,11 +45,22 @@ pub const MigrationManager = struct {
                 try migration.up(self.db, self.allocator);
                 const versionStr = try std.fmt.allocPrint(self.allocator, "{}", .{migration.version});
                 defer self.allocator.free(versionStr);
-                try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name) VALUES (?, ?)", &.{ versionStr, migration.name });
+                try self.recordApplied(versionStr, migration.name);
                 self.running_version = 0;
                 self.running_name = "";
             }
         }
+
+        if (dialect.enable_foreign_keys.len > 0) try self.db.exec(self.allocator, dialect.enable_foreign_keys, &[_][]const u8{});
+    }
+
+    fn recordApplied(self: *MigrationManager, versionStr: []const u8, name: []const u8) !void {
+        const has_applied_at = dialect.columnExists(.{ .db = self.db }, self.allocator, "schema_migrations", "applied_at") catch false;
+        if (has_applied_at) {
+            try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, CURRENT_TIMESTAMP)", &.{ versionStr, name });
+            return;
+        }
+        try self.db.exec(self.allocator, "INSERT INTO schema_migrations (version, name) VALUES (?, ?)", &.{ versionStr, name });
     }
 
     fn getCurrentVersion(self: *MigrationManager) u32 {
@@ -116,4 +127,41 @@ pub fn renameColumnIfExists(
     const ddl = std.fmt.bufPrint(&ddl_buf, "ALTER TABLE {s} RENAME COLUMN {s} TO {s}", .{ table, old_column, new_column }) catch
         return error.BufferTooSmall;
     try db.exec(allocator, ddl, &.{});
+}
+
+const test_db = pabrikcore.test_db;
+
+fn createProbeTables(db: *Backend, allocator: std.mem.Allocator) anyerror!void {
+    try db.exec(allocator,
+        \\CREATE TABLE fk_probe_parent (id TEXT PRIMARY KEY)
+    , &[_][]const u8{});
+    try db.exec(allocator,
+        \\CREATE TABLE fk_probe_child (
+        \\    id TEXT PRIMARY KEY,
+        \\    parent_id TEXT NOT NULL,
+        \\    FOREIGN KEY (parent_id) REFERENCES fk_probe_parent(id) ON DELETE CASCADE
+        \\)
+    , &[_][]const u8{});
+}
+
+test "a migration chain leaves foreign keys enforced, so a child row needs its parent" {
+    const alloc = std.testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    var db: Backend = .{};
+    defer db.deinit();
+    try test_db.openMemory(&db, threaded.io());
+
+    var manager = MigrationManager.init(alloc, &db);
+    defer manager.deinit();
+    try manager.registerMigration(.{ .version = 1, .name = "fk_probe", .up = createProbeTables });
+    try manager.runMigrations();
+
+    try std.testing.expectError(
+        error.ExecuteFailed,
+        db.exec(alloc, "INSERT INTO fk_probe_child (id, parent_id) VALUES ('c_orphan', 'p_missing')", &[_][]const u8{}),
+    );
+
+    try db.exec(alloc, "INSERT INTO fk_probe_parent (id) VALUES ('p_1')", &[_][]const u8{});
+    try db.exec(alloc, "INSERT INTO fk_probe_child (id, parent_id) VALUES ('c_1', 'p_1')", &[_][]const u8{});
 }

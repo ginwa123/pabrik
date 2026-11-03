@@ -186,6 +186,14 @@ pub fn openMemory(db: *database.Db, io: std.Io) !void {
     for (dialect.sqlite_time_functions) |sql| try db.exec(longLived(), sql, &.{});
 }
 
+/// Turn on the same foreign-key pragma `MigrationManager.runMigrations` sets
+/// at the end of a chain. A fixture that asserts a cascade has to call this:
+/// sqlite enforces nothing without it, and postgres needs no call at all.
+pub fn enableForeignKeys(allocator: std.mem.Allocator, db: *database.Db) !void {
+    if (dialect.enable_foreign_keys.len == 0) return;
+    try db.exec(allocator, dialect.enable_foreign_keys, &.{});
+}
+
 test "openMemory hands out a database the compiled backend can write to" {
     const testing = std.testing;
     var db: database.Db = .{};
