@@ -84,17 +84,19 @@ say "ok  exec -> uid 0 on Fedora 44"
 # `search` under --saas execs this exact path (vmd_policy.guest_rg), so an image
 # without it fails every search with RgNotFound — the bug this gate exists for.
 # A version banner proves the binary runs; the match proves it reads the tree.
-say "the image ships the ripgrep the search tool execs"
-out="$(exec_in --timeout-ms 20000 -- /usr/bin/rg --version 2>/dev/null)"
+# The version is asserted, not just the name: the image must carry the PINNED
+# ripgrep (15.2.0), not whichever one the distro resolved on the day.
+say "the image ships the bundled ripgrep the search tool execs"
+out="$(exec_in --timeout-ms 20000 -- /usr/bin/rg-pabrik --version 2>/dev/null)"
 case "$out" in
-  "ripgrep "*) say "ok  /usr/bin/rg -> $(printf '%s' "$out" | head -1)" ;;
-  *) fail "/usr/bin/rg (vmd_policy.guest_rg) does not run in the guest: $out" ;;
+  "ripgrep 15.2.0"*) say "ok  /usr/bin/rg-pabrik -> $(printf '%s' "$out" | head -1)" ;;
+  *) fail "/usr/bin/rg-pabrik (vmd_policy.guest_rg) did not answer ripgrep 15.2.0 in the guest: $out" ;;
 esac
 exec_in --timeout-ms 20000 -- /bin/sh -c 'printf "hay\nNEEDLE\nstack\n" > /workspace/haystack.txt' >/dev/null
-out="$(exec_in --timeout-ms 20000 -- /usr/bin/rg NEEDLE /workspace 2>/dev/null)"
+out="$(exec_in --timeout-ms 20000 -- /usr/bin/rg-pabrik NEEDLE /workspace 2>/dev/null)"
 case "$out" in
-  *haystack.txt:NEEDLE*) say "ok  /usr/bin/rg found $out" ;;
-  *) fail "/usr/bin/rg returned no match for a file it should have found: $out" ;;
+  *haystack.txt:NEEDLE*) say "ok  /usr/bin/rg-pabrik found $out" ;;
+  *) fail "/usr/bin/rg-pabrik returned no match for a file it should have found: $out" ;;
 esac
 
 say "the reconciler sweeps on its own clock"
