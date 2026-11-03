@@ -38,7 +38,17 @@ done
 
 # A fresh HOME keeps the live agent.db (and the :8081 server) out of the run.
 work="$(mktemp -d -t pabrik-saas-smoke-XXXXXX)"
+# The guest image cache belongs to the operator, so it is resolved BEFORE HOME
+# moves: a cache derived from the smoke's own HOME is deleted with it, and every
+# run then re-downloads the pinned Fedora rootfs and the package set.
+vm_cache="$(pabrik_vm_cache_root)"
+case "$vm_cache" in
+  "$work" | "$work"/*)
+    fail "the guest image cache resolves inside the smoke's work dir ($vm_cache): it is deleted with the run, so every run redownloads Fedora. Point PABRIK_VM_CACHE outside $work"
+    ;;
+esac
 export HOME="$work"
+export PABRIK_VM_CACHE="$vm_cache"
 # A self-hosted runner may export XDG_*: pin pabrik's config, data, state and
 # runtime dir to the smoke's HOME, or the smoke reads the operator's install
 # (their real config.json and agent.db) instead of its own.
@@ -61,6 +71,19 @@ trap cleanup EXIT
 sample_manager() {
   pgrep -fc "pabrik-vmd serve --socket $sock" >"$work/managers_up" 2>/dev/null || echo 0 >"$work/managers_up"
   if [ -S "$sock" ]; then echo yes >"$work/socket_up"; else echo no >"$work/socket_up"; fi
+}
+
+# The manager exits with the server that started it, just not synchronously, so
+# anything that COUNTS managers has to wait for it to go: until it does, the one
+# that is still exiting sits next to the one the next boot has already started
+# and "exactly one manager" reads as two. The wait is on the condition, not on a
+# sleep long enough to be lucky.
+wait_for_no_manager() { # <socket>
+  local sock_path="$1"
+  for _ in $(seq 1 100); do
+    pgrep -f "pabrik-vmd serve --socket $sock_path" >/dev/null || return 0
+    sleep 0.1
+  done
 }
 
 # Boot the server in the background, wait for a log line, then stop it.
@@ -107,7 +130,10 @@ if grep -q "runtime mode" "$work/refusal.log"; then fail "a refused mode still b
 say "ok  exit 2, naming both pabrik-vmd and the missing guest image"
 
 say "saas starts its own manager when none is running"
-"$repo_root/scripts/build-guest-image.sh" --out "$work/base.ext4" >/dev/null
+say "assembling the guest image"
+build_note="$(pabrik_build_guest_image "$repo_root" "$work/base.ext4")" ||
+  fail "the guest image build failed"
+say "$build_note"
 sock="$work/auto.sock"
 export PABRIK_VMD_SOCKET="$sock"
 export PABRIK_VM_BASE_IMAGE="$work/base.ext4"
@@ -124,6 +150,7 @@ grep -q "serving on $sock" "$work/vms/vmd.log" \
   || fail "the spawned manager never wrote its log: $(cat "$work/vms/vmd.log" 2>/dev/null)"
 say "ok  pabrik --saas --port $port -> runtime mode: saas, manager started by the boot"
 
+wait_for_no_manager "$sock"
 say "a second boot adopts that manager instead of starting another"
 # The first server stays up: the manager it started lives only while it does.
 "$pabrik" --port 0 --saas --no-static-dir >"$work/server-first.log" 2>&1 &
@@ -145,10 +172,7 @@ say "ok  still $after manager(s) on $sock"
 say "the manager goes down with the server that started it"
 kill -TERM "$first_pid" 2>/dev/null || true
 wait "$first_pid" 2>/dev/null || true
-for _ in $(seq 1 100); do
-  pgrep -f "pabrik-vmd serve --socket $sock" >/dev/null || break
-  sleep 0.1
-done
+wait_for_no_manager "$sock"
 pgrep -f "pabrik-vmd serve --socket $sock" >/dev/null \
   && fail "the manager outlived the server that started it"
 say "ok  the manager is gone"
