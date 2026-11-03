@@ -548,6 +548,12 @@ say "dnf installed $(rpm --root "$work" -qa | wc -l) packages in total"
 # packages are this list resolved against Fedora 41 on the day of the build.
 rpm --root "$work" -qa --qf '%{name}-%{version}-%{release}.%{arch}\n' | sort \
   >"$work/etc/pabrik-image-rpms"
+# `search` execs /usr/bin/rg by absolute path in the guest (vmd_policy.guest_rg;
+# execve searches no PATH), so a package set that lost ripgrep — or a release
+# that moved the binary — is an image whose every search answers RgNotFound. The
+# build stops here, not at the first chat turn in a workspace.
+[ -x "$work/usr/bin/rg" ] \
+  || fail "the $tier package set installed no /usr/bin/rg, and search execs exactly that path"
 
 # ─── our own side ────────────────────────────────────────────────────────
 # /init is the BOOTSTRAP: it asks the host for the current agent and execs
