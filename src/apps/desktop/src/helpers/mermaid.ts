@@ -1,5 +1,16 @@
 import type { MermaidConfig } from 'mermaid'
 import { activeScheme, activeTheme } from '../theme/runtime'
+import { paintAuthoredColours } from './mermaidPaint'
+
+export type MermaidRole =
+  | 'blue'
+  | 'green'
+  | 'yellow'
+  | 'violet'
+  | 'pink'
+  | 'orange'
+  | 'red'
+  | 'aqua'
 
 /** The colours and type a diagram is drawn in. Every field is a CSS custom property of the app
  * theme, so the diagram cannot drift from the transcript it sits in. */
@@ -17,6 +28,7 @@ export interface MermaidPalette {
   muted: string
   accent: string
   font: string
+  roles: Record<MermaidRole, string>
   /** Pie-slice colours, in palette order — the app's own accents, no new hues. */
   slices: string[]
 }
@@ -32,19 +44,40 @@ export const MERMAID_PALETTE_FALLBACK: MermaidPalette = {
   muted: '#a6a69c',
   accent: '#8ba4b0',
   font: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  roles: {
+    blue: '#8ba4b0',
+    green: '#87a987',
+    yellow: '#c4b28a',
+    violet: '#8992a7',
+    pink: '#a292a3',
+    orange: '#b6927b',
+    red: '#c4746e',
+    aqua: '#8ea4a2',
+  },
   slices: ['#8ba4b0', '#87a987', '#c4b28a', '#8992a7', '#a292a3', '#b6927b', '#c4746e', '#8ea4a2'],
 }
 
 /** `pieN` takes a category colour, not a surface: these are the app's accent tokens, in order. */
-const SLICE_VARS = [
-  '--color-blue',
-  '--color-green',
-  '--color-yellow',
-  '--color-violet',
-  '--color-pink',
-  '--color-orange',
-  '--color-red',
-  '--color-aqua',
+const ROLE_VARS: Readonly<Record<MermaidRole, string>> = {
+  blue: '--color-blue',
+  green: '--color-green',
+  yellow: '--color-yellow',
+  violet: '--color-violet',
+  pink: '--color-pink',
+  orange: '--color-orange',
+  red: '--color-red',
+  aqua: '--color-aqua',
+}
+
+const SLICE_ROLES: readonly MermaidRole[] = [
+  'blue',
+  'green',
+  'yellow',
+  'violet',
+  'pink',
+  'orange',
+  'red',
+  'aqua',
 ]
 
 const readVar = (name: string, fallback: string): string => {
@@ -62,6 +95,16 @@ export const resolveMermaidPalette = (): MermaidPalette => {
   const theme = activeTheme()
   if (palette && paletteTheme === theme) return palette
   const f = MERMAID_PALETTE_FALLBACK
+  const roles: Record<MermaidRole, string> = {
+    blue: readVar(ROLE_VARS.blue, f.roles.blue),
+    green: readVar(ROLE_VARS.green, f.roles.green),
+    yellow: readVar(ROLE_VARS.yellow, f.roles.yellow),
+    violet: readVar(ROLE_VARS.violet, f.roles.violet),
+    pink: readVar(ROLE_VARS.pink, f.roles.pink),
+    orange: readVar(ROLE_VARS.orange, f.roles.orange),
+    red: readVar(ROLE_VARS.red, f.roles.red),
+    aqua: readVar(ROLE_VARS.aqua, f.roles.aqua),
+  }
   palette = {
     canvas: readVar('--semantic-card-bg', f.canvas),
     node: readVar('--color-bg-p1', f.node),
@@ -71,7 +114,8 @@ export const resolveMermaidPalette = (): MermaidPalette => {
     muted: readVar('--semantic-text-muted', f.muted),
     accent: readVar('--semantic-link', f.accent),
     font: readVar('--font-sans', f.font),
-    slices: SLICE_VARS.map((name, i) => readVar(name, f.slices[i] ?? f.accent)),
+    roles,
+    slices: SLICE_ROLES.map((role) => roles[role]),
   }
   paletteTheme = theme
   return palette
@@ -195,7 +239,7 @@ export const renderMermaid = async (source: string): Promise<string> => {
   const mermaid = await loadMermaid()
   renderSeq += 1
   const id = `chat-mermaid-${renderSeq}`
-  return mermaid.render(id, source).then(
+  return mermaid.render(id, paintAuthoredColours(source, resolveMermaidPalette())).then(
     (result) => result.svg,
     (cause: unknown) => {
       // mermaid's temp nodes are `d<id>`, `<id>` and `i<id>` (see `removeExistingElements` in
