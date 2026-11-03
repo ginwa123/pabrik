@@ -12,11 +12,9 @@ pub const guest_shell = "/bin/sh";
 /// The git and ripgrep the sealed image ships. `execve` searches no PATH, so
 /// a guest program is named by its absolute path or not at all.
 pub const guest_git = "/usr/bin/git";
-/// The BUNDLED ripgrep: the same hash-pinned artifact the host release ships
-/// beside `pabrik` (scripts/stage-bundled-ripgrep.sh, ripgrep 15.2.0). A distro
-/// `ripgrep` moves version with the Fedora release, and `search`'s argv and
-/// output parsing are written against one version. Named `rg-pabrik` for the
-/// same reason the host copy is: it must never shadow a `rg` of the user's.
+/// The BUNDLED ripgrep, the hash-pinned artifact the host release ships
+/// (scripts/stage-bundled-ripgrep.sh): a distro `ripgrep` moves version with the
+/// release, and `search` parses one version's output. Named like the host copy.
 pub const guest_rg = "/usr/bin/rg-pabrik";
 
 /// The id arrives from outside and is the ONLY input that reaches a path, so it
