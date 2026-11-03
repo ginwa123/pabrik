@@ -138,13 +138,14 @@ fn listBranchesUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
+    opts: git_route.Options,
 ) !BranchListResult {
     // 1) Confirm it's a git repo.
-    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
+    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, opts) catch return error.NotARepository;
     if (git_dir_check.term.exited != 0) return error.NotARepository;
 
     // 2) Current branch. Empty in a bare repo / detached HEAD.
-    const current_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return error.NotARepository;
+    const current_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, opts) catch return error.NotARepository;
     const current_branch = std.mem.trim(u8, current_result.stdout, " \n\r\t");
 
     // 3) Every local + remote-tracking ref, with symbolic refs flagged
@@ -152,7 +153,7 @@ fn listBranchesUseCase(
     const refs_result = git_route.run(allocator, io, path, &.{
         "for-each-ref", "--format=%(refname)%09%(refname:short)%09%(symref)", "refs/heads",
         "refs/remotes",
-    }, .{}) catch return error.NotARepository;
+    }, opts) catch return error.NotARepository;
     if (refs_result.term.exited != 0) return error.NotARepository;
 
     const parsed = try parseRefRows(allocator, refs_result.stdout);
@@ -186,7 +187,7 @@ pub fn gitBranchesListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = err_msg }) });
     }
 
-    const result = listBranchesUseCase(allocator, ctx.io, path_param) catch |err| switch (err) {
+    const result = listBranchesUseCase(allocator, ctx.io, path_param, git_route.options(req)) catch |err| switch (err) {
         error.NotARepository => {
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
         },

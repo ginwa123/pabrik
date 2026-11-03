@@ -23,6 +23,17 @@ export function getCurrentWorkspaceId(): string | null {
   return currentWorkspaceId
 }
 
+/** `url` with the workspace the app is on appended, for the endpoints whose
+ *  `path` alone cannot name it: under `--saas` every `/api/git/*` tree lives
+ *  in a workspace's VM, so the request has to say which one. */
+export function withWorkspaceId(url: string): string {
+  if (!url.startsWith('/git/')) return url
+  const id = getCurrentWorkspaceId()
+  if (!id) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}workspace_id=${encodeURIComponent(id)}`
+}
+
 /** Test-only: reset the module state between specs. */
 export function resetWorkspaceScopeForTest(): void {
   currentWorkspaceId = null

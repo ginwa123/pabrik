@@ -2,6 +2,7 @@ import { useNotificationStore } from '../stores/notifications'
 import { getActivePinia } from 'pinia'
 import { useLoadingStore } from '../stores/loading'
 import { tryParseJsonErrorField } from './internal'
+import { withWorkspaceId } from '../helpers/workspaceScope'
 
 export const API_BASE = '/api'
 
@@ -71,7 +72,7 @@ export async function apiFetch<T = unknown>(url: string, opts: ApiFetchOptions =
   }
 
   try {
-    const response = await fetch(`${API_BASE}${url}`, fetchInit)
+    const response = await fetch(`${API_BASE}${withWorkspaceId(url)}`, fetchInit)
 
     if (!response.ok) {
       const responseBody = await response.text().catch(() => '')

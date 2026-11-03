@@ -65,8 +65,10 @@ const DIFF_CAPTURE_BYTES: usize = MAX_DIFF_BYTES * 2;
 /// Run `git <args>` in `path`, return its stdout on exit 0/1 (git diff uses
 /// exit 1 when differences exist), else the mapped error. `path` is routed:
 /// under `--saas` this is the workspace's VM, and the host never runs it.
-fn runGit(allocator: std.mem.Allocator, io: std.Io, path: []const u8, args: []const []const u8) ![]u8 {
-    const res = git_route.run(allocator, io, path, args, .{ .max_output_bytes = DIFF_CAPTURE_BYTES }) catch return error.DiffFailed;
+fn runGit(allocator: std.mem.Allocator, io: std.Io, path: []const u8, args: []const []const u8, opts: git_route.Options) ![]u8 {
+    var capped = opts;
+    capped.max_output_bytes = DIFF_CAPTURE_BYTES;
+    const res = git_route.run(allocator, io, path, args, capped) catch return error.DiffFailed;
     defer allocator.free(res.stderr);
     errdefer allocator.free(res.stdout);
     if (res.term.exited != 0 and res.term.exited != 1) return error.DiffFailed;
@@ -75,12 +77,12 @@ fn runGit(allocator: std.mem.Allocator, io: std.Io, path: []const u8, args: []co
 
 /// Auto-detect the base branch: origin/main → origin/master → origin/develop
 /// → "main" fallback.
-fn detectBase(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
+fn detectBase(allocator: std.mem.Allocator, io: std.Io, path: []const u8, opts: git_route.Options) ![]const u8 {
     const bases = [_][]const u8{ "main", "master", "develop" };
     for (bases) |b| {
         var buf: [64]u8 = undefined;
         const origin_b = std.fmt.bufPrint(&buf, "origin/{s}", .{b}) catch continue;
-        const probe = git_route.run(allocator, io, path, &.{ "rev-parse", "--verify", origin_b }, .{}) catch continue;
+        const probe = git_route.run(allocator, io, path, &.{ "rev-parse", "--verify", origin_b }, opts) catch continue;
         defer {
             allocator.free(probe.stdout);
             allocator.free(probe.stderr);
@@ -91,8 +93,8 @@ fn detectBase(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]con
 }
 
 /// Current branch ("" when detached). Returns an OWNED string.
-fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
-    const res = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return allocator.dupe(u8, "");
+fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8, opts: git_route.Options) ![]const u8 {
+    const res = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, opts) catch return allocator.dupe(u8, "");
     defer allocator.free(res.stderr);
     if (res.term.exited != 0) {
         allocator.free(res.stdout);
@@ -158,6 +160,7 @@ fn fetchRefRange(
     number: []const u8,
     is_pr: bool,
     base_override: ?[]const u8,
+    opts: git_route.Options,
 ) !PrDiffResult {
     // `+` forces the update.
     const refspec = if (is_pr)
@@ -170,7 +173,7 @@ fn fetchRefRange(
     else
         try std.fmt.allocPrint(allocator, "refs/pabrik-mr/{s}", .{number});
     // NOT deferred-free: ownership moves into PrDiffResult.head.
-    const fetch = git_route.run(allocator, io, path, &.{ "fetch", "origin", refspec }, .{}) catch return error.FetchFailed;
+    const fetch = git_route.run(allocator, io, path, &.{ "fetch", "origin", refspec }, opts) catch return error.FetchFailed;
     defer {
         allocator.free(fetch.stdout);
         allocator.free(fetch.stderr);
@@ -182,14 +185,14 @@ fn fetchRefRange(
     const base = if (base_override) |b|
         try allocator.dupe(u8, b)
     else
-        try detectBase(allocator, io, path);
+        try detectBase(allocator, io, path, opts);
     const range = std.fmt.allocPrint(allocator, "{s}...{s}", .{ base, local_ref }) catch {
         allocator.free(base);
         allocator.free(local_ref);
         return error.OutOfMemory;
     };
     defer allocator.free(range);
-    const diff = runGit(allocator, io, path, &.{ "diff", range }) catch {
+    const diff = runGit(allocator, io, path, &.{ "diff", range }, opts) catch {
         allocator.free(base);
         allocator.free(local_ref);
         return error.DiffFailed;
@@ -219,10 +222,11 @@ fn useCase(
     provider_override: ?[]const u8,
     base_override: ?[]const u8,
     head_override: ?[]const u8,
+    opts: git_route.Options,
 ) !PrDiffResult {
     // 1) Must be a git repo.
     {
-        const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
+        const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, opts) catch return error.NotARepository;
         defer {
             allocator.free(check.stdout);
             allocator.free(check.stderr);
@@ -259,22 +263,22 @@ fn useCase(
             if (try tryForgeCli(allocator, io, provider, normalized)) |cli_result| {
                 return cli_result;
             }
-            return fetchRefRange(allocator, io, path, number, provider == .github, base_override);
+            return fetchRefRange(allocator, io, path, number, provider == .github, base_override, opts);
         },
         .git_fetch_pr_ref, .git_fetch_mr_ref => {
-            return fetchRefRange(allocator, io, path, number, strategy == .git_fetch_pr_ref, base_override);
+            return fetchRefRange(allocator, io, path, number, strategy == .git_fetch_pr_ref, base_override, opts);
         },
         .git_local_range => {
             const base: []const u8 = if (base_override) |b|
                 try allocator.dupe(u8, b)
             else
-                try detectBase(allocator, io, path);
+                try detectBase(allocator, io, path, opts);
             errdefer allocator.free(base);
             const head: []const u8 = blk: {
                 if (head_override) |h| break :blk try allocator.dupe(u8, h);
                 // Detached HEAD reports "", which `git diff main...` cannot
                 // resolve; fall back to the literal ref.
-                const cb = try currentBranch(allocator, io, path);
+                const cb = try currentBranch(allocator, io, path, opts);
                 if (cb.len != 0) break :blk cb;
                 allocator.free(cb);
                 break :blk try allocator.dupe(u8, "HEAD");
@@ -282,7 +286,7 @@ fn useCase(
             errdefer allocator.free(head);
             const range = try std.fmt.allocPrint(allocator, "{s}...{s}", .{ base, head });
             defer allocator.free(range);
-            const diff = try runGit(allocator, io, path, &.{ "diff", range });
+            const diff = try runGit(allocator, io, path, &.{ "diff", range }, opts);
             const capped = try capDiff(allocator, diff);
             return .{ .diff_content = capped.text, .truncated = capped.truncated, .base = base, .head = head };
         },
@@ -314,7 +318,7 @@ pub fn gitPrDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     const base_param = query.get("base");
     const head_param = query.get("head");
 
-    const result = useCase(allocator, io, path_param, pr_url_param, provider_param, base_param, head_param) catch |err| switch (err) {
+    const result = useCase(allocator, io, path_param, pr_url_param, provider_param, base_param, head_param, git_route.options(req)) catch |err| switch (err) {
         error.NotARepository => {
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, "not a git repository") });
         },

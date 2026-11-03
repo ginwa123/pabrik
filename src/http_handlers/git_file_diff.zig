@@ -33,7 +33,7 @@ pub fn gitFileReadHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
 
     // Under `--saas` the bytes live in the VM and this host has no copy.
     {
-        var route = git_route.routeFor(allocator, path_param);
+        var route = git_route.routeFor(allocator, path_param, git_route.workspaceOf(req));
         defer route.deinit();
         switch (route) {
             .unavailable => |err| return res.jsonResponse(.{ .status_code = 503, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) }),
