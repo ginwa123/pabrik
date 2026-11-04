@@ -45,6 +45,9 @@ pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
 // after `SkillWriteToolRule` and before the gated Secrets rule.
 pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
 pub const PullRequestToolRule = prompts.PullRequestToolRule;
+// The `<ask_user>` question card — appended by `buildMessages` for the main
+// agent only, because a sub-agent cannot reach the human.
+pub const AskUserRule = prompts.AskUserRule;
 
 // ---------------------------------------------------------------------------
 // Thin delegating re-exports for the two pure helpers that `prompts_test.zig`
@@ -1465,6 +1468,17 @@ const mandate_order = [_][]const u8{
 /// Assemble one session's system prompt through the live path and hand
 /// back an owned copy of the returned bytes.
 fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8, tools: []AgentTool) ![]u8 {
+    return buildSystemPromptFor(ctx, cwd, session_id, session_id, false, tools);
+}
+
+fn buildSystemPromptFor(
+    ctx: *PromptDbCtx,
+    cwd: []const u8,
+    session_id: []const u8,
+    parent_session_id: []const u8,
+    is_sub_agent: bool,
+    tools: []AgentTool,
+) ![]u8 {
     const alloc = std.testing.allocator;
     const messages = try prompts_mod.buildMessages(
         alloc,
@@ -1472,7 +1486,8 @@ fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8,
         &ctx.db,
         cwd,
         session_id,
-        "",
+        parent_session_id,
+        is_sub_agent,
         &.{},
         tools,
         "",
@@ -1549,6 +1564,36 @@ test "buildMessages: the nine mandates reach the live prompt, ungated by the too
     // Planning is gated on `update_plan`), yet every mandate survived it.
     try std.testing.expect(contains(full, "## Task Planning"));
     try std.testing.expect(!contains(bare, "## Task Planning"));
+}
+
+test "buildMessages: only the main agent's prompt teaches the ask_user block" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &path_buf);
+    const cwd = try std.testing.allocator.dupe(u8, path_buf[0..n]);
+    defer std.testing.allocator.free(cwd);
+
+    var tools = [_]AgentTool{makeTool("command", "Run a shell command")};
+
+    // The desktop chat sends parent == session with is_sub_agent = false
+    // (`src/app.zig`), so a non-empty parent must not hide the rule.
+    const main_agent = try buildSystemPromptFor(&ctx, cwd, "sess_ask_main", "sess_ask_main", false, &tools);
+    defer std.testing.allocator.free(main_agent);
+    try std.testing.expect(contains(main_agent, AskUserRule));
+
+    const sub_agent = try buildSystemPromptFor(&ctx, cwd, "sess_ask_sub", "sess_ask_parent", true, &tools);
+    defer std.testing.allocator.free(sub_agent);
+    try std.testing.expect(!contains(sub_agent, AskUserRule));
+
+    // Non-vacuity: the sub-agent got a real prompt, and it differs from the
+    // main agent's only where this rule lives.
+    try std.testing.expect(contains(sub_agent, TemporaryFilesRule));
+    try std.testing.expect(!std.mem.eql(u8, main_agent, sub_agent));
 }
 
 test "buildMessages: the mandates hold a byte-identical prefix across sessions" {
