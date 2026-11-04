@@ -31,6 +31,7 @@ export function useTaskDetailActions(
     selectedSkills,
     skillSearch,
     isSkillPickerOpen,
+    rememberSkills,
     selectedColumnId,
     isColumnPickerOpen,
     columnPickerRef,
@@ -293,10 +294,12 @@ const toggleSkill = (name: string) => {
   selectedSkills.value = selectedSkills.value.includes(name)
     ? selectedSkills.value.filter((n) => n !== name)
     : [...selectedSkills.value, name]
+  rememberSkills(selectedSkills.value)
 }
 
 const clearSkills = () => {
   selectedSkills.value = []
+  rememberSkills(selectedSkills.value)
 }
 
 const _openFilePreview = (path: string) => {
