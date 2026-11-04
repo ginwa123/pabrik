@@ -37,6 +37,7 @@ const event_bus_mod = pabrikcore.event_bus;
 const Backend = pabrikcore.database.Db;
 
 const compact_message_mod = @import("workflow_compact_message.zig");
+const session_compact_target = @import("session_compact_target.zig");
 const delete_queue_worker_mod = @import("delete_queue_worker.zig");
 const delete_worker_mod = @import("delete_worker.zig");
 const get_llm_histories_mod = @import("get_llm_histories.zig");
@@ -529,11 +530,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         .{ params.session_id, params.parent_session_id, params.is_sub_agent, params.message.len, params.allowed_tools.len, params.cwd },
     );
 
-    // ─── Per-session config (auth mode) ─── With `--auth` on, each user's
-    // LLM config lives in `users.config_json` and the process-global
-    // singleton still describes the on-disk `config.json` — it is never
-    var config = session_llm_config.forSession(parent_allocator, db, params.session_id) orelse
-        pabrikcore.getLlmConfig(di.di);
+    var config = session_compact_target.sessionConfig(parent_allocator, di.di, db, params.session_id);
     var eff = effectiveAgentForSubAgent(
         config.resolveEffectiveAgent(params.selected_profile_model),
         params.sub_agent_overrides,
@@ -810,8 +807,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // ─── Live config re-read ───
         // Re-fetch the LlmConfig pointer from the holder once per iteration
         // so user-initiated changes (model switch, profile change, API-key
-        config = session_llm_config.forSession(allocator, db, copy_session_id) orelse
-            pabrikcore.getLlmConfig(di.di);
+        config = session_compact_target.sessionConfig(allocator, di.di, db, copy_session_id);
 
         // ─── Live MCP tools refresh on config invalidation ─── PUT
         // /api/config/pabrik and add_mcp_server call `clearMcpToolsCache()`
@@ -1162,15 +1158,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         });
         const is_task_kanban = try isSessionKanban(allocator, db, copy_session_id);
 
-        const total_tokens = blk: {
-            var max_token: u32 = 0;
-            for (db_messages) |msg| {
-                if (msg.total_tokens > max_token) {
-                    max_token = msg.total_tokens;
-                }
-            }
-            break :blk max_token;
-        };
+        const total_tokens = session_compact_target.totalTokens(db_messages);
         loop_counter = blk: {
             var max_loop_counter: u32 = 0;
             for (db_messages) |msg| {
@@ -2490,7 +2478,7 @@ test "end-to-end: compaction envelope is queryable via getCompactedMessages" {
 /// Agent Mode helper: if `session_id` is bound to a workspace_item whose
 /// item_type='agent', resolve the agent's allowed_tools from the
 /// `agent_tools` table and overwrite `out_allowed_tools` with the
-fn maybeOverrideAllowedToolsForAgent(
+pub fn maybeOverrideAllowedToolsForAgent(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
@@ -2533,7 +2521,7 @@ fn maybeOverrideAllowedToolsForAgent(
 /// Agent-Kanbans mirror (Migration 081): override `out_allowed_tools` with
 /// the board's allowlist from `agent_kanban_tools` when the session's
 /// workspace_item is a kanban WITH an `agent_kanbans` row.
-fn maybeOverrideAllowedToolsForKanban(
+pub fn maybeOverrideAllowedToolsForKanban(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
