@@ -21,6 +21,13 @@ pub fn parseConfigInput(
     });
 }
 
+/// Resolve `chat_view` to its default before writing: the readers
+/// (`pabrik_config_get.ConfigJson`, `config.LlmConfigJson`) declare it
+/// non-optional, so a written `null` made the whole document unparseable.
+fn resolvePersistedDefaults(config_json: *ConfigJson) void {
+    if (config_json.chat_view == null) config_json.chat_view = "dev";
+}
+
 /// PUT /api/config/pabrik - Save pabrik.json configuration
 pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
     const allocator = ctx.allocator;
@@ -369,6 +376,7 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     }
 
     // Write config
+    resolvePersistedDefaults(&config_json);
     const config_str = try std.json.Stringify.valueAlloc(allocator, config_json, .{
         .whitespace = .indent_tab,
     });
@@ -560,8 +568,9 @@ const ConfigJson = struct {
     /// Opt-in web-launch flag. Default `false` matches `LlmConfigJson`
     /// (Config.zig); a brand-new config has web launch off.
     web_launch_enabled: bool = false,
-    /// How the chat draws tool calls. `null` = the key is not on disk, so
-    /// a save does not add it.
+    /// How the chat draws tool calls. `null` on input means "not sent", which
+    /// is resolved to the default before the document is written — see
+    /// `resolvePersistedDefaults`.
     chat_view: ?[]const u8 = null,
     /// Compaction threshold in KB. Default `100` matches
     /// `LlmConfigJson` (Config.zig:92).
@@ -1430,4 +1439,30 @@ test "the response serializes skill_evals.enabled so the toggle can render it" {
         std.debug.print("!! response does not serialize skill_evals.enabled=true: {s}\n", .{on});
         return error.SkillEvalsEnabledNotSerialized;
     }
+}
+
+test "a document written from a one-field PUT is readable by the GET parser" {
+    // A PUT that omits chat_view used to write a JSON `null`, which every
+    // reader rejects — so the next GET (and the runtime's live reload) failed
+    // on a document this handler itself produced.
+    const allocator = std.testing.allocator;
+
+    var config_json = ConfigJson{};
+    config_json.retry_delay_ms = 2500;
+    resolvePersistedDefaults(&config_json);
+
+    const text = try std.json.Stringify.valueAlloc(allocator, config_json, .{});
+    defer allocator.free(text);
+
+    var parsed = try std.json.parseFromSlice(
+        @import("pabrik_config_get.zig").ConfigJson,
+        allocator,
+        text,
+        .{ .ignore_unknown_fields = true },
+    );
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(u32, 2500), parsed.value.retry_delay_ms);
+    try std.testing.expectEqual(false, parsed.value.notify_on_complete);
+    try std.testing.expectEqualStrings("dev", parsed.value.chat_view);
 }
