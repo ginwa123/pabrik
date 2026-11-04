@@ -37,6 +37,7 @@ pub const Routine = struct {
     /// The profile name this routine fires under. Empty = the backend's
     /// `active_agent` → top-level-config cascade.
     selected_profile_model: []const u8 = "",
+    cwd: []const u8 = "",
     enabled: bool,
     next_run_at: ?[]const u8 = null,
     last_run_at: ?[]const u8 = null,
@@ -52,6 +53,7 @@ pub const Routine = struct {
         if (self.instruction.len > 0) allocator.free(self.instruction);
         if (self.schedule.len > 0) allocator.free(self.schedule);
         if (self.selected_profile_model.len > 0) allocator.free(self.selected_profile_model);
+        if (self.cwd.len > 0) allocator.free(self.cwd);
         if (self.next_run_at) |v| allocator.free(v);
         if (self.last_run_at) |v| allocator.free(v);
         if (self.last_error) |v| allocator.free(v);
@@ -62,8 +64,8 @@ pub const Routine = struct {
 
 pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Routine) !void {
     _ = try db.exec(allocator,
-        \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at, selected_profile_model)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?, COALESCE(NULLIF(?, ''), ''))
+        \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at, selected_profile_model, cwd)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''))
     , &.{
         r.id,
         r.workspace_item_id,
@@ -73,6 +75,7 @@ pub fn insertWorkspaceRoutine(allocator: std.mem.Allocator, db: *Backend, r: Rou
         if (r.enabled) "1" else "0",
         r.next_run_at orelse "",
         r.selected_profile_model,
+        r.cwd,
     });
 }
 
@@ -80,7 +83,8 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: 
     var q = try db.query(allocator,
         \\SELECT id, workspace_item_id, description, instruction, schedule, enabled, next_run_at,
         \\       last_run_at, last_status, last_error, created_at, updated_at,
-        \\       COALESCE(CAST(selected_profile_model AS TEXT), '')
+        \\       COALESCE(CAST(selected_profile_model AS TEXT), ''),
+        \\       COALESCE(CAST(cwd AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &.{id});
     defer q.deinit();
@@ -104,6 +108,7 @@ pub fn loadWorkspaceRoutineById(allocator: std.mem.Allocator, db: *Backend, id: 
         .created_at = try nullIfEmpty(allocator, row.values[10]),
         .updated_at = try nullIfEmpty(allocator, row.values[11]),
         .selected_profile_model = try allocator.dupe(u8, row.values[12]),
+        .cwd = try allocator.dupe(u8, row.values[13]),
     };
 }
 
@@ -203,6 +208,7 @@ const database = pabrikcore.database;
 const migration = pabrikcore.migrations_mod.migration;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration124AddRoutineSelectedProfileModel = migration.Migration124AddRoutineSelectedProfileModel;
+const Migration139AddRoutineCwd = migration.Migration139AddRoutineCwd;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
@@ -241,6 +247,7 @@ fn setupDb() !struct {
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
     try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
+    try Migration139AddRoutineCwd.up(&db, alloc);
 
     return .{ .db = db, .threaded = threaded };
 }

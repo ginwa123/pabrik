@@ -40,6 +40,7 @@ import AgentKnowledgeDialog from '../dialogs/AgentKnowledgeDialog.vue'
 import AgentKnowledgeDetailDialog from '../dialogs/AgentKnowledgeDetailDialog.vue'
 import AgentSystemPromptDialog from '../dialogs/AgentSystemPromptDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
+import FilePickerDialog from '../FilePickerDialog.vue'
 import { ROUTINE_PRESETS, ROUTINE_CRON_FIELDS, routinePresetFor } from '../../helpers/routinePresets'
 import { buildAppUrl } from '../../helpers/appUrl'
 
@@ -61,9 +62,12 @@ const saveError = ref<string | null>(null)
 const running = ref(false)
 const runError = ref<string | null>(null)
 
+const title = ref('')
 const description = ref('')
 const instruction = ref('')
 const schedule = ref('')
+const cwd = ref('')
+const showCwdPicker = ref(false)
 const enabled = ref(true)
 const lastStatus = ref('')
 const lastRunAt = ref('')
@@ -105,9 +109,11 @@ async function load() {
 }
 
 function applyRoutine(routine: WorkspaceRoutine) {
+  title.value = props.item.name ?? ''
   description.value = routine.description ?? ''
   instruction.value = routine.instruction ?? ''
   schedule.value = routine.schedule ?? ''
+  cwd.value = routine.cwd ?? ''
   enabled.value = routine.enabled
   lastStatus.value = routine.last_status ?? ''
   lastRunAt.value = routine.last_run_at ?? ''
@@ -199,15 +205,31 @@ function validateSchedule(expr: string): string | null {
 const scheduleError = computed<string | null>(() => validateSchedule(schedule.value))
 const canSave = computed(() => !saving.value && scheduleError.value === null)
 
+const loadItemsForPicker = async (path: string) => {
+  const data = path ? await api.listFolder(path) : await api.getSystemFolder()
+  return (data.entries || []) as api.FolderEntry[]
+}
+
+function handleCwdSelected(path: string) {
+  cwd.value = path
+  showCwdPicker.value = false
+}
+
 async function handleSave() {
   if (!canSave.value) return
   saving.value = true
   saveError.value = null
   try {
+    const trimmedTitle = title.value.trim()
+    if (trimmedTitle && trimmedTitle !== (props.item.name ?? '')) {
+      await api.updateWorkspaceItem(props.workspaceId, props.itemId, { name: trimmedTitle })
+      props.item.name = trimmedTitle
+    }
     const { routine } = await updateRoutineItem(props.workspaceId, props.itemId, {
       description: description.value,
       instruction: instruction.value,
       schedule: schedule.value.trim(),
+      cwd: cwd.value.trim(),
       enabled: enabled.value,
     })
     applyRoutine(routine)
@@ -595,9 +617,7 @@ onUpdated(() => {
       style="border-bottom: 1px solid var(--color-border)"
     >
       <UiIcon name="stopwatch" size-class="w-4.5 h-4.5" style="color: var(--semantic-text-dim)" />
-      <h1 class="text-lead font-semibold truncate" style="color: var(--semantic-text)">
-        {{ item.name ?? 'Routine' }}
-      </h1>
+      <input v-model="title" type="text" placeholder="Routine" data-testid="routine-title" class="text-lead font-semibold truncate bg-transparent outline-none border-b border-transparent focus:border-[var(--color-border)] px-1" style="color: var(--semantic-text)" />
 
       <span
         class="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full text-dense font-medium shrink-0"
@@ -706,6 +726,13 @@ onUpdated(() => {
             <h2 class="text-dense font-semibold mb-3" style="color: var(--semantic-text-dim)">
               What it does
             </h2>
+            <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)">Folder (cwd) — base project folder</label>
+            <button type="button" data-testid="routine-cwd-picker" class="w-full px-3 py-2 rounded-lg text-body flex items-center justify-between gap-2 mb-3" :style="{ backgroundColor: cwd ? 'var(--semantic-active-bg)' : 'var(--semantic-sidebar-bg)', border: '1px solid var(--color-border)', color: cwd ? 'var(--semantic-text)' : 'var(--semantic-text-dim)' }" @click="showCwdPicker = true">
+              <span class="truncate flex-1 text-left font-mono" :title="cwd">{{ cwd || 'Use routine folder (item path)…' }}</span>
+              <span v-if="cwd" class="text-dense shrink-0" style="color: var(--semantic-text-dim)">Browse</span>
+              <UiIcon v-else name="folder-open" class="w-4 h-4 shrink-0" style="color: var(--semantic-text-dim)" />
+            </button>
+            <p class="text-micro mb-3" style="color: var(--semantic-text-dim)">Empty = use the routine's folder. Set a folder to run this routine in a different project.</p>
             <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)"
               >Description</label
             >
@@ -1093,5 +1120,6 @@ onUpdated(() => {
       @create="handleRoutineSystemPromptCreate"
       @save="handleRoutineSystemPromptSave"
     />
+    <FilePickerDialog v-model="showCwdPicker" mode="folder" :load-items="loadItemsForPicker" :key-for="(e: any) => e.path as string" :path-for="(e: any) => e.path as string" :is-expandable="(e: any) => e.is_directory as boolean" :label-for="(e: any) => e.name as string" :close-on-select="true" title="Select Routine Cwd" @select="handleCwdSelected" />
   </div>
 </template>

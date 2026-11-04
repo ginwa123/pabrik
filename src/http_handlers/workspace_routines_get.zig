@@ -16,6 +16,7 @@ pub const RoutineRow = struct {
     instruction: []const u8,
     schedule: []const u8,
     selected_profile_model: []const u8,
+    cwd: []const u8,
     enabled: bool,
     last_run_at: []const u8,
     next_run_at: []const u8,
@@ -71,7 +72,8 @@ fn useCase(
         \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
         \\       last_status, COALESCE(CAST(last_error AS TEXT), ''),
         \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
-        \\       COALESCE(CAST(selected_profile_model AS TEXT), '')
+        \\       COALESCE(CAST(selected_profile_model AS TEXT), ''),
+        \\       COALESCE(CAST(cwd AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.DatabaseError;
     defer qr.deinit();
@@ -93,6 +95,7 @@ fn useCase(
         .created_at = try allocator.dupe(u8, rrow.values[10]),
         .updated_at = try allocator.dupe(u8, rrow.values[11]),
         .selected_profile_model = try allocator.dupe(u8, rrow.values[12]),
+        .cwd = try allocator.dupe(u8, rrow.values[13]),
     } };
 }
 
@@ -149,6 +152,7 @@ const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration124AddRoutineSelectedProfileModel = @import("../migrations/migration.zig").Migration124AddRoutineSelectedProfileModel;
+const Migration139AddRoutineCwd = @import("../migrations/migration.zig").Migration139AddRoutineCwd;
 
 const TestCtx = struct {
     db: database.Db,
@@ -173,6 +177,7 @@ fn setupDb() !TestCtx {
     );
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, testing.allocator);
     try Migration124AddRoutineSelectedProfileModel.up(&db, testing.allocator);
+    try Migration139AddRoutineCwd.up(&db, testing.allocator);
 
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'routine', 'Nightly')",
@@ -202,6 +207,7 @@ fn freeOutput(allocator: std.mem.Allocator, output: RoutineGetOutput) void {
     allocator.free(output.routine.created_at);
     allocator.free(output.routine.updated_at);
     allocator.free(output.routine.selected_profile_model);
+    allocator.free(output.routine.cwd);
 }
 
 test "useCase: empty ids return IdsRequired" {
