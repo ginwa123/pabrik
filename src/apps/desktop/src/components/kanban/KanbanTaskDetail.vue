@@ -143,6 +143,8 @@ const {
   isSkillPickerOpen,
   name,
   pendingAction,
+  prefillSkillsIfUntouched,
+  resetSkillsEdited,
   selectedAgent,
   selectedColumnId,
   selectedSkills,
@@ -229,6 +231,9 @@ const loadSkills = async () => {
       name: sk.name,
       description: sk.description ?? '',
     }))
+    // Prefill from this board's last-created skill set unless the human
+    // already moved the picker in this dialog session.
+    prefillSkillsIfUntouched(availableSkills.value.map((sk) => sk.name))
     // eslint-disable-next-line local/no-try-catch -- mirrors loadAgents directly above: a failed fetch must degrade to an empty picker, not break the dialog
   } catch (err) {
     console.error('Failed to load skills:', err)
@@ -258,6 +263,7 @@ const openDialog = async (): Promise<void> => {
     selectedSkills.value = []
     skillSearch.value = ''
     isSkillPickerOpen.value = false
+    resetSkillsEdited()
     // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync cwdSession from the parent kanban's
     // path on dialog open so the picker shows the kanban-level fallback by default. The legacy code
     // initialized from the ref literal (`ref<string>(props.cwd ??

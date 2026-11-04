@@ -7,7 +7,9 @@ import { setActivePinia, createPinia } from 'pinia'
 
 import KanbanTaskDetailDialog from '@/components/kanban/KanbanTaskDetailDialog.vue'
 import * as api from '@/api'
+import { skillDefaultsKey } from '@/helpers/kanbanSkillDefaults'
 import type { Task } from '@/stores/workspaces'
+import { makeLocalStorageStub } from './helpers'
 
 function findInDom<T extends Element = Element>(selector: string): T | null {
   return document.querySelector<T>(selector)
@@ -41,6 +43,11 @@ describe('KanbanTaskDetailDialog — skills picker (Migration 112)', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: makeLocalStorageStub(),
+      writable: true,
+      configurable: true,
+    })
     vi.spyOn(api, 'getSkills').mockResolvedValue({ skills: SKILLS })
     // The profile picker loads on the same open path — keep it quiet.
     vi.spyOn(api, 'getWorkspaceConfig').mockResolvedValue({ profiles: {} })
@@ -302,22 +309,105 @@ describe('KanbanTaskDetailDialog — skills picker (Migration 112)', () => {
     expect(payload.skillNames).toEqual([])
   })
 
-  it('resets the selection and the search when the dialog reopens in create mode', async () => {
+  it('resets the search box when the dialog reopens in create mode', async () => {
     mountDialog()
     await flushPromises()
     await openPicker()
-    await clickRow(0)
     await typeInto(SEARCH, 'pdf')
 
     await wrapper!.setProps({ show: false })
     await wrapper!.setProps({ show: true })
     await flushPromises()
 
-    expect(chips()).toHaveLength(0)
-    expect(pickerText()).toContain('None')
     await openPicker()
     expect(findInDom<HTMLInputElement>(SEARCH)?.value).toBe('')
     expect(labels()).toHaveLength(3)
+  })
+
+  it('fills the picker with the skills this board was last created with', async () => {
+    localStorage.setItem(skillDefaultsKey('ws_1', ''), 'pdf||behavior-unit-tests')
+    mountDialog()
+    await flushPromises()
+
+    expect(chips()).toHaveLength(2)
+    expect(chips()[0]).toContain('pdf')
+    expect(chips()[1]).toContain('behavior-unit-tests')
+    expect(findInDom(COUNT)?.textContent).toBe('2')
+    expect(pickerText()).toContain('pdf +1')
+    await openPicker()
+    expect(checkedCount()).toBe(2)
+  })
+
+  it('submits the filled skills without the user touching the picker', async () => {
+    localStorage.setItem(skillDefaultsKey('ws_1', ''), 'pdf||behavior-unit-tests')
+    mountDialog()
+    await flushPromises()
+    await typeInto('[data-testid="kanban-task-detail-create-name"]', 'My task')
+
+    findInDom<HTMLButtonElement>('[data-testid="kanban-task-detail-create-and-run"]')?.click()
+    await flushPromises()
+
+    const payload = wrapper!.emitted('create-and-run')![0]![0] as { skillNames: string[] }
+    expect(payload.skillNames).toEqual(['pdf', 'behavior-unit-tests'])
+  })
+
+  it('remembers the picks so the next create dialog is filled with them', async () => {
+    mountDialog()
+    await flushPromises()
+    await openPicker()
+    await clickRow(1)
+    await clickRow(2)
+    wrapper!.unmount()
+
+    mountDialog()
+    await flushPromises()
+
+    expect(chips()).toHaveLength(2)
+    expect(chips()[0]).toContain('zig-trap')
+    expect(chips()[1]).toContain('behavior-unit-tests')
+  })
+
+  it('"Clear all" leaves the next create dialog with no skill', async () => {
+    localStorage.setItem(skillDefaultsKey('ws_1', ''), 'pdf')
+    mountDialog()
+    await flushPromises()
+    expect(chips()).toHaveLength(1)
+    await openPicker()
+    findInDom<HTMLButtonElement>(CLEAR)?.click()
+    await flushPromises()
+    wrapper!.unmount()
+
+    mountDialog()
+    await flushPromises()
+
+    expect(chips()).toHaveLength(0)
+    expect(pickerText()).toContain('None')
+  })
+
+  it('skips a remembered skill that is no longer installed', async () => {
+    localStorage.setItem(skillDefaultsKey('ws_1', ''), 'ghost||pdf')
+    mountDialog()
+    await flushPromises()
+
+    expect(chips()).toHaveLength(1)
+    expect(chips()[0]).toContain('pdf')
+  })
+
+  it("does not fill from another board's picks", async () => {
+    localStorage.setItem(skillDefaultsKey('ws_1', 'item_board_b'), 'pdf')
+    mountDialog({
+      column: {
+        id: 'col_1',
+        workspace_item_id: 'item_board_a',
+        name: 'todo',
+        position: 0,
+        created_at: '',
+      },
+    })
+    await flushPromises()
+
+    expect(chips()).toHaveLength(0)
+    expect(pickerText()).toContain('None')
   })
 
   it('handles api.getSkills failure gracefully (empty list, picker still renders)', async () => {
