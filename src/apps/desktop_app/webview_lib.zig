@@ -68,12 +68,55 @@ pub const Ready = struct {
     attach: *const fn (ctx: *anyopaque, view: *Webview) void,
 };
 
+pub const Page = union(enum) {
+    url: [*:0]const u8,
+    html: [*:0]const u8,
+};
+
+pub const BindHandler = *const fn (
+    id: [*:0]const u8,
+    req: [*:0]const u8,
+    arg: ?*anyopaque,
+) callconv(.c) void;
+
+pub fn bind(view: *Webview, name: [*:0]const u8, handler: BindHandler, arg: ?*anyopaque) bool {
+    return webview_bind(view, name, handler, arg).succeeded();
+}
+
+pub fn unbind(view: *Webview, name: [*:0]const u8) bool {
+    return webview_unbind(view, name).succeeded();
+}
+
+pub fn respond(view: *Webview, id: [*:0]const u8, body: [*:0]const u8) void {
+    _ = webview_return(view, id, 0, body);
+}
+
+pub fn navigate(view: *Webview, url: [*:0]const u8) bool {
+    return webview_navigate(view, url).succeeded();
+}
+
+pub fn showHtml(view: *Webview, html: [*:0]const u8) bool {
+    return webview_set_html(view, html).succeeded();
+}
+
 /// High-level convenience: create a windowed webview, navigate, run the main
 /// loop until the window closes, then destroy. Mirrors the old webview.run()
 /// contract so main.zig stays simple.
 pub fn runWindow(
     title: [*:0]const u8,
     url: [*:0]const u8,
+    width: c_int,
+    height: c_int,
+    debug: bool,
+    force_x11: bool,
+    ready: ?Ready,
+) !void {
+    return runWindowPage(title, .{ .url = url }, width, height, debug, force_x11, ready);
+}
+
+pub fn runWindowPage(
+    title: [*:0]const u8,
+    page: Page,
     width: c_int,
     height: c_int,
     debug: bool,
@@ -99,7 +142,10 @@ pub fn runWindow(
 
     _ = webview_set_title(w, title);
     _ = webview_set_size(w, width, height, .none);
-    _ = webview_navigate(w, url);
+    switch (page) {
+        .url => |url| _ = webview_navigate(w, url),
+        .html => |html| _ = webview_set_html(w, html),
+    }
     _ = webview_run(w);
 }
 

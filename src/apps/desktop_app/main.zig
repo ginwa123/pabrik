@@ -12,6 +12,9 @@ const webview_lib = @import("webview_lib.zig");
 const attach = @import("attach.zig");
 const browser = @import("browser.zig");
 const tray = @import("tray.zig");
+const desktop_config = @import("desktop_config.zig");
+const server_picker = @import("server_picker.zig");
+const startup = @import("startup.zig");
 const pabrikcore = @import("pabrikcore");
 
 /// See `src/main.zig` for why this decl exists. It matters most here:
@@ -35,9 +38,7 @@ test {
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
-    // init.environ_map is used below (read PATH for attach.zig's auto-spawn).
 
-    // 1. Parse CLI args.
     var args_buf: std.ArrayList([]const u8) = .empty;
     defer args_buf.deinit(allocator);
     var args_iter = try std.process.Args.Iterator.initAllocator(init.minimal.args, allocator);
@@ -74,151 +75,319 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    // 1b. Connect mode (--pabrik-url): skip the entire spawn path.
-    if (cfg.pabrik_url) |url| {
-        std.log.info("Connect mode: connecting to {s} (no spawn)", .{url});
-        if (cfg.browser) {
-            try browser.openBrowser(io, url);
-            return;
-        }
-        var icon_buf: [std.fs.max_path_bytes]u8 = undefined;
-        var session = Session{
-            .io = io,
-            .url = url,
-            .icon = tray.resolveIcon(cfg.icon_path, "", path_resolve.fileExists, &icon_buf),
-        };
-        try runWebview(allocator, cfg, &session);
-        return;
-    }
-
-    // SPAWN MODE was removed in the decoupled-pabrik-service refactor. The
-    // desktop now ONLY attaches to an already-running pabrik (or asks the
-    // user to start one).
-
-    // ATTACH MODE (default + new behavior).
     const self_exe_owned = path_resolve.selfExePath(allocator) catch ".";
     defer if (!std.mem.eql(u8, self_exe_owned, ".")) allocator.free(self_exe_owned);
 
-    // 1. Choose the webapp dir to serve via `--static-dir` on auto-spawn.
-    var webapp_dir: []u8 = undefined;
-    if (path_resolve.findInstalledWebapp(allocator, self_exe_owned)) |installed| {
-        webapp_dir = installed;
-        std.log.info("Using installed webapp at {s}", .{webapp_dir});
-    } else {
-        webapp_dir = extraction.ensurePersistentStable(allocator, webapp_assets.assets) catch |err| {
-            std.log.err("Failed to materialise webapp assets: {s}", .{@errorName(err)});
-            return err;
-        };
-        std.log.info("Using persistent webapp at {s}", .{webapp_dir});
-    }
-    defer allocator.free(webapp_dir);
-
-
-
-    // 2. Resolve the attach target via attach.zig: probe state file
-    //    → health → connect. If pabrik isn't running and --no-auto-start
-    //    was passed, surface an actionable error.
     const state_path = pabrikcore.state_file.defaultStatePath(allocator) catch |err| {
         std.log.err("Failed to resolve state.json path: {s}", .{@errorName(err)});
         return err;
     };
     defer allocator.free(state_path);
 
-    // (self_exe_owned was resolved above -- it feeds both the
-    // installed-webapp lookup and the attach target below.)
+    const config_path = try desktop_config.pathNextTo(allocator, state_path);
+    defer allocator.free(config_path);
 
-    // PATH env (for the auto-spawn fallback when --pabrik-path is unset and
-    // pabrik isn't next to the desktop binary).
-    const path_env = init.environ_map.get("PATH") orelse "";
+    const saved_url = try desktop_config.readBaseUrl(allocator, io, config_path);
+    defer if (saved_url) |url| allocator.free(url);
 
-    const attach_target = attach.resolveAttachTarget(allocator, io, .{
-        .state_path = state_path,
-        .default_port = if (cfg.attach_port == 0) 8081 else cfg.attach_port,
-        .no_auto_start = cfg.no_auto_start,
-        .pabrik_path = cfg.pabrik_path,
-        .self_exe_path = self_exe_owned,
-        .path_env = path_env,
-        .static_dir = webapp_dir,
-    }) catch |err| switch (err) {
-        error.AutoStartDisabled => {
-            std.log.err("pabrik is not running.", .{});
-            std.log.err("Run `pabrik service start` in a terminal first, then re-open the desktop.", .{});
-            return err;
-        },
-        error.PabrikNotFound => {
-            // Already logged from attach.zig with hints; just exit cleanly.
-            return err;
-        },
-        error.AutoSpawnFailed => {
-            // Already logged from attach.zig with hints; just exit cleanly.
-            return err;
-        },
-        else => return err,
-    };
-    defer allocator.free(attach_target.host);
-
-    // 2. Build the URL.
-    const url = try std.fmt.allocPrint(allocator, "http://{s}:{d}/", .{ attach_target.host, attach_target.port });
-    defer allocator.free(url);
-
-    // 3. Open the UI.
-    std.log.info("Attaching to pabrik at {s} (we_spawned={any})", .{ url, attach_target.we_spawned });
-    if (cfg.browser) {
-        try browser.openBrowser(io, url);
-        return;
-    }
-    // Windows: prefer a bundled fixed-version WebView2 runtime when the
-    // release zip shipped one next to the exe (no install needed).
-    if (comptime builtin.os.tag == .windows) {
-        pointWebView2AtBundledRuntime(allocator, self_exe_owned);
-    }
-    var icon_buf: [std.fs.max_path_bytes]u8 = undefined;
-    var session = Session{
+    var shell = Shell{
+        .allocator = allocator,
         .io = io,
-        .url = url,
-        .icon = tray.resolveIcon(cfg.icon_path, webapp_dir, path_resolve.fileExists, &icon_buf),
-        .daemon_pid = attach_target.pid,
+        .config_path = config_path,
+        .state_path = state_path,
+        .self_exe_path = self_exe_owned,
+        .path_env = init.environ_map.get("PATH") orelse "",
+        .pabrik_path = cfg.pabrik_path,
+        .attach_port = if (cfg.attach_port == 0) 8081 else cfg.attach_port,
+        .no_auto_start = cfg.no_auto_start,
+        .icon_path = cfg.icon_path,
     };
-    try runWebview(allocator, cfg, &session);
+    defer shell.deinit();
+
+    switch (startup.decide(cfg.pabrik_url, saved_url, cfg.choose_server)) {
+        .connect => |url| try shell.openUrl(cfg, url),
+        .picker => |reason| try shell.openPicker(cfg, reason),
+        .local => {
+            const local_url = shell.resolveLocalUrl() catch |err| {
+                std.log.warn("No local pabrik server to open: {s}", .{@errorName(err)});
+                return shell.openPicker(cfg, .no_local_server);
+            };
+            defer allocator.free(local_url);
+            try shell.openUrl(cfg, local_url);
+        },
+    }
 }
 
-/// Everything the tray callbacks need, alive for as long as the window is.
-const Session = struct {
+const Shell = struct {
+    allocator: std.mem.Allocator,
     io: std.Io,
-    url: []const u8,
-    icon: tray.IconSource,
-    /// Pid of the pabrik daemon this desktop spawned, or 0 (we attached to
-    /// one that was already running and must not stop it).
+    config_path: []const u8,
+    state_path: []const u8,
+    self_exe_path: []const u8,
+    path_env: []const u8,
+    pabrik_path: ?[]const u8,
+    attach_port: u16,
+    no_auto_start: bool,
+    icon_path: ?[]const u8,
+    icon_buf: [std.fs.max_path_bytes]u8 = undefined,
+
+    url: ?[]u8 = null,
     daemon_pid: i32 = 0,
     view: ?*webview_lib.Webview = null,
+    webapp_dir: ?[]u8 = null,
+    on_picker: bool = false,
+
+    fn deinit(self: *Shell) void {
+        if (self.url) |url| self.allocator.free(url);
+        if (self.webapp_dir) |dir| self.allocator.free(dir);
+    }
+
+    fn rememberUrl(self: *Shell, url: []const u8) !void {
+        const copy = try self.allocator.dupe(u8, url);
+        if (self.url) |old| self.allocator.free(old);
+        self.url = copy;
+    }
+
+    fn navigate(self: *Shell, url: []const u8) void {
+        const view = self.view orelse return;
+        if (self.on_picker) {
+            self.unbindPicker(view);
+            self.on_picker = false;
+        }
+        self.rememberUrl(url) catch return;
+        const url_z = self.allocator.dupeZ(u8, url) catch return;
+        defer self.allocator.free(url_z);
+        _ = webview_lib.navigate(view, url_z.ptr);
+    }
+
+    fn openUrl(self: *Shell, cfg: cli.Config, url: []const u8) !void {
+        if (cfg.browser) {
+            try browser.openBrowser(self.io, url);
+            return;
+        }
+        std.log.info("Connecting to {s}", .{url});
+        self.on_picker = false;
+        try self.rememberUrl(url);
+        if (comptime builtin.os.tag == .windows) {
+            pointWebView2AtBundledRuntime(self.allocator, self.self_exe_path);
+        }
+        const url_z = try self.allocator.dupeZ(u8, url);
+        defer self.allocator.free(url_z);
+        try self.run(cfg, .{ .url = url_z.ptr });
+    }
+
+    fn openPicker(self: *Shell, cfg: cli.Config, reason: startup.Reason) !void {
+        if (cfg.browser) {
+            std.log.err("The server picker needs the app window; pass --pabrik-url URL to pick one without it.", .{});
+            return;
+        }
+        std.log.info("Showing the server picker ({s})", .{@tagName(reason)});
+        self.on_picker = true;
+        const html = try server_picker.renderPage(self.allocator, self.url orelse "", reason.note());
+        defer self.allocator.free(html);
+        const html_z = try self.allocator.dupeZ(u8, html);
+        defer self.allocator.free(html_z);
+        try self.run(cfg, .{ .html = html_z.ptr });
+    }
+
+    fn showPicker(self: *Shell, reason: startup.Reason) void {
+        const view = self.view orelse return;
+        std.log.info("Showing the server picker ({s})", .{@tagName(reason)});
+        self.on_picker = true;
+        self.bindPicker(view);
+        const html = server_picker.renderPage(self.allocator, self.url orelse "", reason.note()) catch return;
+        defer self.allocator.free(html);
+        const html_z = self.allocator.dupeZ(u8, html) catch return;
+        defer self.allocator.free(html_z);
+        _ = webview_lib.showHtml(view, html_z.ptr);
+    }
+
+    fn run(self: *Shell, cfg: cli.Config, page: webview_lib.Page) !void {
+        const title_z = try self.allocator.dupeZ(u8, cfg.title);
+        defer self.allocator.free(title_z);
+
+        webview_lib.runWindowPage(
+            title_z.ptr,
+            page,
+            @intCast(cfg.window_width),
+            @intCast(cfg.window_height),
+            cfg.enable_devtools,
+            cfg.force_x11,
+            .{ .ctx = self, .attach = attachToWindow },
+        ) catch |err| {
+            std.log.err("Webview error: {s}", .{@errorName(err)});
+            if (builtin.os.tag == .windows) {
+                std.log.err("The WebView2 window could not be created.", .{});
+                std.log.err("Install the WebView2 evergreen runtime and re-run:", .{});
+                std.log.err("  https://go.microsoft.com/fwlink/p/?LinkId=2124703", .{});
+            }
+            return err;
+        };
+        std.log.info("Window closed. Exiting.", .{});
+    }
+
+    fn webappDirectory(self: *Shell) ![]const u8 {
+        if (self.webapp_dir) |dir| return dir;
+        const dir = path_resolve.findInstalledWebapp(self.allocator, self.self_exe_path) orelse
+            try extraction.ensurePersistentStable(self.allocator, webapp_assets.assets);
+        self.webapp_dir = dir;
+        return dir;
+    }
+
+    fn resolveLocalUrl(self: *Shell) ![]u8 {
+        const webapp_dir = try self.webappDirectory();
+        const target = attach.resolveAttachTarget(self.allocator, self.io, .{
+            .state_path = self.state_path,
+            .default_port = self.attach_port,
+            .no_auto_start = self.no_auto_start,
+            .pabrik_path = self.pabrik_path,
+            .self_exe_path = self.self_exe_path,
+            .path_env = self.path_env,
+            .static_dir = webapp_dir,
+        }) catch |err| switch (err) {
+            error.AutoStartDisabled => {
+                std.log.err("pabrik is not running.", .{});
+                std.log.err("Run `pabrik service start` in a terminal first, or pick a server to connect to.", .{});
+                return err;
+            },
+            else => return err,
+        };
+        defer self.allocator.free(target.host);
+        self.daemon_pid = target.pid;
+        return std.fmt.allocPrint(self.allocator, "http://{s}:{d}/", .{ target.host, target.port });
+    }
+
+    fn icon(self: *Shell) tray.IconSource {
+        return tray.resolveIcon(self.icon_path, self.webapp_dir orelse "", path_resolve.fileExists, &self.icon_buf);
+    }
+
+    fn bindPicker(self: *Shell, view: *webview_lib.Webview) void {
+        const ctx: *anyopaque = self;
+        _ = webview_lib.bind(view, server_picker.bind_connect, onConnect, ctx);
+        _ = webview_lib.bind(view, server_picker.bind_use_local, onUseLocal, ctx);
+        _ = webview_lib.bind(view, server_picker.bind_quit, onQuit, ctx);
+    }
+
+    fn unbindPicker(self: *Shell, view: *webview_lib.Webview) void {
+        _ = self;
+        _ = webview_lib.unbind(view, server_picker.bind_connect);
+        _ = webview_lib.unbind(view, server_picker.bind_use_local);
+        _ = webview_lib.unbind(view, server_picker.bind_quit);
+    }
+
+    fn effects(self: *Shell) server_picker.Effects {
+        return .{
+            .ctx = self,
+            .save = saveBaseUrl,
+            .forget = forgetBaseUrl,
+            .local_url = localUrl,
+        };
+    }
 };
 
-/// Install the tray once the native window exists, on the thread that owns
-/// the platform main loop.
-fn attachTray(ctx: *anyopaque, view: *webview_lib.Webview) void {
-    const session: *Session = @ptrCast(@alignCast(ctx));
-    session.view = view;
-    tray.install(.{ .ctx = ctx, .on = onTrayAction }, session.icon) catch |err| {
+fn saveBaseUrl(ctx: *anyopaque, base_url: []const u8) bool {
+    const shell: *Shell = @ptrCast(@alignCast(ctx));
+    desktop_config.writeBaseUrl(shell.allocator, shell.io, shell.config_path, base_url) catch |err| {
+        std.log.warn("Could not save the server address: {s}", .{@errorName(err)});
+        return false;
+    };
+    return true;
+}
+
+fn forgetBaseUrl(ctx: *anyopaque) void {
+    const shell: *Shell = @ptrCast(@alignCast(ctx));
+    desktop_config.forget(shell.io, shell.config_path);
+}
+
+fn localUrl(ctx: *anyopaque) ?[]const u8 {
+    const shell: *Shell = @ptrCast(@alignCast(ctx));
+    return shell.resolveLocalUrl() catch |err| {
+        std.log.warn("No local pabrik server to open: {s}", .{@errorName(err)});
+        return null;
+    };
+}
+
+fn attachToWindow(ctx: *anyopaque, view: *webview_lib.Webview) void {
+    const shell: *Shell = @ptrCast(@alignCast(ctx));
+    shell.view = view;
+    if (shell.on_picker) shell.bindPicker(view);
+    tray.install(.{ .ctx = ctx, .on = onTrayAction }, shell.icon()) catch |err| {
         std.log.warn("Tray icon unavailable: {s}", .{@errorName(err)});
     };
 }
 
+fn onConnect(id: [*:0]const u8, req: [*:0]const u8, arg: ?*anyopaque) callconv(.c) void {
+    const shell: *Shell = @ptrCast(@alignCast(arg orelse return));
+
+    const typed = server_picker.firstArgument(shell.allocator, std.mem.span(req)) catch null;
+    defer if (typed) |text| shell.allocator.free(text);
+
+    const outcome = server_picker.connect(shell.allocator, shell.effects(), typed orelse "") catch {
+        respond(shell, id, "{\"ok\":false,\"message\":\"This computer is out of memory.\"}");
+        return;
+    };
+    defer outcome.deinit(shell.allocator);
+
+    const reply = server_picker.writeReply(shell.allocator, outcome) catch return;
+    defer shell.allocator.free(reply);
+    respond(shell, id, reply);
+
+    switch (outcome) {
+        .connected => |url| shell.navigate(url),
+        .failed => {},
+    }
+}
+
+fn onUseLocal(id: [*:0]const u8, req: [*:0]const u8, arg: ?*anyopaque) callconv(.c) void {
+    _ = req;
+    const shell: *Shell = @ptrCast(@alignCast(arg orelse return));
+
+    const outcome = server_picker.useLocal(shell.effects());
+    defer outcome.deinit(shell.allocator);
+
+    const reply = server_picker.writeReply(shell.allocator, outcome) catch return;
+    defer shell.allocator.free(reply);
+    respond(shell, id, reply);
+
+    switch (outcome) {
+        .connected => |url| shell.navigate(url),
+        .failed => {},
+    }
+}
+
+fn onQuit(id: [*:0]const u8, req: [*:0]const u8, arg: ?*anyopaque) callconv(.c) void {
+    _ = id;
+    _ = req;
+    const shell: *Shell = @ptrCast(@alignCast(arg orelse return));
+    if (shell.view) |view| _ = webview_lib.webview_terminate(view);
+}
+
+fn respond(shell: *Shell, id: [*:0]const u8, body: []const u8) void {
+    const view = shell.view orelse return;
+    const body_z = shell.allocator.dupeZ(u8, body) catch return;
+    defer shell.allocator.free(body_z);
+    webview_lib.respond(view, id, body_z.ptr);
+}
+
 fn onTrayAction(ctx: *anyopaque, action: tray.Action) void {
-    const session: *Session = @ptrCast(@alignCast(ctx));
+    const shell: *Shell = @ptrCast(@alignCast(ctx));
     switch (action) {
-        .show_window => if (session.view) |view| {
+        .show_window => if (shell.view) |view| {
             tray.presentNativeWindow(webview_lib.webview_get_window(view));
         },
-        .open_in_browser => browser.openBrowser(session.io, session.url) catch {},
+        .change_server => shell.showPicker(.forced),
+        .open_in_browser => if (shell.url) |url| {
+            browser.openBrowser(shell.io, url) catch {};
+        },
         .quit => {
-            _ = subprocess.terminateByPid(session.daemon_pid);
-            if (session.view) |view| _ = webview_lib.webview_terminate(view);
+            _ = subprocess.terminateByPid(shell.daemon_pid);
+            if (shell.view) |view| _ = webview_lib.webview_terminate(view);
         },
     }
 }
 
-/// Open the webview window and run the platform event loop (blocks until the
-/// window closes).
+/// Windows: prefer a bundled fixed-version WebView2 runtime when the release
+/// zip shipped one next to the exe (no install needed).
 extern "kernel32" fn SetEnvironmentVariableW(lpName: [*:0]const u16, lpValue: [*:0]const u16) callconv(.winapi) c_int;
 
 fn pointWebView2AtBundledRuntime(allocator: std.mem.Allocator, self_exe_path: []const u8) void {
@@ -243,40 +412,6 @@ fn pointWebView2AtBundledRuntime(allocator: std.mem.Allocator, self_exe_path: []
     value_wide[value_len] = 0;
     if (SetEnvironmentVariableW(@ptrCast(&name_wide), @ptrCast(&value_wide)) == 0) return;
     std.log.info("Using bundled WebView2 runtime at {s}", .{runtime_dir});
-}
-fn runWebview(
-    allocator: std.mem.Allocator,
-    cfg: cli.Config,
-    session: *Session,
-) !void {
-    // Null-terminate the strings the C ABI expects.
-    const title_z = try allocator.dupeZ(u8, cfg.title);
-    defer allocator.free(title_z);
-    const url_z = try allocator.dupeZ(u8, session.url);
-    defer allocator.free(url_z);
-
-    std.log.info("Opening webview at {s}", .{session.url});
-    webview_lib.runWindow(
-        title_z.ptr,
-        url_z.ptr,
-        @intCast(cfg.window_width),
-        @intCast(cfg.window_height),
-        cfg.enable_devtools,
-        cfg.force_x11,
-        .{ .ctx = session, .attach = attachTray },
-    ) catch |err| {
-        std.log.err("Webview error: {s}", .{@errorName(err)});
-        // Windows: webview_create fails when the WebView2 EVERGREEN RUNTIME
-        // is not installed on the machine.
-        if (builtin.os.tag == .windows) {
-            std.log.err("The WebView2 window could not be created.", .{});
-            std.log.err("Install the WebView2 evergreen runtime and re-run:", .{});
-            std.log.err("  https://go.microsoft.com/fwlink/p/?LinkId=2124703", .{});
-            std.log.err("Workaround: open {s} in Edge/Chrome (backend is running).", .{session.url});
-        }
-        return err;
-    };
-    std.log.info("Window closed. Exiting.", .{});
 }
 
 // ===== Tests merged from platform/linux_test.zig (2026-09-29 flatten) =====
