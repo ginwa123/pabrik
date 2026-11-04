@@ -88,6 +88,9 @@ fn registerSessionRoutes(authed: *Group) !void {
     // Token usage + cache hit rate, derived from `llm_history` (the
     // `sessions` table stores no token column).
     try authed.get("/api/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
+    // Manual compaction — the same `maybeCompactMessagesNew` the agentic loop
+    // runs, against the same target.
+    try authed.post("/api/session/:session_id/compact", ai_mod.http_handlers.sessionCompactHandler);
     // try authed.get("/api/session/exists/:session_id",
     // http_handlers.sessionExistHandler, ctxParent); try
     // authed.get("/api/session/latest", http_handlers.sessionLatestHandler,

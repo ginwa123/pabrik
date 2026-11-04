@@ -172,12 +172,14 @@ export async function getSessionWorkspaceId(sessionId: string): Promise<string |
   }
 }
 
+/** `compacted` is false when the request succeeded but there was nothing to
+ * hand off yet — the server only writes when the loop would have written. */
+export type CompactResult = { success: boolean; compacted?: boolean; message?: string }
+
 // Compact chat session history
-export async function compactSession(
-  sessionId: string,
-): Promise<{ success: boolean; message?: string }> {
+export async function compactSession(sessionId: string): Promise<CompactResult> {
   try {
-    return await apiFetch<{ success: boolean; message?: string }>(`/session/${sessionId}/compact`, {
+    return await apiFetch<CompactResult>(`/session/${sessionId}/compact`, {
       method: 'POST',
     })
   } catch (error) {

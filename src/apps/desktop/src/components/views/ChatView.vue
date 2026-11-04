@@ -322,8 +322,10 @@ const compactSession = async () => {
 
   try {
     const result = await api.compactSession(sessionId.value)
-    if (result.success) {
+    if (result.success && result.compacted) {
       await loadChatHistory()
+    } else if (result.success) {
+      compactError.value = result.message || 'Nothing to compact'
     } else {
       compactError.value = result.message || 'Failed to compact'
     }
