@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import {
-  getWebStatus,
-  type McpServer,
-  type PabrikConfig,
-  type PabrikAgent,
-} from '../../api'
+import { getWebStatus, type McpServer, type PabrikConfig, type PabrikAgent } from '../../api'
 import { usePabrikConfig } from '../../composables/usePabrikConfig'
 import { AUTOSAVE_DELAY_MS } from '../../composables/autosaveDelay'
 import { useDebouncedRunner } from '../../composables/useDebouncedRunner'
@@ -16,6 +11,7 @@ import { useChatViewStore } from '../../stores/chatView'
 
 import PabrikSaveStatus from './PabrikSaveStatus.vue'
 import PabrikGeneralSection, { type PabrikGeneralSettings } from './PabrikGeneralSection.vue'
+import PabrikRuntimeSection, { type PabrikRuntimeSettings } from './PabrikRuntimeSection.vue'
 import AgentsSection, { type AgentRow } from './AgentsSection.vue'
 import McpServersSection from './McpServersSection.vue'
 import WebSearchSection from './WebSearchSection.vue'
@@ -48,7 +44,7 @@ const emit = defineEmits<{
 // ─── Scope ──────────────────────────────────────────────────────────────── Navigation lives in
 // `SettingsShell` (flat sidebar items + `?section=`), so this component renders ONE section at a
 // time and owns no tab strip. One editor, two scopes.
-type Tab = 'general' | 'agents' | 'mcp' | 'tools' | 'evals'
+type Tab = 'general' | 'runtime' | 'agents' | 'mcp' | 'tools' | 'evals'
 
 const props = withDefaults(
   defineProps<{
@@ -303,11 +299,13 @@ const toolsList = ref<string[] | null>(null)
 const generalSettings = ref<PabrikGeneralSettings>({
   notify_on_complete: false,
   notify_on_error: false,
-  retry_delay_ms: 0,
   // Plan 2026-09-10-web-launch-toggle: browser-mode flag (4th key).
   web_launch_enabled: false,
   chat_view: 'dev',
 })
+
+// The Runtime tab (workspace scope).
+const runtimeSettings = ref<PabrikRuntimeSettings>({ retry_delay_ms: 0 })
 
 // Skill Evals tab. Only `enabled` is editable in the UI; the budget
 // knobs ride along untouched (see skillEvalsRaw below) so flipping the
@@ -364,14 +362,14 @@ function syncFromConfig() {
   generalSettings.value = {
     notify_on_complete: c.notify_on_complete ?? false,
     notify_on_error: c.notify_on_error ?? false,
-    // Treat `undefined` (missing key) and explicit 0 the same way so
-    // hydrating an absent field is not read as an edit.
-    retry_delay_ms: c.retry_delay_ms ?? 0,
     // Plan 2026-09-10-web-launch-toggle: browser-mode flag, same
     // `?? false` hydration as the notify toggles.
     web_launch_enabled: c.web_launch_enabled ?? false,
     chat_view: c.chat_view === 'compact' ? 'compact' : 'dev',
   }
+  // Treat `undefined` (missing key) and explicit 0 the same way so
+  // hydrating an absent field is not read as an edit.
+  runtimeSettings.value = { retry_delay_ms: c.retry_delay_ms ?? 0 }
   // Remember the persisted flag so the autosave can detect the OFF→ON
   // transition for the one-time browser auto-open.
   prevWebLaunch.value = generalSettings.value.web_launch_enabled
@@ -465,12 +463,12 @@ function syncToConfig() {
   const webSearch = serializeWebSearchProviders(webSearchRows.value)
   config.value = {
     ...c,
-    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the three operational settings are
-    // driven by the General tab (`generalSettings`). Always write them through so toggling one
-    // reaches the autosave as the edit it is.
+    // Plan 2026-08-25-notify-on-error-and-retry-ms-in-settings: the operational settings are
+    // driven by their tabs (`generalSettings`, `runtimeSettings`). Always write them through so
+    // toggling one reaches the autosave as the edit it is.
     notify_on_complete: generalSettings.value.notify_on_complete,
     notify_on_error: generalSettings.value.notify_on_error,
-    retry_delay_ms: generalSettings.value.retry_delay_ms,
+    retry_delay_ms: runtimeSettings.value.retry_delay_ms,
     // Plan 2026-09-10-web-launch-toggle: 4th operational setting,
     // always written through like its siblings.
     web_launch_enabled: generalSettings.value.web_launch_enabled,
@@ -1130,6 +1128,12 @@ const isLoading = computed(() => !loaded.value)
           @update:model-value="syncToConfig"
           @open-web="openWeb"
           @copy-web="copyWeb"
+        />
+
+        <PabrikRuntimeSection
+          v-if="activeTab === 'runtime'"
+          v-model="runtimeSettings"
+          @update:model-value="syncToConfig"
         />
 
         <!-- Interface preferences — app-local (localStorage), not config.json -->

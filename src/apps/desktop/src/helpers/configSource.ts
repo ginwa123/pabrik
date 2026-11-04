@@ -16,7 +16,7 @@ export type ConfigScope = 'user' | 'workspace'
 /** The config sections that live in Workspace settings, in nav order. One list, two consumers: the
  * settings shell renders a nav item per entry and the workspace view renders an editor for each -
  * so a section can never be listed but unrenderable (a dead link) or renderable but unlisted. */
-export const WORKSPACE_AGENT_SECTIONS = ['agents', 'mcp', 'tools', 'evals'] as const
+export const WORKSPACE_AGENT_SECTIONS = ['agents', 'mcp', 'tools', 'evals', 'runtime'] as const
 
 /**  * Does the WORKSPACE settings page render this section? The complement of
  * `WORKSPACE_AGENT_SECTIONS`, for callers that hold a section id from somewhere else (the editor's

@@ -263,10 +263,7 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.emitted('notification')?.some((e) => e[1] === 'error')).toBe(true)
   })
 
-  // ─── General tab (plan 2026-08-25-notify-on-error-and-retry-ms-in-settings) ── Three operational
-  // settings live in the General tab: - `notify_on_complete` (existing config.json field) -
-  // `notify_on_error` (new field added by this plan).
-  it('hydrates the General tab from the loaded config (notify_on_complete + notify_on_error + retry_delay_ms)', async () => {
+  it('hydrates the General tab from the loaded config (notify_on_complete + notify_on_error)', async () => {
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,
       notify_on_error: true,
@@ -292,13 +289,8 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(
       (wrapper.find('[data-testid="toggle-notify-on-error"]').element as HTMLInputElement).checked,
     ).toBe(true)
-    // The retry-delay input is in seconds (15000 ms = 15 sec).
-    expect(
-      Number(
-        (wrapper.find('[data-testid="input-retry-delay-seconds"]').element as HTMLInputElement)
-          .value,
-      ),
-    ).toBe(15)
+    // The retry delay is not a General-tab field: it is workspace-scoped.
+    expect(wrapper.find('[data-testid="input-retry-delay-seconds"]').exists()).toBe(false)
     // Plan 2026-09-10-web-launch-toggle: the web-launch toggle reflects
     // the loaded flag and the pill shows the live status URL.
     expect(
@@ -380,65 +372,10 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(wrapper.find('[data-testid="reset-btn"]').exists()).toBe(false)
   })
 
-  it('typing into the retry-delay input round-trips to retry_delay_ms in the PUT body', async () => {
-    mockGet.mockResolvedValueOnce({
-      notify_on_complete: false,
-      notify_on_error: false,
-      retry_delay_ms: 0,
-      web_launch_enabled: false,
-    })
-    mockSave.mockResolvedValueOnce({ success: true })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    // Set the retry delay to 5 seconds → backend expects 5000 ms.
-    const input = wrapper.find('[data-testid="input-retry-delay-seconds"]')
-    await input.setValue('5')
-    await flushPromises()
-
-    // Save.
-    await settleAutosave()
-    expect(mockSave).toHaveBeenCalledTimes(1)
-    const savedConfig = mockSave.mock.calls[0]![0] as Record<string, unknown>
-    expect(savedConfig.retry_delay_ms).toBe(5000)
-  })
-
-  it('clamps retry-delay input values to [0, 60] seconds in the General tab', async () => {
-    // The backend caps retry_delay_ms at 60_000 (pabrik_config_put.zig).
-    // The UI clamps at the same range so the user gets immediate
-    // feedback instead of a silent server-side clamp.
-    mockGet.mockResolvedValueOnce({
-      notify_on_complete: false,
-      notify_on_error: false,
-      retry_delay_ms: 0,
-      web_launch_enabled: false,
-    })
-    const wrapper = mount(PabrikConfigEditor, { global: { stubs: { Teleport: true } } })
-    await flushPromises()
-
-    const input = wrapper.find('[data-testid="input-retry-delay-seconds"]')
-
-    // Above-max → clamps to 60 seconds (the underlying value should
-    // be 60_000 ms — assert via the ms readout element's text
-    // content, which is the source of truth the user sees).
-    await input.setValue('999')
-    await flushPromises()
-    // The input element's `.value` is a string — vitest sometimes
-    // formats numbers with locale separators, so check via the
-    // dedicated ms-readout element instead.
-    const msReadout = wrapper.find('[data-testid="retry-delay-ms-readout"]')
-    expect(msReadout.text()).toContain('60000')
-
-    // Below-min (negative) → clamps to 0.
-    await input.setValue('-5')
-    await flushPromises()
-    expect(msReadout.text()).toContain('0')
-  })
-
-  it('the PUT body always includes all four operational settings, even when the user only edits one', async () => {
-    // The General tab MUST write all four operational settings through (syncToConfig does this
-    // unconditionally). This is a regression guard so a future refactor doesn't accidentally drop
-    // one of them and silently re-introduce the hidden-field bug.
+  it('the PUT body always includes every operational setting, even when the user only edits one', async () => {
+    // syncToConfig writes the operational settings through unconditionally. This is a regression
+    // guard so a future refactor doesn't accidentally drop one of them and silently re-introduce the
+    // hidden-field bug — including `retry_delay_ms`, which now rides the Runtime tab.
     mockGet.mockResolvedValueOnce({
       notify_on_complete: true,
       notify_on_error: false,

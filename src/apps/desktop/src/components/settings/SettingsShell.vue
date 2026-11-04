@@ -54,6 +54,7 @@ const AGENT_SECTION_META: Record<
   mcp: { label: 'MCP Servers', icon: 'globe' },
   tools: { label: 'Tools', icon: 'tools' },
   evals: { label: 'Skill Evals', icon: 'sparkle' },
+  runtime: { label: 'Runtime', icon: 'stopwatch' },
 }
 
 const WORKSPACE_SECTIONS: readonly SettingsSectionItem[] = [

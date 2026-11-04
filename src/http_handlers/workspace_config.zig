@@ -384,10 +384,21 @@ test "overlayFromPutBody keeps only the workspace-scoped keys" {
     // `workspace_config.ScopedKey`.
     try testing.expect(obj.get("profiles_models") != null);
     try testing.expect(obj.get("tools") != null);
-    // The General-tab keys stay user-level (D4).
+    try testing.expectEqual(@as(i64, 2000), obj.get("retry_delay_ms").?.integer);
     try testing.expect(obj.get("notify_on_complete") == null);
-    try testing.expect(obj.get("retry_delay_ms") == null);
     try testing.expect(obj.get("web_launch_enabled") == null);
+}
+
+test "overlayFromPutBody clamps a retry delay the user PUT would clamp" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const alloc = arena_state.allocator();
+
+    const overlay = try overlayFromPutBody(alloc, "{\"retry_delay_ms\":999999}");
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, overlay, .{});
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 60_000), parsed.value.object.get("retry_delay_ms").?.integer);
 }
 
 test "overlayFromPutBody refuses a body with nothing scoped, and malformed JSON" {
@@ -398,7 +409,7 @@ test "overlayFromPutBody refuses a body with nothing scoped, and malformed JSON"
     const alloc = arena_state.allocator();
     // Refusing beats storing `{}`: storing it would look like a successful
     // save while every setting the user typed silently stayed user-level.
-    try testing.expectError(error.NothingScoped, overlayFromPutBody(alloc, "{\"retry_delay_ms\":2000}"));
+    try testing.expectError(error.NothingScoped, overlayFromPutBody(alloc, "{\"notify_on_complete\":true}"));
     try testing.expectError(error.NothingScoped, overlayFromPutBody(alloc, "{}"));
     try testing.expectError(error.InvalidBody, overlayFromPutBody(alloc, "{\"tools\":"));
 }

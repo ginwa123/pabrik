@@ -467,8 +467,36 @@ test "auth mode: a workspace's own row is the whole scoped answer" {
     try testing.expect(cfg.agents.get("claude") == null);
     try testing.expect(cfg.active_agent == null);
 
-    // General is still shared, so the run keeps the user's retry backoff.
-    try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
+    // The retry backoff is workspace-scoped too, so the user's 1234 does not
+    // reach a run in here: an unset workspace retries immediately.
+    try testing.expectEqual(@as(u32, 0), cfg.retry_delay_ms);
+}
+
+test "a workspace's own retry delay is the one the run uses" {
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    try insertUser(&ctx.db, "u_1", "{\"retry_delay_ms\":1234}");
+    try putOverlay(&ctx.db, "u_1", "ws_a", "{\"retry_delay_ms\":2500}");
+
+    const merged = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "ws_a") orelse
+        return error.OverlayIgnored;
+    defer alloc.free(merged);
+
+    const cfg = fromJsonText(alloc, merged) orelse return error.Unparseable;
+    defer freeResolved(cfg);
+    try testing.expectEqual(@as(u32, 2500), cfg.retry_delay_ms);
+
+    // Outside a workspace the same user still gets their own value: the move
+    // narrows where the setting is read from, it does not delete the field.
+    const plain = mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_1", "") orelse
+        return error.UserConfigLost;
+    defer alloc.free(plain);
+    const plain_cfg = fromJsonText(alloc, plain) orelse return error.Unparseable;
+    defer freeResolved(plain_cfg);
+    try testing.expectEqual(@as(u32, 1234), plain_cfg.retry_delay_ms);
 }
 
 test "auth mode: a workspace with no row has no scoped settings" {
@@ -488,11 +516,11 @@ test "auth mode: a workspace with no row has no scoped settings" {
 
     const cfg = fromJsonText(alloc, text) orelse return error.Unparseable;
     defer freeResolved(cfg);
-    // Nothing was saved for this workspace, so there are no tools and no
-    // active agent - the user's scoped keys are not a fallback.
+    // Nothing was saved for this workspace, so there are no tools, no active
+    // agent and no retry backoff - the user's scoped keys are not a fallback.
     try testing.expect(cfg.tools == null);
     try testing.expect(cfg.active_agent == null);
-    try testing.expectEqual(@as(u32, 1234), cfg.retry_delay_ms);
+    try testing.expectEqual(@as(u32, 0), cfg.retry_delay_ms);
 
     // A user who never saved settings, and no overlay either: the singleton.
     try testing.expect(mergedConfigTextFor(alloc, ctx.threaded.io(), &ctx.db, null, true, "u_none", "ws_a") == null);

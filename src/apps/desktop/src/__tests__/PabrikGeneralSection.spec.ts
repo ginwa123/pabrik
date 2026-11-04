@@ -1,4 +1,5 @@
-/** Tests for PabrikGeneralSection.vue — the General tab in Pabrik settings. */
+/** Tests for PabrikGeneralSection.vue — the General tab in USER settings. Retry backoff is a
+ * workspace value and is covered by PabrikRuntimeSection.spec.ts. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -9,33 +10,39 @@ import PabrikGeneralSection, {
 const DEFAULT_SETTINGS: PabrikGeneralSettings = {
   notify_on_complete: false,
   notify_on_error: false,
-  retry_delay_ms: 0,
   // Plan 2026-09-10-web-launch-toggle: 4th key (browser-mode flag).
   web_launch_enabled: false,
   chat_view: 'dev',
 }
 
 describe('PabrikGeneralSection', () => {
-  it('renders both toggles and the retry-delay input', () => {
+  it('renders the notification toggles and the chat-view control', () => {
     const wrapper = mount(PabrikGeneralSection, {
       props: { modelValue: { ...DEFAULT_SETTINGS } },
     })
     expect(wrapper.find('[data-testid="toggle-notify-on-complete"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="toggle-notify-on-error"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="input-retry-delay-seconds"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="chat-view-dev"]').exists()).toBe(true)
     // Human-readable copy.
     expect(wrapper.text()).toContain('Notify when agent finishes')
     expect(wrapper.text()).toContain('Notify when agent fails')
-    expect(wrapper.text()).toContain('Retry delay')
   })
 
-  it('reflects the loaded settings in the toggles + input', () => {
+  it('offers no retry-delay input — that setting lives in workspace settings', () => {
+    const wrapper = mount(PabrikGeneralSection, {
+      props: { modelValue: { ...DEFAULT_SETTINGS } },
+    })
+    expect(wrapper.find('[data-testid="input-retry-delay-seconds"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="retry-delay-ms-readout"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Retry delay')
+  })
+
+  it('reflects the loaded settings in the toggles', () => {
     const wrapper = mount(PabrikGeneralSection, {
       props: {
         modelValue: {
           notify_on_complete: true,
           notify_on_error: true,
-          retry_delay_ms: 15000, // 15 seconds
           web_launch_enabled: true,
           chat_view: 'dev',
         },
@@ -43,15 +50,12 @@ describe('PabrikGeneralSection', () => {
       },
     })
     expect(
-      (wrapper.find('[data-testid="toggle-notify-on-complete"]').element as HTMLInputElement).checked,
+      (wrapper.find('[data-testid="toggle-notify-on-complete"]').element as HTMLInputElement)
+        .checked,
     ).toBe(true)
     expect(
       (wrapper.find('[data-testid="toggle-notify-on-error"]').element as HTMLInputElement).checked,
     ).toBe(true)
-    expect(
-      Number((wrapper.find('[data-testid="input-retry-delay-seconds"]').element as HTMLInputElement).value),
-    ).toBe(15)
-    expect(wrapper.text()).toContain('15000 ms')
   })
 
   it('clicking notify_on_complete emits update:modelValue with the flipped boolean', async () => {
@@ -62,7 +66,6 @@ describe('PabrikGeneralSection', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual({
       notify_on_complete: true,
       notify_on_error: false,
-      retry_delay_ms: 0,
       web_launch_enabled: false,
       chat_view: 'dev',
     })
@@ -76,7 +79,6 @@ describe('PabrikGeneralSection', () => {
         modelValue: {
           notify_on_complete: true,
           notify_on_error: false,
-          retry_delay_ms: 5000,
           web_launch_enabled: false,
           chat_view: 'dev',
         },
@@ -86,38 +88,6 @@ describe('PabrikGeneralSection', () => {
     const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as PabrikGeneralSettings
     expect(emitted.notify_on_error).toBe(true)
     expect(emitted.notify_on_complete).toBe(true)
-    expect(emitted.retry_delay_ms).toBe(5000)
-  })
-
-  it('typing a new retry delay (in seconds) emits update:modelValue with the millisecond value', async () => {
-    const wrapper = mount(PabrikGeneralSection, {
-      props: { modelValue: { ...DEFAULT_SETTINGS, retry_delay_ms: 0 } },
-    })
-    await wrapper.find('[data-testid="input-retry-delay-seconds"]').setValue('5')
-    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual({
-      notify_on_complete: false,
-      notify_on_error: false,
-      retry_delay_ms: 5000, // 5 sec → 5000 ms
-      web_launch_enabled: false,
-      chat_view: 'dev',
-    })
-  })
-
-  it('clamps retry-delay input to [0, 60] seconds (matches the backend 0–60_000 ms cap)', async () => {
-    const wrapper = mount(PabrikGeneralSection, {
-      props: { modelValue: { ...DEFAULT_SETTINGS } },
-    })
-    const input = wrapper.find('[data-testid="input-retry-delay-seconds"]')
-
-    // Above the max → clamps to 60 sec = 60_000 ms.
-    await input.setValue('999')
-    const emitted = wrapper.emitted('update:modelValue')?.[0]?.[0] as PabrikGeneralSettings
-    expect(emitted.retry_delay_ms).toBe(60_000)
-
-    // Negative → clamps to 0.
-    await input.setValue('-5')
-    const emitted2 = wrapper.emitted('update:modelValue')?.[1]?.[0] as PabrikGeneralSettings
-    expect(emitted2.retry_delay_ms).toBe(0)
   })
 
   it('toggling a control does not lose the OTHER settings (whole-object emit)', async () => {
@@ -129,7 +99,6 @@ describe('PabrikGeneralSection', () => {
         modelValue: {
           notify_on_complete: true,
           notify_on_error: false,
-          retry_delay_ms: 30000,
           web_launch_enabled: false,
           chat_view: 'dev',
         },
@@ -140,7 +109,6 @@ describe('PabrikGeneralSection', () => {
     expect(emitted).toEqual({
       notify_on_complete: true,
       notify_on_error: true,
-      retry_delay_ms: 30000,
       web_launch_enabled: false,
       chat_view: 'dev',
     })
@@ -162,7 +130,6 @@ describe('PabrikGeneralSection', () => {
         modelValue: {
           notify_on_complete: true,
           notify_on_error: false,
-          retry_delay_ms: 5000,
           web_launch_enabled: false,
           chat_view: 'dev',
         },
@@ -172,7 +139,6 @@ describe('PabrikGeneralSection', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual({
       notify_on_complete: true,
       notify_on_error: false,
-      retry_delay_ms: 5000,
       web_launch_enabled: true,
       chat_view: 'dev',
     })
@@ -205,8 +171,14 @@ describe('PabrikGeneralSection', () => {
       },
     })
     expect(wrapper.find('[data-testid="pill-web-url-row"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="pill-web-url"]').text()).toContain('Starting local web server')
-    expect((wrapper.find('[data-testid="btn-open-web"]').element as HTMLButtonElement).disabled).toBe(true)
-    expect((wrapper.find('[data-testid="btn-copy-web"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="pill-web-url"]').text()).toContain(
+      'Starting local web server',
+    )
+    expect(
+      (wrapper.find('[data-testid="btn-open-web"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(
+      (wrapper.find('[data-testid="btn-copy-web"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 })
