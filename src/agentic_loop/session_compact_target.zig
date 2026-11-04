@@ -100,7 +100,7 @@ pub fn compactSession(
     var messages: std.ArrayList(agent.AgentMessage) = .empty;
     try messages.appendSlice(
         allocator,
-        try buildMessages(allocator, io, db, resolved.cwd, session_id, "", db_messages, tools, "", ""),
+        try buildMessages(allocator, io, db, resolved.cwd, session_id, "", false, db_messages, tools, "", ""),
     );
 
     const compacted = try compact_mod.maybeCompactMessagesNew(

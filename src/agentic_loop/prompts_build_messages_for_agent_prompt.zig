@@ -78,6 +78,7 @@ pub fn buildMessages(
     cwd: []const u8,
     session_id: []const u8,
     parent_session_id: []const u8,
+    is_sub_agent: bool,
     historyMessages: []agentic_loop.LLMHistory,
     tools: []tool_models.AgentTool,
     inherited_context_mode: []const u8,
@@ -132,6 +133,12 @@ pub fn buildMessages(
     // Session VCS binding: a worktree and a pull request.
     try final_system.appendSlice(allocator, prompts_const.GitWorktreeToolRule);
     try final_system.appendSlice(allocator, prompts_const.PullRequestToolRule);
+    // The `<ask_user>` block IS the desktop question card: without this rule
+    // the model answers in prose. A sub-agent cannot reach the human — the loop
+    // strips its block — so it gets no rule.
+    if (!is_sub_agent) {
+        try final_system.appendSlice(allocator, prompts_const.AskUserRule);
+    }
     // Workspace credentials.
     if (hasTool(filtered_tools, "list_secrets")) {
         try final_system.appendSlice(allocator, prompts_const.SecretsToolRule);
@@ -1211,9 +1218,9 @@ const PromptSection = struct {
     requires_tool: ?[]const u8 = null,
 };
 
-/// Single source of truth for which prompt sections the main agent receives.
-/// Order is meaningful: prompts earlier in the array are read first by the
-/// model.
+/// Sections for the LEGACY `build_agent_prompt` below, which the live path no
+/// longer calls: a rule listed here does NOT reach the model. `buildMessages`
+/// assembles the live prompt by hand, and its tests prove what ships.
 const PROMPT_SECTIONS: []const PromptSection = &.{
     .{ .name = "universal_rules", .content = prompts_const.UniversalRules },
     .{ .name = "search_tool_rule", .content = prompts_const.SearchToolRule },
@@ -1225,6 +1232,7 @@ const PROMPT_SECTIONS: []const PromptSection = &.{
     .{ .name = "temporary_files_rule", .content = prompts_const.TemporaryFilesRule },
     .{ .name = "git_prompt", .content = prompts_const.GitPrompt },
     .{ .name = "response_formatting", .content = prompts_const.ResponseFormatting },
+    .{ .name = "ask_user_rule", .content = prompts_const.AskUserRule },
     .{
         .name = "task_planning",
         .content =
@@ -1767,6 +1775,7 @@ test "buildMessages: the spawned agent's configuration reaches the prompt" {
         cwd,
         "sess_agent_cfg",
         "",
+        false,
         &.{},
         &.{},
         "",
@@ -1800,6 +1809,7 @@ test "buildMessages: a top-level session gets no agent-configuration section" {
         cwd,
         "sess_no_agent_cfg",
         "",
+        false,
         &.{},
         &.{},
         "",
@@ -1839,6 +1849,7 @@ test "buildMessages: the cross-project block reaches the prompt, after the works
         cwd,
         "sess_cross",
         "",
+        false,
         &.{},
         &.{},
         "",
