@@ -63,7 +63,7 @@ pub fn gitStageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res
 
     for (files.items) |file| {
         // Use git add -v for verbose output (shows what's being staged)
-        if (git_route.run(allocator, io, path_param, &.{ "add", "-v", "--", file }, .{})) |result| {
+        if (git_route.run(allocator, io, path_param, &.{ "add", "-v", "--", file }, git_route.options(req))) |result| {
             if (result.term.exited == 0) {
                 staged_files.append(allocator, file) catch {};
                 emitStageEvent(ctx, path_param, file, false);
@@ -131,13 +131,13 @@ pub fn gitUnstageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 
     for (files.items) |file| {
         // Use git restore --staged -v for verbose output
-        if (git_route.run(allocator, io, path_param, &.{ "restore", "--staged", "-v", "--", file }, .{})) |result| {
+        if (git_route.run(allocator, io, path_param, &.{ "restore", "--staged", "-v", "--", file }, git_route.options(req))) |result| {
             if (result.term.exited == 0) {
                 unstaged_files.append(allocator, file) catch {};
                 emitUnstageEvent(ctx, path_param, file, false);
             } else {
                 // Fallback to git reset HEAD if restore fails
-                if (git_route.run(allocator, io, path_param, &.{ "reset", "-q", "--", file }, .{})) |reset_result| {
+                if (git_route.run(allocator, io, path_param, &.{ "reset", "-q", "--", file }, git_route.options(req))) |reset_result| {
                     if (reset_result.term.exited == 0) {
                         unstaged_files.append(allocator, file) catch {};
                         emitUnstageEvent(ctx, path_param, file, false);
@@ -152,7 +152,7 @@ pub fn gitUnstageHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
             }
         } else |_| {
             // Fallback to git reset HEAD
-            if (git_route.run(allocator, io, path_param, &.{ "reset", "-q", "--", file }, .{})) |reset_result| {
+            if (git_route.run(allocator, io, path_param, &.{ "reset", "-q", "--", file }, git_route.options(req))) |reset_result| {
                 if (reset_result.term.exited == 0) {
                     unstaged_files.append(allocator, file) catch {};
                     emitUnstageEvent(ctx, path_param, file, false);

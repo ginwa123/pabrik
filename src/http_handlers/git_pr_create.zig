@@ -42,10 +42,11 @@ fn createPullRequestUseCase(
     base: []const u8,
     title: []const u8,
     body: []const u8,
+    opts: git_route.Options,
 ) !CreatePullRequestResult {
     // The program MUST be derived from the provider.
     const cli = pr_cli.cliFor(provider) orelse return ghFailed(allocator, "the generic provider has no forge CLI, so a pull/merge request cannot be created");
-    return createPullRequestUseCaseWith(allocator, io, cli.program, provider, worktree_path, base, title, body);
+    return createPullRequestUseCaseWith(allocator, io, cli.program, provider, worktree_path, base, title, body, opts);
 }
 
 fn createPullRequestUseCaseWith(
@@ -57,6 +58,7 @@ fn createPullRequestUseCaseWith(
     base: []const u8,
     title: []const u8,
     body: []const u8,
+    opts: git_route.Options,
 ) !CreatePullRequestResult {
     const cli = pr_cli.cliFor(provider) orelse return ghFailed(allocator, "the generic provider has no forge CLI, so a pull/merge request cannot be created");
 
@@ -67,7 +69,7 @@ fn createPullRequestUseCaseWith(
     // FUNCTION scope on purpose.
     defer if (source_branch) |b| allocator.free(b);
     if (provider == .gitlab) {
-        source_branch = currentBranch(allocator, io, worktree_path);
+        source_branch = currentBranch(allocator, io, worktree_path, opts);
         if (source_branch == null) {
             return ghFailed(allocator, "could not determine the current branch in the worktree, which glab mr create needs as --source-branch");
         }
@@ -122,8 +124,8 @@ fn createPullRequestUseCaseWith(
 /// The branch checked out in `path`, OWNED by `allocator` (the caller must
 /// free it), or null when it cannot be determined — detached HEAD, not a
 /// repo, git missing.
-fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ?[]u8 {
-    const res = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return null;
+fn currentBranch(allocator: std.mem.Allocator, io: std.Io, path: []const u8, opts: git_route.Options) ?[]u8 {
+    const res = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, opts) catch return null;
     defer {
         allocator.free(res.stdout);
         allocator.free(res.stderr);
@@ -175,7 +177,7 @@ pub fn gitPrCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
     // `resolveCreateProvider` fails only on an unparseable provider name,
     // so a bare `catch` is exhaustive here — an `else => return err` arm
     // is an unreachable prong and breaks the exe build.
-    const provider = resolveCreateProvider(allocator, ctx.io, parsed) catch {
+    const provider = resolveCreateProvider(allocator, ctx.io, parsed, git_route.options(req)) catch {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "provider must be \"github\", \"gitlab\", or \"generic\"" }) });
     };
 
@@ -187,6 +189,7 @@ pub fn gitPrCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
         parsed.base,
         parsed.title,
         parsed.body,
+        git_route.options(req),
     );
 
     const status_code: u16 = switch (result.status) {
@@ -205,11 +208,11 @@ pub fn gitPrCreateHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
 /// Which forge to create on. There is no URL to sniff here (we are
 /// making one), so the order is: explicit body field, then the
 /// worktree's `origin` remote, then GitHub.
-fn resolveCreateProvider(allocator: std.mem.Allocator, io: std.Io, body: anytype) !pr_provider.PrProvider {
+fn resolveCreateProvider(allocator: std.mem.Allocator, io: std.Io, body: anytype, opts: git_route.Options) !pr_provider.PrProvider {
     if (body.provider.len > 0) {
         return pr_provider.PrProvider.fromString(body.provider) orelse error.UnknownProvider;
     }
-    const res = git_route.run(allocator, io, body.worktree_path, &.{ "remote", "get-url", "origin" }, .{}) catch return .github;
+    const res = git_route.run(allocator, io, body.worktree_path, &.{ "remote", "get-url", "origin" }, opts) catch return .github;
     defer {
         allocator.free(res.stdout);
         allocator.free(res.stderr);
@@ -306,7 +309,7 @@ test "create: github still runs the exact historical gh pr create argv" {
     });
     defer a.free(gh);
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, gh, .github, repo, "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, gh, .github, repo, "main", "T", "B", .{});
     defer freeCreateResult(a, res);
 
     try testing.expectEqual(GhStatus.success, res.status);
@@ -339,7 +342,7 @@ test "create: gitlab runs glab mr create with --source-branch and --yes" {
     });
     defer a.free(glab);
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, glab, .gitlab, repo, "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, glab, .gitlab, repo, "main", "T", "B", .{});
     defer freeCreateResult(a, res);
 
     try testing.expectEqual(GhStatus.success, res.status);
@@ -366,7 +369,7 @@ test "create: a glab banner before the URL does not become pr_url" {
     });
     defer a.free(glab);
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, glab, .gitlab, repo, "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, glab, .gitlab, repo, "main", "T", "B", .{});
     defer freeCreateResult(a, res);
     try testing.expectEqualStrings("https://gitlab.com/g/s/r/-/merge_requests/7", res.pr_url);
 }
@@ -381,7 +384,7 @@ test "create: the generic provider fails without spawning anything" {
     const prog = try fx.writeProgram("nope", .{ .touch_file = sentinel });
     defer a.free(prog);
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, prog, .generic, fx.root(), "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, prog, .generic, fx.root(), "main", "T", "B", .{});
     defer freeCreateResult(a, res);
     try testing.expectEqual(GhStatus.gh_failed, res.status);
     try testing.expect(std.mem.indexOf(u8, res.stderr, "no forge CLI") != null);
@@ -399,7 +402,7 @@ test "create: a missing CLI names glab, not gh" {
     var fx = try Fixture.init(a);
     defer fx.deinit();
 
-    const res = try createPullRequestUseCaseWith(a, std.testing.io, "/pabrik/definitely/not/glab", .gitlab, fx.root(), "main", "T", "B");
+    const res = try createPullRequestUseCaseWith(a, std.testing.io, "/pabrik/definitely/not/glab", .gitlab, fx.root(), "main", "T", "B", .{});
     defer freeCreateResult(a, res);
     try testing.expectEqual(GhStatus.gh_failed, res.status);
     try testing.expect(std.mem.indexOf(u8, res.stderr, "glab") != null);

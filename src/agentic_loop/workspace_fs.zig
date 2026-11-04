@@ -513,6 +513,31 @@ pub fn routeForPath(
     return .{ .guest = found orelse return .{ .unavailable = Error.GuestWorkspaceUnknown } };
 }
 
+/// The route for a directory the caller names TOGETHER with the workspace it
+/// means. A guest path carries no workspace identity, so `--saas` needs the
+/// caller to say it — exactly what the folder picker already requires.
+pub fn routeForWorkspace(
+    allocator: std.mem.Allocator,
+    db: ?*database.Db,
+    abs_path: []const u8,
+    workspace_id: ?[]const u8,
+) Route {
+    if (runtime_mode.currentMode() != .saas) return .host;
+    if (workspace_id) |id| {
+        if (id.len > 0) {
+            const db_handle = db orelse return .{ .unavailable = Error.GuestWorkspaceUnknown };
+            if (forWorkspace(allocator, db_handle, id)) |fs| {
+                return .{ .guest = fs };
+            } else |err| {
+                // Only a workspace with no VM has a second answer: its path
+                // may still name the tree.
+                if (err != Error.GuestWorkspaceNotVm) return .{ .unavailable = err };
+            }
+        }
+    }
+    return routeForPath(allocator, db, abs_path);
+}
+
 /// One preview exchange through the manager, for the route that reaches a
 /// tenant's dev server. Local mode has no guest to reach, so it fails closed
 /// exactly like every other guest call here.
@@ -888,6 +913,102 @@ test "forPath: saas refuses a path no workspace owns, and one with no manager" {
         Error.GuestManagerUnavailable,
         forPath(testing.allocator, &ctx.db, "/proj/a/src"),
     );
+}
+
+test "routeForWorkspace: naming the workspace resolves /workspace, which no item path records" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    // A SaaS item's recorded path is the server's host home, so nothing the
+    // path route matches can ever be `/workspace`.
+    var by_path = routeForPath(testing.allocator, &ctx.db, policy.guest_root);
+    defer by_path.deinit();
+    try testing.expect(by_path == .unavailable);
+
+    var by_hint = routeForWorkspace(testing.allocator, &ctx.db, policy.guest_root, "w1");
+    defer by_hint.deinit();
+    if (!runtime_mode.vm_backend_available) {
+        try testing.expect(by_hint == .unavailable);
+        try testing.expectEqual(Error.GuestManagerUnavailable, by_hint.unavailable);
+        return;
+    }
+    switch (by_hint) {
+        .guest => |fs| {
+            try testing.expectEqualStrings("w1", fs.workspace_id);
+            try testing.expectEqualStrings("", fs.relativeDir(policy.guest_root).?);
+            try testing.expectEqualStrings("src", fs.relativeDir("/workspace/src").?);
+        },
+        else => return error.TestExpectedGuest,
+    }
+}
+
+test "routeForWorkspace: a workspace with no VM falls back to the path route" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    // `/proj/a` is the root the item row records for `w1`.
+    var route = routeForWorkspace(testing.allocator, &ctx.db, "/proj/a/src", "w_host");
+    defer route.deinit();
+    if (!runtime_mode.vm_backend_available) {
+        try testing.expect(route == .unavailable);
+        return;
+    }
+    switch (route) {
+        .guest => |fs| try testing.expectEqualStrings("w1", fs.workspace_id),
+        else => return error.TestExpectedGuest,
+    }
+}
+
+test "routeForWorkspace: an id that is not inert is refused, and never the host" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    var route = routeForWorkspace(testing.allocator, &ctx.db, "/proj/a", "../../etc");
+    defer route.deinit();
+    try testing.expect(route == .unavailable);
+}
+
+test "routeForWorkspace: local mode ignores the hint and answers the host" {
+    try testing.expectEqual(runtime_mode.Mode.local, runtime_mode.currentMode());
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    var route = routeForWorkspace(testing.allocator, &ctx.db, "/proj/a/src", "w1");
+    defer route.deinit();
+    try testing.expect(route == .host);
+}
+
+test "routeForWorkspace: an empty hint is no hint, so today's route still answers" {
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+    runtime_mode.setManagerSocket("/run/user/1000/pabrik-vmd.sock");
+    defer runtime_mode.setManagerSocket(null);
+
+    var ctx = try guestTestCtx();
+    defer ctx.deinit();
+
+    var route = routeForWorkspace(testing.allocator, &ctx.db, "/proj/a/src", "");
+    defer route.deinit();
+    if (!runtime_mode.vm_backend_available) {
+        try testing.expect(route == .unavailable);
+        return;
+    }
+    switch (route) {
+        .guest => |fs| try testing.expectEqualStrings("w1", fs.workspace_id),
+        else => return error.TestExpectedGuest,
+    }
 }
 
 const linux = std.os.linux;

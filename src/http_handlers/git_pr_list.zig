@@ -63,8 +63,9 @@ fn listUseCase(
     limit: u32,
     provider_override: ?[]const u8,
     detail: *?[]u8,
+    opts: git_route.Options,
 ) !http_response.GitPrListResponse {
-    return listUseCaseWithPrograms(allocator, io, .{}, path, state, limit, provider_override, detail);
+    return listUseCaseWithPrograms(allocator, io, .{}, path, state, limit, provider_override, detail, opts);
 }
 
 /// The whole read path: repo gate → provider → argv → spawn → parse. `pub` so
@@ -79,8 +80,9 @@ pub fn listUseCaseWithPrograms(
     limit: u32,
     provider_override: ?[]const u8,
     detail: *?[]u8,
+    opts: git_route.Options,
 ) !http_response.GitPrListResponse {
-    if (!isGitRepository(allocator, io, path)) return error.NotARepository;
+    if (!isGitRepository(allocator, io, path, opts)) return error.NotARepository;
 
     const provider = pr_status.resolveProvider(allocator, io, path, "", provider_override) catch |err| switch (err) {
         error.UnknownProvider => {
@@ -178,8 +180,8 @@ pub fn listUseCaseWithPrograms(
 }
 
 /// `git -C <path> rev-parse --git-dir` exits 0 only inside a repository.
-fn isGitRepository(allocator: std.mem.Allocator, io: std.Io, path: []const u8) bool {
-    const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return false;
+fn isGitRepository(allocator: std.mem.Allocator, io: std.Io, path: []const u8, opts: git_route.Options) bool {
+    const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, opts) catch return false;
     defer {
         allocator.free(check.stdout);
         allocator.free(check.stderr);
@@ -338,7 +340,7 @@ pub fn gitPrListHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     }
 
     var detail: ?[]u8 = null;
-    const result = listUseCase(allocator, io, path_param, state, limit, provider_param, &detail) catch |err| switch (err) {
+    const result = listUseCase(allocator, io, path_param, state, limit, provider_param, &detail, git_route.options(req)) catch |err| switch (err) {
         error.NotARepository => {
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "not a git repository" }) });
         },
@@ -569,7 +571,7 @@ test "list: github asks by state and limit, and the recorded argv says so" {
     defer a.free(gh);
 
     var detail: ?[]u8 = null;
-    const out = try listUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, repo, .closed, 5, "github", &detail);
+    const out = try listUseCaseWithPrograms(a, testing.io, .{ .gh = gh }, repo, .closed, 5, "github", &detail, .{});
     defer freeListResponse(a, out);
 
     try testing.expectEqualStrings("github", out.provider);
@@ -603,7 +605,7 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
     defer a.free(two);
 
     var detail: ?[]u8 = null;
-    const full = try listUseCaseWithPrograms(a, testing.io, .{ .gh = two }, repo, .open, 2, "github", &detail);
+    const full = try listUseCaseWithPrograms(a, testing.io, .{ .gh = two }, repo, .open, 2, "github", &detail, .{});
     defer freeListResponse(a, full);
     try testing.expect(full.truncated);
     try testing.expectEqual(@as(usize, 2), full.changes.len);
@@ -613,7 +615,7 @@ test "list: a full page reports truncated, and an empty stdout is an empty resul
     const silent = try fx.writeProgram("gh-silent", .{});
     defer a.free(silent);
     var detail2: ?[]u8 = null;
-    const none = try listUseCaseWithPrograms(a, testing.io, .{ .gh = silent }, repo, .open, 30, "github", &detail2);
+    const none = try listUseCaseWithPrograms(a, testing.io, .{ .gh = silent }, repo, .open, 30, "github", &detail2, .{});
     defer freeListResponse(a, none);
     try testing.expectEqual(@as(usize, 0), none.changes.len);
     try testing.expect(!none.truncated);
@@ -634,7 +636,7 @@ test "list: a failing CLI surfaces its own stderr rather than an empty list" {
     defer a.free(fail);
 
     var detail: ?[]u8 = null;
-    const res = listUseCaseWithPrograms(a, testing.io, .{ .gh = fail }, repo, .open, 30, "github", &detail);
+    const res = listUseCaseWithPrograms(a, testing.io, .{ .gh = fail }, repo, .open, 30, "github", &detail, .{});
     try testing.expectError(error.FetchFailed, res);
     const d = detail orelse return error.NoDetail;
     defer a.free(d);
@@ -649,7 +651,7 @@ test "list: a missing CLI is CliMissing (422), not a fetch failure" {
     defer a.free(repo);
 
     var detail: ?[]u8 = null;
-    const res = listUseCaseWithPrograms(a, testing.io, .{ .gh = "/pabrik/no/such/gh" }, repo, .open, 30, "github", &detail);
+    const res = listUseCaseWithPrograms(a, testing.io, .{ .gh = "/pabrik/no/such/gh" }, repo, .open, 30, "github", &detail, .{});
     try testing.expectError(error.CliMissing, res);
 }
 
@@ -665,7 +667,7 @@ test "list: a non-repository path is refused before any CLI runs" {
     if (pr_status.gitProbeIsEnvHijacked(a, not_repo)) return error.SkipZigTest;
 
     var detail: ?[]u8 = null;
-    const res = listUseCaseWithPrograms(a, testing.io, .{}, not_repo, .open, 30, "github", &detail);
+    const res = listUseCaseWithPrograms(a, testing.io, .{}, not_repo, .open, 30, "github", &detail, .{});
     try testing.expectError(error.NotARepository, res);
 }
 
@@ -677,7 +679,7 @@ test "list: the generic provider has no CLI, and says so instead of an empty lis
     defer a.free(repo);
 
     var detail: ?[]u8 = null;
-    const res = listUseCaseWithPrograms(a, testing.io, .{}, repo, .open, 30, "generic", &detail);
+    const res = listUseCaseWithPrograms(a, testing.io, .{}, repo, .open, 30, "generic", &detail, .{});
     try testing.expectError(error.FetchFailed, res);
     const d = detail orelse return error.NoDetail;
     defer a.free(d);

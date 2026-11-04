@@ -229,14 +229,14 @@ fn readHostFile(io: std.Io, allocator: std.mem.Allocator, abs: []const u8) ?[]u8
 /// Bytes of a file the diff never mentioned: an untracked file has no diff, so
 /// its `new file` hunk is built from the file itself — ROUTED, because under
 /// `--saas` the bytes live in the guest and this host holds no copy.
-fn readNewFile(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8) ?[]u8 {
+fn readNewFile(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8, opts: git_route.Options) ?[]u8 {
     const full = std.fs.path.join(allocator, &.{ repo_path, file }) catch return null;
     defer allocator.free(full);
     // `openFileAbsolute` ASSERTS the path is absolute and ABORTS the whole
     // process (Debug/ReleaseSafe) instead of returning an error, so never
     // hand it a relative path — `repo_path` is validated at the handler
     if (!std.fs.path.isAbsolute(full)) return null;
-    var route = git_route.routeFor(allocator, repo_path);
+    var route = git_route.routeFor(allocator, repo_path, opts.workspace_id);
     defer route.deinit();
     return switch (route) {
         .unavailable => null,
@@ -248,8 +248,8 @@ fn readNewFile(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, 
     };
 }
 
-fn syntheticFallback(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8) ![]const u8 {
-    const content = readNewFile(allocator, io, repo_path, file) orelse return try allocator.dupe(u8, "");
+fn syntheticFallback(allocator: std.mem.Allocator, io: std.Io, repo_path: []const u8, file: []const u8, opts: git_route.Options) ![]const u8 {
+    const content = readNewFile(allocator, io, repo_path, file, opts) orelse return try allocator.dupe(u8, "");
     defer allocator.free(content);
     if (content.len == 0) return try allocator.dupe(u8, "");
     return try buildNewFileDiff(allocator, file, content);
@@ -319,7 +319,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         if (folder.len > 0) {
             args.appendSlice(allocator, &.{ "--", folder }) catch {};
         }
-        if (git_route.run(allocator, io, parsed.path, args.items, .{})) |result| {
+        if (git_route.run(allocator, io, parsed.path, args.items, git_route.options(req))) |result| {
             defer allocator.free(result.stderr);
             defer allocator.free(result.stdout);
             if (result.term.exited == 0 or result.term.exited == 1) {
@@ -366,7 +366,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         } else {
             args.appendSlice(allocator, staged.items) catch {};
         }
-        if (git_route.run(allocator, io, parsed.path, args.items, .{})) |result| {
+        if (git_route.run(allocator, io, parsed.path, args.items, git_route.options(req))) |result| {
             defer allocator.free(result.stderr);
             if (result.term.exited == 0 or result.term.exited == 1) {
                 staged_out = result.stdout;
@@ -378,7 +378,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
     if (unstaged.items.len > 0) {
         var args = std.ArrayList([]const u8).empty;
         defer args.deinit(allocator);
-        args.appendSlice(allocator, &.{ "diff" }) catch {};
+        args.appendSlice(allocator, &.{"diff"}) catch {};
         if (whole_file) args.append(allocator, WHOLE_FILE_UNIFIED_FLAG) catch {};
         args.append(allocator, "--") catch {};
         if (folder_mode) {
@@ -386,7 +386,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         } else {
             args.appendSlice(allocator, unstaged.items) catch {};
         }
-        if (git_route.run(allocator, io, parsed.path, args.items, .{})) |result| {
+        if (git_route.run(allocator, io, parsed.path, args.items, git_route.options(req))) |result| {
             defer allocator.free(result.stderr);
             if (result.term.exited == 0 or result.term.exited == 1) {
                 unstaged_out = result.stdout;
@@ -416,7 +416,7 @@ pub fn gitFileDiffsHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest,
         var owned: []const u8 = "";
         var need_free = false;
         if (content.len == 0) {
-            owned = syntheticFallback(allocator, io, parsed.path, f.file) catch "";
+            owned = syntheticFallback(allocator, io, parsed.path, f.file, git_route.options(req)) catch "";
             need_free = owned.len > 0;
             content = owned;
         }
@@ -461,7 +461,7 @@ test "an untracked file's diff is built from the bytes its tree holds" {
     const abs = try allocator.dupe(u8, buf[0..n]);
     defer allocator.free(abs);
 
-    const diff = try syntheticFallback(allocator, std.testing.io, abs, "docs/note.md");
+    const diff = try syntheticFallback(allocator, std.testing.io, abs, "docs/note.md", .{});
     defer allocator.free(diff);
 
     try std.testing.expect(std.mem.indexOf(u8, diff, "+++ b/docs/note.md") != null);

@@ -4,6 +4,7 @@
 
 const std = @import("std");
 const pabrik_core = @import("pabrikcore");
+const gserverz = pabrik_core.gserverz;
 const run_captured = @import("helpers").run_captured;
 const git_hardening = @import("helpers").git_hardening;
 const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
@@ -23,6 +24,9 @@ pub const default_max_output_bytes: usize = 4 * 1024 * 1024;
 pub const Options = struct {
     timeout_ms: u32 = default_timeout_ms,
     max_output_bytes: usize = default_max_output_bytes,
+    /// The workspace this call means. A path cannot carry that identity, and
+    /// under `--saas` every tree lives in a workspace's VM.
+    workspace_id: ?[]const u8 = null,
 };
 
 /// One git invocation's output, whoever ran it. Shaped like
@@ -63,10 +67,25 @@ pub const Run = struct {
     }
 };
 
+/// The workspace a `/api/git/*` request names, if any. Under `--saas` a bare
+/// path cannot identify its workspace, so the caller has to say which one.
+pub fn workspaceOf(req: gserverz.HttpRequest) ?[]const u8 {
+    return req.query.get("workspace_id");
+}
+
+/// The options one `/api/git/*` request asks for.
+pub fn options(req: gserverz.HttpRequest) Options {
+    return .{ .workspace_id = workspaceOf(req) };
+}
+
 /// Which git may answer about `abs_path` — the same route the file tools take.
-pub fn routeFor(allocator: std.mem.Allocator, abs_path: []const u8) workspace_fs.Route {
+pub fn routeFor(
+    allocator: std.mem.Allocator,
+    abs_path: []const u8,
+    workspace_id: ?[]const u8,
+) workspace_fs.Route {
     const di = pabrik_core.getSingleton() catch null;
-    return workspace_fs.routeForPath(allocator, if (di) |d| d.db else null, abs_path);
+    return workspace_fs.routeForWorkspace(allocator, if (di) |d| d.db else null, abs_path, workspace_id);
 }
 
 /// `git <args>` with `abs_dir` as its working directory, on whichever side owns
@@ -79,7 +98,7 @@ pub fn run(
     args: []const []const u8,
     opts: Options,
 ) !Run {
-    var route = routeFor(allocator, abs_dir);
+    var route = routeFor(allocator, abs_dir, opts.workspace_id);
     defer route.deinit();
 
     const hardened = try git_hardening.hardenArgs(allocator, args);
@@ -174,10 +193,56 @@ const Repo = struct {
 };
 
 test "local mode routes every path to the host, with no database and no VM" {
-    var route = routeFor(testing.allocator, "/tmp/pabrik-git-route-local");
+    var route = routeFor(testing.allocator, "/tmp/pabrik-git-route-local", null);
     defer route.deinit();
     try testing.expect(route == .host);
     try testing.expect(route.guestFs() == null);
+}
+
+test "local mode ignores a workspace hint, so the answer is the one it gave before" {
+    // The hint is a `--saas` idea: a local process owns its tree directly, and
+    // a request that names a workspace must not change the arm.
+    var hinted = routeFor(testing.allocator, "/tmp/pabrik-git-route-local", "ws_1");
+    defer hinted.deinit();
+    try testing.expect(hinted == .host);
+}
+
+/// The least an `HttpRequest` needs for these tests: a query map, and the
+/// empty collections the type has no defaults for.
+fn requestWith(query: std.StringHashMap([]const u8)) gserverz.HttpRequest {
+    return .{
+        .method = "GET",
+        .path = "/api/git/status",
+        .version = "HTTP/1.1",
+        .headers = std.StringHashMap([]const u8).init(query.allocator),
+        .body = "",
+        .raw = "",
+        .params = std.StringHashMap([]const u8).init(query.allocator),
+        .query = query,
+        ._client_fd = -1,
+    };
+}
+
+test "a request's workspace hint becomes the options the route reads" {
+    var map = std.StringHashMap([]const u8).init(testing.allocator);
+    defer map.deinit();
+    try map.put("path", "/workspace");
+    try map.put("workspace_id", "ws_1785055733544_28e79c9db8950100");
+    const req = requestWith(map);
+
+    try testing.expectEqualStrings("ws_1785055733544_28e79c9db8950100", options(req).workspace_id.?);
+    try testing.expectEqual(default_timeout_ms, options(req).timeout_ms);
+    try testing.expectEqual(default_max_output_bytes, options(req).max_output_bytes);
+}
+
+test "a request with no workspace hint asks for none, and keeps the defaults" {
+    var map = std.StringHashMap([]const u8).init(testing.allocator);
+    defer map.deinit();
+    try map.put("path", "/workspace");
+    const req = requestWith(map);
+
+    try testing.expect(workspaceOf(req) == null);
+    try testing.expect(options(req).workspace_id == null);
 }
 
 test "local mode hands git exactly the -C argv the call sites used to build" {
@@ -239,7 +304,7 @@ test "an argument list crosses the seam verbatim, so a flag-shaped value stays a
     var repo = try Repo.init(allocator);
     defer repo.deinit(allocator);
 
-    var res = try run(allocator, testing.io, repo.abs, &.{ "--definitely-not-a-git-option" }, .{});
+    var res = try run(allocator, testing.io, repo.abs, &.{"--definitely-not-a-git-option"}, .{});
     defer res.deinit(allocator);
 
     // git rejected OUR option: proof it received the argv as the caller wrote
@@ -292,6 +357,21 @@ test "saas mode never answers from the host, even when the host holds that repos
     else
         error.GuestManagerUnavailable;
     try testing.expectError(expected, run(allocator, testing.io, repo.abs, &.{ "rev-parse", "--is-inside-work-tree" }, .{}));
+}
+
+test "saas mode refuses a hinted run on a host repository instead of reading it" {
+    const allocator = testing.allocator;
+    var repo = try Repo.init(allocator);
+    defer repo.deinit(allocator);
+
+    runtime_mode.setCurrent(.saas);
+    defer runtime_mode.setCurrent(.local);
+
+    // Naming a workspace never makes the host's copy reachable: a unit test has
+    // no workspace DB, and the hint arm answers that before any backend
+    // question, so the refusal is the same on every platform.
+    const opts = Options{ .workspace_id = "ws_1785055733544_28e79c9db8950100" };
+    try testing.expectError(error.GuestWorkspaceUnknown, run(allocator, testing.io, repo.abs, &.{ "rev-parse", "--is-inside-work-tree" }, opts));
 }
 
 test "repeated runs cost no descriptors" {

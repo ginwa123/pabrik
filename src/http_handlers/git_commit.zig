@@ -34,6 +34,7 @@ pub fn useCase(
     path: []const u8,
     message: []const u8,
     err_detail: *?[]u8,
+    opts: git_route.Options,
 ) ![]u8 {
     err_detail.* = null;
 
@@ -43,6 +44,7 @@ pub fn useCase(
     // like `--help` commits literally instead of printing git usage (probed
     // by the functional test). No shell is involved at any point — argv only.
     var commit_res = git_route.run(allocator, io, path, &.{ "commit", "-m", message }, .{
+        .workspace_id = opts.workspace_id,
         .max_output_bytes = MAX_OUTPUT_BYTES,
         .timeout_ms = GIT_TIMEOUT_MS,
     }) catch {
@@ -81,6 +83,7 @@ pub fn useCase(
     }
 
     var rev_res = git_route.run(allocator, io, path, &.{ "rev-parse", "HEAD" }, .{
+        .workspace_id = opts.workspace_id,
         .max_output_bytes = MAX_OUTPUT_BYTES,
         .timeout_ms = GIT_TIMEOUT_MS,
     }) catch {
@@ -125,7 +128,7 @@ pub fn gitCommitHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
-    const sha = useCase(allocator, io, path_param, message_param, &detail) catch |err| {
+    const sha = useCase(allocator, io, path_param, message_param, &detail, git_route.options(req)) catch |err| {
         const msg: []const u8 = detail orelse switch (err) {
             error.EmptyMessage => "Commit message must not be empty",
             error.NothingToCommit => "Nothing to commit",
@@ -272,7 +275,7 @@ test "useCase commits the staged change and returns its SHA" {
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
-    const sha = try useCase(allocator, testing.io, path, "second commit", &detail);
+    const sha = try useCase(allocator, testing.io, path, "second commit", &detail, .{});
     defer allocator.free(sha);
 
     // Full 40-hex SHA, not a prefix.
@@ -293,7 +296,7 @@ test "useCase rejects an empty message without spawning a commit" {
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
-    const err = useCase(allocator, testing.io, path, "   \n  ", &detail) catch |e| e;
+    const err = useCase(allocator, testing.io, path, "   \n  ", &detail, .{}) catch |e| e;
     try testing.expectEqual(error.EmptyMessage, err);
 
     // The staged change is still there — nothing was committed.
@@ -317,7 +320,7 @@ test "useCase surfaces git's nothing-to-commit message on a clean tree" {
 
     var detail: ?[]u8 = null;
     defer if (detail) |d| allocator.free(d);
-    const err = useCase(allocator, testing.io, fx.path, "nothing staged", &detail) catch |e| e;
+    const err = useCase(allocator, testing.io, fx.path, "nothing staged", &detail, .{}) catch |e| e;
     try testing.expectEqual(error.NothingToCommit, err);
     // The caller-facing detail carries git's own words, not a canned string.
     try testing.expect(detail != null);

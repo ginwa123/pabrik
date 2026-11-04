@@ -74,7 +74,7 @@ fn parseGitStatus(allocator: std.mem.Allocator, output: []const u8) GitChangesRe
 
 /// Expand untracked directories to show individual files inside them
 /// Like VS Code Git, lazygit, or fzf-lua git
-fn expandUntrackedDirectories(allocator: std.mem.Allocator, io: std.Io, untracked_dirs: []const []const u8, path_param: []const u8) ![][]const u8 {
+fn expandUntrackedDirectories(allocator: std.mem.Allocator, io: std.Io, untracked_dirs: []const []const u8, path_param: []const u8, opts: git_route.Options) ![][]const u8 {
     var all_files = std.ArrayList([]const u8).empty;
     defer {
         for (all_files.items) |item| allocator.free(item);
@@ -91,7 +91,7 @@ fn expandUntrackedDirectories(allocator: std.mem.Allocator, io: std.Io, untracke
 
         // Get files inside this untracked directory
         // Use git ls-files --others --exclude-standard <dir>
-        const result = git_route.run(allocator, io, path_param, &.{ "ls-files", "--others", "--exclude-standard", dir }, .{}) catch continue;
+        const result = git_route.run(allocator, io, path_param, &.{ "ls-files", "--others", "--exclude-standard", dir }, opts) catch continue;
 
         if (result.term.exited != 0) continue;
 
@@ -132,7 +132,7 @@ pub fn gitChangesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     };
 
     // Check if we're in a git repo by running git rev-parse --git-dir with -C
-    const git_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, .{}) catch |err| {
+    const git_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, git_route.options(req)) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 
@@ -146,13 +146,13 @@ pub fn gitChangesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
     }
 
     // Get current branch using: git -C <path> branch --show-current
-    const branch_result = git_route.run(allocator, io, path_param, &.{ "branch", "--show-current" }, .{}) catch |err| {
+    const branch_result = git_route.run(allocator, io, path_param, &.{ "branch", "--show-current" }, git_route.options(req)) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
     const branch_name = std.mem.trim(u8, branch_result.stdout, " \n\r");
 
     // Get status using: git -C <path> status --porcelain
-    const status_result = git_route.run(allocator, io, path_param, &.{ "status", "--porcelain" }, .{}) catch |err| {
+    const status_result = git_route.run(allocator, io, path_param, &.{ "status", "--porcelain" }, git_route.options(req)) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 
@@ -179,7 +179,7 @@ pub fn gitChangesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 
         // If we have directories, expand them
         if (dirs.items.len > 0) {
-            const expanded_files = try expandUntrackedDirectories(allocator, io, dirs.items, path_param);
+            const expanded_files = try expandUntrackedDirectories(allocator, io, dirs.items, path_param, git_route.options(req));
 
             // Free the dir strings (they're no longer needed)
             for (dirs.items) |d| allocator.free(d);
@@ -306,4 +306,3 @@ fn makeGitChangesResponse(allocator: std.mem.Allocator, response: GitChangesResp
 
     return try buf.toOwnedSlice(allocator);
 }
-

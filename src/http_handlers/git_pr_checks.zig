@@ -383,8 +383,9 @@ fn useCase(
     pr_arg: []const u8,
     provider_override: ?[]const u8,
     fetch_detail: *?[]u8,
+    opts: git_route.Options,
 ) !http_response.GitPrChecksResponse {
-    return useCaseWithPrograms(allocator, io, .{}, path, pr_arg, provider_override, fetch_detail);
+    return useCaseWithPrograms(allocator, io, .{}, path, pr_arg, provider_override, fetch_detail, opts);
 }
 
 fn useCaseWith(
@@ -395,8 +396,9 @@ fn useCaseWith(
     pr_arg: []const u8,
     provider_override: ?[]const u8,
     fetch_detail: *?[]u8,
+    opts: git_route.Options,
 ) !http_response.GitPrChecksResponse {
-    return useCaseWithPrograms(allocator, io, .{ .gh = prog }, path, pr_arg, provider_override, fetch_detail);
+    return useCaseWithPrograms(allocator, io, .{ .gh = prog }, path, pr_arg, provider_override, fetch_detail, opts);
 }
 
 fn useCaseWithPrograms(
@@ -407,9 +409,10 @@ fn useCaseWithPrograms(
     pr_arg: []const u8,
     provider_override: ?[]const u8,
     fetch_detail: *?[]u8,
+    opts: git_route.Options,
 ) !http_response.GitPrChecksResponse {
     {
-        const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
+        const check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, opts) catch return error.NotARepository;
         defer {
             allocator.free(check.stdout);
             allocator.free(check.stderr);
@@ -462,7 +465,7 @@ pub fn gitPrChecksHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, 
     }
 
     var fetch_detail: ?[]u8 = null;
-    const result = useCase(allocator, io, path_param, pr_param, provider_param, &fetch_detail) catch |err| switch (err) {
+    const result = useCase(allocator, io, path_param, pr_param, provider_param, &fetch_detail, git_route.options(req)) catch |err| switch (err) {
         error.NotARepository => {
             return res.jsonResponse(.{ .status_code = 404, .data = try http_response.makeGitStatusErrorResponse(allocator, "not a git repository") });
         },

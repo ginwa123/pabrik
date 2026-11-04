@@ -16,7 +16,7 @@ pub fn gitStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     };
 
     // Check if we're in a git repo by running git rev-parse --git-dir with -C
-    const git_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, .{}) catch |err| {
+    const git_check = git_route.run(allocator, io, path_param, &.{ "rev-parse", "--git-dir" }, git_route.options(req)) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 
@@ -34,12 +34,12 @@ pub fn gitStatusHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     }
 
     // Get current branch using: git -C <path> branch --show-current
-    const branch_result = git_route.run(allocator, io, path_param, &.{ "branch", "--show-current" }, .{}) catch |err| {
+    const branch_result = git_route.run(allocator, io, path_param, &.{ "branch", "--show-current" }, git_route.options(req)) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 
     // Get status using: git -C <path> status --porcelain
-    const status_result = git_route.run(allocator, io, path_param, &.{ "status", "--porcelain" }, .{}) catch |err| {
+    const status_result = git_route.run(allocator, io, path_param, &.{ "status", "--porcelain" }, git_route.options(req)) catch |err| {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeGitStatusErrorResponse(allocator, @errorName(err)) });
     };
 

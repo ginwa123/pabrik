@@ -28,17 +28,18 @@ fn getWorktreeInfoUseCase(
     io: std.Io,
     path: []const u8,
     base: ?[]const u8,
+    opts: git_route.Options,
 ) WorktreeInfoError!WorktreeInfoResult {
     // 1) Confirm it's a git repo.
-    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, .{}) catch return error.NotARepository;
+    const git_dir_check = git_route.run(allocator, io, path, &.{ "rev-parse", "--git-dir" }, opts) catch return error.NotARepository;
     if (git_dir_check.term.exited != 0) return error.NotARepository;
 
     // 2) Current branch.
-    const branch_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, .{}) catch return error.NotARepository;
+    const branch_result = git_route.run(allocator, io, path, &.{ "branch", "--show-current" }, opts) catch return error.NotARepository;
     const branch = std.mem.trim(u8, branch_result.stdout, " \n\r");
 
     // 3) Last commit (short SHA + subject).
-    const log_result = git_route.run(allocator, io, path, &.{ "log", "-1", "--format=%h %s" }, .{}) catch return error.NotARepository;
+    const log_result = git_route.run(allocator, io, path, &.{ "log", "-1", "--format=%h %s" }, opts) catch return error.NotARepository;
     const log_line = std.mem.trim(u8, log_result.stdout, " \n\r");
     var last_sha: []const u8 = "";
     var last_msg: []const u8 = "";
@@ -60,7 +61,7 @@ fn getWorktreeInfoUseCase(
             // loop variable.
             var origin_b_buf: [64]u8 = undefined;
             const origin_b = std.fmt.bufPrint(origin_b_buf[0..], "origin/{s}", .{b}) catch continue;
-            const probe = git_route.run(allocator, io, path, &.{ "rev-parse", "--verify", origin_b }, .{}) catch continue;
+            const probe = git_route.run(allocator, io, path, &.{ "rev-parse", "--verify", origin_b }, opts) catch continue;
             if (probe.term.exited == 0) {
                 default_base = b;
                 break;
@@ -73,7 +74,7 @@ fn getWorktreeInfoUseCase(
     {
         var range_buf: [128]u8 = undefined;
         const range = std.fmt.bufPrint(range_buf[0..], "origin/{s}..HEAD", .{default_base}) catch "";
-        if (git_route.run(allocator, io, path, &.{ "rev-list", "--count", range }, .{})) |ahead_result| {
+        if (git_route.run(allocator, io, path, &.{ "rev-list", "--count", range }, opts)) |ahead_result| {
             if (ahead_result.term.exited == 0) {
                 const trimmed = std.mem.trim(u8, ahead_result.stdout, " \n\r");
                 commits_ahead = std.fmt.parseInt(i64, trimmed, 10) catch 0;
@@ -88,7 +89,7 @@ fn getWorktreeInfoUseCase(
     {
         var range_buf: [128]u8 = undefined;
         const range = std.fmt.bufPrint(range_buf[0..], "origin/{s}..HEAD", .{default_base}) catch "";
-        if (git_route.run(allocator, io, path, &.{ "diff", "--shortstat", range }, .{})) |diff_result| {
+        if (git_route.run(allocator, io, path, &.{ "diff", "--shortstat", range }, opts)) |diff_result| {
             if (diff_result.term.exited == 0) {
                 diff_summary = std.mem.trim(u8, diff_result.stdout, " \n\r");
             }
@@ -121,7 +122,7 @@ pub fn gitWorktreeInfoHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     // Optional ?base=<branch> override. Forwarded verbatim to the use case.
     const explicit_base_param = req.query.get("base");
 
-    const info = getWorktreeInfoUseCase(allocator, io, path_param, explicit_base_param) catch |err| switch (err) {
+    const info = getWorktreeInfoUseCase(allocator, io, path_param, explicit_base_param, git_route.options(req)) catch |err| switch (err) {
         // NotARepository → 404 with a clear message. Other errors propagate
         // to the GinwaServer which returns a generic 500.
         error.NotARepository => {
