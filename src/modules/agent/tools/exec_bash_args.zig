@@ -3,13 +3,9 @@ const pabrikcore = @import("pabrikcore");
 
 const tool_models = pabrikcore.tool_models;
 
-/// Lenient argument parser for the bash + pwsh tools. ## Why this exists The
-/// bash + pwsh tools share `tool_models.BashInput` (aliased to
-/// `shell.ShellInput`).
-
-/// Numeric fields on `ShellInput` whose values the LLM may have contaminated
-/// with stray XML closing tags. Order doesn't matter; the helper matches by
-/// key.
+/// Lenient argument parser for the bash + pwsh tools (which share
+/// `tool_models.BashInput`); the field tables below drive its XML-tag recovery
+/// and its error text.
 pub const TIMEOUT_ALIASES: []const []const u8 = &.{ "timeout", "mandatory_timeout" };
 
 pub const NUMERIC_U32_FIELDS = TIMEOUT_ALIASES;
@@ -36,36 +32,122 @@ pub const MODE_VALUES: []const []const u8 = &.{
 /// text for a bad `mode`, built once from `MODE_VALUES`.
 const MODE_EXPECTED = "one of \"foreground\", \"background\", \"background_persistence\"";
 
-/// Structured error info returned when the JSON parses but a single
-/// field has the wrong type or value. The caller surfaces the three
-/// fields in the error envelope so the LLM can self-correct next turn.
+pub const KNOWN_FIELDS: []const []const u8 = &.{
+    "command",    "cwd",         "timeout",    "mandatory_timeout",
+    "max_output", "max_lines",   "stdin_data", "mode",
+    "background", "do_encoding", "is_stop",
+};
+
+/// Spelled the way the payload has to carry them, so the repair hint is
+/// copy-pasteable.
+pub const REQUIRED_HINT =
+    "\"command\" (string), \"cwd\" (absolute path), \"timeout\" (seconds, 1-600)";
+
+pub const EXAMPLE_CALL =
+    "{\"command\":\"ls -la\",\"cwd\":\"/home/you/project\",\"timeout\":30}";
+
+const CLIP_VALUE = 120;
+const CLIP_PAYLOAD = 300;
+
+/// A call that parses but cannot run, described well enough for the model to
+/// repair it without guessing. Every optional slice is owned; release the lot
+/// with `freeInvalidField`.
 pub const InvalidField = struct {
     field: []const u8,
-    /// The bad value as the LLM emitted it (verbatim, including any
-    /// stray XML closing tags). The caller echoes this back so the
-    /// LLM recognizes exactly what went wrong.
+    /// The offending value as the LLM emitted it (verbatim, including any
+    /// stray XML closing tags), or the whole payload when the failure is at
+    /// the JSON level.
     got: []const u8,
-    /// The expected Zig type / wire-shape (e.g. `"number (u32)"`).
+    /// The wire-shape the field accepts (e.g. `"number (u32)"`).
     expected: []const u8,
+    kind: Kind = .wrong_type,
+    /// The fields the payload actually carried, quoted and comma-joined.
+    sent: ?[]const u8 = null,
+    /// The fields the payload carried that this tool does not accept.
+    unknown: ?[]const u8 = null,
+    /// The declared field a single unknown one most likely meant.
+    suggestion: ?[]const u8 = null,
+
+    pub const Kind = enum { wrong_type, missing, bad_json, not_object };
 };
 
 /// Result of `parseShellArgs`. Either a typed BashInput on success or
 /// structured failure info. Use `formatInvalidField` to render the
-/// `InvalidField` into a single human-readable line for the envelope.
+/// `InvalidField` into the envelope's error text.
 pub const Result = union(enum) {
     success: tool_models.BashInput,
     failure: InvalidField,
 };
 
-/// Render an `InvalidField` into a single line suitable for the `<error>`
-/// element of a tool envelope. Format: `invalid field 'timeout': got JSON
-/// value "5</timeout>", expected number (u32)`
+/// Render an `InvalidField` as the error text of a tool envelope: what went
+/// wrong, what the call actually carried, and a payload that would work.
 pub fn formatInvalidField(allocator: std.mem.Allocator, info: InvalidField) ![]u8 {
-    return try std.fmt.allocPrint(
-        allocator,
-        "invalid field '{s}': got JSON value \"{s}\", expected {s}",
-        .{ info.field, info.got, info.expected },
-    );
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    switch (info.kind) {
+        .missing => {
+            try out.print(
+                allocator,
+                "Missing required field \"{s}\": the tool cannot run without it, so nothing was executed.\n",
+                .{info.field},
+            );
+            if (info.sent) |sent| {
+                if (sent.len == 0) {
+                    try out.appendSlice(allocator, "You sent: an empty arguments object.\n");
+                } else {
+                    try out.print(allocator, "You sent: {s}\n", .{sent});
+                }
+            }
+            try appendUnknown(allocator, &out, info);
+            try out.print(allocator, "Required: {s}\n", .{REQUIRED_HINT});
+        },
+        .wrong_type => {
+            try out.print(allocator, "Field \"{s}\" expects {s}, got ", .{ info.field, info.expected });
+            try appendQuotedClipped(allocator, &out, info.got, CLIP_VALUE);
+            try out.appendSlice(allocator, ".\n");
+            if (info.sent) |sent| {
+                if (sent.len != 0) try out.print(allocator, "You sent: {s}\n", .{sent});
+            }
+            try appendUnknown(allocator, &out, info);
+        },
+        .bad_json => {
+            try out.appendSlice(allocator, "The arguments are not valid JSON, got ");
+            try appendQuotedClipped(allocator, &out, info.got, CLIP_PAYLOAD);
+            try out.appendSlice(
+                allocator,
+                ".\nCommon causes: a ```json fence around the object, a lone backslash in a Windows path, or the call cut off mid-object.\n",
+            );
+        },
+        .not_object => {
+            try out.appendSlice(allocator, "The arguments must be ONE JSON object of named fields, got ");
+            try appendQuotedClipped(allocator, &out, info.got, CLIP_PAYLOAD);
+            try out.appendSlice(allocator, ".\n");
+        },
+    }
+
+    try out.print(allocator, "A call that works: {s}", .{EXAMPLE_CALL});
+    return out.toOwnedSlice(allocator);
+}
+
+fn appendUnknown(allocator: std.mem.Allocator, out: *std.ArrayList(u8), info: InvalidField) !void {
+    const unknown = info.unknown orelse return;
+    try out.print(allocator, "Unrecognized field {s}: this tool has no such parameter.", .{unknown});
+    if (info.suggestion) |suggestion| {
+        try out.print(allocator, " Did you mean \"{s}\"?", .{suggestion});
+    }
+    try out.append(allocator, '\n');
+}
+
+fn appendQuotedClipped(allocator: std.mem.Allocator, out: *std.ArrayList(u8), text: []const u8, max: usize) !void {
+    try out.append(allocator, '"');
+    if (text.len <= max) {
+        try out.appendSlice(allocator, text);
+    } else {
+        try out.appendSlice(allocator, text[0..max]);
+        try out.appendSlice(allocator, "…");
+    }
+    try out.append(allocator, '"');
 }
 
 /// Parse the JSON `arguments` string from a bash / pwsh tool call into a
@@ -89,6 +171,7 @@ pub fn parseShellArgs(
             .field = "<json>",
             .got = got_dup,
             .expected = "JSON object",
+            .kind = .bad_json,
         } };
     };
     defer parsed_value.deinit();
@@ -100,6 +183,7 @@ pub fn parseShellArgs(
             .field = "<json>",
             .got = got_dup,
             .expected = "JSON object",
+            .kind = .not_object,
         } };
     }
     const obj = root.object;
@@ -110,19 +194,22 @@ pub fn parseShellArgs(
     // command (required string)
     if (obj.get("command")) |v| {
         const s = coerceString(allocator, v, "command") orelse {
-            return returnFail(allocator, &out, v, "command", "string");
+            return returnFail(allocator, &out, obj, v, "command", "string");
         };
         out.command = s;
     } else {
         // No allocator-needed slice was produced yet (command is the
         // first field we coerce), so a duped "<missing>" literal is
-        // safe — the caller frees via freeFailure.
+        // safe — the caller frees via `freeInvalidField`.
         const got_dup = allocator.dupe(u8, "<missing>") catch "<missing>";
-        return .{ .failure = .{
+        var failure = InvalidField{
             .field = "command",
             .got = got_dup,
             .expected = "string",
-        } };
+            .kind = .missing,
+        };
+        describeArgs(allocator, obj, &failure);
+        return .{ .failure = failure };
     }
 
     // timeout (?u32) — or its pre-rename spelling, see `TIMEOUT_ALIASES`.
@@ -131,7 +218,7 @@ pub fn parseShellArgs(
     for (TIMEOUT_ALIASES) |field| {
         const v = obj.get(field) orelse continue;
         const n = coerceU32(allocator, v, field) orelse {
-            return returnFail(allocator, &out, v, field, "number (u32)");
+            return returnFail(allocator, &out, obj, v, field, "number (u32)");
         };
         out.timeout = n;
         break;
@@ -142,7 +229,7 @@ pub fn parseShellArgs(
     // cwd (?string)
     if (obj.get("cwd")) |v| {
         const s = coerceString(allocator, v, "cwd") orelse {
-            return returnFail(allocator, &out, v, "cwd", "string");
+            return returnFail(allocator, &out, obj, v, "cwd", "string");
         };
         out.cwd = s;
     }
@@ -150,7 +237,7 @@ pub fn parseShellArgs(
     // max_output (?usize)
     if (obj.get("max_output")) |v| {
         const n = coerceUsize(allocator, v, "max_output") orelse {
-            return returnFail(allocator, &out, v, "max_output", "number (usize)");
+            return returnFail(allocator, &out, obj, v, "max_output", "number (usize)");
         };
         out.max_output = n;
     }
@@ -158,7 +245,7 @@ pub fn parseShellArgs(
     // stdin_data (?string)
     if (obj.get("stdin_data")) |v| {
         const s = coerceString(allocator, v, "stdin_data") orelse {
-            return returnFail(allocator, &out, v, "stdin_data", "string");
+            return returnFail(allocator, &out, obj, v, "stdin_data", "string");
         };
         out.stdin_data = s;
     }
@@ -166,7 +253,7 @@ pub fn parseShellArgs(
     // background (bool, default false)
     if (obj.get("background")) |v| {
         const b = coerceBool(allocator, v, "background") orelse {
-            return returnFail(allocator, &out, v, "background", "boolean (or \"true\"/\"false\")");
+            return returnFail(allocator, &out, obj, v, "background", "boolean (or \"true\"/\"false\")");
         };
         out.background = b;
     }
@@ -174,7 +261,7 @@ pub fn parseShellArgs(
     // max_lines (?usize)
     if (obj.get("max_lines")) |v| {
         const n = coerceUsize(allocator, v, "max_lines") orelse {
-            return returnFail(allocator, &out, v, "max_lines", "number (usize)");
+            return returnFail(allocator, &out, obj, v, "max_lines", "number (usize)");
         };
         out.max_lines = n;
     }
@@ -182,7 +269,7 @@ pub fn parseShellArgs(
     // do_encoding (bool, default false)
     if (obj.get("do_encoding")) |v| {
         const b = coerceBool(allocator, v, "do_encoding") orelse {
-            return returnFail(allocator, &out, v, "do_encoding", "boolean (or \"true\"/\"false\")");
+            return returnFail(allocator, &out, obj, v, "do_encoding", "boolean (or \"true\"/\"false\")");
         };
         out.do_encoding = b;
     }
@@ -190,7 +277,7 @@ pub fn parseShellArgs(
     // is_stop (bool, default false) — loop control, not a shell option.
     if (obj.get("is_stop")) |v| {
         const b = coerceBool(allocator, v, "is_stop") orelse {
-            return returnFail(allocator, &out, v, "is_stop", "boolean (or \"true\"/\"false\")");
+            return returnFail(allocator, &out, obj, v, "is_stop", "boolean (or \"true\"/\"false\")");
         };
         out.is_stop = b;
     }
@@ -201,12 +288,12 @@ pub fn parseShellArgs(
     var explicit_mode: ?tool_models.RunMode = null;
     if (obj.get("mode")) |v| {
         const raw = coerceString(allocator, v, "mode") orelse {
-            return returnFail(allocator, &out, v, "mode", MODE_EXPECTED);
+            return returnFail(allocator, &out, obj, v, "mode", MODE_EXPECTED);
         };
         // `coerceString` dups; the parsed enum owns nothing, so release now.
         defer allocator.free(raw);
         explicit_mode = tool_models.RunMode.fromWire(raw) orelse {
-            return returnFail(allocator, &out, v, "mode", MODE_EXPECTED);
+            return returnFail(allocator, &out, obj, v, "mode", MODE_EXPECTED);
         };
     }
 
@@ -217,6 +304,7 @@ pub fn parseShellArgs(
             return returnFail(
                 allocator,
                 &out,
+                obj,
                 obj.get("background") orelse .{ .bool = out.background },
                 "background",
                 "false, when you also pass mode=\"foreground\" (or drop mode to mean background)",
@@ -239,6 +327,7 @@ pub fn parseShellArgs(
 fn returnFail(
     allocator: std.mem.Allocator,
     out: *tool_models.BashInput,
+    obj: std.json.ObjectMap,
     v: std.json.Value,
     field: []const u8,
     expected: []const u8,
@@ -249,7 +338,125 @@ fn returnFail(
     out.command = "";
     out.cwd = null;
     out.stdin_data = null;
-    return .{ .failure = makeInvalidField(allocator, v, field, expected) };
+    var failure = makeInvalidField(allocator, v, field, expected);
+    describeArgs(allocator, obj, &failure);
+    return .{ .failure = failure };
+}
+
+const MAX_LISTED_FIELDS = 12;
+const MAX_UNKNOWN_LISTED = 3;
+const MAX_SUGGESTION_DISTANCE = 2;
+const MAX_FIELD_NAME = 32;
+
+/// Record which fields the payload carried and which of them the tool does
+/// not accept, so the error text can name the model's typo instead of only
+/// reporting the field that went missing because of it.
+fn describeArgs(allocator: std.mem.Allocator, obj: std.json.ObjectMap, failure: *InvalidField) void {
+    const keys = obj.keys();
+    failure.sent = joinQuoted(allocator, keys, keys.len, MAX_LISTED_FIELDS) catch null;
+
+    var buffer: [MAX_UNKNOWN_LISTED][]const u8 = undefined;
+    var listed: usize = 0;
+    var total: usize = 0;
+    for (keys) |key| {
+        if (isKnownField(key)) continue;
+        total += 1;
+        if (listed < buffer.len) {
+            buffer[listed] = key;
+            listed += 1;
+        }
+    }
+    if (total == 0) return;
+
+    failure.unknown = joinQuoted(allocator, buffer[0..listed], total, MAX_UNKNOWN_LISTED) catch null;
+    if (total != 1) return;
+    const suggested = nearestField(buffer[0]) orelse return;
+    failure.suggestion = allocator.dupe(u8, suggested) catch null;
+}
+
+fn joinQuoted(
+    allocator: std.mem.Allocator,
+    names: []const []const u8,
+    total: usize,
+    limit: usize,
+) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    const shown = @min(names.len, limit);
+    for (names[0..shown], 0..) |name, i| {
+        if (i != 0) try out.appendSlice(allocator, ", ");
+        try out.print(allocator, "\"{s}\"", .{name});
+    }
+    if (total > shown) try out.appendSlice(allocator, ", …");
+    return out.toOwnedSlice(allocator);
+}
+
+fn isKnownField(name: []const u8) bool {
+    for (KNOWN_FIELDS) |known| {
+        if (std.mem.eql(u8, known, name)) return true;
+    }
+    return false;
+}
+
+fn nearestField(name: []const u8) ?[]const u8 {
+    var best: ?[]const u8 = null;
+    var best_distance: usize = MAX_SUGGESTION_DISTANCE + 1;
+    var tied = false;
+    for (KNOWN_FIELDS) |known| {
+        const distance = fieldDistance(name, known) orelse continue;
+        if (distance < best_distance) {
+            best_distance = distance;
+            best = known;
+            tied = false;
+        } else if (best != null and distance == best_distance) {
+            tied = true;
+        }
+    }
+    return if (tied) null else best;
+}
+
+fn fieldDistance(a: []const u8, b: []const u8) ?usize {
+    var buf_a: [MAX_FIELD_NAME]u8 = undefined;
+    var buf_b: [MAX_FIELD_NAME]u8 = undefined;
+    const norm_a = normalizeField(a, &buf_a) orelse return null;
+    const norm_b = normalizeField(b, &buf_b) orelse return null;
+    return editDistance(norm_a, norm_b, MAX_SUGGESTION_DISTANCE);
+}
+
+fn normalizeField(name: []const u8, buf: *[MAX_FIELD_NAME]u8) ?[]const u8 {
+    if (name.len > buf.len) return null;
+    var n: usize = 0;
+    for (name) |c| {
+        if (c == '_' or c == '-') continue;
+        buf[n] = std.ascii.toLower(c);
+        n += 1;
+    }
+    return buf[0..n];
+}
+
+fn editDistance(a: []const u8, b: []const u8, max: usize) ?usize {
+    const length_gap = if (a.len > b.len) a.len - b.len else b.len - a.len;
+    if (length_gap > max) return null;
+    if (a.len > MAX_FIELD_NAME or b.len > MAX_FIELD_NAME) return null;
+
+    var prev: [MAX_FIELD_NAME + 1]usize = undefined;
+    var current: [MAX_FIELD_NAME + 1]usize = undefined;
+    for (0..b.len + 1) |j| prev[j] = j;
+    for (a, 0..) |ca, i| {
+        current[0] = i + 1;
+        var row_min = current[0];
+        for (b, 0..) |cb, j| {
+            const cost: usize = if (ca == cb) 0 else 1;
+            current[j + 1] = @min(@min(current[j] + 1, prev[j + 1] + 1), prev[j] + cost);
+            row_min = @min(row_min, current[j + 1]);
+        }
+        if (row_min > max) return null;
+        const swap = prev;
+        prev = current;
+        current = swap;
+    }
+    const distance = prev[b.len];
+    return if (distance <= max) distance else null;
 }
 
 /// Strip a single trailing `</fieldname>` substring from `s` IF `s` ends with
@@ -393,10 +600,13 @@ fn freeInput(allocator: std.mem.Allocator, input: tool_models.BashInput) void {
 }
 
 /// Free every owned slice in an `InvalidField` returned by `parseShellArgs`.
-/// Use with `defer freeFailure(testing.allocator, info);` at the top of
+/// Use with `defer freeInvalidField(testing.allocator, info);` at the top of
 /// every failure-arm test body.
-fn freeFailure(allocator: std.mem.Allocator, info: InvalidField) void {
+pub fn freeInvalidField(allocator: std.mem.Allocator, info: InvalidField) void {
     allocator.free(info.got);
+    if (info.sent) |sent| allocator.free(sent);
+    if (info.unknown) |unknown| allocator.free(unknown);
+    if (info.suggestion) |suggestion| allocator.free(suggestion);
 }
 
 test "parseShellArgs: recovers from LLM XML-fragment hallucination in timeout" {
@@ -459,7 +669,7 @@ test "parseShellArgs: missing required command returns failure" {
     const args = "{\"timeout\":5}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
-    defer freeFailure(testing.allocator, result.failure);
+    defer freeInvalidField(testing.allocator, result.failure);
     try testing.expectEqualStrings("command", result.failure.field);
     try testing.expectEqualStrings("<missing>", result.failure.got);
 }
@@ -468,7 +678,7 @@ test "parseShellArgs: truly garbage timeout returns failure with rich info" {
     const args = "{\"command\":\"ls\",\"timeout\":\"abc\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
-    defer freeFailure(testing.allocator, result.failure);
+    defer freeInvalidField(testing.allocator, result.failure);
     try testing.expectEqualStrings("timeout", result.failure.field);
     try testing.expectEqualStrings("abc", result.failure.got);
     try testing.expectEqualStrings("number (u32)", result.failure.expected);
@@ -483,7 +693,7 @@ test "parseShellArgs: failure message renders cleanly for the envelope" {
     switch (result) {
         .success => return error.TestUnexpectedResult,
         .failure => |info| {
-            defer freeFailure(testing.allocator, info);
+            defer freeInvalidField(testing.allocator, info);
             const msg = try formatInvalidField(testing.allocator, info);
             defer testing.allocator.free(msg);
             try testing.expect(std.mem.indexOf(u8, msg, "timeout") != null);
@@ -491,6 +701,101 @@ test "parseShellArgs: failure message renders cleanly for the envelope" {
             try testing.expect(std.mem.indexOf(u8, msg, "number (u32)") != null);
         },
     }
+}
+
+fn failureMessage(allocator: std.mem.Allocator, args: []const u8) ![]u8 {
+    switch (parseShellArgs(allocator, args)) {
+        .success => return error.TestUnexpectedResult,
+        .failure => |info| {
+            defer freeInvalidField(allocator, info);
+            return formatInvalidField(allocator, info);
+        },
+    }
+}
+
+fn manyUnknownFields(allocator: std.mem.Allocator, count: usize) ![]u8 {
+    var payload: std.ArrayList(u8) = .empty;
+    errdefer payload.deinit(allocator);
+    try payload.append(allocator, '{');
+    for (0..count) |i| {
+        if (i != 0) try payload.append(allocator, ',');
+        try payload.print(allocator, "\"k{d}\":{d}", .{ i, i });
+    }
+    try payload.append(allocator, '}');
+    return payload.toOwnedSlice(allocator);
+}
+
+test "formatInvalidField: a missing field names what the call did send and what to send instead" {
+    const msg = try failureMessage(testing.allocator, "{\"timeout\":5,\"cwd\":\"/tmp\"}");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "Missing required field \"command\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "You sent: \"timeout\", \"cwd\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, EXAMPLE_CALL) != null);
+}
+
+test "formatInvalidField: an empty arguments object is named as empty, not as <missing>" {
+    const msg = try failureMessage(testing.allocator, "{}");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "an empty arguments object") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "<missing>") == null);
+}
+
+test "formatInvalidField: a misspelled field points at the field it meant" {
+    const msg = try failureMessage(testing.allocator, "{\"comand\":\"ls\",\"timeout\":5}");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "Unrecognized field \"comand\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "Did you mean \"command\"?") != null);
+}
+
+test "formatInvalidField: a field this tool does not have is named, not silently dropped" {
+    const msg = try failureMessage(testing.allocator, "{\"command\":\"ls\",\"timeout\":\"soon\",\"directory\":\"/tmp\"}");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "Unrecognized field \"directory\"") != null);
+}
+
+test "formatInvalidField: a wrong-typed field shows the value received and the shape it needs" {
+    const msg = try failureMessage(testing.allocator, "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":\"soon\"}");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "\"timeout\" expects number (u32)") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "\"soon\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, EXAMPLE_CALL) != null);
+}
+
+test "formatInvalidField: malformed JSON carries the payload and the likely causes" {
+    const msg = try failureMessage(testing.allocator, "{not valid json");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "not valid JSON") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "{not valid json") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "Common causes") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, EXAMPLE_CALL) != null);
+}
+
+test "formatInvalidField: a non-object root asks for one object of named fields" {
+    const msg = try failureMessage(testing.allocator, "[1, 2, 3]");
+    defer testing.allocator.free(msg);
+
+    try testing.expect(std.mem.indexOf(u8, msg, "ONE JSON object") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "[1, 2, 3]") != null);
+}
+
+test "formatInvalidField: the message stops growing with the number of unrecognized fields" {
+    const few = try manyUnknownFields(testing.allocator, 15);
+    defer testing.allocator.free(few);
+    const many = try manyUnknownFields(testing.allocator, 40);
+    defer testing.allocator.free(many);
+
+    const few_msg = try failureMessage(testing.allocator, few);
+    defer testing.allocator.free(few_msg);
+    const many_msg = try failureMessage(testing.allocator, many);
+    defer testing.allocator.free(many_msg);
+
+    try testing.expectEqualStrings(few_msg, many_msg);
 }
 
 test "parseShellArgs: bool from string 'true'" {
@@ -568,7 +873,7 @@ test "parseShellArgs: a garbage is_stop names the field instead of guessing" {
     switch (result) {
         .success => return error.TestUnexpectedResult,
         .failure => |info| {
-            defer testing.allocator.free(info.got);
+            defer freeInvalidField(testing.allocator, info);
             try testing.expectEqualStrings("is_stop", info.field);
             try testing.expectEqualStrings("maybe", info.got);
         },
@@ -613,7 +918,7 @@ test "parseShellArgs: an unknown mode names the field instead of picking a defau
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
         .failure => |info| {
-            defer testing.allocator.free(info.got);
+            defer freeInvalidField(testing.allocator, info);
             try testing.expectEqualStrings("mode", info.field);
             try testing.expectEqualStrings("persistent", info.got);
         },
@@ -642,7 +947,7 @@ test "parseShellArgs: background=true with mode=foreground is rejected, not gues
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
         .failure => |info| {
-            defer testing.allocator.free(info.got);
+            defer freeInvalidField(testing.allocator, info);
             try testing.expectEqualStrings("background", info.field);
             try testing.expectEqualStrings("true", info.got);
             try testing.expect(std.mem.indexOf(u8, info.expected, "mode") != null);
@@ -707,7 +1012,7 @@ test "parseShellArgs: a bad alias value is reported under the name the caller us
     switch (parseShellArgs(testing.allocator, args)) {
         .success => return error.TestUnexpectedResult,
         .failure => |info| {
-            defer testing.allocator.free(info.got);
+            defer freeInvalidField(testing.allocator, info);
             try testing.expectEqualStrings("mandatory_timeout", info.field);
         },
     }
@@ -766,7 +1071,7 @@ test "parseShellArgs: malformed JSON returns failure with the raw payload" {
     const args = "{not valid json";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
-    defer freeFailure(testing.allocator, result.failure);
+    defer freeInvalidField(testing.allocator, result.failure);
     try testing.expectEqualStrings("<json>", result.failure.field);
     try testing.expectEqualStrings("{not valid json", result.failure.got);
 }
@@ -775,7 +1080,7 @@ test "parseShellArgs: non-object root returns failure" {
     const args = "[1, 2, 3]";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
-    defer freeFailure(testing.allocator, result.failure);
+    defer freeInvalidField(testing.allocator, result.failure);
     try testing.expectEqualStrings("<json>", result.failure.field);
 }
 
@@ -783,7 +1088,7 @@ test "parseShellArgs: bool field with garbage string returns failure" {
     const args = "{\"command\":\"ls\",\"background\":\"maybe\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
-    defer freeFailure(testing.allocator, result.failure);
+    defer freeInvalidField(testing.allocator, result.failure);
     try testing.expectEqualStrings("background", result.failure.field);
     try testing.expectEqualStrings("maybe", result.failure.got);
 }
@@ -819,7 +1124,7 @@ test "parseShellArgs: complex XML fragment that resists parseInt returns rich fa
     const args = "{\"command\":\"ls\",\"timeout\":\"5<timeout>5</timeout>\"}";
     const result = parseShellArgs(testing.allocator, args);
     try testing.expect(result == .failure);
-    defer freeFailure(testing.allocator, result.failure);
+    defer freeInvalidField(testing.allocator, result.failure);
     try testing.expectEqualStrings("timeout", result.failure.field);
     // The got value should still contain the original XML fragment.
     try testing.expect(std.mem.indexOf(u8, result.failure.got, "</timeout>") != null);
