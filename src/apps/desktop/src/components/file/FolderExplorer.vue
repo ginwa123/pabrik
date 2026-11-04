@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUpdated, onUnmounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { listFolder, getGitChanges, type FolderEntry } from '../../api'
+import { useContextMenu } from '../../composables/useContextMenu'
+import { openInNewTab } from '../../helpers/openInNewTab'
+import { isBackgroundOpenEvent } from '../../helpers/tabTarget'
 import {
   buildGitStatusMap,
   countChangedUnder,
@@ -8,6 +12,7 @@ import {
   summarizeGitStatuses,
   type GitBadge,
 } from '../../helpers/gitStatusMap'
+import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
@@ -18,8 +23,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'file-click': [file: FolderEntry]
-  // Emitted when the user clicks a directory entry. Used by the CreateWorktreeDialog to navigate
-  // the picker into the clicked folder (parent of the new worktree).
   'folder-click': [folder: FolderEntry]
 }>()
 
@@ -275,23 +278,51 @@ const footerText = computed(() => {
   return props.cwd ?? ''
 })
 
-// Emit event when file is clicked (for opening in editor)
 const handleFileClick = (entry: FolderEntry) => {
   if (entry.is_directory) {
     toggleFolder(entry)
-    // Also emit so parents (e.g. CreateWorktreeDialog's picker) can navigate into the clicked
-    // folder. toggleFolder above still runs so existing consumers (RightSidebar) keep their expand/
-    // collapse behavior unchanged.
     emit('folder-click', entry)
   } else {
-    // Emit file click event for non-directory files
     emit('file-click', entry)
   }
 }
 
-// Open folder on click (for files) or toggle (for folders)
-const handleClick = (entry: FolderEntry) => {
+const router: ReturnType<typeof useRouter> | undefined = useRouter()
+const route: ReturnType<typeof useRoute> | undefined = useRoute()
+
+const { menuPos, openAt, close: closeContextMenu } = useContextMenu({ width: 200, height: 48 })
+const contextMenuPath = ref<string | null>(null)
+
+const openFileInNewTab = (path: string): void => {
+  if (!router || !route) return
+  openInNewTab(router, { path: route.path, query: { view: 'code-editor', file: path } })
+}
+
+const onRowContextMenu = (event: MouseEvent, entry: FolderEntry): void => {
+  if (entry.is_directory) return
+  contextMenuPath.value = entry.path
+  openAt(event)
+}
+
+const onMenuOpenFile = (): void => {
+  const path = contextMenuPath.value
+  contextMenuPath.value = null
+  closeContextMenu()
+  if (path) openFileInNewTab(path)
+}
+
+const handleClick = (entry: FolderEntry, event?: MouseEvent): void => {
+  if (event && !entry.is_directory && isBackgroundOpenEvent(event)) {
+    openFileInNewTab(entry.path)
+    return
+  }
   handleFileClick(entry)
+}
+
+const handleAuxClick = (entry: FolderEntry, event: MouseEvent): void => {
+  if (event.button !== 1 || entry.is_directory) return
+  event.preventDefault()
+  openFileInNewTab(entry.path)
 }
 </script>
 
@@ -405,7 +436,9 @@ const handleClick = (entry: FolderEntry) => {
         :key="path"
         data-testid="explorer-row"
         :title="path"
-        @click="handleClick(entry)"
+        @click="handleClick(entry, $event)"
+        @auxclick="handleAuxClick(entry, $event)"
+        @contextmenu="onRowContextMenu($event, entry)"
         class="w-full flex items-center gap-2 px-3 py-1.5 text-body transition-colors hover:opacity-80"
         :style="{ paddingLeft: `${0.75 + depth * 1.25}rem`, color: rowColor({ entry, depth, path, badge, childCount }) }"
         :class="{ 'line-through': badge?.kind === 'deleted' }"
@@ -454,6 +487,15 @@ const handleClick = (entry: FolderEntry) => {
     >
       {{ footerText }}
     </div>
+
+    <OpenInNewTabMenu
+      v-if="menuPos"
+      :x="menuPos.x"
+      :y="menuPos.y"
+      :show-chat="false"
+      show-file
+      @open-file="onMenuOpenFile"
+    />
   </div>
 </template>
 
