@@ -248,6 +248,26 @@ export function createItemCrud(p: ItemCrudParams) {
     }
   }
 
+  async function renameWorkspaceItem(
+    workspaceId: string,
+    itemId: string,
+    name: string,
+  ): Promise<void> {
+    const workspace = workspaces.value.find((ws) => ws.id === workspaceId)
+    const item = workspace?.items.find((i) => i.id === itemId)
+    const previousName = item?.name
+    if (item) item.name = name
+
+    const failure: unknown = await api
+      .updateWorkspaceItem(workspaceId, itemId, { name })
+      .then(() => null)
+      .catch((err: unknown) => err)
+
+    if (failure === null) return
+    if (item && previousName !== undefined) item.name = previousName
+    throw failure
+  }
+
   async function removeWorkspaceItem(workspaceId: string, itemId: string) {
     const workspace = workspaces.value.find((ws) => ws.id === workspaceId)
     if (!workspace) return
@@ -354,6 +374,7 @@ export function createItemCrud(p: ItemCrudParams) {
     // item.
     addRoutineItem,
     removeWorkspaceItem,
+    renameWorkspaceItem,
     reorderWorkspaceItems,
   }
 }

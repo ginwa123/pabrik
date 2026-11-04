@@ -114,6 +114,7 @@ export interface WorkspaceRoutine {
   schedule: string
   /** The profile name this routine fires under. '' = the backend's active-profile cascade. */
   selected_profile_model: string
+  cwd: string
   enabled: boolean
   last_run_at: string
   /** '' when manual-only or disabled. */
@@ -174,6 +175,7 @@ export async function updateRoutineItem(
     instruction?: string
     schedule?: string
     selected_profile_model?: string
+    cwd?: string
     enabled?: boolean
   },
 ): Promise<{ routine: WorkspaceRoutine }> {

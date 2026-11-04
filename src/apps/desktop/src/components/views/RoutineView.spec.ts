@@ -8,6 +8,15 @@ import * as api from '../../api'
 const { replaceMock } = vi.hoisted(() => ({ replaceMock: vi.fn() }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace: replaceMock }) }))
 
+vi.mock('../FilePickerDialog.vue', () => ({
+  default: {
+    name: 'FilePickerDialog',
+    props: ['modelValue', 'mode', 'loadItems', 'keyFor', 'pathFor', 'isExpandable', 'labelFor', 'title'],
+    emits: ['update:modelValue', 'select'],
+    template: `<div v-if="modelValue" data-testid="file-picker-dialog"><button data-testid="stub-pick" @click="$emit('select', '/proj/other')">pick</button></div>`,
+  },
+}))
+
 const routineFixture = {
   id: 'item_r_1',
   workspace_item_id: 'item_r_1',
@@ -15,6 +24,7 @@ const routineFixture = {
   instruction: 'do things',
   schedule: '0 9 * * *',
   selected_profile_model: '',
+  cwd: '',
   enabled: true,
   last_run_at: '',
   next_run_at: '2026-01-02 09:00:00',
@@ -170,6 +180,7 @@ describe('RoutineView', () => {
       description: 'nightly things',
       instruction: 'do other things',
       schedule: '0 9 * * *',
+      cwd: '',
       enabled: true,
     })
   })
@@ -330,5 +341,65 @@ describe('RoutineView', () => {
 
     expect(wrapper.find('[data-testid="routine-running-sessions"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('shows the folder the routine runs in, defaulting to its own folder', async () => {
+    const wrapper = mountView()
+    await settle()
+    expect(wrapper.find('[data-testid="routine-cwd-picker"]').text()).toContain(
+      'Use routine folder',
+    )
+
+    vi.mocked(api.getRoutineItem).mockResolvedValue({
+      routine: { ...routineFixture, cwd: '/proj/other' },
+    })
+    const picked = mountView()
+    await settle()
+    expect(picked.find('[data-testid="routine-cwd-picker"]').text()).toContain('/proj/other')
+  })
+
+  it('saves the folder picked for the routine and reports it after the save', async () => {
+    const wrapper = mountView()
+    await settle()
+
+    await wrapper.find('[data-testid="routine-cwd-picker"]').trigger('click')
+    await nextTick()
+    await wrapper.find('[data-testid="stub-pick"]').trigger('click')
+    await nextTick()
+    await wrapper.find('[data-testid="routine-save"]').trigger('click')
+    await flush()
+
+    expect(api.updateRoutineItem).toHaveBeenCalledWith(
+      'ws_1',
+      'item_r_1',
+      expect.objectContaining({ cwd: '/proj/other' }),
+    )
+    expect(wrapper.find('[data-testid="routine-cwd-picker"]').text()).toContain('/proj/other')
+  })
+
+  it('renames the routine item when the title is edited and Save is pressed', async () => {
+    const updateItem = vi.spyOn(api, 'updateWorkspaceItem').mockResolvedValue({} as never)
+    const wrapper = mountView()
+    await settle()
+
+    const input = wrapper.find('[data-testid="routine-title"]')
+    expect((input.element as HTMLInputElement).value).toBe('Nightly')
+
+    await input.setValue('Nightly sweep')
+    await wrapper.find('[data-testid="routine-save"]').trigger('click')
+    await flush()
+
+    expect(updateItem).toHaveBeenCalledWith('ws_1', 'item_r_1', { name: 'Nightly sweep' })
+  })
+
+  it('leaves the item name alone when the title was not touched', async () => {
+    const updateItem = vi.spyOn(api, 'updateWorkspaceItem').mockResolvedValue({} as never)
+    const wrapper = mountView()
+    await settle()
+
+    await wrapper.find('[data-testid="routine-save"]').trigger('click')
+    await flush()
+
+    expect(updateItem).not.toHaveBeenCalled()
   })
 })

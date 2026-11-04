@@ -19,6 +19,7 @@ const UpdateRoutineBody = struct {
     instruction: ?[]const u8 = null,
     schedule: ?[]const u8 = null,
     selected_profile_model: ?[]const u8 = null,
+    cwd: ?[]const u8 = null,
     enabled: ?bool = null,
 };
 
@@ -71,7 +72,7 @@ fn useCase(
     // Load existing values so absent fields keep their current state
     // (effective_* pattern from the deleted task_update routine branch).
     var qr = db.query(allocator,
-        "SELECT description, instruction, schedule, enabled, selected_profile_model FROM workspace_routines WHERE id = ?",
+        "SELECT description, instruction, schedule, enabled, selected_profile_model, COALESCE(CAST(cwd AS TEXT), '') FROM workspace_routines WHERE id = ?",
         &[_][]const u8{input.item_id},
     ) catch return error.LookupFailed;
     defer qr.deinit();
@@ -88,6 +89,8 @@ fn useCase(
     const existing_enabled = existing_enabled_int == 1;
     const existing_profile_model = try allocator.dupe(u8, erow.values[4]);
     defer allocator.free(existing_profile_model);
+    const existing_cwd = try allocator.dupe(u8, erow.values[5]);
+    defer allocator.free(existing_cwd);
 
     const effective_description = input.body.description orelse existing_description;
     const effective_instruction = input.body.instruction orelse existing_instruction;
@@ -96,6 +99,11 @@ fn useCase(
     const effective_profile_model = std.mem.trim(
         u8,
         input.body.selected_profile_model orelse existing_profile_model,
+        " \t\n\r",
+    );
+    const effective_cwd = std.mem.trim(
+        u8,
+        input.body.cwd orelse existing_cwd,
         " \t\n\r",
     );
 
@@ -124,10 +132,11 @@ fn useCase(
         \\       enabled = ?,
         \\       next_run_at = ?,
         \\       selected_profile_model = COALESCE(NULLIF(?, ''), ''),
+        \\       cwd = COALESCE(NULLIF(?, ''), ''),
         \\       updated_at = datetime('now')
         \\ WHERE id = ?
     ,
-        &.{ effective_description, effective_instruction, effective_schedule, enabled_str, next_run_at, effective_profile_model, input.item_id },
+        &.{ effective_description, effective_instruction, effective_schedule, enabled_str, next_run_at, effective_profile_model, effective_cwd, input.item_id },
     ) catch return error.UpdateFailed;
 
     // Refetch via the GET use-case's row shape. The GET module's
@@ -137,7 +146,8 @@ fn useCase(
         \\       COALESCE(CAST(last_run_at AS TEXT), ''), COALESCE(CAST(next_run_at AS TEXT), ''),
         \\       last_status, COALESCE(CAST(last_error AS TEXT), ''),
         \\       COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''),
-        \\       COALESCE(CAST(selected_profile_model AS TEXT), '')
+        \\       COALESCE(CAST(selected_profile_model AS TEXT), ''),
+        \\       COALESCE(CAST(cwd AS TEXT), '')
         \\FROM workspace_routines WHERE id = ?
     , &[_][]const u8{input.item_id}) catch return error.RefetchFailed;
     defer q2.deinit();
@@ -159,6 +169,7 @@ fn useCase(
         .created_at = try allocator.dupe(u8, urow.values[10]),
         .updated_at = try allocator.dupe(u8, urow.values[11]),
         .selected_profile_model = try allocator.dupe(u8, urow.values[12]),
+        .cwd = try allocator.dupe(u8, urow.values[13]),
     } };
 }
 
@@ -236,6 +247,7 @@ const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration124AddRoutineSelectedProfileModel = @import("../migrations/migration.zig").Migration124AddRoutineSelectedProfileModel;
+const Migration139AddRoutineCwd = @import("../migrations/migration.zig").Migration139AddRoutineCwd;
 
 const TestCtx = struct {
     db: database.Db,
@@ -260,6 +272,7 @@ fn setupDb() !TestCtx {
     );
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, testing.allocator);
     try Migration124AddRoutineSelectedProfileModel.up(&db, testing.allocator);
+    try Migration139AddRoutineCwd.up(&db, testing.allocator);
 
     try db.exec(testing.allocator,
         "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('ws_item_1', 'ws_1', 'routine', 'Nightly')",
@@ -295,6 +308,7 @@ fn freeOutput(allocator: std.mem.Allocator, output: RoutineUpdateOutput) void {
     allocator.free(output.routine.created_at);
     allocator.free(output.routine.updated_at);
     allocator.free(output.routine.selected_profile_model);
+    allocator.free(output.routine.cwd);
 }
 
 test "update routine: instruction patch keeps schedule" {

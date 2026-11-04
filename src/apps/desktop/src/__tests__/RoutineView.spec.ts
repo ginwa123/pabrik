@@ -57,6 +57,7 @@ describe('RoutineView tabs', () => {
         instruction: 'do things',
         schedule: '',
         selected_profile_model: '',
+        cwd: '',
         enabled: true,
         last_run_at: '',
         next_run_at: '',

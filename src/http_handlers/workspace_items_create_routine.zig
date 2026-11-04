@@ -17,6 +17,7 @@ const CreateRoutineBody = struct {
     description: []const u8 = "",
     instruction: []const u8 = "",
     schedule: []const u8 = "",
+    cwd: []const u8 = "",
     enabled: bool = true,
 };
 
@@ -38,6 +39,7 @@ pub const CreateRoutineRoutineResponse = struct {
     description: []const u8,
     instruction: []const u8,
     schedule: []const u8,
+    cwd: []const u8,
     enabled: bool,
     next_run_at: []const u8, // "" = manual-run only
     created_at: []const u8,
@@ -128,10 +130,10 @@ fn useCase(
     // the constraint (see memory `sqlite-backend-empty-slice-binds-as-null`).
     const enabled_str: []const u8 = if (input.body.enabled) "1" else "0";
     tx.exec(allocator,
-        \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?)
+        \\INSERT INTO workspace_routines (id, workspace_item_id, description, instruction, schedule, enabled, next_run_at, cwd)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, ?, COALESCE(NULLIF(?, ''), ''))
     ,
-        &.{ item_id, item_id, input.body.description, input.body.instruction, trimmed_schedule, enabled_str, next_run_at },
+        &.{ item_id, item_id, input.body.description, input.body.instruction, trimmed_schedule, enabled_str, next_run_at, input.body.cwd },
     ) catch return error.DatabaseError;
 
     // Seed the agent_routines config row so the RoutineView Agent tab works
@@ -161,6 +163,7 @@ fn useCase(
             .description = input.body.description,
             .instruction = input.body.instruction,
             .schedule = trimmed_schedule,
+            .cwd = input.body.cwd,
             .enabled = input.body.enabled,
             .next_run_at = next_run_at,
             .created_at = "",
@@ -286,6 +289,7 @@ const database = @import("pabrikcore").database;
 const testing = std.testing;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = @import("../migrations/migration.zig").Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration116 = @import("../migrations/migration.zig").Migration116UnifyAgentConfigTables;
+const Migration139AddRoutineCwd = @import("../migrations/migration.zig").Migration139AddRoutineCwd;
 
 const TestCtx = struct {
     db: database.Db,
@@ -310,6 +314,7 @@ fn setupDb() !TestCtx {
     );
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, testing.allocator);
     try Migration116.up(&db, testing.allocator);
+    try Migration139AddRoutineCwd.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
