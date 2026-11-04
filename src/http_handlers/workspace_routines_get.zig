@@ -264,6 +264,36 @@ test "useCase: the routine carries the agent model it will fire under" {
     try testing.expectEqualStrings("900ribu", output.routine.selected_profile_model);
 }
 
+test "useCase: a routine that never chose a folder reports an empty cwd" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .item_id = "ws_item_1" });
+    defer freeOutput(alloc, output);
+
+    try testing.expectEqualStrings("", output.routine.cwd);
+}
+
+test "useCase: the routine carries the folder it runs in" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(
+        alloc,
+        "UPDATE workspace_routines SET cwd = '/proj/other' WHERE id = 'ws_item_1'",
+        &[_][]const u8{},
+    );
+
+    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .item_id = "ws_item_1" });
+    defer freeOutput(alloc, output);
+
+    try testing.expectEqualStrings("/proj/other", output.routine.cwd);
+}
+
 test "useCase: happy path returns routine row" {
     const alloc = testing.allocator;
     var ctx = try setupDb();

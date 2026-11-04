@@ -311,6 +311,68 @@ fn freeOutput(allocator: std.mem.Allocator, output: RoutineUpdateOutput) void {
     allocator.free(output.routine.cwd);
 }
 
+test "update routine: choosing a folder stores it as the cwd the fire runs in" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const output = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .cwd = "/proj/other" },
+    });
+    defer freeOutput(alloc, output);
+
+    try testing.expectEqualStrings("/proj/other", output.routine.cwd);
+}
+
+test "update routine: an instruction patch keeps the chosen folder" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .cwd = "/proj/other" },
+    });
+    freeOutput(alloc, first);
+
+    const second = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .instruction = "do other things" },
+    });
+    defer freeOutput(alloc, second);
+
+    try testing.expectEqualStrings("/proj/other", second.routine.cwd);
+}
+
+test "update routine: clearing the folder returns the routine to its own item path" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .cwd = "/proj/other" },
+    });
+    freeOutput(alloc, first);
+
+    const second = try useCase(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .item_id = "ws_item_1",
+        .body = .{ .cwd = "" },
+    });
+    defer freeOutput(alloc, second);
+
+    try testing.expectEqualStrings("", second.routine.cwd);
+}
+
 test "update routine: instruction patch keeps schedule" {
     const alloc = testing.allocator;
     var ctx = try setupDb();

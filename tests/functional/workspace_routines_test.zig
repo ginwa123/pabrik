@@ -517,6 +517,50 @@ test "patch_instruction_keeps_schedule" {
     }
 }
 
+test "patch_cwd_sets_the_folder_the_fire_runs_in" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}", .{@errorName(err)});
+    };
+
+    const ws_id = try createWorkspace(&h, "ws-routines");
+    defer gpa.free(ws_id);
+    const path = try projectPath(&h);
+    defer gpa.free(path);
+
+    var created = try createRoutine(&h, ws_id, "nightly", path, null, "");
+    defer created.deinit();
+    const item_id = try createdItemId(&created, "patch cwd");
+
+    const url = try std.fmt.allocPrint(
+        gpa,
+        "/api/workspaces/{s}/items/{s}/routine",
+        .{ ws_id, item_id },
+    );
+    defer gpa.free(url);
+
+    const body = try std.json.Stringify.valueAlloc(gpa, .{
+        .cwd = "/tmp/other-project",
+    }, .{});
+    defer gpa.free(body);
+
+    var patched = try h.http(io, .PATCH, url, .{ .json_body = body, .expect = &.{200} });
+    defer patched.deinit();
+    var doc = try patched.json();
+    defer doc.deinit();
+
+    const routine = try routineObj(&doc, "patched cwd");
+    try testing.expectEqualStrings("/tmp/other-project", try strAt(routine, "cwd", "patched routine"));
+
+    var read_back = try h.http(io, .GET, url, .{ .expect = &.{200} });
+    defer read_back.deinit();
+    var read_doc = try read_back.json();
+    defer read_doc.deinit();
+    const stored = try routineObj(&read_doc, "read-back cwd");
+    try testing.expectEqualStrings("/tmp/other-project", try strAt(stored, "cwd", "read-back routine"));
+}
+
 test "patch_schedule_recomputes_next_run_at" {
     try harness.requirePabrikBin(io, gpa);
     var h = try Harness.boot(io, gpa, .{});

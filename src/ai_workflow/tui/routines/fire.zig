@@ -598,6 +598,53 @@ fn idListContains(ids: [][]u8, wanted: []const u8) bool {
     return false;
 }
 
+test "a fire runs in the folder the routine chose over its item's own folder" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertNamedParentItem(&ctx.db, alloc, "item_1", "Nightly", "/proj/collect");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "",
+        .enabled = true,
+        .cwd = "/proj/other",
+    });
+    var routine = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer routine.deinit(alloc);
+
+    const cwd = try effectiveCwd(alloc, &ctx.db, routine);
+    defer alloc.free(cwd);
+
+    try testing.expectEqualStrings("/proj/other", cwd);
+}
+
+test "a routine with no folder of its own runs in its item's folder" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertNamedParentItem(&ctx.db, alloc, "item_1", "Nightly", "/proj/collect");
+    try model.insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "x",
+        .schedule = "",
+        .enabled = true,
+    });
+    var routine = try model.loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer routine.deinit(alloc);
+
+    const cwd = try effectiveCwd(alloc, &ctx.db, routine);
+    defer alloc.free(cwd);
+
+    try testing.expectEqualStrings("/proj/collect", cwd);
+}
+
 test "a fire stamps the run's chat session with the routine's name, dir and workspace" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
