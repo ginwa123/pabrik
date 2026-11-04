@@ -14,6 +14,8 @@
 #   run: python3 scripts/lint-no-dead-doc-refs.py --selftest
 #        python3 scripts/lint-no-dead-doc-refs.py
 #   run: python3 scripts/check-app-path-deps.py
+#   run: python3 scripts/lint-kt-comment-lines.py --selftest
+#        python3 scripts/lint-kt-comment-lines.py
 #
 # That first step used to live at ci.yml lines 1485-1491 and the CI job
 # was deleted in PR #398 ("drop frontend job"), which left this hook
@@ -48,6 +50,10 @@ python3 scripts/lint-no-dead-doc-refs.py
 
 echo "→ app path dependencies agree with the root pins"
 python3 scripts/check-app-path-deps.py
+
+echo "→ Kotlin comment blocks are at most two lines"
+python3 scripts/lint-kt-comment-lines.py --selftest
+python3 scripts/lint-kt-comment-lines.py
 
 echo "→ zginlint (comment-block ceiling, zero findings)"
 zig build zginlint:check

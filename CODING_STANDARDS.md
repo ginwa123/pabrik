@@ -748,3 +748,136 @@ invocation.
 The interpreter is checked, not assumed. If `python3` is not on PATH the
 step FAILS — a scan that cannot run must never report the tree clean,
 because "clean" is the one answer that lets a violation merge.
+
+---
+
+## 7. The same ceiling in Kotlin, at two lines
+
+**Capped.** The Android app's half of §4's rule, and the third language it
+covers. The rule is `scripts/lint-kt-comment-lines.py`, wired into the
+`lint` job of `.github/workflows/ci.yml` and mirrored by
+`.husky/pre-commit`. The ceiling is **two** lines — one tighter than §4's
+and §5's three — because that is the number this app holds itself to.
+Every other semantic is identical, so "a comment block is a paragraph"
+means the same thing in all three languages.
+
+```kotlin
+// WRONG — one block, three lines.
+// The shell's drawer and a chat route's drawer are the same drawer, so the
+// fold is forwarded here rather than kept per drawer.
+
+// RIGHT — two lines. The extra sentences belong in the commit message or
+// the PR body, where they are read once instead of sitting in the code.
+```
+
+### The rule
+
+- A **comment line** carries comment content and no code byte, so a blank
+  line or a line with code on it ends the block.
+- A **comment block** is a run of consecutive comment lines. Two lines
+  pass, three fail, and the finding is reported at the block's first line.
+- A `/* ... */` comment counts by the lines it spans. Kotlin's block
+  comments **nest**, so `/* a /* b */ c */` is one comment and the lexer
+  tracks its depth rather than assuming the first `*/` closes it.
+- `/** ... */` KDoc counts like any other comment. There is no doc-string
+  exemption.
+- The ceiling is a CLI option: `--max N`.
+
+### What is NOT banned
+
+- **Comments.** The rule is about length, not existence. A two-line
+  comment explaining a non-obvious invariant is what it is trying to
+  produce.
+- **A trailing comment after code.** `val x = 1 // note` has a code byte
+  on its line, so it is not a comment line and never joins a block.
+- **Comment markers inside a literal.** `"// not a comment"`, a raw
+  `"""..."""` string holding `/*`, and `'/'` are text. This half is a real
+  lexer rather than a line scan, so it knows the difference — and the
+  selftest pins three such fixtures.
+- **Prose everywhere else.** Docs, commit messages, PR bodies, issue text
+  and YAML comments are not Kotlin and are not scanned. Two lines is a
+  ceiling on code comments, not on writing.
+
+### Why two, and why a pin instead of a conversion
+
+Two, because that is the ceiling this app was asked for, and because the
+Android tree's comments are the densest in the repo: measured 2026-11-04
+there are **1,806 over-long blocks in 187 of 211 `.kt` files**, and most
+of them are KDoc that explains a real invariant in a paragraph — the
+`LastPositionStore` header on why the saved position is not the nav back
+stack is 14 lines and worth every one of them.
+
+Converting them is the job §4 describes, and it is **not** this change's
+job: it is 187 files and each block needs a decision (shorten, split, move
+into a `///` doc comment, or delete after establishing that nothing depends
+on it), which is 733-file-diff territory and exactly the trade §5 declined
+for the frontend. So the rule ships the way §2 and §5 shipped — with a
+counted ceiling — and this is a documented exception to §3's rule 5, same
+as those two.
+
+`src/apps/android_mobile/comment-lines-baseline.json` is the pin: one count
+per file, plus the `max` it was pinned at and a `total` for the report.
+
+| | |
+|---|---|
+| a file over its pin | **FAIL** |
+| a file with findings that is not pinned | **FAIL** (a new file cannot sneak in) |
+| a count below its pin | PASS, with a notice naming the value to re-pin |
+| a baseline pinned at a different `--max` | **FAIL** (a looser ceiling needs a deliberate re-pin) |
+| the baseline file missing or unreadable | **FAIL** (exit 2) |
+
+The count may only fall. `--pin` rewrites the baseline and is for **after
+fixing debt, never for silencing a new violation**. The honest weakness of
+a count-based ratchet is that swapping one over-long block for another in
+the same file keeps the count — §5 has the same hole, and it is the price
+of not shipping a 187-file rewrite.
+
+**The finish line is `--strict`**, which ignores the baseline and asks for
+zero. It is wired and tested today, so turning it on is a one-word change
+to the CI step once the pins are empty. The 406 three-line blocks are the
+first tranche: each one needs a line deleted, not a rewrite.
+
+### How a finding is fixed
+
+Shorten to two lines, in this order of preference:
+
+1. **Keep the why, drop the rest.** Which operation this guards, which
+   invariant it relies on. Everything else was the design document.
+2. **Split.** A blank line between two paragraphs makes two blocks, and
+   two legal blocks beat one illegal one. This is the fix for a KDoc that
+   genuinely needs four lines.
+3. **Move it.** The commit message, the PR body, the module README.
+4. **Delete it.** Only after establishing that nothing depends on it.
+
+Then re-pin the file down to its new count — `--pin` is what makes the
+ratchet fall, and a notice from the gate names the exact number.
+
+There is no inline exemption and no suppression comment. A rule with an
+escape hatch is a rule nobody follows, which is why §4 deleted the Zig
+baseline instead of grandfathering it forever.
+
+### Running it
+
+```bash
+python3 scripts/lint-kt-comment-lines.py --selftest   # scanner + verdict, on fixtures
+python3 scripts/lint-kt-comment-lines.py              # the gate: check against the pin
+python3 scripts/lint-kt-comment-lines.py --strict     # the finish line: zero findings
+python3 scripts/lint-kt-comment-lines.py --pin        # re-pin after fixing debt
+```
+
+Exit codes: `0` clean, `1` findings, `2` a usage error, a ceiling that
+disagrees with the pin, or a file set that could not be enumerated. The
+script covers every `.kt` file git keeps under `src/apps/android_mobile/`
+— `main`, `test` and `androidTest` — via
+`git ls-files --cached --others --exclude-standard`, so a new file is
+scanned before it is committed and Gradle's `build/` is not.
+
+The `--selftest` mode runs **30 fixtures**: the block boundary in both
+directions, blank and code lines splitting a block, a trailing comment, a
+marker inside a plain string, an escaped quote, a raw string and a char
+literal, KDoc, a nested block comment, an unterminated string and an
+unterminated block comment (neither may crash the lexer), `--max` moving
+the ceiling both ways, a vacuous scan failing instead of passing, and the
+verdict table above — over-pin, at-pin, under-pin, unpinned file, and a
+baseline whose `max` disagrees with the run.
+
