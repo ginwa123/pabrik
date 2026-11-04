@@ -1,7 +1,8 @@
 <!--
   Workspace settings (`/app/:workspaceId/settings`) — one workspace's
   Overview, Secrets, Skills, Memories, and the config sections that moved
-  here: Profiles, MCP Servers, Tools and Skill Evals.
+  here: Profiles, MCP Servers, Tools, Skill Evals and Runtime (the retry
+  backoff).
 
   The config sections edit THIS workspace's own row
   (`/api/workspaces/:id/config`): profiles, MCP servers, tools, skill evals
@@ -247,7 +248,7 @@ function handleRetry(): void {
               :key="workspaceId"
               :source="agentSource"
               :sections="WORKSPACE_AGENT_SECTIONS"
-                            @notification="notify"
+              @notification="notify"
             />
           </section>
         </div>

@@ -65,7 +65,17 @@ describe('SettingsShell', () => {
     expect(wrapper.find('[data-testid="settings-nav-general"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-nav-appearance"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="settings-nav-security"]').exists()).toBe(true)
-    for (const id of ['pabrik', 'agents', 'mcp', 'tools', 'evals', 'skills', 'memories', 'members']) {
+    for (const id of [
+      'pabrik',
+      'agents',
+      'mcp',
+      'tools',
+      'evals',
+      'runtime',
+      'skills',
+      'memories',
+      'members',
+    ]) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(false)
     }
     expect(wrapper.find('[data-testid="settings-scope-label"]').text()).toContain('User')
@@ -79,14 +89,36 @@ describe('SettingsShell', () => {
     expect(wrapper.find('[data-testid="settings-shell"]').attributes('data-scope')).toBe(
       'workspace',
     )
-    for (const id of ['overview', 'members', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
+    for (const id of [
+      'overview',
+      'members',
+      'secrets',
+      'skills',
+      'memories',
+      'agents',
+      'mcp',
+      'tools',
+      'evals',
+      'runtime',
+    ]) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}"]`).exists()).toBe(true)
     }
     // The workspace comes from the URL, so nav items carry no per-item workspace
     // suffix — and no name box: the URL is the context, the Overview section
     // shows name + ID.
     expect(wrapper.find('[data-testid="settings-nav-overview"]').text()).not.toContain('Acme')
-    for (const id of ['overview', 'members', 'secrets', 'skills', 'memories', 'agents', 'mcp', 'tools', 'evals']) {
+    for (const id of [
+      'overview',
+      'members',
+      'secrets',
+      'skills',
+      'memories',
+      'agents',
+      'mcp',
+      'tools',
+      'evals',
+      'runtime',
+    ]) {
       expect(wrapper.find(`[data-testid="settings-nav-${id}-workspace"]`).exists()).toBe(false)
     }
 
@@ -124,6 +156,7 @@ describe('SettingsShell', () => {
       'MCP Servers',
       'Tools',
       'Skill Evals',
+      'Runtime',
     ])
     // No 'Sub-agents' section: the agent list is the only editor.
     expect(labels).not.toContain('Sub-agents')

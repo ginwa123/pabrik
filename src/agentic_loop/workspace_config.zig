@@ -136,6 +136,10 @@ pub const ScopedKey = struct {
     disk: []const u8,
     /// The spelling the HTTP wire uses, when it differs.
     wire: []const u8 = "",
+    /// Upper bound for an integer value, applied while the overlay is written.
+    /// The user-scope PUT clamps the same field (`pabrik_config_put.zig`); a
+    /// workspace body must not be able to store a value that path would refuse.
+    max: ?u32 = null,
 };
 
 pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
@@ -148,6 +152,9 @@ pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
     .{ .disk = "tools" },
     .{ .disk = "skill_evals" },
     .{ .disk = "web_search" },
+    // Retry backoff is a property of the run, not of the account: two
+    // workspaces can want different patience against the same provider.
+    .{ .disk = "retry_delay_ms", .max = 60_000 },
 };
 
 /// The value for one scoped key, preferring the ON-DISK spelling.
@@ -155,6 +162,16 @@ fn scopedValue(obj: std.json.ObjectMap, key: ScopedKey) ?std.json.Value {
     if (obj.get(key.disk)) |v| return v;
     if (key.wire.len > 0) return obj.get(key.wire);
     return null;
+}
+
+/// `value` with the key's `max` applied to an integer. A negative integer is
+/// left for the parser to reject, so this never has to decide what one means.
+fn clampedValue(key: ScopedKey, value: std.json.Value) std.json.Value {
+    const max = key.max orelse return value;
+    return switch (value) {
+        .integer => |n| .{ .integer = @min(n, @as(i64, max)) },
+        else => value,
+    };
 }
 
 /// The workspace-scoped SLICE of a user-level config, as overlay JSON.
@@ -188,7 +205,7 @@ pub fn workspaceScopedOverlay(
         // Always the DISK spelling, whichever spelling the input used.
         try appendKeyJson(allocator, &out, key.disk);
         try out.append(allocator, ':');
-        try appendValueJson(allocator, &out, value);
+        try appendValueJson(allocator, &out, clampedValue(key, value));
     }
     try out.append(allocator, '}');
     return out.toOwnedSlice(allocator);
@@ -204,7 +221,7 @@ fn isWorkspaceScopedKey(key: []const u8) bool {
 
 /// The user-level document minus the workspace-scoped keys: everything a
 /// workspace still shares once its own row owns profiles, MCP servers, tools,
-/// skill evals and web search.
+/// skill evals, web search and the retry backoff.
 pub fn withoutScopedKeys(allocator: std.mem.Allocator, base_json: []const u8) ![]u8 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, base_json, .{}) catch
         return allocator.dupe(u8, "{}");
@@ -261,9 +278,9 @@ pub fn baseConfigText(
     return reader.interface.allocRemaining(allocator, .limited(1024 * 1024)) catch null;
 }
 
-/// `baseConfigText` with the workspace-scoped keys removed. A workspace owns
-/// its profiles, MCP servers, tools, skill evals and web search through its
-/// own row, so it inherits only the rest (General) from the user document.
+/// `baseConfigText` minus the workspace-scoped keys: a workspace owns those
+/// through its own row and inherits only the rest (General) from the user
+/// document.
 pub fn scopedBaseConfigText(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -530,6 +547,27 @@ test "the copy carries every workspace-scoped key" {
     try testing.expectEqual(@as(usize, 2), obj.get("tools").?.array.items.len);
     try testing.expectEqual(true, obj.get("skill_evals").?.object.get("enabled").?.bool);
     try testing.expect(obj.get("web_search") != null);
+    try testing.expectEqual(@as(i64, 2000), obj.get("retry_delay_ms").?.integer);
+}
+
+test "a retry delay above the cap is clamped on the way into a workspace" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(alloc, "{\"retry_delay_ms\":999999}");
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 60_000), parsed.value.object.get("retry_delay_ms").?.integer);
+}
+
+test "a retry delay under the cap is stored exactly as written" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(alloc, "{\"retry_delay_ms\":2500}");
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 2500), parsed.value.object.get("retry_delay_ms").?.integer);
 }
 
 test "the copy does NOT carry the General-tab keys, so they keep applying everywhere" {
@@ -538,7 +576,7 @@ test "the copy does NOT carry the General-tab keys, so they keep applying everyw
     // Positive control: the source really does have them.
     var source = try parse(alloc, USER_CONFIG);
     defer source.deinit();
-    for ([_][]const u8{ "notify_on_complete", "notify_on_error", "retry_delay_ms", "web_launch_enabled", "model_compaction_size_kb", "max_capacity_token_model", "compaction_threshold_percent" }) |key| {
+    for ([_][]const u8{ "notify_on_complete", "notify_on_error", "web_launch_enabled", "model_compaction_size_kb", "max_capacity_token_model", "compaction_threshold_percent" }) |key| {
         try testing.expect(source.value.object.get(key) != null);
     }
 
@@ -547,7 +585,7 @@ test "the copy does NOT carry the General-tab keys, so they keep applying everyw
     var parsed = try parse(alloc, copy);
     defer parsed.deinit();
 
-    for ([_][]const u8{ "notify_on_complete", "notify_on_error", "retry_delay_ms", "web_launch_enabled", "model_compaction_size_kb", "max_capacity_token_model", "compaction_threshold_percent" }) |key| {
+    for ([_][]const u8{ "notify_on_complete", "notify_on_error", "web_launch_enabled", "model_compaction_size_kb", "max_capacity_token_model", "compaction_threshold_percent" }) |key| {
         try testing.expect(parsed.value.object.get(key) == null);
     }
 }
@@ -617,7 +655,7 @@ test "a null or absent key is not copied, so it cannot fake an override" {
 
 test "a config with nothing to copy yields {}, never junk" {
     const alloc = testing.allocator;
-    for ([_][]const u8{ "", "   ", "not json", "[1,2]", "{}", "{\"retry_delay_ms\":2000}" }) |input| {
+    for ([_][]const u8{ "", "   ", "not json", "[1,2]", "{}", "{\"notify_on_complete\":true}" }) |input| {
         const copy = try workspaceScopedOverlay(alloc, input);
         defer alloc.free(copy);
         try testing.expectEqualStrings("{}", copy);
@@ -750,18 +788,18 @@ test "withoutScopedKeys keeps General and drops every workspace-scoped key" {
     try testing.expect(obj.get("mcp_servers") == null);
     try testing.expect(obj.get("skill_evals") == null);
     try testing.expect(obj.get("web_search") == null);
+    try testing.expect(obj.get("retry_delay_ms") == null);
 
-    try testing.expectEqual(@as(i64, 1234), obj.get("retry_delay_ms").?.integer);
     try testing.expectEqual(false, obj.get("notify_on_complete").?.bool);
 }
 
 test "withoutScopedKeys strips the wire spelling `profiles` too" {
     const alloc = testing.allocator;
-    const stripped = try withoutScopedKeys(alloc, "{\"profiles\":{\"a\":{}},\"retry_delay_ms\":7}");
+    const stripped = try withoutScopedKeys(alloc, "{\"profiles\":{\"a\":{}},\"notify_on_complete\":true}");
     defer alloc.free(stripped);
 
     var parsed = try parse(alloc, stripped);
     defer parsed.deinit();
     try testing.expect(parsed.value.object.get("profiles") == null);
-    try testing.expectEqual(@as(i64, 7), parsed.value.object.get("retry_delay_ms").?.integer);
+    try testing.expectEqual(true, parsed.value.object.get("notify_on_complete").?.bool);
 }

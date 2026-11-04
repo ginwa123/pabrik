@@ -1,10 +1,11 @@
 <!--
   User settings (`/app/settings`) — General and Security.
 
-  Decision D4: General (notifications, retry delay, web launch, browser tabs)
-  is the only CONFIG that still applies to every workspace, so it is the only
-  config section left here. Profiles, MCP servers, tools, skill evals and web
-  search moved to Workspace settings — they were always per-workspace values.
+  Decision D4: General (notifications, web launch, browser tabs) is the
+  only CONFIG that still applies to every workspace, so it is the only
+  config section left here. Profiles, MCP servers, tools, skill evals, web
+  search and the retry backoff moved to Workspace settings — they were
+  always per-workspace values.
 
   Security is here for the same reason: `users.password_hash` belongs to the
   account, not to one workspace. The section comes from the shell's nav

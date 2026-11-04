@@ -185,7 +185,6 @@ describe('the compact group', () => {
     await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
     expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(2)
   })
-
 })
 
 /** A tool-call message of a transcript, as the chain builder sees it. */
@@ -423,7 +422,6 @@ describe('the chat view setting', () => {
   const settings = (chat_view: 'dev' | 'compact'): PabrikGeneralSettings => ({
     notify_on_complete: false,
     notify_on_error: false,
-    retry_delay_ms: 0,
     web_launch_enabled: false,
     chat_view,
   })
