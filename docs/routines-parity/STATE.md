@@ -1,6 +1,6 @@
 # Routines Parity — State
 
-Status: IN_PROGRESS (run #2, T01 done, 2026-11-04)
+Status: IN_PROGRESS (run #3, T02 done, 2026-11-04)
 Repo: pabrik (github.com/ginwa123/pabrik), main @ cda5c60ce
 Vue app: `src/apps/desktop/` (Vue 3 + TS, Pinia, Vitest)
 Android app: `src/apps/android_mobile/` (Kotlin, Compose Material 3, Navigation-Compose, Room, no DI framework — manual construction in MainActivity/PabrikNavGraph, cookie auth via AuthTransport, JUnit4 + Robolectric + Compose UI test, androidTest + functional harness)
@@ -104,7 +104,7 @@ Android currently implements NONE of the routine endpoints, so every row below i
 ## Task checklist (one task = one PR = one run)
 
 - [x] T01 RoutineApi + models + parsers (create/get/update/run/delete paths, WorkspaceRoutine, cron validator, presets) + unit tests — DONE run #2 (RoutineApi.kt + RoutineApiTest.kt, 21 tests)
-- [ ] T02 RoutineClient (cookie transport, status mapping) + unit tests
+- [x] T02 RoutineClient (cookie transport, status mapping) + unit tests — DONE run #3 (RoutineClient.kt + RoutineClientTest.kt, 12 tests)
 - [ ] T03 Routine detail screen (Routine tab: load, edit description/instruction/schedule/enabled, save, status pill/line, last_error, loading/error+retry) + ViewModel + unit/UI tests
 - [ ] T04 Run now + status polling + running sessions (workers) + open chat nav + unit/UI tests
 - [ ] T05 Agent model picker (workspace config profiles, immediate PATCH, revert on error) + tests
@@ -130,10 +130,12 @@ Android currently implements NONE of the routine endpoints, so every row below i
 - Folder picker on Android: reuse existing file/folder browsing seam if present, else text field with path validation (decide in T06, record here).
 - Conflict policy: last-write-wins by updatedAt (per brief); server recomputes next_run_at on schedule/enabled change, so client never computes next fire.
 - Local Gradle runs require JDK 17 (system JDK 27 breaks Kotlin 2.0.21); CI uses its own JDK. Recorded after T01 build failure.
+- AuthTransport has no DELETE verb (only get/post/put/patch, patch/put default-throw). Routine delete (T08) needs a `delete` default-throw member on AuthTransport + HttpsAuthTransport override, mirroring the patch precedent — decide in T08, do not invent a POST alias.
 
 ## Last test results
 
 - Run #1 (audit): no code changed; no tests run. Android unit tests not executed (audit only).
+- Run #3 (T02): `JAVA_HOME=<gradle-jdk-17> ./gradlew :app:testDebugUnitTest` — BUILD SUCCESSFUL; 1271 tests, 0 skipped, 0 failures, 0 errors, incl. new RoutineClientTest (12 tests).
 - Run #2 (T01): `JAVA_HOME=<gradle-jdk-17> ./gradlew :app:testDebugUnitTest` — BUILD SUCCESSFUL; 1259 tests, 0 skipped, 0 failures, 0 errors (97 classes), incl. new RoutineApiTest (21 tests). NOTE: system JDK is 27 (Kotlin 2.0.21 crashes: `IllegalArgumentException: 27.0.1.0.3`); must run Gradle with JDK 17 (`/home/ginwa/.gradle/jdks/jdk-17.0.20.1+1`).
 
 ## Blockers
