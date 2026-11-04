@@ -5,16 +5,16 @@ export interface RichSegment {
   payload: string
 }
 
-/** Every wrapper the response-formatting prompt teaches (`<html>`, `<mermaid>`, `<plantuml>`, `<d2>`) plus
- * the fences models reach for anyway. Each alternative pairs a whole-match group with a body group,
- * so one scan yields both the kind and the payload. */
+/** Every wrapper the prompt teaches plus the fences models reach for anyway. Each alternative pairs
+ * a whole-match group with a body group, so one scan yields the kind AND the payload; an opening tag
+ * may carry attributes (`<html lang="en">`) — a bare-tag-only pattern lost that whole block. */
 const RICH_BLOCK_SOURCE =
-  '(<html>([\\s\\S]*?)<\\/html>)' +
-  '|(<mermaid>([\\s\\S]*?)<\\/mermaid>)' +
-  '|(<plantuml>([\\s\\S]*?)<\\/plantuml>)' +
+  '(<html(?:\\s[^>]*)?>([\\s\\S]*?)<\\/html>)' +
+  '|(<mermaid(?:\\s[^>]*)?>([\\s\\S]*?)<\\/mermaid>)' +
+  '|(<plantuml(?:\\s[^>]*)?>([\\s\\S]*?)<\\/plantuml>)' +
   '|(```mermaid[ \\t]*\\r?\\n([\\s\\S]*?)```)' +
   '|(```plantuml[ \\t]*\\r?\\n([\\s\\S]*?)```)' +
-  '|(<d2>([\\s\\S]*?)<\\/d2>)' +
+  '|(<d2(?:\\s[^>]*)?>([\\s\\S]*?)<\\/d2>)' +
   '|(```d2[ \\t]*\\r?\\n([\\s\\S]*?)```)'
 
 /** Body-group index → kind. */
