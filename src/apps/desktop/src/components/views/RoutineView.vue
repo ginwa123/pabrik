@@ -222,8 +222,8 @@ async function handleSave() {
   try {
     const trimmedTitle = title.value.trim()
     if (trimmedTitle && trimmedTitle !== (props.item.name ?? '')) {
-      await api.updateWorkspaceItem(props.workspaceId, props.itemId, { name: trimmedTitle })
-      props.item.name = trimmedTitle
+      await workspacesStore.renameWorkspaceItem(props.workspaceId, props.itemId, trimmedTitle)
+      title.value = trimmedTitle
     }
     const { routine } = await updateRoutineItem(props.workspaceId, props.itemId, {
       description: description.value,
