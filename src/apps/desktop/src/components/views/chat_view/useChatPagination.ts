@@ -2,7 +2,7 @@ import { nextTick, type ComputedRef, type Ref } from 'vue'
 import { Effect } from 'effect'
 import * as api from '../../../api'
 import { ChatHistoryError } from '../../../api'
-import { chatEngineDb, newestCursor, toChatMessage } from '../../../sync/ChatEngineDb'
+import { chatEngineDb, newestCursor, oldestCursor, toChatMessage } from '../../../sync/ChatEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../../sync/runtime'
 import { useChatScrollRestore } from '../../../composables/useChatScrollRestore'
 import {
@@ -226,13 +226,12 @@ export function useChatPagination(deps: ChatPaginationDeps) {
    * directly) and by the foreground path when no buffer is armed. */
   const fetchOlderPage = async (cursor: string | null): Promise<BufferedOlderPage> => {
     const startedAt = performance.now()
-    // Cache-first older page: serve from IndexedDB when it holds rows older than the current oldest,
-    // so scroll-back avoids the network. The cursor is left unchanged on a hit so the next cache MISS
-    // resumes the network exactly where it left off; the commit's id-dedupe covers any overlap.
-    try {
-      const oldest = messages.value[0]
-      if (oldest) {
-        const beforeKey = oldest.timestamp ? oldest.timestamp.getTime() * 1e6 : 0
+    // Cache-first older page: serve from IndexedDB when it holds rows older than the pagination
+    // cursor. A hit advances the cursor to the cache page's oldest row, so the next lookup (cache or
+    // network) resumes exactly where this page ended; the commit's id-dedupe covers any overlap.
+    const beforeKey = cursor !== null ? Number(cursor) : NaN
+    if (Number.isFinite(beforeKey)) {
+      try {
         const cached = await runSyncEffectOr(
           chatEngineDb.loadOlderFromCache(sessionId.value, beforeKey, PAGE_SIZE),
           [],
@@ -244,14 +243,14 @@ export function useChatPagination(deps: ChatPaginationDeps) {
             generation: commitGeneration,
             messages: toChatMessages(cached.map((c) => c.raw)),
             hasMore: hasMoreMessages.value,
-            nextCursor: cursor,
+            nextCursor: oldestCursor(cached, cursor),
             measuredMs: performance.now() - startedAt,
             armedAt: performance.now(),
           }
         }
+      } catch {
+        // Cache failure must not break the network path.
       }
-    } catch {
-      // Cache failure must not break the network path.
     }
     const data = await api.getChatHistory(sessionId.value, PAGE_SIZE, cursor ?? undefined)
     const measuredMs = performance.now() - startedAt
@@ -682,8 +681,8 @@ export function useChatPagination(deps: ChatPaginationDeps) {
    * failed network fetch. */
   const runHistoryLoadAttempt = async () => {
     // Cached mount: paint stored full-fidelity raws instantly (same mapper as the network path, so no
-    // shape drift), restore the cursor from sync_state, then refresh just the tail with cursor+asc.
-    // Miss/IDB failure falls through to the full-load path below unchanged.
+    // shape drift), then refresh just the tail with cursor+asc. Miss/IDB failure falls through to the
+    // full-load path below unchanged.
     try {
       const sid = sessionId.value
       const cached = await runSyncEffectOr(
@@ -692,11 +691,6 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         'messages.primeFromCache',
       )
       if (cached.length > 0 && sessionId.value === sid) {
-        const storedCursor = await runSyncEffectOr(
-          chatEngineDb.getCursor(sid),
-          null,
-          'messages.getCursor',
-        )
         isInitialLoad = true
         try {
           const liveMessagesAtPaint = currentLiveMessages()
@@ -706,7 +700,10 @@ export function useChatPagination(deps: ChatPaginationDeps) {
               .reverse(),
             liveMessagesAtPaint,
           )
-          messageCursor.value = storedCursor
+          // Older-history pagination walks BACKWARDS from the oldest row on screen, like the server's
+          // `next_cursor` (last row of a DESC page). `sync_state` holds the NEWEST row — that is the
+          // newer-direction delta cursor, and using it here aims scroll-back at the wrong end.
+          messageCursor.value = oldestCursor(cached)
           hasMoreMessages.value = true
         } finally {
           isInitialLoad = false
@@ -732,8 +729,9 @@ export function useChatPagination(deps: ChatPaginationDeps) {
                 liveMessagesAtMerge,
               )
             }
-            messageCursor.value = delta.nextCursor
-            hasMoreMessages.value = delta.hasMore
+            // NOT `delta.hasMore` / `delta.nextCursor` — the tail is ASCENDING (newer) so both
+            // describe the wrong direction. Adopting them disarmed scroll-back for the whole mount
+            // (an already-cached tail answers has_more=false); `messageCursor` stays at the oldest row.
           }
         } catch {
           // Painted cache stands; the next mount retries the tail.

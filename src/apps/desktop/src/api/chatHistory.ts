@@ -46,6 +46,10 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   created_at: number
+  /** Exact value of `llm_history.created_at_nano`, kept next to the second-floored `created_at`.
+   * Older-history cursors are compared against that column verbatim, so a floored cursor would skip
+   * every row sharing the boundary second. */
+  created_at_nano?: number
   tool_name?: string
   tool_call_id?: string
   diffview_before?: string
@@ -78,6 +82,12 @@ function parseTimestamp(ts: number | string): number {
   const num = typeof ts === 'string' ? parseInt(ts, 10) : ts
   // If timestamp looks like nanoseconds (> 1e12), convert to seconds
   return num > 1e12 ? Math.floor(num / 1e9) : num
+}
+
+/** The raw timestamp column value (nanoseconds), unfloored — see {@link Message.created_at_nano}. */
+function parseNanoTimestamp(ts: number | string): number | undefined {
+  const num = typeof ts === 'string' ? parseInt(ts, 10) : ts
+  return Number.isFinite(num) ? num : undefined
 }
 /** The transcript fetch failed — transport, non-2xx, or an abort. Deliberately coarse: the UI acts
  * on "the transcript is unavailable", not on which kind of unavailable it is, and the retry policy
@@ -173,6 +183,7 @@ export function fetchChatHistoryEffect(
         ...msg,
         content: msg.content,
         created_at: parseTimestamp(msg.created_at),
+        created_at_nano: parseNanoTimestamp(msg.created_at),
         tool_name: msg.tool_name,
         diffview_before: msg.diffview_before,
         diffview_after: msg.diffview_after,

@@ -200,15 +200,23 @@ describe('older-history prefetch — invalidation', () => {
     expect(unmountBody).toContain("resetOlderPrefetch('unmount')")
   })
 
-  it('writes messageCursor exactly five times: reset, cached restore, cached delta, initial page, commit', async () => {
+  it('writes messageCursor exactly four times: reset, cached restore, initial page, commit', async () => {
     const source = await readChatViewSource()
     const writes = source.match(/messageCursor\.value = /g) ?? []
-    // 1. `= null` — reset before an initial load 2. `= storedCursor` — cached mount restores the
-    // sync cursor for paint 3. `= delta.nextCursor` — cached mount advances past the tail 4. `=
-    // data.next_cursor` — the initial page's cursor 5.
-    expect(writes).toHaveLength(5)
+    // 1. `= null` — reset before an initial load · 2. `= oldestCursor(cached)` — a cached mount arms
+    // scroll-back at the oldest row it painted · 3. `= data.next_cursor` — the initial page ·
+    // 4. `= page.nextCursor` — an older page commit.
+    expect(writes).toHaveLength(4)
     const resyncBody = fnBody(source, 'bus.onResync?.(() => {', '}) ?? null')
     expect(resyncBody).not.toMatch(/messageCursor\.value = /)
+    // The tail delta is an ASCENDING (newer-direction) page: its cursor must never be adopted.
+    const cachedDeltaBody = fnBody(
+      source,
+      'const delta = await runSyncEffect(',
+      'Painted rows exist either way',
+    )
+    expect(cachedDeltaBody).not.toContain('messageCursor.value =')
+    expect(cachedDeltaBody).not.toContain('hasMoreMessages.value =')
   })
 
   it('routes the manual button through the shared guard chain (no slow path left)', async () => {
