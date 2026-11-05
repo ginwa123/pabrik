@@ -205,7 +205,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !parsed.success }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !parsed.success }"
     data-testid="web-search-card"
   >
     <ToolCardHeader
@@ -221,7 +221,7 @@ const handleToggle = (next: boolean) => {
       @update:expanded="handleToggle"
     />
 
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Failure: the reason flags, then the sentence and the details. -->
       <template v-if="!parsed.success && parsed.error">
         <div
@@ -232,14 +232,14 @@ const handleToggle = (next: boolean) => {
           <span
             v-for="flag in parsed.error.flags"
             :key="flag"
-            class="px-1 border border-red-500/40 text-red-500 rounded-sm"
+            class="px-1 border border-[var(--tint-error-border)] text-[var(--semantic-error)] rounded-sm"
             data-testid="web-search-flag"
             >{{ flag }}</span
           >
         </div>
 
         <div
-          class="flex gap-2 px-2 py-1.5 text-red-500 text-dense border-b border-dashed border-[var(--color-border)]"
+          class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense border-b border-dashed border-[var(--color-border)]"
           data-testid="web-search-error"
         >
           <span class="font-semibold shrink-0">Error:</span>
@@ -343,7 +343,7 @@ const handleToggle = (next: boolean) => {
 
         <pre
           v-else
-          class="p-2 m-0 bg-black/[0.02] whitespace-pre-wrap break-words overflow-x-auto leading-relaxed text-[var(--semantic-text)] text-dense"
+          class="p-2 m-0 bg-[var(--semantic-wash)] whitespace-pre-wrap break-words overflow-x-auto leading-relaxed text-[var(--semantic-text)] text-dense"
           data-testid="web-search-json"
           >{{ prettyResponse }}</pre
         >

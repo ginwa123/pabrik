@@ -264,7 +264,7 @@ defineExpose({ submit, toggleOption, chooseFreeText, canSend, buildBody })
           </span>
           <span
             v-if="option === question.recommended"
-            class="shrink-0 rounded-full border border-green-500/40 px-1.5 text-micro text-green-500"
+            class="shrink-0 rounded-full border border-[var(--tint-success-border)] px-1.5 text-micro text-[var(--semantic-success)]"
           >
             recommended
           </span>
@@ -335,7 +335,7 @@ defineExpose({ submit, toggleOption, chooseFreeText, canSend, buildBody })
 
       <div
         v-if="sendFailed"
-        class="px-3 pb-2 font-sans text-dense text-red-500"
+        class="px-3 pb-2 font-sans text-dense text-[var(--semantic-error)]"
         data-testid="ask-user-error"
       >
         Couldn't send your answer — the server is unreachable.
@@ -349,7 +349,7 @@ defineExpose({ submit, toggleOption, chooseFreeText, canSend, buildBody })
 .ask-user-card {
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: var(--color-bg-subtle, transparent);
+  background: var(--semantic-wash, transparent);
   margin-top: 0.5rem;
 }
 

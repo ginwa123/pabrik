@@ -116,7 +116,7 @@ describe('ListDirectory.vue — happy path', () => {
   it('does NOT show the red border on success', () => {
     const wrapper = makeWrapper({ content: makeSuccessContent() })
     const root = wrapper.find('[data-testid="list-directory"]')
-    expect(root.classes()).not.toContain('border-red-500/50')
+    expect(root.classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('does NOT auto-expand (parent controls via :expanded prop)', () => {
@@ -190,7 +190,7 @@ describe('ListDirectory.vue — error path', () => {
   it('applies the red border on error', () => {
     const wrapper = makeWrapper({ content: makeErrorContent() })
     const root = wrapper.find('[data-testid="list-directory"]')
-    expect(root.classes()).toContain('border-red-500/50')
+    expect(root.classes()).toContain('border-[var(--tint-error-border)]')
   })
 
   it('does not render any entry rows on error', () => {

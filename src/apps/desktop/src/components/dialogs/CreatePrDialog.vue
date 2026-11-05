@@ -194,7 +194,7 @@ const onClose = () => {
             type="text"
             class="w-full px-2 py-1.5 text-dense rounded font-mono"
             style="
-              background-color: var(--semantic-input-bg, var(--semantic-card-bg));
+              background-color: var(--semantic-wash, var(--semantic-card-bg));
               border: 1px solid var(--color-border);
               color: var(--semantic-text);
               color-scheme: var(--color-scheme);
@@ -212,7 +212,7 @@ const onClose = () => {
             type="text"
             class="w-full px-2 py-1.5 text-dense rounded"
             style="
-              background-color: var(--semantic-input-bg, var(--semantic-card-bg));
+              background-color: var(--semantic-wash, var(--semantic-card-bg));
               border: 1px solid var(--color-border);
               color: var(--semantic-text);
               color-scheme: var(--color-scheme);
@@ -230,7 +230,7 @@ const onClose = () => {
             rows="8"
             class="w-full px-2 py-1.5 text-dense rounded font-mono"
             style="
-              background-color: var(--semantic-input-bg, var(--semantic-card-bg));
+              background-color: var(--semantic-wash, var(--semantic-card-bg));
               border: 1px solid var(--color-border);
               color: var(--semantic-text);
               color-scheme: var(--color-scheme);

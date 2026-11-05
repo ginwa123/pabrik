@@ -102,7 +102,7 @@ const copySkillName = async (e: Event, name: string) => {
   <div class="chat-tool-card font-mono text-dense" data-testid="search-skills">
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -123,7 +123,7 @@ const copySkillName = async (e: Event, name: string) => {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Pattern warning: the query was reinterpreted as a literal, or the
            match engine ran out of budget. Always worth surfacing: the model
            otherwise reads a literal fallback as a real regex result. -->
@@ -150,7 +150,7 @@ const copySkillName = async (e: Event, name: string) => {
         <div
           v-for="skill in skills"
           :key="skill.name"
-          class="flex items-start gap-2 py-1 px-1 rounded hover:bg-violet-500/5 group"
+          class="flex items-start gap-2 py-1 px-1 rounded hover:bg-[var(--tint-accent)] group"
           data-testid="search-skills-row"
           :data-skill-name="skill.name"
         >
@@ -159,7 +159,7 @@ const copySkillName = async (e: Event, name: string) => {
             <div class="flex items-center gap-1">
               <span class="text-[var(--semantic-text)] font-medium truncate">{{ skill.name }}</span>
               <button
-                class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-dense transition-opacity shrink-0"
+                class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-dense transition-opacity shrink-0"
                 @click.stop="copySkillName($event, skill.name)"
                 title="Copy skill name"
               >

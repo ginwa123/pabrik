@@ -235,7 +235,7 @@ const handlePromptRemove = async (promptId: string) => {
     <div
       v-else-if="loadError && !config"
       class="px-5 py-6 text-body text-center"
-      style="color: rgb(239, 68, 68)"
+      style="color: var(--semantic-error)"
       data-testid="kanban-knowledge-error"
     >
       {{ loadError }}
@@ -301,7 +301,7 @@ const handlePromptRemove = async (promptId: string) => {
             <button
               type="button"
               class="shrink-0 hover:opacity-70"
-              style="color: rgb(239, 68, 68)"
+              style="color: var(--semantic-error)"
               :aria-label="`Remove knowledge ${k.label || k.id}`"
               :data-testid="`kanban-agent-knowledge-remove-${k.id}`"
               @click="handleKnowledgeRemove(k.id)"
@@ -377,7 +377,7 @@ const handlePromptRemove = async (promptId: string) => {
             <button
               type="button"
               class="shrink-0 hover:opacity-70"
-              style="color: rgb(239, 68, 68)"
+              style="color: var(--semantic-error)"
               :aria-label="`Remove system prompt ${p.title || p.id}`"
               :data-testid="`kanban-agent-system-prompt-remove-${p.id}`"
               @click="handlePromptRemove(p.id)"
@@ -400,7 +400,7 @@ const handlePromptRemove = async (promptId: string) => {
       <p
         v-if="loadError && config"
         class="text-dense px-3 py-2 rounded-lg"
-        style="color: rgb(239, 68, 68); background-color: rgba(239, 68, 68, 0.08)"
+        style="color: var(--semantic-error); background-color: var(--tint-error)"
         data-testid="kanban-knowledge-mutation-error"
       >
         {{ loadError }}

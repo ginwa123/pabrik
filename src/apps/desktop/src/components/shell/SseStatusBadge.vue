@@ -130,18 +130,18 @@ onUpdated(() => {
 }
 
 .sse-status--connecting {
-  background: rgb(148 163 184 / 0.18);
-  color: rgb(148 163 184);
+  background: var(--semantic-text-muted);
+  color: var(--semantic-text-muted);
 }
 
 .sse-status--reconnecting {
-  background: rgb(245 158 11 / 0.18);
-  color: rgb(245 158 11);
+  background: var(--tint-warning);
+  color: var(--semantic-warning);
 }
 
 .sse-status--failed {
-  background: rgb(239 68 68 / 0.18);
-  color: rgb(239 68 68);
+  background: var(--tint-error);
+  color: var(--semantic-error);
 }
 
 @keyframes sse-pulse {

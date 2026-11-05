@@ -61,7 +61,7 @@ const handleClose = () => {
             <button
               @click="handleConfirm"
               class="px-3 py-1.5 rounded-lg text-body font-medium transition-all duration-200 hover:opacity-80"
-              style="background-color: var(--semantic-error); color: white;"
+              style="background-color: var(--semantic-error); color: var(--semantic-on-accent);"
             >
               {{ confirmText || 'Delete' }}
             </button>

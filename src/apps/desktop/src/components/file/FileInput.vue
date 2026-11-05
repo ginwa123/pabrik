@@ -1105,7 +1105,7 @@ const sendMessage = () => {
     <div
       v-if="reviewMode"
       class="mb-3 px-4 py-2 rounded-lg flex items-center gap-2"
-      style="background: rgba(135, 169, 135, 0.15); border: 1px solid var(--color-green)"
+      style="background: var(--tint-success); border: 1px solid var(--color-green)"
     >
       <UiIcon name="chat" style="color: var(--color-green)" />
       <span class="text-body font-medium" style="color: var(--color-green)">Review Mode</span>
@@ -1583,7 +1583,7 @@ const sendMessage = () => {
 }
 
 .composer-stop-btn:hover {
-  background-color: rgba(224, 122, 110, 0.12);
+  background-color: var(--tint-error);
 }
 
 /* Hairline-separated toolbar strip pinned to the card's bottom edge. */

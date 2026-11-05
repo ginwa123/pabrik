@@ -44,7 +44,7 @@ const emit = defineEmits<{
       <span
         class="w-2 h-2 rounded-full"
         style="
-          background-color: rgb(251, 146, 60);
+          background-color: var(--color-orange);
           box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
           animation: chat-needs-review-pulse 2.4s ease-out 4 forwards;
         "
@@ -52,7 +52,7 @@ const emit = defineEmits<{
     </span>
     <span
       v-else-if="isReviewed(item)"
-      class="inline-flex items-center shrink-0 text-green-500"
+      class="inline-flex items-center shrink-0 text-[var(--semantic-success)]"
       title="Reviewed"
       data-testid="chat-status-reviewed"
     >
@@ -99,7 +99,7 @@ const emit = defineEmits<{
     >
       <span
         v-if="shouldShowStaleDot(item)"
-        class="w-1 h-1 rounded-full bg-amber-400"
+        class="w-1 h-1 rounded-full bg-[var(--semantic-warning)]"
         title="AI is still working — your last touch was earlier"
         data-testid="chat-stale-dot"
       />

@@ -79,11 +79,11 @@ describe('Glob.vue — de-bubble contract (renders like bash/ShellTool)', () => 
     expect(src).not.toContain('.gl--warning')
   })
 
-  it('warning variant binds border-orange-500/50 like ShellTool does', () => {
+  it('warning variant binds the warning edge token like ShellTool does', () => {
     const wrapper = makeWrapper({ content: noMatchData() })
     const root = wrapper.find('.chat-tool-card')
     expect(root.exists()).toBe(true)
-    expect(root.classes()).toContain('border-orange-500/50')
+    expect(root.classes()).toContain('border-[var(--tint-warning-border)]')
   })
 
   it('header keeps the violet glob pill + pattern after migration', () => {
@@ -195,7 +195,7 @@ describe('Glob.vue — error/empty states', () => {
     const html = wrapper.html()
     expect(html).toContain('glob failed: PathDoesNotExist')
     expect(wrapper.find('[data-testid="glob-error"]').exists()).toBe(true)
-    expect(wrapper.find('.chat-tool-card').classes()).toContain('border-red-500/50')
+    expect(wrapper.find('.chat-tool-card').classes()).toContain('border-[var(--tint-error-border)]')
   })
 
   it('shows the warning text in the expanded body for empty results', () => {

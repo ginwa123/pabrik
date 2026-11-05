@@ -83,7 +83,7 @@ describe('SaveMemory.vue — happy path', () => {
       props: { content: makeSuccessContent() },
     })
     const root = wrapper.find('[data-testid="save-memory"]')
-    expect(root.classes()).not.toContain('border-red-500/50')
+    expect(root.classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('renders the copy-id button on success', () => {
@@ -142,7 +142,7 @@ describe('SaveMemory.vue — error path', () => {
       props: { content: makeErrorContent() },
     })
     const root = wrapper.find('[data-testid="save-memory"]')
-    expect(root.classes()).toContain('border-red-500/50')
+    expect(root.classes()).toContain('border-[var(--tint-error-border)]')
   })
 
   it('shows "error" in the header label on failure', () => {

@@ -645,7 +645,7 @@ const handleColumnDrop = (event: DragEvent) => {
             <button
               type="button"
               class="w-full px-3 py-2 text-left text-body hover:opacity-80"
-              style="color: #ef4444"
+              style="color: var(--semantic-error)"
               :data-testid="`kanban-column-${column.id}-menu-delete`"
               @click="handleMenuDelete"
             >

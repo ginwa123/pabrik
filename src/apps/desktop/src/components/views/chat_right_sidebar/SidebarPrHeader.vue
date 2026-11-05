@@ -81,7 +81,7 @@ const reviewChip = computed(() => reviewChipOf(props.prStatusData))
         <span
           v-if="hasPrConflict"
           class="px-1.5 rounded-full text-micro font-semibold shrink-0"
-          style="background-color: var(--semantic-error); color: var(--color-bg)"
+          style="background-color: var(--tint-error); color: var(--semantic-error)"
           :title="
             prConflictFiles.length > 0
               ? `This ${forge.noun} has merge conflicts in ${prConflictFiles.length} file(s)`

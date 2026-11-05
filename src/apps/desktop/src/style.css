@@ -116,6 +116,31 @@
   --tag-red-border: rgba(239, 68, 68, 0.45);
   --tag-red-text: #f87171;
 
+  /* A role's wash is a `color-mix` of that role's OWN ink, so one formula serves
+     all nine themes: declare `--semantic-error` once and the tint follows. Transparent
+     leads so a browser without `color-mix` falls back to no tint, never a solid block. */
+  --tint-error: color-mix(in srgb, transparent 95%, var(--semantic-error));
+  --tint-error-strong: color-mix(in srgb, transparent 84%, var(--semantic-error));
+  --tint-error-border: color-mix(in srgb, transparent 55%, var(--semantic-error));
+  --tint-warning: color-mix(in srgb, transparent 95%, var(--semantic-warning));
+  --tint-warning-strong: color-mix(in srgb, transparent 84%, var(--semantic-warning));
+  --tint-warning-border: color-mix(in srgb, transparent 55%, var(--semantic-warning));
+  --tint-success: color-mix(in srgb, transparent 95%, var(--semantic-success));
+  --tint-success-strong: color-mix(in srgb, transparent 84%, var(--semantic-success));
+  --tint-success-border: color-mix(in srgb, transparent 55%, var(--semantic-success));
+  --tint-info: color-mix(in srgb, transparent 95%, var(--semantic-info));
+  --tint-info-border: color-mix(in srgb, transparent 55%, var(--semantic-info));
+  --tint-accent: color-mix(in srgb, transparent 95%, var(--semantic-accent));
+  --tint-accent-strong: color-mix(in srgb, transparent 84%, var(--semantic-accent));
+  --tint-accent-border: color-mix(in srgb, transparent 55%, var(--semantic-accent));
+
+  /* A surface ONE STEP off the card behind it — an expanded tool body, a pill,
+     a code block. Mixed from the ink, so it lifts on a dark theme and deepens
+     on a light one, which `bg-black/[0.02]` never did either way. */
+  --semantic-wash: color-mix(in srgb, transparent 95%, var(--color-fg));
+  --semantic-wash-strong: color-mix(in srgb, transparent 91%, var(--color-fg));
+  --semantic-code-bg: color-mix(in srgb, transparent 90%, var(--color-fg));
+
   /* Tailwind integration - extend theme */
   --color-primary: var(--color-violet);
   --color-secondary: var(--color-aqua);

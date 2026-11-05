@@ -176,7 +176,7 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
 }
 .split-hunk td {
   padding: 2px 8px;
-  background: rgba(139, 164, 176, 0.1);
+  background: var(--tint-info);
   color: var(--color-blue);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }

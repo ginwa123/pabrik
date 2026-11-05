@@ -16,7 +16,7 @@ const props = defineProps<{
 const isExpanded = ref(props.expanded ?? false)
 
 // Running means the tool has not returned yet: the dispatcher passes an empty-string placeholder.
-// Without this the card renders its failure styling (`border-red-500/50` + a red cross) for the
+// Without this the card renders its failure styling (`border-[var(--tint-error-border)]` + a red cross) for the
 // whole tool call, because `parsed.removed` is false while the envelope is empty.
 const isEmptyContent = (c: unknown): boolean =>
   c === null || c === undefined || (typeof c === 'string' && c.trim().length === 0)
@@ -44,7 +44,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-80': !parsed.removed && !isRunning }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-80': !parsed.removed && !isRunning }"
   >
     <ToolCardHeader
       tool-name="remove_skill"
@@ -59,18 +59,18 @@ const handleToggle = (next: boolean) => {
 
     <div
       v-if="isExpanded"
-      class="border-t border-[var(--color-border)] bg-black/[0.02] flex flex-col min-h-0"
+      class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)] flex flex-col min-h-0"
     >
       <div
         v-if="parsed.error"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense border-b border-dashed border-[var(--color-border)]"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense border-b border-dashed border-[var(--color-border)]"
       >
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error }}</span>
       </div>
       <div
         v-if="parsed.removed && parsed.skillName"
-        class="flex gap-2 px-2 py-1.5 text-green-500 text-dense border-b border-dashed border-[var(--color-border)]"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-success)] text-dense border-b border-dashed border-[var(--color-border)]"
         data-testid="remove-skill-name"
       >
         <span class="font-semibold shrink-0">Removed:</span>

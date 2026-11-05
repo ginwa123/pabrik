@@ -229,7 +229,7 @@ describe('ReadWorkspaceSession.vue — envelope dispatch', () => {
       props: { content: makeErrorContent('Not linked to any workspace') },
     })
     expect(wrapper.find('[data-testid="read-workspace-session"]').classes()).toContain(
-      'border-red-500/50',
+      'border-[var(--tint-error-border)]',
     )
     expect(wrapper.find('[data-testid="read-workspace-session-error"]').text()).toContain(
       'Not linked to any workspace',

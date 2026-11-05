@@ -83,4 +83,25 @@ describe('AgentErrorCard', () => {
     // Headline still renders.
     expect(wrapper.find('[data-testid="agent-error-headline"]').text()).toContain('StreamInterrupted')
   })
+
+  it('paints the server detail with readable ink on a code surface, not a dark overlay', () => {
+    wrapper = mount(AgentErrorCard, { props: { content: RETRY_MESSAGE } })
+    const classes = wrapper.find('[data-testid="agent-error-detail"]').classes()
+
+    expect(classes).toContain('text-[var(--semantic-text)]')
+    expect(classes).toContain('bg-[var(--semantic-code-bg)]')
+  })
+
+  it('names no fixed palette colour anywhere in the card', () => {
+    wrapper = mount(AgentErrorCard, { props: { content: RETRY_MESSAGE } })
+    const palette =
+      /(?<![\w-])(?:(?:[a-z-]+):)*(?:!)?(?:bg|text|border|ring|fill|stroke)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(?:-\d{2,3})?(?:\/(?:\d{1,3}|\[[\d.]+\]))?(?![\w-])/
+
+    const offenders = wrapper
+      .findAll('*')
+      .flatMap((node) => node.classes())
+      .filter((className) => palette.test(className))
+
+    expect(offenders).toEqual([])
+  })
 })

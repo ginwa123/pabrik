@@ -281,7 +281,7 @@ onUpdated(() => {
                 v-model="isDone"
                 type="checkbox"
                 :data-testid="`kanban-column-editor-${mode}-is-done`"
-                class="w-4 h-4 accent-violet-500"
+                class="w-4 h-4 accent-[var(--semantic-accent)]"
               />
               <span>Completes tasks (unblocks dependents)</span>
             </label>

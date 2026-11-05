@@ -141,12 +141,12 @@ const copyTaskId = async (e: Event) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !isSuccess && !isRunning }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !isSuccess && !isRunning }"
     data-testid="kanban-move"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -160,7 +160,7 @@ const copyTaskId = async (e: Event) => {
       </span>
 
       <!-- Status indicator -->
-      <span class="text-dense font-semibold" :class="isSuccess ? 'text-green-500' : 'text-red-500'">
+      <span class="text-dense font-semibold" :class="isSuccess ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'">
         {{ statusIndicator }}
       </span>
 
@@ -168,7 +168,7 @@ const copyTaskId = async (e: Event) => {
       <span
         v-if="isRunning"
         data-testid="kanban-move-running"
-        class="text-micro text-yellow-500 animate-pulse shrink-0"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse shrink-0"
       >
         running…
       </span>
@@ -176,7 +176,7 @@ const copyTaskId = async (e: Event) => {
       <!-- Copy task_id button (only on success — there's something to copy) -->
       <button
         v-if="isSuccess && taskId"
-        class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+        class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
         @click="copyTaskId"
         title="Copy task id"
       >
@@ -190,11 +190,11 @@ const copyTaskId = async (e: Event) => {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Error message -->
       <div
         v-if="errorMessage"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense border-b border-dashed border-[var(--color-border)]"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense border-b border-dashed border-[var(--color-border)]"
       >
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ errorMessage }}</span>

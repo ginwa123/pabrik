@@ -31,8 +31,8 @@ function onToggle(event: Event) {
     aria-labelledby="skill-evals-heading"
   >
     <header class="flex flex-col gap-1">
-      <h3 id="skill-evals-heading" class="text-body font-medium text-neutral-200">Skill Evals</h3>
-      <p class="text-dense text-neutral-400">
+      <h3 id="skill-evals-heading" class="text-body font-medium text-[var(--semantic-text)]">Skill Evals</h3>
+      <p class="text-dense text-[var(--semantic-text-muted)]">
         Lets the agent review the skills a session actually used and report whether each one still
         helps. Verdicts land in the
         <strong>Evals</strong> tab of the right sidebar, where you can apply them.
@@ -53,8 +53,8 @@ function onToggle(event: Event) {
         @change="onToggle"
       />
       <span class="flex flex-col gap-1">
-        <span class="text-dense text-neutral-200">Enable skill evals</span>
-        <span id="skill-evals-note" class="text-dense text-neutral-400" data-testid="skill-evals-note">
+        <span class="text-dense text-[var(--semantic-text)]">Enable skill evals</span>
+        <span id="skill-evals-note" class="text-dense text-[var(--semantic-text-muted)]" data-testid="skill-evals-note">
           <template v-if="model.enabled">
             Adds <code>run_skill_eval</code> to the main agent's tools. It runs once per session, at
             the agent's discretion, and spends tokens.
@@ -62,14 +62,14 @@ function onToggle(event: Event) {
           <template v-else>
             Off. The <code>run_skill_eval</code> tool is not offered to the agent at all.
           </template>
-          <span v-if="!isLoaded" data-testid="skill-evals-unloaded" class="text-amber-400">
+          <span v-if="!isLoaded" data-testid="skill-evals-unloaded" class="text-[var(--semantic-warning)]">
             Could not read the current setting — this may not match the server.
           </span>
         </span>
       </span>
     </label>
 
-    <p class="text-dense text-neutral-500">
+    <p class="text-dense text-[var(--semantic-text-dim)]">
       Takes effect on the next agent iteration — no restart needed.
     </p>
   </section>

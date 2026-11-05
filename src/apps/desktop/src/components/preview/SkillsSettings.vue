@@ -269,7 +269,7 @@ onBeforeUnmount(() => {
                 placeholder="my-skill"
                 class="w-full px-3 h-8 rounded-md text-dense font-mono"
                 style="
-                  background-color: var(--semantic-bg);
+                  background-color: var(--semantic-wash);
                   color: var(--semantic-text);
                   border: 1px solid var(--color-border);
                 "
@@ -298,7 +298,7 @@ onBeforeUnmount(() => {
                 placeholder="One line on when to reach for this skill"
                 class="w-full px-3 h-8 rounded-md text-dense"
                 style="
-                  background-color: var(--semantic-bg);
+                  background-color: var(--semantic-wash);
                   color: var(--semantic-text);
                   border: 1px solid var(--color-border);
                 "
@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
                 placeholder="---&#10;name: my-skill&#10;description: ...&#10;---&#10;&#10;When to use this, and how."
                 class="w-full min-h-[16rem] p-4 rounded text-dense font-mono resize-y"
                 style="
-                  background-color: var(--semantic-bg);
+                  background-color: var(--semantic-wash);
                   color: var(--semantic-text);
                   border: 1px solid var(--color-border);
                 "

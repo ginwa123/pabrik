@@ -165,15 +165,15 @@ function onKeydown(event: KeyboardEvent): void {
         v-for="(depId, idx) in props.modelValue"
         :key="`${depId}-${idx}`"
         class="inline-flex items-center gap-1 text-meta px-1.5 py-0.5 rounded font-medium"
-        :class="isBlocked(depId) ? 'border border-orange-500/50' : ''"
-        style="background-color: rgba(245, 158, 11, 0.12); color: var(--semantic-text)"
+        :class="isBlocked(depId) ? 'border border-[var(--tint-warning-border)]' : ''"
+        style="background-color: var(--tint-warning); color: var(--semantic-text)"
         :title="isBlocked(depId) ? `${labelFor(depId)} — not completed` : labelFor(depId)"
         :data-testid="`${props.testId}-chip-${depId}`"
       >
         <span
           v-if="isBlocked(depId)"
           class="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-          style="background-color: rgb(249, 115, 22)"
+          style="background-color: var(--color-orange)"
           aria-hidden="true"
           :data-testid="`${props.testId}-chip-blocked-dot-${depId}`"
         />
@@ -181,7 +181,7 @@ function onKeydown(event: KeyboardEvent): void {
         <button
           type="button"
           @click="removeDep(idx)"
-          class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-black/20 focus:outline-none"
+          class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-[var(--semantic-wash-strong)] focus:outline-none"
           :aria-label="`Remove dependency ${labelFor(depId)}`"
           :data-testid="`${props.testId}-remove-${depId}`"
         >
@@ -218,7 +218,7 @@ function onKeydown(event: KeyboardEvent): void {
           v-for="(row, idx) in dropdownRows"
           :key="row.id"
           class="px-3 py-1.5 cursor-pointer text-body transition-colors duration-100 flex items-center gap-2"
-          :class="idx === highlightedIndex ? 'bg-violet-500/20' : ''"
+          :class="idx === highlightedIndex ? 'bg-[var(--tint-accent-strong)]' : ''"
           :style="{ color: 'var(--semantic-text)' }"
           :data-testid="`${props.testId}-suggestion-${row.id}`"
           @mousedown.prevent="pick(row.id)"

@@ -352,7 +352,7 @@ const handleDragEnd = (event: DragEvent): void => {
 .layer-row-drop-target {
   outline: 1px solid var(--color-violet);
   outline-offset: -1px;
-  background-color: rgba(127, 0, 255, 0.08);
+  background-color: var(--tint-accent);
 }
 .layer-row-drop-target-blocked {
   cursor: not-allowed;
@@ -375,6 +375,6 @@ const handleDragEnd = (event: DragEvent): void => {
   transition: background-color 120ms ease;
 }
 .layer-row-drop-zone-base:hover {
-  background-color: rgba(127, 0, 255, 0.04);
+  background-color: var(--tint-accent);
 }
 </style>

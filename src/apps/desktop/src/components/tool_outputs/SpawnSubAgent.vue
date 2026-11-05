@@ -242,11 +242,11 @@ function formatElapsed(ms: number): string {
 <template>
   <div 
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-80': failedCount > 0 || liveSummary.failed > 0 || hasFailed }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-80': failedCount > 0 || liveSummary.failed > 0 || hasFailed }"
   >
     <!-- Header -->
     <div 
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -276,29 +276,29 @@ function formatElapsed(ms: number): string {
         <span v-if="liveSummary.running > 0" class="text-[var(--semantic-text-muted)] font-semibold" data-testid="running-count">
           {{ liveSummary.running }} running
         </span>
-        <span v-if="liveSummary.done > 0" class="text-green-500 font-semibold" data-testid="done-count">
+        <span v-if="liveSummary.done > 0" class="text-[var(--semantic-success)] font-semibold" data-testid="done-count">
           ✓ {{ liveSummary.done }}
         </span>
-        <span v-if="liveSummary.failed > 0" class="text-red-500 font-semibold" data-testid="failed-count">
+        <span v-if="liveSummary.failed > 0" class="text-[var(--semantic-error)] font-semibold" data-testid="failed-count">
           ✗ {{ liveSummary.failed }}
         </span>
       </span>
       <!-- Starting-placeholder summary (2026-09-04 refresh fix) -->
       <span v-else-if="isStarting" class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full shrink-0 bg-yellow-500 animate-pulse" data-testid="starting-dot"></span>
+        <span class="w-2 h-2 rounded-full shrink-0 bg-[var(--semantic-warning)] animate-pulse" data-testid="starting-dot"></span>
         <span class="text-[var(--semantic-text-muted)] font-semibold" data-testid="starting-badge">starting</span>
       </span>
       <!-- Pre-thread failure summary — the tool completed with
            <success>false</success> before any row existed -->
       <span v-else-if="hasFailed" class="flex items-center gap-1.5">
-        <span class="text-red-500 font-semibold" data-testid="failed-badge">✗ failed</span>
+        <span class="text-[var(--semantic-error)] font-semibold" data-testid="failed-badge">✗ failed</span>
       </span>
       <!-- Final-envelope summary -->
       <span v-else-if="summary" class="flex items-center gap-1.5">
-        <span v-if="summary.succeeded > 0" class="text-green-500 font-semibold">
+        <span v-if="summary.succeeded > 0" class="text-[var(--semantic-success)] font-semibold">
           ✓ {{ summary.succeeded }}
         </span>
-        <span v-if="summary.failed > 0" class="text-red-500 font-semibold">
+        <span v-if="summary.failed > 0" class="text-[var(--semantic-error)] font-semibold">
           ✗ {{ summary.failed }}
         </span>
       </span>
@@ -309,7 +309,7 @@ function formatElapsed(ms: number): string {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded || inLiveMode || isStarting || hasFailed" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded || inLiveMode || isStarting || hasFailed" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <div class="divide-y divide-[var(--color-border)]">
         <!-- STARTING placeholder (2026-09-04) — Phase 1 envelope with
              empty <data>, no <results>, no live rows yet (e.g. right
@@ -317,7 +317,7 @@ function formatElapsed(ms: number): string {
         <template v-if="isStarting">
           <div class="overflow-hidden">
             <div class="flex items-center gap-1 px-2 py-1.5 select-none">
-              <span class="w-2 h-2 rounded-full shrink-0 bg-yellow-500 animate-pulse" data-testid="starting-row-dot"></span>
+              <span class="w-2 h-2 rounded-full shrink-0 bg-[var(--semantic-warning)] animate-pulse" data-testid="starting-row-dot"></span>
               <span class="text-[var(--semantic-text-muted)] text-dense" data-testid="starting-row-text">
                 Spawning sub-agent{{ expectedCount !== 1 ? 's' : '' }}…
               </span>
@@ -343,13 +343,13 @@ function formatElapsed(ms: number): string {
              starting placeholder. -->
         <template v-if="hasFailed">
           <div class="overflow-hidden">
-            <div class="flex items-center gap-1 px-2 py-1.5 select-none bg-red-500/5">
-              <span class="w-2 h-2 rounded-full shrink-0 bg-red-500" data-testid="start-error-dot"></span>
-              <span class="text-dense text-red-500 font-medium" data-testid="start-error-label">failed to spawn</span>
+            <div class="flex items-center gap-1 px-2 py-1.5 select-none bg-[var(--tint-error)]">
+              <span class="w-2 h-2 rounded-full shrink-0 bg-[var(--semantic-error)]" data-testid="start-error-dot"></span>
+              <span class="text-dense text-[var(--semantic-error)] font-medium" data-testid="start-error-label">failed to spawn</span>
             </div>
-            <div v-if="startError" class="px-3 py-2 bg-red-500/5">
+            <div v-if="startError" class="px-3 py-2 bg-[var(--tint-error)]">
               <pre
-                class="whitespace-pre-wrap break-all text-dense leading-relaxed text-red-500 max-w-full min-w-0 overflow-x-auto"
+                class="whitespace-pre-wrap break-all text-dense leading-relaxed text-[var(--semantic-error)] max-w-full min-w-0 overflow-x-auto"
                 data-testid="start-error-text"
               >{{ startError }}</pre>
             </div>
@@ -366,17 +366,17 @@ function formatElapsed(ms: number): string {
             class="overflow-hidden"
           >
             <div
-              class="group flex items-center gap-1 px-2 py-1.5 select-none hover:bg-violet-500/5"
-              :class="{ 'bg-red-500/5': row.status === 'failed' }"
+              class="group flex items-center gap-1 px-2 py-1.5 select-none hover:bg-[var(--tint-accent)]"
+              :class="{ 'bg-[var(--tint-error)]': row.status === 'failed' }"
             >
               <span
                 class="w-2 h-2 rounded-full shrink-0"
                 :class="
                   row.status === 'done'
-                    ? 'bg-green-500'
+                    ? 'bg-[var(--semantic-success)]'
                     : row.status === 'failed'
-                    ? 'bg-red-500'
-                    : 'bg-yellow-500 animate-pulse'
+                    ? 'bg-[var(--semantic-error)]'
+                    : 'bg-[var(--semantic-warning)] animate-pulse'
                 "
                 :data-testid="`live-dot-${idx}`"
               ></span>
@@ -414,13 +414,13 @@ function formatElapsed(ms: number): string {
               <span class="flex-1"></span>
               <span
                 v-if="row.status === 'done'"
-                class="text-dense text-green-500"
+                class="text-dense text-[var(--semantic-success)]"
               >
                 done
               </span>
               <span
                 v-else-if="row.status === 'failed'"
-                class="text-dense text-red-500"
+                class="text-dense text-[var(--semantic-error)]"
               >
                 failed
               </span>
@@ -444,13 +444,13 @@ function formatElapsed(ms: number): string {
         >
           <!-- Agent header -->
           <div 
-            class="group flex items-center gap-1 px-2 py-1.5 cursor-pointer select-none hover:bg-violet-500/5"
-            :class="{ 'bg-red-500/5': !agent.success }"
+            class="group flex items-center gap-1 px-2 py-1.5 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
+            :class="{ 'bg-[var(--tint-error)]': !agent.success }"
             @click="toggleAgent(idx)"
           >
             <span 
               class="w-2 h-2 rounded-full shrink-0"
-              :class="agent.success ? 'bg-green-500' : 'bg-red-500'"
+              :class="agent.success ? 'bg-[var(--semantic-success)]' : 'bg-[var(--semantic-error)]'"
             ></span>
             <span class="text-[var(--semantic-text)] font-medium text-dense">{{ agent.name }}</span>
             <span
@@ -488,19 +488,19 @@ function formatElapsed(ms: number): string {
             <span class="flex-1"></span>
             <span 
               v-if="agent.success" 
-              class="text-dense text-green-500"
+              class="text-dense text-[var(--semantic-success)]"
             >
               success
             </span>
             <span 
               v-else 
-              class="text-dense text-red-500"
+              class="text-dense text-[var(--semantic-error)]"
             >
               failed
             </span>
             <button 
               v-if="agent.response && expandedAgents.has(idx)"
-              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
               @click.stop="copyResponse($event, agent.response!)" 
               title="Copy response"
             >
@@ -512,15 +512,15 @@ function formatElapsed(ms: number): string {
           </div>
 
           <!-- Expanded agent response/error -->
-          <div v-if="expandedAgents.has(idx) && agent.response" class="px-3 py-2 bg-black/[0.02]">
+          <div v-if="expandedAgents.has(idx) && agent.response" class="px-3 py-2 bg-[var(--semantic-wash)]">
             <pre 
               class="whitespace-pre-wrap break-all text-dense leading-relaxed max-h-64 overflow-y-auto max-w-full min-w-0 overflow-x-auto"
               style="color: var(--semantic-text);"
             >{{ agent.response }}</pre>
           </div>
-          <div v-if="expandedAgents.has(idx) && agent.error" class="px-3 py-2 bg-red-500/5">
+          <div v-if="expandedAgents.has(idx) && agent.error" class="px-3 py-2 bg-[var(--tint-error)]">
             <pre 
-              class="whitespace-pre-wrap break-all text-dense leading-relaxed text-red-500 max-w-full min-w-0 overflow-x-auto"
+              class="whitespace-pre-wrap break-all text-dense leading-relaxed text-[var(--semantic-error)] max-w-full min-w-0 overflow-x-auto"
             >{{ agent.error }}</pre>
           </div>
         </div>

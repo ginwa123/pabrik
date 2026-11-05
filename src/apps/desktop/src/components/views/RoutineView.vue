@@ -705,8 +705,8 @@ onUpdated(() => {
         class="m-5 px-4 py-3 rounded-xl text-body"
         style="
           color: var(--color-red);
-          background-color: rgba(196, 116, 110, 0.1);
-          border: 1px solid rgba(196, 116, 110, 0.35);
+          background-color: var(--tint-error);
+          border: 1px solid var(--tint-error-border);
         "
         data-testid="routine-error"
       >
@@ -974,8 +974,8 @@ onUpdated(() => {
                 class="text-micro px-1.5 py-0.5 rounded"
                 style="
                   color: var(--color-green);
-                  background-color: rgba(135, 169, 135, 0.12);
-                  border: 1px solid rgba(135, 169, 135, 0.4);
+                  background-color: var(--tint-success);
+                  border: 1px solid var(--tint-success-border);
                 "
                 data-testid="routine-running-session-count"
               >
@@ -1020,8 +1020,8 @@ onUpdated(() => {
             class="px-4 py-3 rounded-xl text-dense font-mono"
             style="
               color: var(--color-red);
-              background-color: rgba(196, 116, 110, 0.1);
-              border: 1px solid rgba(196, 116, 110, 0.35);
+              background-color: var(--tint-error);
+              border: 1px solid var(--tint-error-border);
             "
             data-testid="routine-last-error"
           >

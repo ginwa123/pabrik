@@ -68,9 +68,9 @@ const {
           :disabled="pathPickerBusy"
           class="shrink-0 px-2 py-1 rounded text-dense font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           style="
-            background-color: rgba(234, 179, 8, 0.18);
-            color: rgb(202, 138, 4);
-            border: 1px solid rgba(234, 179, 8, 0.4);
+            background-color: var(--tint-warning);
+            color: var(--semantic-warning);
+            border: 1px solid var(--tint-warning-border);
           "
           :data-testid="`kanban-view-${item.id}-set-project-root`"
           title="Set a project root so chat sessions have a working directory"

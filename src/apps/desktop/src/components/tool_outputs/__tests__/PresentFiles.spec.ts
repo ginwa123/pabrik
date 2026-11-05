@@ -116,7 +116,7 @@ describe('PresentFiles', () => {
   it('error path: red border + ✗ + error message inline', () => {
     const wrapper = mountCard(makeErrorContent())
     expect(wrapper.find('[data-testid="present-files-card"]').classes()).toContain(
-      'border-red-500/50',
+      'border-[var(--tint-error-border)]',
     )
     expect(wrapper.text()).toContain('✗')
     expect(wrapper.text()).toContain('file not found')

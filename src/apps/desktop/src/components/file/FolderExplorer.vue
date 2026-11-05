@@ -509,23 +509,23 @@ const handleAuxClick = (entry: FolderEntry, event: MouseEvent): void => {
   flex-shrink: 0;
 }
 .git-badge-modified {
-  background-color: rgba(182, 146, 123, 0.18);
+  background-color: var(--tint-warning);
   color: var(--color-orange);
 }
 .git-badge-staged {
-  background-color: rgba(135, 169, 135, 0.18);
+  background-color: var(--tint-success);
   color: var(--color-green);
 }
 .git-badge-deleted {
-  background-color: rgba(196, 116, 110, 0.18);
+  background-color: var(--tint-error);
   color: var(--color-red);
 }
 .git-badge-untracked {
-  background-color: rgba(115, 124, 115, 0.25);
+  background-color: var(--semantic-wash);
   color: var(--semantic-text-dim);
 }
 .git-badge-renamed {
-  background-color: rgba(139, 164, 176, 0.18);
+  background-color: var(--tint-info);
   color: var(--color-blue);
 }
 .git-count-pill {

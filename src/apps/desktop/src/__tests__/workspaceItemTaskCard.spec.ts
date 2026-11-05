@@ -323,7 +323,7 @@ describe('WorkspaceItemTaskCard card-ux-v3 (Jira-style type accent)', () => {
       task_type: 'memory',
     })
     expect(style).toContain('inset 3px 0 0 0')
-    expect(style).toContain('rgb(96, 165, 250)') // blue-400
+    expect(style).toContain('var(--semantic-info)')
   })
 
   it('standard card has NO type accent (and a transparent border)', () => {
@@ -346,7 +346,7 @@ describe('WorkspaceItemTaskCard card-ux-v3 (Jira-style type accent)', () => {
     // Both layered inset values should be present in the style.
     expect(style).toContain('inset 0 2px 0 0') // dropIndicator (above)
     expect(style).toContain('inset 3px 0 0 0') // type accent
-    expect(style).toContain('rgb(96, 165, 250)') // blue-400 accent
+    expect(style).toContain('var(--semantic-info)')
   })
 })
 
@@ -474,6 +474,6 @@ describe('WorkspaceItemTaskCard card-ux-v6 (3D shadow + constant width)', () => 
     // 3D base shadow.
     expect(style).toContain('0 1px 3px 0 rgba(0, 0, 0, 0.5)')
     // Jira-style blue left stripe (type accent).
-    expect(style).toContain('inset 3px 0 0 0 rgb(96, 165, 250)')
+    expect(style).toContain('inset 3px 0 0 0 var(--semantic-info)')
   })
 })
