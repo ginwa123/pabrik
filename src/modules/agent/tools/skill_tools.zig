@@ -934,7 +934,6 @@ pub fn executeEditSkillToString(
     }, .{});
 }
 
-
 // ─── set_skill_metadata ───
 
 /// One key to write. `value` is stored verbatim, in the body's fence; an
@@ -1042,7 +1041,7 @@ fn metadataKeyIsAllowed(
     if (frontmatter.isPromoted(key)) {
         const msg = try std.fmt.allocPrint(
             allocator,
-            "{s}{s}' is not metadata — `name`, `description` and `is_can_auto_improve` are columns on the skill row. Change `description` with `edit_skill`; the auto-improve lock belongs to the human, who toggles it in the workspace's Skills settings. Nothing was written.",
+            "{s}{s}' is not metadata — `name` and `description` live in the skill body's frontmatter, and `is_can_auto_improve` is the row's lock. Change `description` with `edit_skill`; the auto-improve lock belongs to the human, who toggles it in the workspace's Skills settings. Nothing was written.",
             .{ SET_SKILL_METADATA_PROMOTED, key },
         );
         defer allocator.free(msg);
@@ -1297,7 +1296,14 @@ fn setupSkillsDb() !TestCtx {
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
+    try migration.Migration139ContractSkillNameDescription.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
+}
+
+fn expectBodyIs(content: []const u8, body: []const u8) !void {
+    var parsed = try frontmatter.parse(std.testing.allocator, content);
+    defer parsed.deinit(std.testing.allocator);
+    try std.testing.expectEqualStrings(body, std.mem.trimEnd(u8, parsed.body, "\n"));
 }
 
 fn seedSkill(
@@ -1776,7 +1782,7 @@ test "remove_skill - removing a name that exists in ANOTHER workspace deletes no
 
     const survivor = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "private");
     defer skills_store.freeSkillRow(alloc, survivor);
-    try testing.expectEqualStrings("TOPSECRET", survivor.content);
+    try expectBodyIs(survivor.content, "TOPSECRET");
 }
 
 // ─── workspace scope ───
@@ -2039,7 +2045,7 @@ test "edit_skill refuses a skill whose auto-improve flag is off and writes nothi
 
     const row = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
     defer skills_store.freeSkillRow(alloc, row);
-    try testing.expectEqualStrings("TOPSECRETBODY", row.content);
+    try expectBodyIs(row.content, "TOPSECRETBODY");
     try testing.expect(!row.is_can_auto_improve);
 }
 
@@ -2066,7 +2072,7 @@ test "add_skill refuses to replace a locked skill but still creates a new name" 
 
     const survivor = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
     defer skills_store.freeSkillRow(alloc, survivor);
-    try testing.expectEqualStrings("ORIGINAL", survivor.content);
+    try expectBodyIs(survivor.content, "ORIGINAL");
     try testing.expectEqualStrings("pinned by the human", survivor.description);
 
     // A name that does not exist yet is not locked by anything: the agent
@@ -2105,7 +2111,7 @@ test "remove_skill refuses a locked skill and leaves the row in place" {
 
     const survivor = try skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
     defer skills_store.freeSkillRow(alloc, survivor);
-    try testing.expectEqualStrings("KEEPME", survivor.content);
+    try expectBodyIs(survivor.content, "KEEPME");
 }
 
 test "an unlocked skill still edits, and the edit keeps it unlocked" {
@@ -2502,6 +2508,7 @@ fn setupDb() !exec_TestCtx {
     , &.{});
     try exec_migration.Migration102CreateSkills.up(&db, alloc);
     try exec_migration.Migration119CreateSkillMetadata.up(&db, alloc);
+    try exec_migration.Migration139ContractSkillNameDescription.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -2836,7 +2843,7 @@ test "execEditSkill: a cross-workspace edit is refused and the row is untouched"
 
     const survivor = try exec_skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "private");
     defer exec_skills_store.freeSkillRow(alloc, survivor);
-    try exec_testing.expectEqualStrings("TOPSECRETBODY", survivor.content);
+    try expectBodyIs(survivor.content, "TOPSECRETBODY");
 }
 
 test "execRemoveSkill removes the row from the caller's workspace only" {
@@ -3048,9 +3055,8 @@ test "execEditSkill: a locked skill is a refusal at the envelope, and the body s
 
     const survivor = try exec_skills_store.getSkillByName(alloc, &ctx.db, "ws_1", "pinned");
     defer exec_skills_store.freeSkillRow(alloc, survivor);
-    try exec_testing.expectEqualStrings("KEEPME", survivor.content);
+    try expectBodyIs(survivor.content, "KEEPME");
 }
-
 
 // ─── metadata through the tool boundary ───
 

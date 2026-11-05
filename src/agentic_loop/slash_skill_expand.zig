@@ -256,6 +256,7 @@ fn setupSlashDb() !TestCtx {
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
+    try migration.Migration139ContractSkillNameDescription.up(&db, alloc);
     try db.exec(alloc,
         \\CREATE TABLE IF NOT EXISTS session_skills (session_id TEXT NOT NULL, skill_name TEXT NOT NULL, content TEXT NOT NULL, loaded_at_nano BIGINT DEFAULT (strftime('%s', 'now')), PRIMARY KEY (session_id, skill_name))
     , &.{});
@@ -357,8 +358,10 @@ test "slash_skill_expand expansion loads seeded skills, persists rows, appends t
     // Original text survives verbatim at the head of the rewrite.
     try testing.expect(std.mem.startsWith(u8, result.message, message));
     try testing.expect(std.mem.indexOf(u8, result.message, "<slash_skills>") != null);
-    try testing.expect(std.mem.indexOf(u8, result.message, "<skill name=\"pdf\">## When to Use\n\nConvert PDFs.</skill>") != null);
-    try testing.expect(std.mem.indexOf(u8, result.message, "<skill name=\"notes\">## When to Use\n\nKeep notes.</skill>") != null);
+    try testing.expect(std.mem.indexOf(u8, result.message, "<skill name=\"pdf\">") != null);
+    try testing.expect(std.mem.indexOf(u8, result.message, "Convert PDFs.") != null);
+    try testing.expect(std.mem.indexOf(u8, result.message, "<skill name=\"notes\">") != null);
+    try testing.expect(std.mem.indexOf(u8, result.message, "Keep notes.") != null);
     try testing.expect(std.mem.indexOf(u8, result.message, "</slash_skills>") != null);
 
     const pdf_body = try sessionSkillBody(alloc, &ctx.db, "s1", "pdf");
