@@ -67,6 +67,9 @@ const mountCard = (content: unknown, sessionId = 'sess_123', expanded = true) =>
   mount(PresentFiles, { props: { content, sessionId, expanded } as never })
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
+const paletteBackgrounds = (classes: string[]): string[] =>
+  classes.filter((name) => /^bg-(?:white|black|[a-z]+-\d{2,3})/.test(name))
+
 describe('PresentFiles', () => {
   it('renders the card with a data-testid', () => {
     const wrapper = mountCard(makeSuccessContent())
@@ -135,7 +138,7 @@ describe('PresentFiles', () => {
     expect(wrapper.find('[data-testid="present-files-row-1"]').exists()).toBe(true)
   })
 
-  it('html/pdf preview chrome uses the dark card bg, not bg-white', async () => {
+  it('html/pdf preview chrome names a theme token for its surface', async () => {
     const html = mountCard({
       status: 'presented',
       count: 1,
@@ -146,7 +149,7 @@ describe('PresentFiles', () => {
     await flushPromises()
     const htmlBox = html.find('[data-testid="present-files-inline-html-0"]')
     expect(htmlBox.exists()).toBe(true)
-    expect(htmlBox.classes().join(' ')).not.toContain('bg-white')
+    expect(paletteBackgrounds(htmlBox.classes())).toEqual([])
     const pdf = mountCard({
       status: 'presented',
       count: 1,
@@ -155,7 +158,7 @@ describe('PresentFiles', () => {
     await flushPromises()
     const pdfBox = pdf.find('[data-testid="present-files-inline-pdf-0"]')
     expect(pdfBox.exists()).toBe(true)
-    expect(pdfBox.classes().join(' ')).not.toContain('bg-white')
+    expect(paletteBackgrounds(pdfBox.classes())).toEqual([])
   })
 
   it('html preview srcdoc paints the frame canvas, never a hardcoded white', async () => {

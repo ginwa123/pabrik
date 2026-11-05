@@ -136,7 +136,7 @@
 
   /* A surface ONE STEP off the card behind it — an expanded tool body, a pill,
      a code block. Mixed from the ink, so it lifts on a dark theme and deepens
-     on a light one, which `bg-black/[0.02]` never did either way. */
+     on a light one: a fixed black wash did neither. */
   --semantic-wash: color-mix(in srgb, transparent 95%, var(--color-fg));
   --semantic-wash-strong: color-mix(in srgb, transparent 91%, var(--color-fg));
   --semantic-code-bg: color-mix(in srgb, transparent 90%, var(--color-fg));
