@@ -13,12 +13,15 @@ const CreateDocumentBody = struct {
     title: []const u8 = "",
     content: []const u8 = "",
     format: []const u8 = "",
+    /// Absent or null creates the document at the root.
+    folder_id: ?[]const u8 = null,
 };
 
 pub const DocumentsCreateError = error{
     WorkspaceIdRequired,
     TitleRequired,
     ContentTooLarge,
+    FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
     OutOfMemory,
@@ -48,6 +51,7 @@ fn useCase(
         .title = input.body.title,
         .content = input.body.content,
         .format = input.body.format,
+        .folder_id = input.body.folder_id,
     }) };
 }
 
@@ -87,12 +91,14 @@ pub fn documentsCreateHandler(
         const status: u16 = switch (err) {
             error.WorkspaceIdRequired, error.TitleRequired => 400,
             error.ContentTooLarge => 413,
+            error.FolderNotFound => 404,
             error.InsertFailed, error.RowNotFoundAfterInsert, error.OutOfMemory => 500,
         };
         const message: []const u8 = switch (err) {
             error.WorkspaceIdRequired => "workspace_id required",
             error.TitleRequired => "title is required",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.FolderNotFound => "folder not found in this workspace",
             error.InsertFailed => "DB error",
             error.RowNotFoundAfterInsert => "row missing after insert (DB inconsistency)",
             error.OutOfMemory => "Out of memory",
@@ -132,6 +138,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

@@ -8,18 +8,35 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
 
-/// PATCH body. Both fields are optional and both default to `null` so
-/// `"content": null` in the wire JSON is distinguishable from
-/// `"content": ""` — the latter is a real "clear the body" instruction.
+/// PATCH body. `"content": null` stays distinguishable from `"content": ""`,
+/// which is a real "clear the body". `move_folder` records that the KEY was
+/// present: `"folder_id": null` moves to the root; absent leaves it alone.
 const UpdateDocumentBody = struct {
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
+    folder_id: ?[]const u8 = null,
+    move_folder: bool = false,
 };
+
+/// Read one optional string field out of a parsed object. A present key whose
+/// value is neither a string nor null is a bad body, not a silent no-op.
+fn optionalString(
+    obj: std.json.ObjectMap,
+    key: []const u8,
+) (error{InvalidField} || std.mem.Allocator.Error)!?[]const u8 {
+    const value = obj.get(key) orelse return null;
+    return switch (value) {
+        .string => |s| s,
+        .null => null,
+        else => error.InvalidField,
+    };
+}
 
 pub const DocumentsUpdateError = error{
     IdsRequired,
     NotFound,
     ContentTooLarge,
+    FolderNotFound,
     UpdateFailed,
     QueryFailed,
     OutOfMemory,
@@ -52,7 +69,12 @@ fn useCase(
         db,
         input.workspace_id,
         input.document_id,
-        .{ .title = input.body.title, .content = input.body.content },
+        .{
+            .title = input.body.title,
+            .content = input.body.content,
+            .folder_id = input.body.folder_id,
+            .move_folder = input.body.move_folder,
+        },
     ) };
 }
 
@@ -77,11 +99,43 @@ pub fn documentsUpdateHandler(
         });
     }
 
-    const body = std.json.parseFromSliceLeaky(UpdateDocumentBody, allocator, req.body, .{}) catch {
+    // Parsed as a generic object so "folder_id absent" and "folder_id: null"
+    // stay distinguishable: the first keeps the document where it is, the
+    // second moves it to the root.
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, allocator, req.body, .{}) catch {
         return res.jsonResponse(.{
             .status_code = 400,
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Invalid JSON body" }),
         });
+    };
+    const obj = switch (parsed) {
+        .object => |o| o,
+        else => return res.jsonResponse(.{
+            .status_code = 400,
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "JSON body must be an object" }),
+        }),
+    };
+
+    const body = UpdateDocumentBody{
+        .title = optionalString(obj, "title") catch {
+            return res.jsonResponse(.{
+                .status_code = 400,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "title must be a string or null" }),
+            });
+        },
+        .content = optionalString(obj, "content") catch {
+            return res.jsonResponse(.{
+                .status_code = 400,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "content must be a string or null" }),
+            });
+        },
+        .folder_id = optionalString(obj, "folder_id") catch {
+            return res.jsonResponse(.{
+                .status_code = 400,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "folder_id must be a string or null" }),
+            });
+        },
+        .move_folder = obj.get("folder_id") != null,
     };
 
     const output = useCase(allocator, sqlite_db, .{
@@ -96,12 +150,14 @@ pub fn documentsUpdateHandler(
             // NotFound so it cannot be distinguished from a foreign id.
             error.NotFound => 400,
             error.ContentTooLarge => 413,
+            error.FolderNotFound => 404,
             error.UpdateFailed, error.QueryFailed, error.OutOfMemory => 500,
         };
         const message: []const u8 = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
             error.NotFound => "document not found, or title would be empty",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.FolderNotFound => "folder not found in this workspace",
             error.UpdateFailed => "DB error",
             error.QueryFailed => "DB error",
             error.OutOfMemory => "Out of memory",
@@ -141,6 +197,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO documents (id, workspace_id, title, content) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),

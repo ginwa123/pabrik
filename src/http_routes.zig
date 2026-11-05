@@ -409,6 +409,12 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     try authed.patch("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsDeleteHandler);
 
+    // Document folders (Migration 140). A separate prefix from `documents`, so
+    // there is no route-order shadowing to get wrong.
+    try authed.post("/api/workspaces/:workspace_id/document-folders", ai_mod.http_handlers.documentFoldersCreateHandler);
+    try authed.patch("/api/workspaces/:workspace_id/document-folders/:folder_id", ai_mod.http_handlers.documentFoldersUpdateHandler);
+    try authed.delete("/api/workspaces/:workspace_id/document-folders/:folder_id", ai_mod.http_handlers.documentFoldersDeleteHandler);
+
     // Workspace-scoped skills (Migration 101).
     try authed.get("/api/workspaces/:workspace_id/skills", ai_mod.http_handlers.skillsListHandler);
     try authed.post("/api/workspaces/:workspace_id/skills", ai_mod.http_handlers.skillCreateHandler);

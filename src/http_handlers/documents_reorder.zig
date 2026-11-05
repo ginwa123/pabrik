@@ -4,18 +4,24 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
+const folders_store = @import("../agentic_loop/document_folders_store.zig");
 
 const ReorderBody = struct {
     ordered_ids: []const []const u8 = &.{},
+    /// Which level is being renumbered. Absent or null is the root, because a
+    /// reorder always names exactly one sibling list.
+    folder_id: ?[]const u8 = null,
 };
 
 pub const DocumentsReorderInput = struct {
     workspace_id: []const u8,
+    folder_id: ?[]const u8 = null,
     ordered_ids: []const []const u8,
 };
 
 pub const DocumentsReorderOutput = struct {
     documents: []documents_store.DocumentRow,
+    folders: []folders_store.FolderRow,
 };
 
 fn useCase(
@@ -24,8 +30,11 @@ fn useCase(
     input: DocumentsReorderInput,
 ) (documents_store.ReorderDocumentsError || documents_store.ListDocumentsError)!DocumentsReorderOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    try documents_store.reorderDocuments(allocator, db, input.workspace_id, input.ordered_ids);
-    return .{ .documents = try documents_store.listDocuments(allocator, db, input.workspace_id) };
+    try documents_store.reorderDocuments(allocator, db, input.workspace_id, input.folder_id, input.ordered_ids);
+    return .{
+        .documents = try documents_store.listDocuments(allocator, db, input.workspace_id),
+        .folders = try folders_store.listFolders(allocator, db, input.workspace_id),
+    };
 }
 
 pub fn documentsReorderHandler(
@@ -54,6 +63,7 @@ pub fn documentsReorderHandler(
 
     const output = useCase(allocator, sqlite_db, .{
         .workspace_id = req.params.get("workspace_id") orelse "",
+        .folder_id = body.folder_id,
         .ordered_ids = body.ordered_ids,
     }) catch |err| {
         const status: u16 = switch (err) {
@@ -77,8 +87,9 @@ pub fn documentsReorderHandler(
         });
     };
     defer documents_store.freeDocumentRows(allocator, output.documents);
+    defer folders_store.freeFolderRows(allocator, output.folders);
 
-    const data = try http_response.makeDocumentListResponse(allocator, output.documents);
+    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders);
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
@@ -100,6 +111,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO documents (id, workspace_id, title, content, updated_at) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a', '2026-09-01 10:00:00'),
@@ -130,6 +142,7 @@ test "useCase: a reorder persists and the response lists the documents in the ne
         .ordered_ids = &[_][]const u8{ "doc_a", "doc_b" },
     });
     defer documents_store.freeDocumentRows(alloc, output.documents);
+    defer folders_store.freeFolderRows(alloc, output.folders);
 
     const order = try ids(alloc, output.documents);
     defer alloc.free(order);
@@ -147,6 +160,7 @@ test "useCase: a reorder never returns another workspace's documents" {
         .ordered_ids = &[_][]const u8{ "doc_b", "doc_a" },
     });
     defer documents_store.freeDocumentRows(alloc, output.documents);
+    defer folders_store.freeFolderRows(alloc, output.folders);
 
     try testing.expectEqual(@as(usize, 2), output.documents.len);
     try testing.expectEqualStrings("doc_b", output.documents[0].id);
@@ -171,6 +185,7 @@ test "useCase: another workspace's id is refused and the stored order is unchang
         .ordered_ids = &[_][]const u8{ "doc_b", "doc_a" },
     });
     defer documents_store.freeDocumentRows(alloc, after.documents);
+    defer folders_store.freeFolderRows(alloc, after.folders);
     try testing.expectEqualStrings("doc_b", after.documents[0].id);
 }
 

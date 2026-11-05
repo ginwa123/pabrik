@@ -4,11 +4,17 @@ const std = @import("std");
 const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
+const folders_store = @import("document_folders_store.zig");
 
 /// The only document format MVP writes. The column exists so the table is
 /// not markdown-shaped by accident; a future pdf/plain-text writer fills
 /// this in without a table rewrite.
 pub const FORMAT_MARKDOWN = "markdown";
+
+/// Bound where a query compares "this level" and it can be the root. `#` is not
+/// a folder-id character, and "" is unusable: `Backend.exec` binds it as SQL
+/// NULL, so `COALESCE(folder_id, '') = ''` would never match a row.
+const ROOT_LEVEL = "#root";
 
 /// Hard cap on a single document's body. 4 MiB is generous for a markdown
 /// note and stops a runaway agent from filling the disk. The agent tool
@@ -34,6 +40,8 @@ pub const DocumentRow = struct {
     created_at: []const u8,
     updated_at: []const u8,
     position: i64,
+    /// The folder this document sits in, or `null` at the root.
+    folder_id: ?[]const u8,
 };
 
 /// Fields for a new document. `workspace_id` is required and has no
@@ -44,6 +52,8 @@ pub const CreateDocumentArgs = struct {
     content: []const u8 = "",
     /// Defaults to `FORMAT_MARKDOWN` when empty.
     format: []const u8 = FORMAT_MARKDOWN,
+    /// `null` creates the document at the root.
+    folder_id: ?[]const u8 = null,
 };
 
 /// Patch shape. Every field is optional; an absent field keeps its current
@@ -51,12 +61,17 @@ pub const CreateDocumentArgs = struct {
 pub const UpdateDocumentArgs = struct {
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
+    /// Set `move_folder` to move, so `folder_id = null` means "to the root"
+    /// rather than "keep the current folder".
+    folder_id: ?[]const u8 = null,
+    move_folder: bool = false,
 };
 
 pub const CreateDocumentError = error{
     WorkspaceIdRequired,
     TitleRequired,
     ContentTooLarge,
+    FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
     OutOfMemory,
@@ -84,6 +99,7 @@ pub const UpdateDocumentError = error{
     IdsRequired,
     NotFound,
     ContentTooLarge,
+    FolderNotFound,
     UpdateFailed,
     QueryFailed,
     OutOfMemory,
@@ -111,10 +127,11 @@ pub const ReorderDocumentsError = error{
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, title, content, format, " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
-    "COALESCE(CAST(position AS TEXT), '0') " ++
+    "COALESCE(CAST(position AS TEXT), '0'), COALESCE(folder_id, '') " ++
     "FROM documents";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !DocumentRow {
+    const folder: ?[]const u8 = if (values[8].len == 0) null else try allocator.dupe(u8, values[8]);
     return .{
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
@@ -124,6 +141,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Docu
         .created_at = try allocator.dupe(u8, values[5]),
         .updated_at = try allocator.dupe(u8, values[6]),
         .position = std.fmt.parseInt(i64, values[7], 10) catch 0,
+        .folder_id = folder,
     };
 }
 
@@ -251,6 +269,13 @@ pub fn createDocument(
     if (title.len == 0) return error.TitleRequired;
     if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
 
+    // A folder id from another workspace must not become a dangling pointer.
+    if (args.folder_id) |folder_id| {
+        if (folder_id.len > 0 and !folders_store.folderExists(allocator, db, args.workspace_id, folder_id)) {
+            return error.FolderNotFound;
+        }
+    }
+
     // `doc_<nanos>_<pid>_<seq>` — the workspace_id scheme from
     // `workspace_provisioning.zig`, for the same reason.
     const document_id = try std.fmt.allocPrint(
@@ -269,10 +294,12 @@ pub fn createDocument(
     // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
     // `Backend.exec` binds a zero-length slice as SQL NULL, which would
     // violate the constraint outright.
+    const folder = args.folder_id orelse "";
+    const level = if (folder.len == 0) ROOT_LEVEL else folder;
     db.exec(allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content, format, position, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), COALESCE((SELECT MIN(position) FROM documents WHERE workspace_id = ?), 0) - 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    , &[_][]const u8{ document_id, args.workspace_id, title, args.content, format, args.workspace_id }) catch
+        \\INSERT INTO documents (id, workspace_id, title, content, format, folder_id, position, created_at, updated_at)
+        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), NULLIF(?, ''), COALESCE((SELECT MIN(position) FROM documents WHERE workspace_id = ? AND COALESCE(folder_id, '#root') = ?), 0) - 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    , &[_][]const u8{ document_id, args.workspace_id, title, args.content, format, folder, args.workspace_id, level }) catch
         return error.InsertFailed;
 
     // The re-read uses a wider error set than this function declares, so map
@@ -312,12 +339,25 @@ pub fn updateDocument(
     } else existing.title;
     const content = patch.content orelse existing.content;
 
-    db.exec(allocator,
-        \\UPDATE documents
-        \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
-        \\WHERE id = ? AND workspace_id = ?
-    , &[_][]const u8{ title, content, document_id, workspace_id }) catch
-        return error.UpdateFailed;
+    if (patch.move_folder) {
+        const folder = patch.folder_id orelse "";
+        if (folder.len > 0 and !folders_store.folderExists(allocator, db, workspace_id, folder)) {
+            return error.FolderNotFound;
+        }
+        db.exec(allocator,
+            \\UPDATE documents
+            \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), folder_id = NULLIF(?, ''), updated_at = CURRENT_TIMESTAMP
+            \\WHERE id = ? AND workspace_id = ?
+        , &[_][]const u8{ title, content, folder, document_id, workspace_id }) catch
+            return error.UpdateFailed;
+    } else {
+        db.exec(allocator,
+            \\UPDATE documents
+            \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
+            \\WHERE id = ? AND workspace_id = ?
+        , &[_][]const u8{ title, content, document_id, workspace_id }) catch
+            return error.UpdateFailed;
+    }
 
     return getDocument(allocator, db, workspace_id, document_id) catch
         return error.UpdateFailed;
@@ -363,15 +403,20 @@ pub fn reorderDocuments(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
+    folder_id: ?[]const u8,
     ordered_ids: []const []const u8,
 ) ReorderDocumentsError!void {
     if (workspace_id.len == 0) return error.WorkspaceIdRequired;
     if (ordered_ids.len == 0) return error.EmptyOrder;
+    const folder = folder_id orelse "";
+    const level = if (folder.len == 0) ROOT_LEVEL else folder;
 
+    // Sibling order is per level: an id in another folder is not "known" here,
+    // so a reorder cannot silently renumber a list the caller is not looking at.
     var q = db.query(
         allocator,
-        "SELECT id FROM documents WHERE workspace_id = ?",
-        &[_][]const u8{workspace_id},
+        "SELECT id FROM documents WHERE workspace_id = ? AND COALESCE(folder_id, '#root') = ?",
+        &[_][]const u8{ workspace_id, level },
     ) catch return error.QueryFailed;
     defer q.deinit();
 
@@ -400,8 +445,8 @@ pub fn reorderDocuments(
         const position = std.fmt.bufPrint(&pos_buf, "{d}", .{i}) catch return error.UpdateFailed;
         tx.exec(
             allocator,
-            "UPDATE documents SET position = ? WHERE id = ? AND workspace_id = ?",
-            &[_][]const u8{ position, id, workspace_id },
+            "UPDATE documents SET position = ? WHERE id = ? AND workspace_id = ? AND COALESCE(folder_id, '#root') = ?",
+            &[_][]const u8{ position, id, workspace_id, level },
         ) catch return error.UpdateFailed;
     }
     tx.commit() catch return error.UpdateFailed;
@@ -416,6 +461,7 @@ pub fn freeDocumentRow(allocator: std.mem.Allocator, row: DocumentRow) void {
     allocator.free(row.format);
     allocator.free(row.created_at);
     allocator.free(row.updated_at);
+    if (row.folder_id) |folder| allocator.free(folder);
 }
 
 /// Free a slice of rows. The slice header is freed last.
@@ -441,6 +487,7 @@ fn setupDb() !TestCtx {
     try test_db.openMemory(&db, threaded.io());
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -489,7 +536,7 @@ test "reorderDocuments: the given order becomes the list order and survives a re
     try seedDocument(alloc, &ctx.db, "doc_b", "ws_1", "2026-09-02 10:00:00");
     try seedDocument(alloc, &ctx.db, "doc_c", "ws_1", "2026-09-03 10:00:00");
 
-    try reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_c", "doc_a", "doc_b" });
+    try reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{ "doc_c", "doc_a", "doc_b" });
 
     const rows = try listDocuments(alloc, &ctx.db, "ws_1");
     defer freeDocumentRows(alloc, rows);
@@ -513,7 +560,7 @@ test "reorderDocuments: another workspace's order is untouched by a reorder" {
     try seedDocument(alloc, &ctx.db, "doc_x", "ws_2", "2026-09-01 10:00:00");
     try seedDocument(alloc, &ctx.db, "doc_y", "ws_2", "2026-09-02 10:00:00");
 
-    try reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_b", "doc_a" });
+    try reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{ "doc_b", "doc_a" });
 
     const theirs = try listDocuments(alloc, &ctx.db, "ws_2");
     defer freeDocumentRows(alloc, theirs);
@@ -534,7 +581,7 @@ test "reorderDocuments: an id from another workspace is rejected and nothing is 
 
     try testing.expectError(
         error.DocumentNotFound,
-        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_b", "doc_x" }),
+        reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{ "doc_b", "doc_x" }),
     );
 
     const rows = try listDocuments(alloc, &ctx.db, "ws_1");
@@ -556,7 +603,7 @@ test "reorderDocuments: an unknown id is rejected" {
 
     try testing.expectError(
         error.DocumentNotFound,
-        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{"doc_missing"}),
+        reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{"doc_missing"}),
     );
 }
 
@@ -571,7 +618,7 @@ test "reorderDocuments: a repeated id is rejected" {
 
     try testing.expectError(
         error.DuplicateDocumentId,
-        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ "doc_a", "doc_a", "doc_b" }),
+        reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{ "doc_a", "doc_a", "doc_b" }),
     );
 }
 
@@ -583,11 +630,11 @@ test "reorderDocuments: an empty order and an empty workspace are rejected" {
 
     try testing.expectError(
         error.EmptyOrder,
-        reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{}),
+        reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{}),
     );
     try testing.expectError(
         error.WorkspaceIdRequired,
-        reorderDocuments(alloc, &ctx.db, "", &[_][]const u8{"doc_a"}),
+        reorderDocuments(alloc, &ctx.db, "", null, &[_][]const u8{"doc_a"}),
     );
 }
 
@@ -602,7 +649,7 @@ test "createDocument: a new document lands above every existing one" {
     const second = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "Second" });
     defer freeDocumentRow(alloc, second);
 
-    try reorderDocuments(alloc, &ctx.db, "ws_1", &[_][]const u8{ first.id, second.id });
+    try reorderDocuments(alloc, &ctx.db, "ws_1", null, &[_][]const u8{ first.id, second.id });
 
     const third = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "Third" });
     defer freeDocumentRow(alloc, third);

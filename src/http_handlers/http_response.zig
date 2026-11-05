@@ -1311,6 +1311,8 @@ pub const DocumentResponse = struct {
     created_at: []const u8,
     updated_at: []const u8,
     position: i64,
+    /// `null` means the document sits at the root of the Documents section.
+    folder_id: ?[]const u8,
 };
 
 /// Map a `documents_store.DocumentRow` (or any struct with the same fields)
@@ -1325,27 +1327,59 @@ pub fn makeDocumentResponse(doc: anytype) DocumentResponse {
         .created_at = doc.created_at,
         .updated_at = doc.updated_at,
         .position = doc.position,
+        .folder_id = doc.folder_id,
+    };
+}
+
+/// One folder on the wire. `parent_id` null is a root folder.
+pub const FolderResponse = struct {
+    id: []const u8,
+    workspace_id: []const u8,
+    parent_id: ?[]const u8,
+    name: []const u8,
+    position: i64,
+};
+
+pub fn makeFolderResponse(folder: anytype) FolderResponse {
+    return .{
+        .id = folder.id,
+        .workspace_id = folder.workspace_id,
+        .parent_id = folder.parent_id,
+        .name = folder.name,
+        .position = folder.position,
     };
 }
 
 pub const DocumentListResponse = struct {
     documents: []const DocumentResponse,
+    folders: []const FolderResponse,
     count: u32,
+    folder_count: u32,
 };
 
-/// Build the `{"documents":[...], "count": N}` envelope. The inner slice is
-/// allocated from the per-request arena and freed before this function
-/// returns; the outer envelope JSON is what the caller receives.
-pub fn makeDocumentListResponse(allocator: std.mem.Allocator, documents: anytype) ![]u8 {
-    const mapped = try allocator.alloc(DocumentResponse, documents.len);
-    defer allocator.free(mapped);
-    for (documents, 0..) |d, i| mapped[i] = makeDocumentResponse(d);
+/// Build the `{"documents":[…], "folders":[…], "count": N}` envelope. One read
+/// returns the whole tree: a per-folder fetch would be an N+1 in the sidebar's
+/// cache-first first paint.
+pub fn makeDocumentListResponse(
+    allocator: std.mem.Allocator,
+    documents: anytype,
+    folders: anytype,
+) ![]u8 {
+    const mapped_docs = try allocator.alloc(DocumentResponse, documents.len);
+    defer allocator.free(mapped_docs);
+    for (documents, 0..) |d, i| mapped_docs[i] = makeDocumentResponse(d);
+
+    const mapped_folders = try allocator.alloc(FolderResponse, folders.len);
+    defer allocator.free(mapped_folders);
+    for (folders, 0..) |f, i| mapped_folders[i] = makeFolderResponse(f);
 
     return std.json.Stringify.valueAlloc(
         allocator,
         DocumentListResponse{
-            .documents = mapped,
+            .documents = mapped_docs,
+            .folders = mapped_folders,
             .count = @intCast(documents.len),
+            .folder_count = @intCast(folders.len),
         },
         .{},
     );
