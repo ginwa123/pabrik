@@ -276,6 +276,38 @@ test "command_tool schema: exactly ONE deadline param, and it is required" {
     try testing.expect(required_mt);
 }
 
+test "command_tool schema: every declared parameter is parsed, none is reported as unrecognized" {
+    // The repair text tells the model which of its fields are not parameters
+    // of this tool, so that list is only honest while the parser reads every
+    // declared field.
+    for (command_tool.function.parameters.properties) |prop| {
+        const args = if (std.mem.eql(u8, prop.name, "command"))
+            try std.fmt.allocPrint(testing.allocator, "{{\"{s}\":[]}}", .{prop.name})
+        else
+            try std.fmt.allocPrint(
+                testing.allocator,
+                "{{\"command\":\"ls\",\"{s}\":[]}}",
+                .{prop.name},
+            );
+        defer testing.allocator.free(args);
+
+        switch (bash_args.parseShellArgs(testing.allocator, args)) {
+            .success => return error.TestUnexpectedResult,
+            .failure => |info| {
+                defer bash_args.freeInvalidField(testing.allocator, info);
+                if (!std.mem.eql(u8, info.field, prop.name)) {
+                    std.debug.print(
+                        "\n!! the parser ignored `{s}` and failed on `{s}` instead\n",
+                        .{ prop.name, info.field },
+                    );
+                    return error.DeclaredParamNotParsed;
+                }
+                try testing.expect(info.unknown == null);
+            },
+        }
+    }
+}
+
 test "command_tool schema: the field named `timeout` is NOT the shell timeout utility" {
     // The rename put the model's word for the FIELD and its word for the
     // banned UTILITY on the same string.
@@ -499,12 +531,12 @@ pub fn runWithContext(
     const input = switch (bash_args.parseShellArgs(allocator, tool_call.function.arguments)) {
         .success => |in| in,
         .failure => |info| {
-            // Both the rendered message and the `got` slice it interpolates
-            // are allocated by the parser; free them once the envelope has
-            // copied the text. The exec_testing allocator catches this path.
+            // Both the rendered message and the slices it interpolates are
+            // allocated by the parser; free them once the envelope has copied
+            // the text. The exec_testing allocator catches this path.
             const err_msg = try bash_args.formatInvalidField(allocator, info);
             defer allocator.free(err_msg);
-            defer allocator.free(info.got);
+            defer bash_args.freeInvalidField(allocator, info);
             const output = try wrapToolOutput(allocator, "command", tool_call.function.arguments, false, err_msg, "");
             // `.stop_loop` stays false: the arguments did not parse, so
             // `is_stop` was never read. Ending a turn on a malformed call
