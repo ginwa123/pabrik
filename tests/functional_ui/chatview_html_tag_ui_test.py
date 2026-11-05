@@ -2,8 +2,9 @@
 
 Feature (2026-08-23 html-tag-support): the LLM can wrap raw HTML in
 ``<html>...</html>``; the chatview renders each block as a live
-sandboxed iframe (``sandbox="allow-scripts"``, null origin) instead of
-markdown. Any text outside the tags still renders as markdown.
+sandboxed iframe (``sandbox="allow-scripts allow-forms"``, null origin)
+instead of markdown. ``allow-forms`` is what lets an interactive block submit a
+form; ``allow-same-origin`` must never be added. Any text outside the tags still renders as markdown.
 
 Each test:
 
@@ -80,8 +81,9 @@ def test_html_only_message_renders_sandboxed_iframe(
     page.wait_for_selector("iframe.chat-html-frame", timeout=15000)
     frame_el = page.locator("iframe.chat-html-frame").first
     sandbox = frame_el.get_attribute("sandbox")
-    assert sandbox == "allow-scripts", (
-        f"Expected sandbox='allow-scripts', got {sandbox!r}. "
+    assert sandbox == "allow-scripts allow-forms", (
+        f"Expected sandbox='allow-scripts allow-forms', got {sandbox!r}. "
+        f"allow-forms is what lets an interactive block submit; "
         f"allow-same-origin would break the null-origin security boundary."
     )
     # The inner payload must NOT ALSO render as markdown inside the
@@ -152,6 +154,67 @@ def test_html_block_scripts_execute_inside_sandbox(
     assert title == "CLICKED", (
         f"Expected onclick to set frame title to 'CLICKED', got {title!r}. "
         f"Scripts did not execute inside the sandboxed iframe."
+    )
+
+
+# ─── Test 2b: an interactive form fires its submit event ───────────────────
+
+
+def test_html_block_form_submit_fires_inside_sandbox(
+    ui_harness: UIHarness, page,
+) -> None:
+    """Typing into the block and submitting its form runs the page's own
+    ``submit`` handler with the typed value.
+
+    ``allow-forms`` is the flag that makes this work: measured in real
+    Chromium, WITHOUT it ``requestSubmit()`` does not even dispatch the
+    event, so an interactive widget built around a ``<form>`` is dead in
+    the transcript. The handler writes the value into the frame's title,
+    which proves both halves — the keystrokes landed AND the submit
+    handler ran.
+    """
+    h = ui_harness
+    session_id = "sess_html_tag_form_001"
+    workspace_id = create_workspace(h)
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "HTML form")
+        bind_session_workspace(conn, workspace_id, session_id)
+        ts = DbSeed.baseline_timestamps(count=2, interval_seconds=30)
+        seed.seed_user_message(conn, session_id, "a form please", created_at=ts[0])
+        seed.seed_assistant_message(
+            conn, session_id,
+            "<html>"
+            '<form id="probe-form" onsubmit="event.preventDefault();'
+            "document.title='SUBMIT:'+document.getElementById('probe-in').value"
+            '">'
+            '<input id="probe-in">'
+            '<button id="probe-sub" type="submit">Go</button>'
+            "</form>"
+            "</html>",
+            created_at=ts[1],
+        )
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.wait_for_selector("iframe.chat-html-frame", timeout=15000)
+
+    frame = page.frame_locator("iframe.chat-html-frame")
+    field = frame.locator("#probe-in")
+    field.wait_for(timeout=10000)
+    field.fill("prod-42")
+    frame.locator("#probe-sub").click()
+
+    child_frames = [f for f in page.frames if f != page.main_frame]
+    assert child_frames, "expected at least one child frame"
+    title = ""
+    for _ in range(20):  # up to ~2s
+        title = child_frames[0].title()
+        if title.startswith("SUBMIT:"):
+            break
+        page.wait_for_timeout(100)
+    assert title == "SUBMIT:prod-42", (
+        f"Expected the form's submit handler to run with the typed value, got "
+        f"{title!r}. Without `allow-forms` the submit event never fires."
     )
 
 

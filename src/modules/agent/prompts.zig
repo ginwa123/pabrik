@@ -1278,6 +1278,35 @@ test "ResponseFormatting teaches the <html> wrapper tag" {
 }
 
 // -------------------------------------------------------------------------
+// ResponseFormatting — INTERACTIVE <html> (2026-11-04 interactive-html)
+// -------------------------------------------------------------------------
+
+test "ResponseFormatting teaches the interactive <html> contract" {
+    // The model must know a block is a LIVE document it can build a widget in.
+    // Every wall below was measured in Chromium against the frame's real
+    // attribute (`sandbox="allow-scripts allow-forms"`, ChatMessageRow.vue).
+    const prompt: []const u8 = ResponseFormatting;
+
+    // 1. The capability is advertised at all.
+    try std.testing.expect(contains(prompt, "Interactive HTML works"));
+    try std.testing.expect(contains(prompt, "allow-forms"));
+
+    // 2. A form submit fires there, and an un-prevented one navigates the frame
+    // away — the one rule that turns a widget into a blank frame.
+    try std.testing.expect(contains(prompt, "event.preventDefault()"));
+
+    // 3. The null-origin walls: storage/cookies/history throw, dialogs are
+    // silent, window.open is refused, and there is no network.
+    try std.testing.expect(contains(prompt, "localStorage"));
+    try std.testing.expect(contains(prompt, "SecurityError"));
+    try std.testing.expect(contains(prompt, "window.open"));
+    try std.testing.expect(contains(prompt, "no network"));
+
+    // 4. A mixed turn: several blocks in document order, never nested.
+    try std.testing.expect(contains(prompt, "never a block nested inside another"));
+}
+
+// -------------------------------------------------------------------------
 // ResponseFormatting — <mermaid> wrapper tag (2026-10-17 mermaid-support)
 // -------------------------------------------------------------------------
 

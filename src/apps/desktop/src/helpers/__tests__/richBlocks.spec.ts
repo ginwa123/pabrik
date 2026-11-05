@@ -99,8 +99,7 @@ describe('extractRichBlocks', () => {
 
   it('does not read a plantuml fence as a mermaid one, or the reverse', () => {
     const content =
-      '<plantuml>' + PLANTUML_SOURCE + '</plantuml>\n```mermaid\n' +
-      MERMAID_SOURCE + '\n```'
+      '<plantuml>' + PLANTUML_SOURCE + '</plantuml>\n```mermaid\n' + MERMAID_SOURCE + '\n```'
     expect(extractRichBlocks(content)).toEqual([
       { kind: 'plantuml', payload: PLANTUML_SOURCE },
       { kind: 'mermaid', payload: MERMAID_SOURCE },
@@ -119,6 +118,51 @@ describe('extractRichBlocks', () => {
     // splitter must still not swallow the text.
     expect(extractRichBlocks('prose <mermaid>flowchart TD\n  A --> B')).toEqual([
       { kind: 'markdown', payload: 'prose <mermaid>flowchart TD\n  A --> B' },
+    ])
+  })
+
+  it('reads a block whose opening tag carries attributes', () => {
+    // A model writing a real document emits `<html lang="en">`, not a bare tag. A
+    // bare-tag-only pattern dropped the whole block into the markdown path, so the
+    // user saw escaped source instead of a rendered surface.
+    expect(extractRichBlocks('<html lang="en"><b>live</b></html>')).toEqual([
+      { kind: 'html', payload: '<b>live</b>' },
+    ])
+    expect(extractRichBlocks('<mermaid class="wide">' + MERMAID_SOURCE + '</mermaid>')).toEqual([
+      { kind: 'mermaid', payload: MERMAID_SOURCE },
+    ])
+    expect(hasRichBlocks('<html data-theme="dark"><b>x</b></html>')).toBe(true)
+  })
+
+  it('does not read a longer tag name as one of the wrappers', () => {
+    // `<htmlfoo>` is not `<html>`; the attribute form must not loosen the tag match.
+    expect(hasRichBlocks('<htmlish><b>x</b></htmlish>')).toBe(false)
+    expect(hasRichBlocks('<d2x>a -> b</d2x>')).toBe(false)
+  })
+
+  it("carries an interactive widget's markup and script into the payload untouched", () => {
+    // The frame runs this payload as a live document, so the splitter must not
+    // reorder, escape or drop the handlers and the form.
+    const widget =
+      '<label>Name</label><input id="n" oninput="render()">' +
+      '<form onsubmit="event.preventDefault(); render()"><button type="submit">Go</button></form>' +
+      '<p id="out"></p><script>function render(){document.getElementById("out").textContent="hi"}</script>'
+    expect(extractRichBlocks(`<html>${widget}</html>`)).toEqual([{ kind: 'html', payload: widget }])
+  })
+
+  it('lays out a mixed plan turn — prose, html, mermaid, prose — in document order', () => {
+    const content =
+      'Here is the plan:\n' +
+      '<html><h2>Steps</h2><input id="q"></html>\n' +
+      'and the flow it follows:\n' +
+      `<mermaid>${MERMAID_SOURCE}</mermaid>\n` +
+      'Start with step 1.'
+    expect(extractRichBlocks(content)).toEqual([
+      { kind: 'markdown', payload: 'Here is the plan:' },
+      { kind: 'html', payload: '<h2>Steps</h2><input id="q">' },
+      { kind: 'markdown', payload: 'and the flow it follows:' },
+      { kind: 'mermaid', payload: MERMAID_SOURCE },
+      { kind: 'markdown', payload: 'Start with step 1.' },
     ])
   })
 })
