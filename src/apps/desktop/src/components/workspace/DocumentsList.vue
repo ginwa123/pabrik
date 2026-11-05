@@ -464,7 +464,7 @@ onUpdated(() => {
               v-model="renameValue"
               class="flex-1 min-w-0 bg-transparent text-dense outline-none"
               style="
-                color: var(--semantic-active-text, var(--color-text));
+                color: inherit;
                 border-bottom: 1px solid var(--color-violet);
               "
               data-testid="document-folder-rename-input"
