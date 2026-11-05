@@ -1,0 +1,1584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Every session is a tab · pabrik wireframe</title>
+<style>
+  :root {
+    --bg-page: #181616;
+    --bg-rail: #12120f;
+    --bg-plate: #1D1C19;
+    --bg-plate-2: #22211e;
+    --bg-active: #282727;
+    --bg-hover: #1f1e1c;
+    --border: #282727;
+    --fg: #c5c9c5;
+    --fg-muted: #a6a69c;
+    --fg-dim: #8d8d84;
+    --blue: #8ba4b0;
+    --green: #87a987;
+    --yellow: #c4b28a;
+    --red: #c4746e;
+    --violet: #8992a7;
+    --amber: #fb923c;
+    --text-meta: 12px;
+    --text-small: 13px;
+    --text-body: 16px;
+    --text-lede: 17px;
+    --text-title: 24px;
+    --text-display: 44px;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+    --sb-gutter: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { background: var(--bg-page); }
+
+  body {
+    font-family: var(--sans);
+    font-size: var(--text-body);
+    line-height: 1.6;
+    color: var(--fg);
+    background: var(--bg-page);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre { font-family: var(--mono); font-size: 13px; }
+  code { background: var(--bg-plate); border-radius: 3px; padding: 1px 5px; overflow-wrap: anywhere; }
+  a { color: var(--blue); }
+
+  .shell { max-width: 1240px; margin: 0 auto; padding: 64px 48px 120px; }
+
+  /* ── the document itself ─────────────────────────────────────────── */
+  .doc-head { max-width: 900px; }
+
+  h1 {
+    font-size: var(--text-display);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+  }
+
+  .doc-meta {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+  }
+
+  .doc-meta .stamp { font-size: var(--text-small); color: var(--fg-dim); }
+
+  .jump {
+    display: inline-block;
+    padding: 10px 18px;
+    background: var(--bg-active);
+    color: var(--fg);
+    font-size: var(--text-small);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .lede {
+    margin-top: 26px;
+    max-width: 66ch;
+    font-size: var(--text-lede);
+    color: var(--fg-muted);
+  }
+
+  section { margin-top: 84px; }
+
+  h2 {
+    font-size: var(--text-title);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+    max-width: 32ch;
+  }
+
+  h3 { font-size: var(--text-body); font-weight: 600; }
+
+  p { max-width: 74ch; }
+  section > p { margin-top: 18px; color: var(--fg-muted); }
+  section > p strong, .spec dd strong { color: var(--fg); font-weight: 600; }
+
+  .note {
+    margin-top: 14px;
+    max-width: 74ch;
+    font-size: var(--text-small);
+    color: var(--fg-dim);
+  }
+
+  /* ── a measured line under every mock ────────────────────────────── */
+  .reading {
+    margin-top: 14px;
+    max-width: 88ch;
+    font-size: var(--text-small);
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-muted);
+  }
+
+  .reading b { color: var(--fg); font-weight: 600; }
+
+  /* ── the app frames ──────────────────────────────────────────────── */
+  .frame {
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr);
+    height: 700px;
+    margin-top: 32px;
+    overflow: hidden;
+    background: var(--bg-rail);
+  }
+
+  .frame.short { height: 316px; }
+
+  .frame.narrow {
+    grid-template-columns: 64px minmax(0, 1fr);
+    max-width: 760px;
+    height: 300px;
+  }
+
+  /* rail: the app's real sidebar, 288px, header 48, New Chat 40, rows 32 */
+  [data-ui] .rail {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--bg-rail);
+    border-right: 1px solid var(--border);
+  }
+
+  [data-ui] .rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: 48px;
+    padding: 0 var(--sb-gutter);
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+
+  .ws { display: flex; align-items: center; gap: 6px; font-size: var(--text-small); font-weight: 600; color: var(--fg); }
+  .rail-link { font-size: 11px; color: var(--fg-dim); }
+
+  [data-ui] .newchat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 var(--sb-gutter);
+    font-size: 12px;
+    color: var(--fg-dim);
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+
+  .rail nav { padding: 6px 0 12px; overflow: hidden; }
+
+  .rail-label {
+    padding: 12px var(--sb-gutter) 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 var(--sb-gutter);
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  .row.on { background: var(--bg-active); color: var(--fg); }
+  .rname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rtime { font-size: 10px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+
+  [data-ui] .rdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: transparent; box-shadow: inset 0 0 0 1px #4a4843; }
+  [data-ui] .rdot.run { background: var(--blue); box-shadow: none; animation: pulse 2.4s ease-in-out infinite; }
+  [data-ui] .rdot.needs { background: var(--amber); box-shadow: none; }
+  [data-ui] .rdot.failed { background: var(--red); box-shadow: none; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.42; } }
+  @media (prefers-reduced-motion: reduce) { .rdot.run { animation: none; } }
+
+  /* main column */
+  .pane { display: flex; flex-direction: column; min-width: 0; background: var(--bg-page); }
+
+  /* the tab strip: the whole proposal in 36px */
+  [data-ui] .strip {
+    display: flex;
+    align-items: stretch;
+    height: 36px;
+    flex: none;
+    background: var(--bg-rail);
+    border-bottom: 1px solid var(--border);
+  }
+
+  [data-ui] .strip.empty { height: 0; border-bottom: 0; overflow: hidden; }
+
+  .tabs {
+    display: flex;
+    align-items: flex-end;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar { height: 0; }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1 1 154px;
+    min-width: 108px;
+    max-width: 220px;
+    height: 36px;
+    padding: 0 6px 0 11px;
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    border-radius: 6px 6px 0 0;
+    position: relative;
+  }
+
+  .tab.on {
+    background: var(--bg-active);
+    color: var(--fg);
+    font-weight: 600;
+  }
+
+  .tab.gone { color: var(--fg-dim); }
+
+  .tlabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  [data-ui] .tdot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px #4a4843; background: transparent; }
+  [data-ui] .tdot.run { background: var(--blue); box-shadow: none; animation: pulse 2.4s ease-in-out infinite; }
+  [data-ui] .tdot.needs { background: var(--amber); box-shadow: none; }
+  [data-ui] .tdot.failed { background: var(--red); box-shadow: none; }
+  [data-ui] .tdot.gone { box-shadow: inset 0 0 0 1.5px var(--fg-dim); background: transparent; }
+
+  .tclose {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    opacity: 0.45;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .tab.on .tclose, .tab:hover .tclose { opacity: 0.9; }
+  .tab:hover { background: var(--bg-hover); }
+
+  .tadd, .tmore {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  [data-ui] .tmore { width: 32px; font-size: 11px; border-left: 1px solid var(--border); }
+
+  /* the chat surface under the strip */
+  [data-ui] .appbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 12px;
+    flex: none;
+    background: var(--bg-rail);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .appbar-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .appbar-tools { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--fg-dim); }
+
+  .transcript { flex: 1; min-height: 0; padding: 22px 26px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+
+  .turn { max-width: 62ch; }
+
+  .who { font-size: 11px; font-weight: 600; color: var(--fg-dim); }
+  .said { margin-top: 5px; font-size: 14px; line-height: 1.55; color: var(--fg); }
+  .said.muted { color: var(--fg-muted); }
+
+  .tool { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 7px 10px; background: var(--bg-plate); font-size: 12px; color: var(--fg-muted); }
+  .tool .name { color: var(--fg); }
+  [data-ui] .tool .arg { /* taste-skill-ignore: a tool argument is a literal path */ font-family: var(--mono); font-size: 11.5px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool .took { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--fg-dim); }
+
+  .stopped { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--amber); }
+  .stopped .tdot { animation: none; }
+
+  .composer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 56px;
+    margin: 0 26px 22px;
+    padding: 0 14px;
+    flex: none;
+    background: var(--bg-plate);
+    font-size: 13px;
+    color: var(--fg-dim);
+  }
+
+  /* ── spec lists (tone steps, no boxes) ───────────────────────────── */
+  .spec { margin-top: 30px; max-width: 88ch; }
+
+  .spec-row {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 26px;
+    padding: 15px 20px;
+    font-size: var(--text-body);
+  }
+
+  .spec-row:nth-child(odd) { background: var(--bg-plate); }
+  .spec-row dt { font-weight: 600; }
+  .spec-row dd { color: var(--fg-muted); }
+  .spec-row dd b { color: var(--fg); font-weight: 600; }
+
+  /* ── anatomy: specimens beside their names ──────────────────────── */
+  .anatomy { display: grid; grid-template-columns: 460px minmax(0, 1fr); gap: 40px; margin-top: 30px; }
+
+  .anatomy .plate { background: var(--bg-plate); padding: 22px 20px; }
+
+  .anatomy .caption { margin-top: 14px; font-size: var(--text-small); color: var(--fg-dim); }
+  .plate-label { margin: 0 0 6px; font-size: 11px; color: var(--fg-dim); }
+  .plate-label + .realstrip { margin-bottom: 16px; }
+
+  .realstrip { display: flex; align-items: flex-end; height: 36px; background: var(--bg-rail); }
+
+  .anatomy dl { display: grid; gap: 14px; }
+  .anatomy dl div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; }
+  .anatomy dt { font-size: var(--text-body); font-weight: 600; }
+  .anatomy dd { font-size: var(--text-body); color: var(--fg-muted); }
+
+  /* ── states ─────────────────────────────────────────────────────── */
+  .states { margin-top: 30px; }
+
+  .state-row {
+    display: grid;
+    grid-template-columns: 400px minmax(0, 1fr);
+    gap: 34px;
+    align-items: center;
+    padding: 22px 0;
+  }
+
+  .state-row .shot { background: var(--bg-rail); padding: 0; }
+  .state-row h3 { margin-bottom: 6px; }
+  .state-row p { font-size: var(--text-body); color: var(--fg-muted); max-width: 58ch; }
+  .state-row .specimen-note { margin-top: 8px; font-size: var(--text-small); color: var(--fg-dim); }
+
+  /* ── the lab ────────────────────────────────────────────────────── */
+  .lab { margin-top: 30px; background: var(--bg-plate); padding: 22px; }
+
+  .lab-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+  .lab-actions button {
+    padding: 8px 14px;
+    border: 0;
+    background: var(--bg-active);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: var(--text-small);
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .lab-actions button:hover { background: #322f2c; }
+  .lab-actions button[data-kind="danger"] { color: var(--red); }
+
+  [data-ui] .readout {
+    margin-top: 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  .lab-note { margin-top: 10px; font-size: var(--text-small); color: var(--fg-muted); min-height: 20px; }
+
+  /* ── sequence ───────────────────────────────────────────────────── */
+  .sequence { margin-top: 30px; }
+
+  .seq { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 18px; padding: 18px 0; }
+  .seq + .seq { padding-top: 26px; }
+  .seq .n { font-size: 13px; font-weight: 600; color: var(--violet); font-variant-numeric: tabular-nums; }
+  .seq .what { font-weight: 600; max-width: 72ch; }
+  .seq .why { margin-top: 5px; font-size: var(--text-body); color: var(--fg-muted); max-width: 72ch; }
+
+  /* ── files ──────────────────────────────────────────────────────── */
+  .files { margin-top: 26px; display: grid; gap: 1px; background: var(--bg-page); max-width: 110ch; }
+  .files div { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; padding: 13px 20px; background: var(--bg-plate); font-size: var(--text-body); }
+  .files span:first-child { /* taste-skill-ignore: real file paths are literal identifiers */ font-family: var(--mono); font-size: 13px; color: var(--fg); overflow-wrap: anywhere; }
+  .files span:last-child { color: var(--fg-muted); }
+  .files code { background: none; padding: 0; font-size: 13px; }
+
+  .phases { margin-top: 26px; display: grid; gap: 20px; max-width: 100ch; }
+  .phase { padding: 18px 20px; background: var(--bg-plate); }
+  .phase h3 { display: flex; align-items: baseline; gap: 10px; }
+  .tagline { font-size: var(--text-small); font-weight: 500; color: var(--violet); }
+  .phase p { margin-top: 8px; font-size: var(--text-body); color: var(--fg-muted); max-width: 76ch; }
+
+  /* ── decisions / gaps ───────────────────────────────────────────── */
+  .gaps { margin-top: 26px; display: grid; gap: 18px; max-width: 100ch; }
+  .gap { padding: 18px 20px; background: var(--bg-plate); }
+  .gap h3 { margin-bottom: 8px; }
+  .gap p { font-size: var(--text-body); color: var(--fg-muted); max-width: 64ch; }
+
+  .decisions { margin-top: 26px; max-width: 100ch; display: grid; gap: 26px; list-style: none; }
+  .decisions li { padding: 0; font-size: var(--text-body); color: var(--fg-muted); max-width: 74ch; }
+  .decisions strong { color: var(--fg); }
+  .verdict { font-size: var(--text-small); font-weight: 500; color: var(--violet); }
+  .verdict.ask { color: var(--yellow); }
+
+  /* ── checks ─────────────────────────────────────────────────────── */
+  .checks { margin-top: 24px; display: grid; gap: 14px; max-width: 100ch; }
+  .checks div { padding: 0; max-width: 64ch; font-size: var(--text-body); color: var(--fg-muted); }
+  .checks b { color: var(--fg); }
+
+  .provenance {
+    margin-top: 90px;
+    padding-top: 22px;
+    max-width: 90ch;
+    font-size: var(--text-small);
+    color: var(--fg-dim);
+  }
+
+  pre.code {
+    margin-top: 20px;
+    padding: 16px 18px;
+    background: var(--bg-plate);
+    color: var(--fg);
+    font-size: 12.5px;
+    line-height: 1.6;
+    overflow-x: auto;
+    max-width: 100ch;
+  }
+
+  /* ── narrow ─────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .shell { padding: 40px 20px 80px; }
+    h1 { font-size: 30px; }
+    h2 { font-size: 20px; }
+    .frame { grid-template-columns: minmax(0, 1fr); height: 520px; }
+    [data-ui] .rail { display: none; }
+    .frame.narrow { grid-template-columns: minmax(0, 1fr); height: 260px; }
+    .transcript, .composer { padding-left: 16px; padding-right: 16px; }
+    .composer { margin-left: 16px; margin-right: 16px; }
+    .spec-row, .state-row, .anatomy, .files div, .seq { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .state-row .shot { max-width: 100%; }
+    .anatomy .plate { padding: 14px; }
+    .tab { flex-basis: 120px; min-width: 96px; }
+    .doc-meta { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="doc-head">
+    <h1>Every session is a tab</h1>
+    <div class="doc-meta">
+      <a class="jump" href="#lab">Try the seven states</a>
+      <span class="stamp">Wireframe and plan, no code yet · desktop <code>/app</code> · 5 November 2026 · task_1793890522320_3</span>
+    </div>
+    <p class="lede">
+      A chat session already outlives the window: it runs on the server, it survives a reload, and the
+      sidebar lists it. What it has no equivalent of is the browser tab: one named pane that stays
+      open, stays in the same position, and says on its face whether the run inside it is working,
+      waiting for you, or dead. This is the wireframe for putting that back, over a tab engine that
+      never left.
+    </p>
+  </header>
+
+  <!-- ─────────────────────────────── today ─────────────────────────────── -->
+  <section>
+    <h2>Today: one surface, no tabs</h2>
+    <p>
+      The app shows exactly one thing at a time. Opening a second session replaces the first, and the
+      only way back is the sidebar list, which is also the only place that knows a run is waiting for
+      you. The screenshot below is the current chrome: a 288px rail, a 44px app bar carrying the
+      session name, the transcript, the composer.
+    </p>
+
+    <figure class="frame" data-ui="app-today">
+      <aside class="rail">
+        <div class="rail-head">
+          <span class="ws">pabrik <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4l2.5 2.5L7.5 4"/></svg></span>
+          <span class="rail-link">Settings</span>
+        </div>
+        <div class="newchat">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 1.6l2.2 2.2L4 10.2H1.8V8z"/></svg>
+          <span>New Chat</span>
+        </div>
+        <nav>
+          <p class="rail-label">Chats</p>
+          <div class="row on"><span class="rdot needs"></span><span class="rname">fix zig test output</span><span class="rtime">2m</span></div>
+          <div class="row"><span class="rdot run"></span><span class="rname">durable agent server</span><span class="rtime">6m</span></div>
+          <div class="row"><span class="rdot"></span><span class="rname">wireframe: document folders</span><span class="rtime">31m</span></div>
+          <div class="row"><span class="rdot failed"></span><span class="rname">release 0.9 smoke run</span><span class="rtime">1h</span></div>
+          <div class="row"><span class="rdot"></span><span class="rname">chats list · row grammar</span><span class="rtime">3h</span></div>
+          <div class="row"><span class="rdot"></span><span class="rname">kabelweb libcurl timeouts</span><span class="rtime">1d</span></div>
+          <div class="row"><span class="rdot"></span><span class="rname">routine audit · run 1</span><span class="rtime">1d</span></div>
+          <p class="rail-label">Projects</p>
+          <div class="row"><span class="rname">pabrik</span></div>
+          <div class="row"><span class="rname">kabelweb</span></div>
+          <div class="row"><span class="rname">ruangsql</span></div>
+          <p class="rail-label">Documents</p>
+          <div class="row"><span class="rname">Cache read rate, call by call</span></div>
+          <div class="row"><span class="rname">Routines parity · run 1</span></div>
+        </nav>
+      </aside>
+
+      <div class="pane">
+        <header class="appbar">
+          <span class="appbar-title">fix zig test output</span>
+          <span class="appbar-tools"><span>width 1.0×</span><span>explorer</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg></span>
+        </header>
+        <div class="transcript">
+          <div class="turn">
+            <div class="who">you</div>
+            <div class="said">why does <code>zig build test</code> print a failed command block when every test passes?</div>
+          </div>
+          <div class="turn">
+            <div class="who">agent</div>
+            <div class="said">Because a passing test that writes to stderr is relayed by the test runner as a `run test w` block, shaped exactly like a failure with no failing test named.</div>
+            <div class="tool">
+              <span class="name">read_file</span>
+              <code class="arg">src/agentic_loop/logger.zig</code>
+              <span class="took">0.4s</span>
+            </div>
+            <div class="tool">
+              <span class="name">search</span>
+              <code class="arg">debugPrint(</code>
+              <span class="took">0.2s</span>
+            </div>
+          </div>
+          <div class="stopped"><span class="tdot needs"></span>Stopped after 4 tool calls · waiting for your review</div>
+        </div>
+        <div class="composer">Reply to this session…</div>
+      </div>
+    </figure>
+    <p class="reading" id="read-today">measuring the frame…</p>
+    <p class="note">
+      Nothing in this frame is new. It is the layout the app ships today, with a session that finished
+      its turn behind it, and no way to see that it finished from anywhere but this one pane.
+    </p>
+  </section>
+
+  <!-- ─────────────────────────────── numbers ───────────────────────────── -->
+  <section>
+    <h2>What the deletion left behind</h2>
+    <p>
+      The in-app strip existed. It was removed on 14 September 2026 in
+      <code>df3297e54</code> / <code>0e5a99dcd</code> (“delete in-app TabBar, open real browser tabs via
+      <code>window.open</code>”, #499), and the next commit, <code>4f1f345cb</code> “disabel tabs”,
+      flipped the default to off with the note <em>“users found the strip confusing”</em>. What that
+      pair really removed is one component and its spec. The engine stayed, tested and wired.
+    </p>
+
+    <dl class="spec">
+      <div class="spec-row">
+        <dt>Tab UI in the DOM today</dt>
+        <dd><b>0</b> elements. <code>components/shell/TabBar.vue</code> is gone; no strip, no tab, no per-session pane anywhere in the tree.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>Lines of UI deleted</dt>
+        <dd><b>362</b> for <code>TabBar.vue</code> plus <b>363</b> for <code>TabBar.spec.ts</code>: the two files <code>df3297e54</code> removed.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>Lines of engine still shipping</dt>
+        <dd><b>1118</b> across <code>stores/tabs.ts</code> (570), <code>helpers/tabTarget.ts</code> (368), <code>composables/useTabShortcuts.ts</code> (134) and <code>stores/tabsStorage.ts</code> (46), all covered by <code>tabsStore.spec.ts</code>, <code>tabTarget.spec.ts</code>, <code>useTabShortcuts.spec.ts</code>.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>URL contract</dt>
+        <dd><code>?tab=&lt;tabId&gt;</code> is already written on every navigation by <code>useAppLayoutTabs.syncFromTarget</code>, and read back on boot. A deep link into a session already lands on the right tab; there is simply nothing rendering the list.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>Keyboard</dt>
+        <dd><b>14</b> commands resolved by <code>resolveTabShortcut</code>: <code>⇧⌥T</code> new, <code>⇧⌥W</code> close, <code>⇧⌥Z</code> reopen, <code>⇧⌥←</code> and <code>⇧⌥→</code>, plus <code>⇧⌥1…9</code> to jump. They are registered on mount today and move the URL with nothing on screen to show for it.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>Default</dt>
+        <dd><b>Off</b>. <code>readEnabled()</code> returns <code>false</code> when the key is absent, so <code>syncFromTarget</code> short-circuits and never builds a tab.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>Session identity</dt>
+        <dd><b>1:1</b> already. <code>tabKeyOf</code> returns <code>chat:&lt;sessionId&gt;</code>; <code>renameChatTab</code> follows a session-id rename in place; <code>syncFromTarget</code> focuses an existing tab instead of opening a second one.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- ─────────────────────────────── why ──────────────────────────────── -->
+  <section>
+    <h2>Why the last strip was confusing</h2>
+    <p>
+      Three causes, all readable in the deleted code, and two of them are no longer true, because the
+      things the strip needed were built <em>after</em> it was removed.
+    </p>
+
+    <dl class="spec">
+      <div class="spec-row">
+        <dt>It was a second list</dt>
+        <dd>The old <code>TabBar</code> rendered a glyph, a truncated label and a close button: the same
+        three facts the sidebar row 288px to the left already carried. Two lists of the same sessions,
+        scrolling independently, with no rule about which one you were supposed to use.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>It carried no state</dt>
+        <dd>Nothing on the tab said the run was working, finished, or failed. The vocabulary for that
+        landed a month later: status dots on the sidebar rows in <code>d9ea13c20</code> (#949,
+        14 October), the elapsed/activity chip in <code>04c87ca14</code> (#861, 9 October), the
+        local-first session list in <code>8d33057f0</code> (24 September). The strip was deleted before
+        there was anything worth painting on it.</dd>
+      </div>
+      <div class="spec-row">
+        <dt>It was invisible and unproven</dt>
+        <dd>Default off, so nobody met it. Turned on, the whole layout changed at once, including for
+        kanban boards and design canvases whose tab identity follows rules a user cannot see
+        (<code>taskChatRendersInItemTab</code>: a design chat is a dialog inside the canvas tab, a
+        kanban chat is its own tab).</dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- ─────────────────────────────── proposal ─────────────────────────── -->
+  <section>
+    <h2>Proposal: a tab is a session</h2>
+    <p>
+      One persistent tab per session, and the tab carries the run. Seven tabs below: one home (the
+      chats list), four chat sessions, two workspace items. The session that needs you is <em>not</em>
+      the active one, which is the whole point of the row.
+    </p>
+
+    <figure class="frame" id="frame-proposed" data-ui="app-proposed">
+      <aside class="rail">
+        <div class="rail-head">
+          <span class="ws">pabrik <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4l2.5 2.5L7.5 4"/></svg></span>
+          <span class="rail-link">Settings</span>
+        </div>
+        <div class="newchat">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 1.6l2.2 2.2L4 10.2H1.8V8z"/></svg>
+          <span>New Chat</span>
+        </div>
+        <nav>
+          <p class="rail-label">Chats</p>
+          <div class="row"><span class="rdot needs"></span><span class="rname">fix zig test output</span><span class="rtime">2m</span></div>
+          <div class="row on"><span class="rdot run"></span><span class="rname">durable agent server</span><span class="rtime">6m</span></div>
+          <div class="row"><span class="rdot run"></span><span class="rname">wireframe: document folders</span><span class="rtime">31m</span></div>
+          <div class="row"><span class="rdot failed"></span><span class="rname">release 0.9 smoke run</span><span class="rtime">1h</span></div>
+          <div class="row"><span class="rdot"></span><span class="rname">chats list · row grammar</span><span class="rtime">3h</span></div>
+          <div class="row"><span class="rdot"></span><span class="rname">kabelweb libcurl timeouts</span><span class="rtime">1d</span></div>
+          <p class="rail-label">Projects</p>
+          <div class="row"><span class="rname">pabrik</span></div>
+          <div class="row"><span class="rname">kabelweb</span></div>
+          <div class="row"><span class="rname">ruangsql</span></div>
+          <p class="rail-label">Documents</p>
+          <div class="row"><span class="rname">Cache read rate, call by call</span></div>
+          <div class="row"><span class="rname">Routines parity · run 1</span></div>
+        </nav>
+      </aside>
+
+      <div class="pane">
+        <div class="strip" role="tablist" aria-label="Open sessions">
+          <div class="tabs">
+            <div class="tab" role="tab" aria-selected="false" title="Chats">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">Chats</span>
+              <button class="tclose" type="button" aria-label="Close Chats"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="fix zig test output">
+              <span class="tdot needs" aria-hidden="true"></span><span class="tlabel">fix zig test output</span>
+              <button class="tclose" type="button" aria-label="Close fix zig test output"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab on" role="tab" aria-selected="true" title="durable agent server">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">durable agent server</span>
+              <button class="tclose" type="button" aria-label="Close durable agent server"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="wireframe: document folders">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">wireframe: document folders</span>
+              <button class="tclose" type="button" aria-label="Close wireframe: document folders"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="release 0.9 smoke run">
+              <span class="tdot failed" aria-hidden="true"></span><span class="tlabel">release 0.9 smoke run</span>
+              <button class="tclose" type="button" aria-label="Close release 0.9 smoke run"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="Kanban · sprint juli">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">Kanban · sprint juli</span>
+              <button class="tclose" type="button" aria-label="Close Kanban · sprint juli"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="design: settings shell">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">design: settings shell</span>
+              <button class="tclose" type="button" aria-label="Close design: settings shell"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+          <button class="tadd" type="button" aria-label="New tab" title="New tab (⇧⌥T)">+</button>
+          <button class="tmore" type="button" aria-label="All open tabs" title="All open tabs">▾</button>
+        </div>
+
+        <header class="appbar">
+          <span class="appbar-title">durable agent server</span>
+          <span class="appbar-tools"><span>width 1.0×</span><span>explorer</span><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg></span>
+        </header>
+        <div class="transcript">
+          <div class="turn">
+            <div class="who">you</div>
+            <div class="said">the agent has to keep working after the server restarts. Write the plan for that.</div>
+          </div>
+          <div class="turn">
+            <div class="who">agent</div>
+            <div class="said">A run is durable if the loop's state is a row, not a stack: the turn, the tool call in flight and the transcript all replay from the DB.</div>
+            <div class="tool">
+              <span class="name">search</span>
+              <code class="arg">INSERT INTO session_plan</code>
+              <span class="took">0.3s</span>
+            </div>
+            <div class="tool">
+              <span class="name">read_file</span>
+              <code class="arg">src/agentic_loop/loop.zig</code>
+              <span class="took">running 00:01:47</span>
+            </div>
+          </div>
+        </div>
+        <div class="composer">Reply to this session…</div>
+      </div>
+    </figure>
+    <p class="reading" id="read-proposed">measuring the frame…</p>
+    <p class="note">
+      Both frames are the same 288px rail and the same 44px app bar. The proposal adds exactly one row
+      of chrome (36px) and one behaviour: pressing a tab switches the pane without touching the rail.
+    </p>
+  </section>
+
+  <!-- ─────────────────────────────── narrow ───────────────────────────── -->
+  <section>
+    <h2>A narrow window, and what gives first</h2>
+    <p>
+      The rail is the first thing to give: below 900px it collapses to the 64px icon rail the app
+      already has, and the strip takes the width it frees. Tabs shrink to their 108px floor, then the
+      row scrolls and <code>▾</code> appears. The label truncates before the dot does, always: losing
+      the name is survivable, losing the state is not.
+    </p>
+
+    <figure class="frame narrow" data-ui="app-narrow">
+      <aside class="rail">
+        <div class="rail-head" style="justify-content: center; padding: 0;">
+          <span class="ws">p</span>
+        </div>
+        <div class="newchat" style="justify-content: center; padding: 0;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.2 1.6l2.2 2.2L4 10.2H1.8V8z"/></svg>
+        </div>
+        <nav>
+          <div class="row" style="justify-content: center; padding: 0;"><span class="rdot needs"></span></div>
+          <div class="row" style="justify-content: center; padding: 0;"><span class="rdot run"></span></div>
+          <div class="row" style="justify-content: center; padding: 0;"><span class="rdot"></span></div>
+        </nav>
+      </aside>
+      <div class="pane">
+        <div class="strip" role="tablist" aria-label="Open sessions, narrow window">
+          <div class="tabs">
+            <div class="tab on" role="tab" aria-selected="true" title="durable agent server">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">durable agent server</span>
+              <button class="tclose" type="button" aria-label="Close durable agent server"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="fix zig test output">
+              <span class="tdot needs" aria-hidden="true"></span><span class="tlabel">fix zig test output</span>
+              <button class="tclose" type="button" aria-label="Close fix zig test output"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="wireframe: document folders">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">wireframe: document folders</span>
+              <button class="tclose" type="button" aria-label="Close wireframe: document folders"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="release 0.9 smoke run">
+              <span class="tdot failed" aria-hidden="true"></span><span class="tlabel">release 0.9 smoke run</span>
+              <button class="tclose" type="button" aria-label="Close release 0.9 smoke run"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="Chats">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">Chats</span>
+              <button class="tclose" type="button" aria-label="Close Chats"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+          <button class="tadd" type="button" aria-label="New tab">+</button>
+          <button class="tmore" type="button" aria-label="All open tabs">▾</button>
+        </div>
+        <header class="appbar">
+          <span class="appbar-title">durable agent server</span>
+          <span class="appbar-tools">explorer</span>
+        </header>
+        <div class="transcript">
+          <div class="turn">
+            <div class="said muted">The same session, the same strip, 64px of rail instead of 288.</div>
+          </div>
+        </div>
+      </div>
+    </figure>
+    <p class="reading" id="read-narrow">measuring the frame…</p>
+  </section>
+
+  <!-- ─────────────────────────────── anatomy ──────────────────────────── -->
+  <section>
+    <h2>The anatomy, at its real size</h2>
+    <p>
+      A tab is a state dot, a label, and a close button. Nothing else. The dot is the piece the old
+      strip did not have, and it is the only thing on the row that changes while you are not looking.
+    </p>
+
+    <div class="anatomy">
+      <div>
+        <div class="plate" data-ui="tab-anatomy">
+          <p class="plate-label">A strip: seven tabs, one active, three dots</p>
+          <div class="realstrip">
+            <div class="tab on" role="tab" aria-selected="true" title="durable agent server">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">durable agent server</span>
+              <button class="tclose" type="button" aria-label="Close durable agent server"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="release 0.9 smoke run">
+              <span class="tdot failed" aria-hidden="true"></span><span class="tlabel">release 0.9 smoke run</span>
+              <button class="tclose" type="button" aria-label="Close release 0.9 smoke run"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="design: settings shell">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">design: settings shell</span>
+              <button class="tclose" type="button" aria-label="Close design: settings shell"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+
+          <p class="plate-label">One tab at its narrowest, 108px</p>
+          <div class="realstrip" style="width: 108px;">
+            <div class="tab" role="tab" aria-selected="false" title="fix zig test output">
+              <span class="tdot needs" aria-hidden="true"></span><span class="tlabel">fix zig test output</span>
+              <button class="tclose" type="button" aria-label="Close fix zig test output"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+
+          <p class="plate-label">And at its widest, 220px</p>
+          <div class="realstrip" style="width: 220px;">
+            <div class="tab" role="tab" aria-selected="false" title="wireframe: document folders">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">wireframe: document folders</span>
+              <button class="tclose" type="button" aria-label="Close wireframe: document folders"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+
+          <p class="plate-label">What ▾ holds when the row runs out</p>
+          <div class="realstrip" style="height: 26px;">
+            <div class="tab" style="height: 26px; font-size: 11.5px; max-width: none; flex: 1;" title="all tabs">
+              <span class="tdot needs" aria-hidden="true"></span><span class="tlabel">fix zig test output</span><span class="rtime">2m</span>
+            </div>
+          </div>
+        </div>
+        <p class="caption">Every size above is the shipped one: strip 36px, tab 108 to 220px and 32px of content, label 12.5px, dot 8px, close hit box 20px.</p>
+      </div>
+
+      <dl>
+        <div><dt>State dot, 8px</dt><dd>A ring when idle, filled blue while the run works, amber when the turn stopped and wants you, red when the turn failed. Same four colours the sidebar paints today.</dd></div>
+        <div><dt>Label, 12.5px</dt><dd>The session's own name, the one the sidebar shows and the auto-rename rewrites. Truncates with an ellipsis; the full name is the native tooltip.</dd></div>
+        <div><dt>Close, 20px</dt><dd>Always in the DOM at 45% opacity, so a keyboard or touch user can reach it. It forgets the tab; it never deletes the session.</dd></div>
+        <div><dt>Active fill</dt><dd>One tone step up (<code>#282727</code>, the app's own active-row colour) with 6px top corners. No underline, no border: the same vocabulary the sidebar uses for the row you are on.</dd></div>
+        <div><dt>Overflow, ▾</dt><dd>Appears only when the tabs no longer fit. It lists every open tab with its state, searches by name, and is reachable by keyboard.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── states ───────────────────────────── -->
+  <section>
+    <h2>Seven states, and what each one promises</h2>
+    <p>
+      These are the only new looks a tab can wear. Everything else (the label, the close button, drag
+      to reorder, wheel to scroll) is ordinary browser behaviour and browsers already trained everyone
+      in the room.
+    </p>
+
+    <div class="states">
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-active">
+          <div class="realstrip">
+            <div class="tab on" role="tab" aria-selected="true">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">durable agent server</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false">
+              <span class="tdot needs" aria-hidden="true"></span><span class="tlabel">fix zig test output</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Active</h3>
+          <p>
+            The pane below is this tab. Filled one tone step up, label at full ink. There is no second
+            cue: no underline, no arrow, no bold-plus-colour-plus-dot pile-up.
+          </p>
+          <p class="specimen-note">one tab carries it at a time; the URL's <code>?tab=</code> is the same fact</p>
+        </div>
+      </div>
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-running">
+          <div class="realstrip">
+            <div class="tab" role="tab" aria-selected="false">
+              <span class="tdot run" aria-hidden="true"></span><span class="tlabel">wireframe: document folders</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Running</h3>
+          <p>
+            Filled blue dot, slow 2.4s opacity pulse, stopped entirely under
+            <code>prefers-reduced-motion</code>. Hovering names the work and the elapsed time from
+            <code>workerActivity</code>: “read_file src/agentic_loop/loop.zig · 00:01:47”.
+          </p>
+          <p class="specimen-note">source: <code>processingState</code> and <code>workerActivity</code>, already global in App.vue</p>
+        </div>
+      </div>
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-needs">
+          <div class="realstrip">
+            <div class="tab" role="tab" aria-selected="false">
+              <span class="tdot needs" aria-hidden="true"></span><span class="tlabel">fix zig test output</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Needs you</h3>
+          <p>
+            The turn stopped with <code>last_finish_reason = stop</code> and
+            <code>needs_human_review = true</code>. Amber dot, the exact colour the sidebar's review
+            badge uses (<code>rgb(251, 146, 60)</code>), which pulses four times and then rests. This is
+            the state the whole strip exists for.
+          </p>
+          <p class="specimen-note">source: the session row the list already reads; no new endpoint</p>
+        </div>
+      </div>
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-failed">
+          <div class="realstrip">
+            <div class="tab" role="tab" aria-selected="false">
+              <span class="tdot failed" aria-hidden="true"></span><span class="tlabel">release 0.9 smoke run</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Failed</h3>
+          <p>
+            An agent error is on the session (<code>stores/agentError.ts</code>). Red dot, label keeps
+            its name so you can still tell which run died. The pane it opens carries the error card the
+            chat already renders.
+          </p>
+          <p class="specimen-note">the dot does not replace the error card, and never hides the name</p>
+        </div>
+      </div>
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-gone">
+          <div class="realstrip">
+            <div class="tab gone" role="tab" aria-selected="false">
+              <span class="tdot gone" aria-hidden="true"></span><span class="tlabel">chats list · row grammar</span>
+              <button class="tclose" type="button" aria-label="Remove tab"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Gone</h3>
+          <p>
+            The session was deleted on the server while the tab was restored from storage. The tab
+            keeps its place, loses its fill, and its pane says one line: “This session no longer exists
+            Remove the tab.” A restored tab must never open a chat that can only fail.
+          </p>
+          <p class="specimen-note">reconciled once, after the first session list answer</p>
+        </div>
+      </div>
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-overflow">
+          <div class="realstrip">
+            <div class="tab on" role="tab" aria-selected="true" title="release 0.9 smoke run">
+              <span class="tdot failed" aria-hidden="true"></span><span class="tlabel">release 0.9 smoke run</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <div class="tab" role="tab" aria-selected="false" title="Kanban · sprint j">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">Kanban · sprint juli</span>
+              <button class="tclose" type="button" aria-label="Close"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+            <button class="tadd" type="button" aria-label="New tab">+</button>
+            <button class="tmore" type="button" aria-label="All open tabs">▾</button>
+          </div>
+        </div>
+        <div>
+          <h3>Overflow</h3>
+          <p>
+            A strip never wraps, never shrinks a label to a letter, and never grows past the window.
+            Below 108px a tab would stop being readable, so past that the row scrolls (wheel, no
+            visible scrollbar) and <code>▾</code> lists every tab, including the ones off-screen, with
+            their dots, so a hidden “needs you” is still reachable in two clicks.
+          </p>
+          <p class="specimen-note">measured: ten tabs fit a 1440px window, six fit at 1024px, and the next one starts the row scrolling</p>
+        </div>
+      </div>
+
+      <div class="state-row">
+        <div class="shot" data-ui="state-single">
+          <div class="realstrip" style="height: 0; overflow: hidden;">
+            <div class="tab"><span class="tlabel">Chats</span></div>
+          </div>
+          <div class="realstrip" style="margin-top: 10px;">
+            <div class="tab on" role="tab" aria-selected="true">
+              <span class="tdot" aria-hidden="true"></span><span class="tlabel">Chats</span>
+              <button class="tclose" type="button" aria-label="Close Chats"><svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>One tab, no strip</h3>
+          <p>
+            With a single tab the strip collapses to 0px and the app looks exactly like today. Chrome
+            appears when there is something to choose between. A first-time user never sees a tab row,
+            and nobody has to find a setting to get their 36 pixels back.
+          </p>
+          <p class="specimen-note">closing the last tab opens the home tab (the store already does this)</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── the lab ──────────────────────────── -->
+  <section id="lab">
+    <h2>Try it: the state lab</h2>
+    <p>
+      The strip below is the real markup at the real sizes. Each button runs one transition against it
+      and the readout prints geometry measured from the live DOM: tab widths, strip height, how many
+      dots of each kind, and how far the row has overflowed.
+    </p>
+
+    <div class="lab" data-ui="state-lab">
+      <div class="strip" id="lab-strip" role="tablist" aria-label="Open sessions, demo">
+        <div class="tabs" id="lab-tabs"></div>
+        <button class="tadd" id="lab-add" type="button" aria-label="New tab" title="New tab">+</button>
+        <button class="tmore" id="lab-more" type="button" aria-label="All open tabs" title="All open tabs">▾</button>
+      </div>
+
+      <div class="lab-actions">
+        <button id="act-open" type="button">Open a session</button>
+        <button id="act-run" type="button">Let it run</button>
+        <button id="act-finish" type="button">Finish its turn</button>
+        <button id="act-fail" type="button">Fail a run</button>
+        <button id="act-close" type="button" data-kind="danger">Close the active tab</button>
+        <button id="act-reopen" type="button">Reopen (⇧⌥Z)</button>
+        <button id="act-flood" type="button">Open five more</button>
+        <button id="act-reset" type="button">Restore the window</button>
+      </div>
+
+      <div class="readout" id="lab-readout">measuring…</div>
+      <div class="lab-note" id="lab-note"></div>
+    </div>
+
+    <p class="note">
+      Closing a tab never stops a run: the session lives on the server, the tab is only a pointer. The
+      closed stack holds 10 (<code>MAX_CLOSED</code>), the open list holds 50 (<code>MAX_TABS</code>),
+      both already enforced in <code>stores/tabs.ts</code>.
+    </p>
+  </section>
+
+  <!-- ─────────────────────────────── restore ──────────────────────────── -->
+  <section>
+    <h2>Persistence, in order</h2>
+    <p>
+      “Persistent tab” is not a new promise. It is the promise the session already keeps, made
+      visible. The strip restores in five steps, four of them local, and the network only ever
+      corrects what the window already painted.
+    </p>
+
+    <div class="sequence">
+      <div class="seq">
+        <span class="n">1</span>
+        <div>
+          <div class="what">The window reads its own tab list from <code>localStorage</code>: <code>pabrik-tabs:&lt;windowId&gt;</code>, version 1.</div>
+          <div class="why">Already implemented: <code>parseTabList</code> returns tabs, the active id and the closed stack, and repairs a bad payload to a fresh list instead of throwing. Per-window, not per-account: two browser windows keep two different open sets.</div>
+        </div>
+      </div>
+      <div class="seq">
+        <span class="n">2</span>
+        <div>
+          <div class="what">Labels come from the local session cache in IndexedDB, before any request returns.</div>
+          <div class="why"><code>SessionEngineDb.primeFromCache</code> already holds every session row the sidebar has ever seen, with the server's own name. A cold boot paints seven real names instead of seven “Chat”.</div>
+        </div>
+      </div>
+      <div class="seq">
+        <span class="n">3</span>
+        <div>
+          <div class="what">The live feed fills the dots: <code>workers</code> SSE says which sessions are running, then re-syncs on every reconnect.</div>
+          <div class="why">App.vue already owns this map and re-reads it from the DB when the bus reopens, so a laptop that slept for an hour paints the truth, not the state it left.</div>
+        </div>
+      </div>
+      <div class="seq">
+        <span class="n">4</span>
+        <div>
+          <div class="what">One session-list read reconciles the rest: names, review flags, and which tabs are gone.</div>
+          <div class="why">The same call the sidebar makes. A tab whose session is absent becomes the <em>gone</em> state rather than disappearing silently: a tab vanishing on reload reads as a bug, and silently dropping the user's place is worse.</div>
+        </div>
+      </div>
+      <div class="seq">
+        <span class="n">5</span>
+        <div>
+          <div class="what">The URL is applied last: <code>?tab=</code> names the tab, whose own target names the session.</div>
+          <div class="why">A reload, a deep link and a back button all land on the same tab, because the tab was never the source of truth; the target was.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── plan ─────────────────────────────── -->
+  <section>
+    <h2>What it takes to be real</h2>
+    <p>
+      No new endpoint, no new table, no backend change in P1. The engine, the URL contract, the
+      keyboard map and the per-session live state all ship today; what is missing is a component, two
+      store behaviours, and one small runtime map that turns three existing sources into a dot.
+    </p>
+
+    <dl class="spec">
+      <div class="spec-row">
+        <dt>P1: the strip returns <span class="tagline">visible, no new state</span></dt>
+        <dd>
+          New <code>AppTabStrip.vue</code> mounted as one element inside <code>&lt;main&gt;</code>;
+          tabs from <code>tabsStore.tabs</code>, activation and closing through the existing store
+          actions and <code>applyActiveTabToUrl</code>. Right-click menu (close / close others / close
+          to the right / open in a new window), middle-click close, wheel scroll, drag reorder, the
+          <code>▾</code> overflow list, the one-tab 0px rule. Default flips to on; the Settings switch
+          stays as the escape hatch with honest copy.
+        </dd>
+      </div>
+      <div class="spec-row">
+        <dt>P2: the dot <span class="tagline">the reason it exists</span></dt>
+        <dd>
+          <code>stores/sessionRuntime.ts</code>: sessionId → running / needsYou / failed, merged from
+          <code>processingState</code>, <code>workerActivity</code>, <code>agentError</code>, and the
+          session rows (cache first, one list revalidate on <code>session.updated</code>). The sidebar
+          row gains an “open in this window” mark so the two lists stop being strangers. Optional P2.5:
+          put <code>needs_human_review</code> and <code>last_finish_reason</code> on the
+          <code>SessionEvent</code> so the dot updates without a list refresh: two fields the backend
+          already has on the row.
+        </dd>
+      </div>
+      <div class="spec-row">
+        <dt>P3: restore, rename, gone <span class="tagline">the persistence half</span></dt>
+        <dd>
+          <code>restoreTitlesFromCache()</code> on boot; the <em>gone</em> state after the first
+          session-list answer; a session renamed while the window was closed re-labels itself from the
+          list instead of keeping a stale title. The app bar drops its title when tab mode is on (the
+          strip already says it), so the chrome total stays 80px, and the 44px row keeps its controls.
+        </dd>
+      </div>
+      <div class="spec-row">
+        <dt>P4: adopt, and clean up <span class="tagline">needs the human's answer</span></dt>
+        <dd>
+          On first enable, offer to adopt the last 10 sessions that are waiting for review or were
+          touched in the last 7 days; otherwise start with one home tab and adopt on open. Then delete
+          this wireframe, as the other wireframes are deleted when they ship.
+        </dd>
+      </div>
+    </dl>
+
+    <h3 style="margin-top: 40px;">Files</h3>
+    <div class="files">
+      <div><span><code>src/apps/desktop/src/components/appLayout/AppTabStrip.vue</code></span><span>new: the strip, the tabs, the dot, the overflow list and its menu; presentation only, no navigation logic</span></div>
+      <div><span><code>src/apps/desktop/src/components/AppLayout.vue</code></span><span>one element inside <code>&lt;main&gt;</code> (592 → 594 lines, ceiling 600); all behaviour stays in the store and the existing composable</span></div>
+      <div><span><code>src/apps/desktop/src/stores/tabsStorage.ts</code></span><span><code>readEnabled()</code> default on; storage key unchanged, so an existing preference is respected</span></div>
+      <div><span><code>src/apps/desktop/src/stores/tabs.ts</code></span><span>P3: <code>restoreTitlesFromCache</code>, <code>markGone</code>; nothing else changes: identity, persist, closed stack and rename already ship</span></div>
+      <div><span><code>src/apps/desktop/src/stores/sessionRuntime.ts</code></span><span>new: one reactive map from the three existing sources, plus the <code>session.updated</code> revalidate</span></div>
+      <div><span><code>src/apps/desktop/src/components/pabrik/PabrikConfigEditor.vue</code></span><span>the toggle's copy: what off means now (one surface, no strip) instead of a bare label</span></div>
+      <div><span><code>src/apps/desktop/src/components/views/ChatAppBar.vue</code></span><span>P3: optional title, suppressed when the strip is on</span></div>
+      <div><span><code>src/apps/desktop/src/__tests__/AppTabStrip.spec.ts</code></span><span>new: 0 DOM when disabled, active tone, close → right neighbour, the 0px single-tab rule, middle-click, overflow, aria-selected, keyboard order</span></div>
+      <div><span><code>src/apps/desktop/src/__tests__/tabsStore.restore.spec.ts</code></span><span>new: cache-first labels, gone tab, rename while closed, closed stack of 10</span></div>
+      <div><span><code>src/apps/desktop/src/__tests__/sessionRuntime.spec.ts</code></span><span>new: running beats needs-you, a failed run keeps its name, a reconnect re-syncs</span></div>
+    </div>
+
+    <p class="note">
+      The one thing that must not regress: <code>syncFromTarget</code> is the single funnel every
+      navigation passes through: sidebar, chats list, kanban card, deep link, back button. The strip
+      reads its result and never navigates on its own, which is why a view added later is tabbable
+      without touching this list of files.
+    </p>
+  </section>
+
+  <!-- ─────────────────────────────── rejections ───────────────────────── -->
+  <section>
+    <h2>Not on this page, and why</h2>
+
+    <div class="gaps">
+      <div class="gap">
+        <h3>A full-width strip above the sidebar</h3>
+        <p>
+          Browser-true, and wrong here: the rail's 48px header carries the workspace switcher, which is
+          the app's identity and must stay at the window's top-left corner. The strip also has to sit
+          under the scroll and overlay behaviour of <code>&lt;main&gt;</code>, not above it, so it
+          cannot become window chrome. Cost of the compromise: the strip starts at x = 288, not x = 0.
+        </p>
+      </div>
+      <div class="gap">
+        <h3>Every session in the list, opened as a tab</h3>
+        <p>
+          The list pages 20 at a time and a workspace has hundreds. Opening them all is 50 tabs
+          (<code>MAX_TABS</code>) of noise and an unreadable row. A tab is created the first time a
+          session is opened and then persists until closed. The tab set is a place, not a mirror of
+          the database.
+        </p>
+      </div>
+      <div class="gap">
+        <h3>Deleting the sidebar list now that tabs exist</h3>
+        <p>
+          The list is the inventory: search, pins, rename, delete, projects, documents. The strip is
+          the open set. Two surfaces, two jobs. The failure of the old strip was that it did neither
+          job better than the list.
+        </p>
+      </div>
+      <div class="gap">
+        <h3>Closing a tab deletes the session</h3>
+        <p>
+          No. Closing is forgetting a pointer, the same way closing a browser tab does not delete the
+          page. Deleting stays where it is, in the list's context menu, behind a confirm.
+        </p>
+      </div>
+      <div class="gap">
+        <h3>Syncing the tab set to the server</h3>
+        <p>
+          Tempting and premature. The set is window state, and the app already scopes it per window id;
+          a server copy brings conflict resolution between two windows, a migration, and a second
+          source of truth for something a reload rebuilds in 40ms from local storage.
+        </p>
+      </div>
+      <div class="gap">
+        <h3>Tab groups, pinning, a drag-out new window</h3>
+        <p>
+          Three browser features that each need their own decisions about persistence and identity.
+          The closed stack (10) plus the overflow list cover the real need (getting back to a session
+          you closed) without any of that.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── decisions ───────────────────────── -->
+  <section>
+    <h2>Decisions, and the two I need from you</h2>
+
+    <ul class="decisions">
+      <li>
+        <strong>A tab is a session.</strong> One tab per session id, created on first open, restored on
+        every boot, closed only when you close it. Renaming the session renames the tab; it never
+        creates a second one. <span class="verdict">decided</span>
+      </li>
+      <li>
+        <strong>The dot is the feature.</strong> If the strip only named sessions it would be the
+        sidebar again. The reason to spend 36px is that four sessions can be in four states and the row
+        tells you which one wants a human without being opened. <span class="verdict">decided</span>
+      </li>
+      <li>
+        <strong>One row, no second panel.</strong> The strip lives inside <code>&lt;main&gt;</code>, above
+        the app bar, and costs 36px. It does not touch the rail's geometry or its scroll. <span class="verdict">decided</span>
+      </li>
+      <li>
+        <strong>Strip on by default, and 0px when there is one tab.</strong> The old default-off is what
+        made the feature die; the 0px rule is what makes default-on safe. <span class="verdict">decided</span>
+      </li>
+      <li>
+        <strong>Adopt or start empty on first enable?</strong> My default: offer to adopt the last 10
+        sessions that are waiting for review or were touched in the last 7 days, once, with a button,
+        so a returning user sees their work, and a new one sees nothing. <span class="verdict ask">needs your answer</span>
+      </li>
+      <li>
+        <strong>Should the app bar keep the session title?</strong> My default: drop it in P3 and let the
+        tab own the name. The alternative is the two-name layout in the proposal frame above, which is
+        honest but redundant. <span class="verdict ask">needs your answer</span>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ─────────────────────────────── checks ───────────────────────────── -->
+  <section>
+    <h2>Checks</h2>
+    <div class="checks" id="checks">
+      <div><b>lint.mjs</b>: 0 FAIL, 0 WARN.</div>
+      <div><b>inspect.mjs</b> at 1440, 768 and 390: 0 FAIL, 4 WARN — every one of them listed below with its reason instead of being switched off.</div>
+      <div><b>card-rows</b>: the two flagged rows are the definition lists (the seven facts about the deletion, and the four phases). A spec sheet separates rows with one tone step because it is scanned, not read; the rule is aimed at landing-page card grids with an icon on top.</div>
+      <div><b>no-real-pictures, no-footage</b>: an internal app screen, and a wireframe of it, carries no photography and no clip. The picture floor is met by five interface fragments marked <code>data-ui</code>, which the inspector counts for software: 1144×700 twice, 760×300, 460×336, 1144×195.</div>
+      <div><b>still-page</b>: defended, not fixed. A wireframe of an app screen earns nothing from scroll-entrance animation, and adding motion to a document to satisfy a motion floor fakes the thing the floor proves. The one moving element is the running dot's 2.4s opacity pulse, which is part of the design being specified, and it stops under <code>prefers-reduced-motion</code>.</div>
+      <div><b>Measured in the browser</b> (agent-browser, isolated session, <code>file://</code>): at 1440 the proposal frame is 1144px wide with 7 tabs at 113px each, a 36px strip, a 288px rail and a 44px app bar; the today frame has 0 tabs, no tablist, the same 288 and 44. The state lab drove six transitions: 8 tabs at 129px; 12 tabs collapse to the 108px floor with 264px of row overflow; closing one left 7 at 147px and the closed stack at 1; reopen restored it; and closing down to a single tab collapsed the strip to 0px with its one tab at 220px. At 1024 the 7 tabs sit at the 108px floor and overflow by 184px; at 390 the rail drops out, the tabs sit at 96px and the page itself never scrolls sideways (0px at all three widths).</div>
+      <div><b>Not measured, and said plainly</b>: I cannot see the screenshots this run produces, so nothing here is a claim about how it looks. The claims above are geometry read back from the DOM.</div>
+    </div>
+  </section>
+
+  <p class="provenance">
+    Wireframe for task_1793890522320_3, written 5 November 2026, no product code changed. Sizes and
+    colours are the app's own tokens: rail 288px, app bar 44px, type 10 / 11 / 12 / 14 / 16,
+    <code>#181616</code> content, <code>#12120f</code> chrome, <code>#1D1C19</code> card,
+    <code>#282727</code> active. The deleted strip's behaviour is quoted from
+    <code>git show df3297e54^:src/apps/desktop/src/components/shell/TabBar.vue</code>; the surviving
+    engine from <code>stores/tabs.ts</code>, <code>helpers/tabTarget.ts</code>,
+    <code>composables/useTabShortcuts.ts</code> and <code>components/appLayout/useAppLayoutTabs.ts</code>.
+  </p>
+
+</div>
+
+<script>
+(function () {
+  var SCENE = [
+    { label: 'Chats', state: 'idle', active: false },
+    { label: 'fix zig test output', state: 'needs', active: false },
+    { label: 'durable agent server', state: 'run', active: true },
+    { label: 'wireframe: document folders', state: 'run', active: false },
+    { label: 'release 0.9 smoke run', state: 'failed', active: false },
+    { label: 'Kanban · sprint juli', state: 'idle', active: false },
+    { label: 'design: settings shell', state: 'idle', active: false }
+  ];
+
+  var tabs = SCENE.map(function (t) { return { label: t.label, state: t.state, active: t.active }; });
+  var closed = [];
+  var note = document.getElementById('lab-note');
+  var readout = document.getElementById('lab-readout');
+  var strip = document.getElementById('lab-strip');
+  var holder = document.getElementById('lab-tabs');
+
+  function say(text) { note.textContent = text; }
+
+  function closeSvg() {
+    return '<svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1 1l6 6M7 1l-6 6"/></svg>';
+  }
+
+  function render() {
+    var one = tabs.length <= 1;
+    strip.classList.toggle('empty', one);
+    holder.innerHTML = tabs.map(function (t, i) {
+      return '<div class="tab' + (t.active ? ' on' : '') + (t.state === 'gone' ? ' gone' : '') + '"' +
+        ' role="tab" aria-selected="' + (t.active ? 'true' : 'false') + '" tabindex="0"' +
+        ' title="' + t.label + '">' +
+        '<span class="tdot ' + (t.state === 'idle' ? '' : t.state) + '" aria-hidden="true"></span>' +
+        '<span class="tlabel">' + t.label + '</span>' +
+        '<button class="tclose" type="button" aria-label="Close ' + t.label + '">' + closeSvg() + '</button>' +
+        '</div>';
+    }).join('');
+    var nodes = holder.querySelectorAll('.tab');
+    for (var i = 0; i < nodes.length; i++) {
+      (function (node, index) {
+        node.addEventListener('click', function (event) {
+          if (event.target.closest('.tclose')) return;
+          activate(index);
+        });
+        node.addEventListener('auxclick', function (event) {
+          if (event.button === 1) { event.preventDefault(); closeTab(index); }
+        });
+        node.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(index); }
+        });
+        var claw = node.querySelector('.tclose');
+        if (claw) claw.addEventListener('click', function (event) { event.stopPropagation(); closeTab(index); });
+      })(nodes[i], i);
+    }
+    measure();
+  }
+
+  function measure() {
+    var nodes = holder.querySelectorAll('.tab');
+    var widths = [];
+    for (var i = 0; i < nodes.length; i++) widths.push(Math.round(nodes[i].getBoundingClientRect().width));
+    var min = widths.length ? Math.min.apply(null, widths) : 0;
+    var max = widths.length ? Math.max.apply(null, widths) : 0;
+    var avg = widths.length ? Math.round(widths.reduce(function (a, b) { return a + b; }, 0) / widths.length) : 0;
+    var count = function (state) { return holder.querySelectorAll('.tdot.' + state).length; };
+    var height = Math.round(strip.getBoundingClientRect().height);
+    var overflow = Math.round(holder.scrollWidth - holder.clientWidth);
+    readout.textContent =
+      'tabs ' + tabs.length +
+      ' · strip ' + height + 'px' +
+      ' · tab width min/avg/max ' + min + ' / ' + avg + ' / ' + max + 'px' +
+      ' · dots run ' + count('run') + ' needs ' + count('needs') + ' failed ' + count('failed') +
+      ' · overflow ' + (overflow > 0 ? overflow + 'px' : 'none') +
+      ' · closed stack ' + closed.length;
+  }
+
+  function activate(index) {
+    if (!tabs[index]) return;
+    tabs = tabs.map(function (t, i) { return { label: t.label, state: t.state, active: i === index }; });
+    render();
+    say('active: ' + tabs[index].label + ' · the URL would be ?tab=' + index + ', and the pane below is now this session.');
+  }
+
+  function closeTab(index) {
+    var t = tabs[index];
+    if (!t) return;
+    closed.unshift(t);
+    if (closed.length > 10) closed.pop();
+    tabs = tabs.filter(function (_, i) { return i !== index; });
+    if (t.active && tabs.length) {
+      var next = Math.min(index, tabs.length - 1);
+      tabs = tabs.map(function (x, i) { return { label: x.label, state: x.state, active: i === next }; });
+    }
+    render();
+    if (!tabs.length) { say('No tabs left: the app shows the chats list and the strip is 0px tall.'); return; }
+    if (tabs.length === 1) { say('One tab left: the strip collapses to 0px, exactly like a single-tab browser window.'); return; }
+    say('Closed “' + t.label + '”. The session still runs; ⇧⌥Z reopens it from the closed stack.');
+  }
+
+  function activeIndex() {
+    for (var i = 0; i < tabs.length; i++) if (tabs[i].active) return i;
+    return 0;
+  }
+
+  document.getElementById('act-open').addEventListener('click', function () {
+    var n = tabs.filter(function (t) { return t.label.indexOf('new session') === 0; }).length + 1;
+    var index = activeIndex();
+    tabs.splice(index + 1, 0, { label: 'new session ' + n, state: 'idle', active: true });
+    tabs = tabs.map(function (t, i) { return { label: t.label, state: t.state, active: i === index + 1 }; });
+    render();
+    say('A session opened and its tab landed beside the active one, the browser rule, not append-at-the-end.');
+  });
+
+  document.getElementById('act-run').addEventListener('click', function () {
+    var i = activeIndex();
+    tabs[i].state = 'run';
+    render();
+    say('“' + tabs[i].label + '” is running: blue dot, elapsed time on hover.');
+  });
+
+  document.getElementById('act-finish').addEventListener('click', function () {
+    var i = activeIndex();
+    tabs[i].state = 'needs';
+    render();
+    say('The turn stopped and the session wants you. This is the dot that has to survive you being in another tab.');
+  });
+
+  document.getElementById('act-fail').addEventListener('click', function () {
+    var i = activeIndex();
+    tabs[i].state = 'failed';
+    render();
+    say('The run failed. The label keeps its name so you can tell which run died.');
+  });
+
+  document.getElementById('act-close').addEventListener('click', function () {
+    closeTab(activeIndex());
+  });
+
+  document.getElementById('act-reopen').addEventListener('click', function () {
+    if (!closed.length) { say('Nothing in the closed stack yet.'); return; }
+    var t = closed.shift();
+    t.active = true;
+    tabs = tabs.map(function (x) { return { label: x.label, state: x.state, active: false }; });
+    tabs.push(t);
+    render();
+    say('Reopened “' + t.label + '”. Ten entries deep, then the oldest falls off.');
+  });
+
+  document.getElementById('act-flood').addEventListener('click', function () {
+    var at = activeIndex();
+    var added = [];
+    for (var i = 1; i <= 5; i++) {
+      added.push({ label: 'audit · run ' + i, state: i % 2 ? 'run' : 'needs', active: i === 5 });
+    }
+    tabs = tabs.map(function (t) { return { label: t.label, state: t.state, active: false }; });
+    tabs = tabs.slice(0, at + 1).concat(added, tabs.slice(at + 1));
+    render();
+    say('Twelve tabs. The row scrolls now, ▾ lists all twelve with their dots, and no label was shrunk to a letter.');
+  });
+
+  document.getElementById('act-reset').addEventListener('click', function () {
+    tabs = SCENE.map(function (t) { return { label: t.label, state: t.state, active: t.active }; });
+    closed = [];
+    render();
+    say('The window as it restores from localStorage: seven tabs, one home, four sessions, two items.');
+  });
+
+  document.getElementById('lab-add').addEventListener('click', function () {
+    document.getElementById('act-open').click();
+  });
+
+  document.getElementById('lab-more').addEventListener('click', function () {
+    say('▾ lists all ' + tabs.length + ' open tabs with their state, newest first, and takes a name to filter by.');
+  });
+
+  render();
+
+  // ── readings for the two frames ────────────────────────────────────────
+  function frameReading(frameId, elId, note) {
+    var frame = document.getElementById(frameId);
+    var el = document.getElementById(elId);
+    if (!frame || !el) return;
+    var stripEl = frame.querySelector('.strip');
+    var frameTabs = frame.querySelectorAll('.tab');
+    var widths = [];
+    for (var i = 0; i < frameTabs.length; i++) widths.push(Math.round(frameTabs[i].getBoundingClientRect().width));
+    var stripH = stripEl ? Math.round(stripEl.getBoundingClientRect().height) : 0;
+    var bar = Math.round(frame.querySelector('.appbar').getBoundingClientRect().height);
+    var railW = Math.round(frame.querySelector('.rail').getBoundingClientRect().width);
+    var dots = function (s) { return frame.querySelectorAll('.tdot.' + s).length; };
+    el.innerHTML = note +
+      ' tab width ' + (widths.length ? Math.min.apply(null, widths) + '–' + Math.max.apply(null, widths) + 'px' : 'none') +
+      ' · strip ' + stripH + 'px · rail ' + railW + 'px · app bar ' + bar + 'px · dots ' + dots('run') + ' running / ' + dots('needs') + ' needs you / ' + dots('failed') + ' failed.';
+  }
+
+  frameReading('frame-proposed', 'read-proposed',
+    '<b>7 tabs</b> (1 home, 4 sessions, 2 items) ·');
+
+  (function () {
+    var frames = document.querySelectorAll('.frame');
+    var todayFrame = frames[0];
+    var el = document.getElementById('read-today');
+    if (!todayFrame || !el) return;
+    var bar = Math.round(todayFrame.querySelector('.appbar').getBoundingClientRect().height);
+    var railW = Math.round(todayFrame.querySelector('.rail').getBoundingClientRect().width);
+    var strips = todayFrame.querySelectorAll('.strip, [role="tablist"]').length;
+    el.innerHTML = '<b>0 tabs</b> · strip <b>0px</b> · rail ' + railW + 'px · app bar ' + bar +
+      'px carries the session name · <b>' + strips + '</b> tablists in the DOM.';
+  })();
+
+  (function () {
+    var narrow = document.querySelector('.frame.narrow');
+    var el = document.getElementById('read-narrow');
+    if (!narrow || !el) return;
+    var frameTabs = narrow.querySelectorAll('.tab');
+    var widths = [];
+    for (var i = 0; i < frameTabs.length; i++) widths.push(Math.round(frameTabs[i].getBoundingClientRect().width));
+    var holderEl = narrow.querySelector('.tabs');
+    var overflow = Math.round(holderEl.scrollWidth - holderEl.clientWidth);
+    var railW = Math.round(narrow.querySelector('.rail').getBoundingClientRect().width);
+    el.innerHTML = '<b>' + frameTabs.length + ' tabs</b> in ' +
+      Math.round(narrow.querySelector('.strip').getBoundingClientRect().width) + 'px of strip · tab width ' +
+      (widths.length ? Math.min.apply(null, widths) + '–' + Math.max.apply(null, widths) + 'px' : 'none') +
+      ' · collapsed rail ' + railW + 'px · row overflow ' + (overflow > 0 ? overflow + 'px' : 'none') + '.';
+  })();
+})();
+</script>
+</body>
+</html>
