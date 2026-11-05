@@ -86,7 +86,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-80': !parsed.success }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-80': !parsed.success }"
   >
     <ToolCardHeader
       :tool-name="props.toolName"
@@ -101,13 +101,13 @@ const handleToggle = (next: boolean) => {
     />
 
     <div v-if="isExpanded" class="border-t border-[var(--color-border)]">
-      <div v-if="!parsed.success" class="flex gap-2 px-2 py-1.5 text-red-500 text-dense">
+      <div v-if="!parsed.success" class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense">
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error || 'unknown error' }}</span>
       </div>
       <pre
         v-else
-        class="p-2 m-0 bg-black/[0.02] whitespace-pre-wrap break-words overflow-x-auto leading-relaxed text-[var(--semantic-text)] text-dense hover:bg-violet-500/5"
+        class="p-2 m-0 bg-[var(--semantic-wash)] whitespace-pre-wrap break-words overflow-x-auto leading-relaxed text-[var(--semantic-text)] text-dense hover:bg-[var(--tint-accent)]"
         data-testid="mcp-tool-output"
         >{{ parsed.prettyOutput || '(empty)' }}</pre>
       <ToolParameters :parameters="props.parameters" />

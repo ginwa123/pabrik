@@ -408,16 +408,16 @@ defineExpose({ selectCwd })
       v-if="errorMessage"
       class="shrink-0 px-5 py-3 text-body"
       style="
-        background-color: rgba(239, 68, 68, 0.12);
+        background-color: var(--tint-error);
         border-bottom: 1px solid var(--color-border);
-        color: rgb(220, 38, 38);
+        color: var(--semantic-error);
         position: relative;
         z-index: 10;
       "
       role="alert"
       data-testid="kanban-task-detail-error"
     >
-      <div class="px-3 py-2 rounded-lg" style="border: 1px solid rgba(239, 68, 68, 0.4)">
+      <div class="px-3 py-2 rounded-lg" style="border: 1px solid var(--tint-error-border)">
         {{ errorMessage }}
       </div>
     </div>

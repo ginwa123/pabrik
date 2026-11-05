@@ -333,7 +333,7 @@ defineExpose({ startCreate })
             <button
               @click="confirmDelete"
               class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-200"
-              style="background-color: rgba(239, 68, 68, 0.1); color: var(--color-red)"
+              style="background-color: var(--tint-error); color: var(--color-red)"
               title="Delete memory"
             >
               <svg

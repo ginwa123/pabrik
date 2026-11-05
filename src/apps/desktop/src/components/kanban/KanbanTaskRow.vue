@@ -332,7 +332,7 @@ const runAgentFromMenu = () => {
         <span
           v-if="props.task.is_blocked"
           class="shrink-0 text-micro px-1.5 rounded font-medium"
-          style="background: rgba(249, 115, 22, 0.15); color: #fb923c"
+          style="background: var(--color-orange); color: var(--color-orange)"
           :title="blockedTitle"
           data-testid="kanban-row-blocked"
           >⛔ blocked by {{ blockedCount }}</span
@@ -395,7 +395,7 @@ const runAgentFromMenu = () => {
 
       <button
         type="button"
-        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong) hover:text-blue-400"
+        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong) hover:text-[var(--semantic-info)]"
         style="color: var(--semantic-text-dim)"
         title="Rename task"
         aria-label="Rename task"
@@ -432,7 +432,7 @@ const runAgentFromMenu = () => {
 
       <button
         type="button"
-        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong) hover:text-red-400"
+        class="w-6 h-6 flex items-center justify-center rounded opacity-70 hover:opacity-100 hover:bg-(--hover-bg-strong) hover:text-[var(--semantic-error)]"
         style="color: var(--semantic-text-dim)"
         title="Delete task"
         aria-label="Delete task"

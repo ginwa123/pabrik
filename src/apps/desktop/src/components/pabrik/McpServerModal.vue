@@ -312,7 +312,7 @@ defineExpose({ onSave })
               :style="{
                 borderColor: 'var(--color-violet)',
                 backgroundColor: 'var(--color-violet)',
-                color: 'var(--semantic-bg)',
+                color: 'var(--semantic-on-accent)',
               }"
               disabled
             >
@@ -492,7 +492,7 @@ defineExpose({ onSave })
               :style="{
                 borderColor: 'var(--color-violet)',
                 backgroundColor: 'var(--color-violet)',
-                color: 'var(--semantic-bg)',
+                color: 'var(--semantic-on-accent)',
                 opacity: httpValid ? 1 : 0.5,
                 cursor: httpValid ? 'pointer' : 'not-allowed',
               }"
@@ -570,7 +570,7 @@ defineExpose({ onSave })
               :style="{
                 borderColor: 'var(--color-violet)',
                 backgroundColor: 'var(--color-violet)',
-                color: 'var(--semantic-bg)',
+                color: 'var(--semantic-on-accent)',
               }"
               disabled
             >
@@ -812,7 +812,7 @@ defineExpose({ onSave })
               :style="{
                 borderColor: 'var(--color-violet)',
                 backgroundColor: 'var(--color-violet)',
-                color: 'var(--semantic-bg)',
+                color: 'var(--semantic-on-accent)',
                 opacity: stdioValid ? 1 : 0.5,
                 cursor: stdioValid ? 'pointer' : 'not-allowed',
               }"

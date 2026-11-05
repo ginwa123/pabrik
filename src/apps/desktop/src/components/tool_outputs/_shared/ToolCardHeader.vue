@@ -96,7 +96,7 @@ const openInEditorClick = (e: Event) => {
 
 <template>
   <div
-    class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+    class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
     :class="{ 'cursor-default': !expandable }"
     role="button"
     :tabindex="expandable ? 0 : -1"
@@ -117,15 +117,15 @@ const openInEditorClick = (e: Event) => {
     <span
       v-if="running"
       data-testid="tool-card-running"
-      class="text-micro text-yellow-500 animate-pulse shrink-0"
+      class="text-micro text-[var(--semantic-warning)] animate-pulse shrink-0"
       >running…</span
     >
-    <span class="text-dense font-semibold" :class="success ? 'text-green-500' : 'text-red-500'">
+    <span class="text-dense font-semibold" :class="success ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'">
       {{ success ? '✓' : '✗' }}
     </span>
     <button
       v-if="showCopy && hasCopyValue"
-      class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+      class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
       :title="`Copy ${toolName}`"
       @click="copyToClipboard"
     >
@@ -133,7 +133,7 @@ const openInEditorClick = (e: Event) => {
     </button>
     <button
       v-if="canOpenInEditor"
-      class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 transition-opacity"
+      class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] transition-opacity"
       title="Open in code editor"
       @click="openInEditorClick"
     >

@@ -436,7 +436,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-80': !!parsed.error }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-80': !!parsed.error }"
     data-testid="present-files-card"
   >
     <ToolCardHeader
@@ -451,7 +451,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
     />
 
     <div v-if="isExpanded" class="border-t border-[var(--color-border)]">
-      <div v-if="parsed.error" class="flex gap-2 px-2 py-1.5 text-red-500 text-dense">
+      <div v-if="parsed.error" class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense">
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error }}</span>
       </div>
@@ -459,7 +459,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
         <div
           v-for="(f, idx) in files"
           :key="`${f.path}-${idx}`"
-          class="flex flex-col gap-1.5 rounded-md border border-[var(--color-border)] bg-black/[0.02] px-2 py-1.5 hover:bg-violet-500/5"
+          class="flex flex-col gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--semantic-wash)] px-2 py-1.5 hover:bg-[var(--tint-accent)]"
           :data-testid="`present-files-row-${idx}`"
         >
           <div class="flex items-center gap-2">
@@ -479,7 +479,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
               <a
                 :href="downloadUrl(f)"
                 :download="basenameOfPath(f.path)"
-                class="truncate font-semibold text-[var(--semantic-text)] hover:text-violet-500 hover:underline"
+                class="truncate font-semibold text-[var(--semantic-text)] hover:text-[var(--semantic-accent)] hover:underline"
                 :data-testid="`present-files-download-${idx}`"
                 :title="f.path"
                 >{{ displayName(f) }}</a
@@ -489,7 +489,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
             <a
               :href="downloadUrl(f)"
               :download="basenameOfPath(f.path)"
-              class="shrink-0 rounded px-1.5 py-0.5 text-body leading-none hover:bg-violet-500/10"
+              class="shrink-0 rounded px-1.5 py-0.5 text-body leading-none hover:bg-[var(--tint-accent)]"
               :data-testid="`present-files-dlbtn-${idx}`"
               :title="`Download ${basenameOfPath(f.path)}`"
               aria-label="Download file"
@@ -502,7 +502,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
             no intrinsic size and would pop the card taller mid-scroll. -->
           <div
             v-if="isImage(f)"
-            class="flex justify-center rounded bg-black/[0.04] p-1.5"
+            class="flex justify-center rounded bg-[var(--semantic-wash-strong)] p-1.5"
             :class="{ 'min-h-40 items-center animate-pulse': !inlineImageLoaded[f.path] }"
           >
             <img
@@ -561,13 +561,13 @@ const openInNewTab = (f: ParsedPresentFile) => {
                 >File too large for inline HTML preview ({{ fileMeta(f) }}) — open in a new tab to
                 view.</span
               >
-              <span v-else class="text-red-500"
+              <span v-else class="text-[var(--semantic-error)]"
                 >Preview failed to load ({{ htmlByPath[f.path]!.error }}) — open in a new tab to
                 view.</span
               >
             </div>
             <div
-              class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-black/[0.02] px-2 py-1.5"
+              class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--semantic-wash)] px-2 py-1.5"
             >
               <button
                 type="button"
@@ -613,13 +613,13 @@ const openInNewTab = (f: ParsedPresentFile) => {
                 >File too large for inline PDF preview ({{ fileMeta(f) }}) — open in a new tab to
                 view.</span
               >
-              <span v-else class="text-red-500"
+              <span v-else class="text-[var(--semantic-error)]"
                 >Preview failed to load ({{ pdfByPath[f.path]!.error }}) — open in a new tab to
                 view.</span
               >
             </div>
             <div
-              class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-black/[0.02] px-2 py-1.5"
+              class="flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--semantic-wash)] px-2 py-1.5"
             >
               <button
                 type="button"
@@ -653,7 +653,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
               class="px-1 py-2 text-[var(--semantic-text-dim)]"
             >
               <div>Loading preview…</div>
-              <div class="mt-2 min-h-32 animate-pulse rounded bg-black/[0.06]" aria-hidden="true" />
+              <div class="mt-2 min-h-32 animate-pulse rounded bg-[var(--semantic-wash-strong)]" aria-hidden="true" />
             </div>
             <div
               v-else-if="textByPath[f.path]!.status === 'skipped'"
@@ -661,7 +661,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
             >
               File too large for inline text preview ({{ fileMeta(f) }}) — download to view.
             </div>
-            <div v-else-if="textByPath[f.path]!.status === 'error'" class="px-1 py-2 text-red-500">
+            <div v-else-if="textByPath[f.path]!.status === 'error'" class="px-1 py-2 text-[var(--semantic-error)]">
               Preview failed to load ({{ textByPath[f.path]!.error }}) — download to view.
             </div>
             <div v-else class="overflow-hidden rounded border border-[var(--color-border)]">
@@ -672,7 +672,7 @@ const openInNewTab = (f: ParsedPresentFile) => {
               />
               <div
                 v-if="textByPath[f.path]!.truncated"
-                class="border-t border-[var(--color-border)] bg-black/[0.02] px-2 py-1 text-[var(--semantic-text-dim)]"
+                class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)] px-2 py-1 text-[var(--semantic-text-dim)]"
               >
                 Truncated for inline display — download for the full file.
               </div>

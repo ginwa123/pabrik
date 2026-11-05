@@ -27,16 +27,16 @@ const serverDetail = computed((): string | null => {
 
 <template>
   <div
-    class="agent-error-card rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2 text-body"
+    class="agent-error-card rounded-xl border border-[var(--tint-error-border)] border-l-2 border-l-[var(--semantic-error)] bg-[var(--semantic-card-bg)] px-3 py-2 text-body"
     data-testid="agent-error-card"
     role="alert"
   >
     <header class="flex items-center gap-2 select-none">
-      <span aria-hidden="true" class="text-red-500">⚠</span>
-      <span class="font-medium text-red-500">Agent error</span>
+      <span aria-hidden="true" class="text-[var(--semantic-error)]">⚠</span>
+      <span class="font-medium text-[var(--semantic-error)]">Agent error</span>
       <span
         v-if="retryLabel"
-        class="rounded-full bg-red-500/15 px-2 py-0.5 text-dense text-red-400"
+        class="rounded-full border border-[var(--tint-error-border)] px-2 py-0.5 text-dense text-[var(--semantic-error)]"
         data-testid="agent-error-retry"
       >retry {{ retryLabel }}</span>
       <span
@@ -52,7 +52,7 @@ const serverDetail = computed((): string | null => {
 
     <div
       v-if="serverDetail"
-      class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/20 px-2 py-1.5 font-mono text-dense text-red-300"
+      class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-[var(--semantic-code-bg)] px-2 py-1.5 font-mono text-dense text-[var(--semantic-text)]"
       data-testid="agent-error-detail"
     >{{ serverDetail }}</div>
   </div>

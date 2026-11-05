@@ -589,27 +589,27 @@ const handleClose = () => {
   user-select: none;
 }
 .diff-row-add {
-  background-color: rgba(135, 169, 135, 0.1);
+  background-color: var(--tint-success);
 }
 .diff-row-remove {
-  background-color: rgba(196, 116, 110, 0.1);
+  background-color: var(--tint-error);
 }
 .diff-row-hunk {
   color: var(--color-blue);
-  background-color: rgba(139, 164, 176, 0.08);
+  background-color: var(--tint-info);
 }
 
 .code-row:hover {
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--semantic-wash);
 }
 
 /* The row reached from the diff review's "open at this line" / ?line=N. */
 .code-row-target {
-  background-color: rgba(139, 164, 176, 0.14);
+  background-color: var(--tint-info);
 }
 
 .code-row-target .code-gutter {
-  background-color: rgba(139, 164, 176, 0.14);
+  background-color: var(--tint-info);
   border-right-color: var(--color-blue);
   color: var(--semantic-text);
 }

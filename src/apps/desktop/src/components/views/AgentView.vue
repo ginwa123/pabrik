@@ -638,7 +638,7 @@ function handleClearAllVisible() {
                 type="button"
                 @click="emit('removeKnowledge', k.id)"
                 data-testid="agent-remove-knowledge"
-                class="text-dense shrink-0 opacity-40 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded hover:bg-red-500/10"
+                class="text-dense shrink-0 opacity-40 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 rounded hover:bg-[var(--tint-error)]"
                 style="color: var(--color-red);"
                 :aria-label="`Remove ${k.label || basename(k.file_path)}`"
                 title="Remove this knowledge file"

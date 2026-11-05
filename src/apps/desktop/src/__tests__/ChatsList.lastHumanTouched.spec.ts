@@ -209,7 +209,7 @@ describe('ChatsList - Migration 082 time pill + stale-dot display', () => {
 
     const dot = wrapper.find('[data-testid="chat-stale-dot"]')
     expect(dot.exists()).toBe(true)
-    expect(dot.classes()).toContain('bg-amber-400')
+    expect(dot.classes()).toContain('bg-[var(--semantic-warning)]')
     expect(dot.attributes('title')).toBe('AI is still working — your last touch was earlier')
   })
 

@@ -303,7 +303,7 @@ const focusRow = (event: MouseEvent) => {
 
 .menu-row--danger:hover,
 .menu-row--danger:focus-visible {
-  background: rgba(196, 116, 110, 0.12);
+  background: var(--tint-error);
 }
 
 .menu-row--busy {

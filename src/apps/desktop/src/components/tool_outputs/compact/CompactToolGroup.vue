@@ -66,7 +66,7 @@ function toggle(): void {
     <div v-if="isRun" class="tool-item">
       <div class="chat-tool-card" data-testid="compact-tool-group">
         <div
-          class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+          class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
           role="button"
           tabindex="0"
           :aria-expanded="open"

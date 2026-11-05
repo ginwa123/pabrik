@@ -106,7 +106,7 @@ describe('GenerateImage', () => {
     expect(wrapper.text()).toContain('✗')
     expect(wrapper.text()).not.toContain('✓')
     expect(wrapper.find('[data-testid="generate-image-card"]').classes()).toContain(
-      'border-red-500/50',
+      'border-[var(--tint-error-border)]',
     )
   })
 

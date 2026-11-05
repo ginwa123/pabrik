@@ -184,7 +184,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !parsed.success }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !parsed.success }"
     data-testid="used-tools"
   >
     <ToolCardHeader
@@ -202,13 +202,13 @@ const handleToggle = (next: boolean) => {
 
     <div
       v-if="isExpanded"
-      class="border-t border-[var(--color-border)] bg-black/[0.02]"
+      class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]"
       data-testid="used-tools-body"
     >
       <!-- Error body — visible when expanded AND the call failed. -->
       <div
         v-if="parsed.error"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense"
         data-testid="used-tools-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
@@ -264,7 +264,7 @@ const handleToggle = (next: boolean) => {
               }}</span>
               <span
                 v-if="row.isMcp"
-                class="text-micro px-1 rounded bg-green-500/10 text-green-500"
+                class="text-micro px-1 rounded bg-[var(--tint-success)] text-[var(--semantic-success)]"
                 data-testid="used-tools-mcp-chip"
                 >mcp</span
               >

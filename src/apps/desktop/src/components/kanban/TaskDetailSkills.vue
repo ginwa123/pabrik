@@ -44,7 +44,7 @@ const skillPickerRef = ref<HTMLElement | null>(null)
               <span
                 v-if="selectedSkillCount > 0"
                 class="shrink-0 text-micro px-1.5 rounded-full"
-                style="background-color: rgba(137, 146, 167, 0.24)"
+                style="background-color: var(--tint-accent)"
                 data-testid="kanban-task-detail-skill-picker-count"
                 >{{ selectedSkillCount }}</span
               >
@@ -140,14 +140,14 @@ const skillPickerRef = ref<HTMLElement | null>(null)
               v-for="name in selectedSkills"
               :key="name"
               class="inline-flex items-center gap-1 text-meta px-1.5 py-0.5 rounded font-medium"
-              style="background-color: rgba(137, 146, 167, 0.16); color: var(--semantic-text)"
+              style="background-color: var(--tint-accent); color: var(--semantic-text)"
               :data-testid="`kanban-task-detail-skill-chip-${name}`"
             >
               {{ name }}
               <button
                 type="button"
                 @click="toggleSkill(name)"
-                class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-black/20"
+                class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-[var(--semantic-wash-strong)]"
                 :aria-label="`Remove skill ${name}`"
                 :data-testid="`kanban-task-detail-skill-chip-remove-${name}`"
               >

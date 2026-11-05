@@ -106,7 +106,7 @@ function maskValue(v: string): string {
               <span
                 class="w-3.5 h-3.5 rounded-full"
                 :style="(server.enabled ?? true)
-                  ? { backgroundColor: 'var(--semantic-bg)' }
+                  ? { backgroundColor: 'var(--semantic-on-accent)' }
                   : { backgroundColor: 'var(--semantic-text-dim)' }"
               ></span>
             </button>

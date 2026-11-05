@@ -285,19 +285,19 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
       'div',
       {
         class:
-          'w-full px-2 py-0.5 text-[var(--semantic-text-muted)] italic bg-black/[0.02] border-y border-[var(--color-border)]',
+          'w-full px-2 py-0.5 text-[var(--semantic-text-muted)] italic bg-[var(--semantic-wash)] border-y border-[var(--color-border)]',
         'data-hunk': idx,
       },
       row.text,
     )
   }
   let rowBgClass = ''
-  if (row.kind === 'delete') rowBgClass = '!bg-red-400/15'
-  else if (row.kind === 'insert') rowBgClass = '!bg-green-400/15'
+  if (row.kind === 'delete') rowBgClass = '!bg-[var(--tint-error)]'
+  else if (row.kind === 'insert') rowBgClass = '!bg-[var(--tint-success)]'
   // ...but the +/- sign keeps its red/green: it is the only place in the
   // unified view that names the direction once the text is syntax-colored.
   const signColorClass =
-    row.kind === 'delete' ? 'text-red-500' : row.kind === 'insert' ? 'text-green-500' : ''
+    row.kind === 'delete' ? 'text-[var(--semantic-error)]' : row.kind === 'insert' ? 'text-[var(--semantic-success)]' : ''
 
   // Unified view: prefer the after-line for click (that's the file's new state).
   const jumpLine = row.afterLine ?? row.beforeLine
@@ -324,7 +324,7 @@ function renderUnifiedRow(row: UnifiedRow, idx: number, language: string) {
   return h(
     'div',
     {
-      class: ['flex w-full hover:bg-violet-500/5', rowBgClass],
+      class: ['flex w-full hover:bg-[var(--tint-accent)]', rowBgClass],
       'data-row': idx,
       'data-kind': row.kind,
       'data-after-line': row.afterLine ?? undefined,
@@ -383,7 +383,7 @@ void readMode
   >
     <!-- Header: file-path title, change count, mode toggle -->
     <div
-      class="flex items-center justify-between gap-2 px-2 py-1 border-b border-[var(--color-border)] bg-black/[0.02] text-dense"
+      class="flex items-center justify-between gap-2 px-2 py-1 border-b border-[var(--color-border)] bg-[var(--semantic-wash)] text-dense"
     >
       <div class="flex items-center gap-2 truncate">
         <span class="text-[var(--color-violet)] font-semibold">diff</span>
@@ -404,8 +404,8 @@ void readMode
             class="px-2 py-0.5 text-dense border-none cursor-pointer"
             :class="
               mode === 'split'
-                ? 'bg-[var(--color-violet)] text-white'
-                : 'bg-transparent text-[var(--semantic-text-muted)] hover:bg-violet-500/10'
+                ? 'bg-[var(--color-violet)] text-[var(--semantic-on-accent)]'
+                : 'bg-transparent text-[var(--semantic-text-muted)] hover:bg-[var(--tint-accent)]'
             "
             @click="setMode('split')"
           >
@@ -416,8 +416,8 @@ void readMode
             class="px-2 py-0.5 text-dense border-none cursor-pointer"
             :class="
               mode === 'unified'
-                ? 'bg-[var(--color-violet)] text-white'
-                : 'bg-transparent text-[var(--semantic-text-muted)] hover:bg-violet-500/10'
+                ? 'bg-[var(--color-violet)] text-[var(--semantic-on-accent)]'
+                : 'bg-transparent text-[var(--semantic-text-muted)] hover:bg-[var(--tint-accent)]'
             "
             @click="setMode('unified')"
           >
@@ -431,7 +431,7 @@ void readMode
     <div v-if="mode === 'split'" class="flex divide-x divide-[var(--color-border)]">
       <div class="flex-1 min-w-0">
         <div
-          class="px-2 py-0.5 text-dense font-semibold uppercase bg-black/[0.02] border-b border-[var(--color-border)] text-red-500"
+          class="px-2 py-0.5 text-dense font-semibold uppercase bg-[var(--semantic-wash)] border-b border-[var(--color-border)] text-[var(--semantic-error)]"
         >
           Before
         </div>
@@ -439,7 +439,7 @@ void readMode
       </div>
       <div class="flex-1 min-w-0">
         <div
-          class="px-2 py-0.5 text-dense font-semibold uppercase bg-black/[0.02] border-b border-[var(--color-border)] text-green-500"
+          class="px-2 py-0.5 text-dense font-semibold uppercase bg-[var(--semantic-wash)] border-b border-[var(--color-border)] text-[var(--semantic-success)]"
         >
           After
         </div>

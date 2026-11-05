@@ -196,9 +196,9 @@ const handleKeydown = (event: KeyboardEvent) => {
               v-else-if="errorMessage"
               class="px-3 py-2 rounded-lg text-body"
               style="
-                background-color: rgba(239, 68, 68, 0.12);
-                border: 1px solid rgba(239, 68, 68, 0.4);
-                color: rgb(220, 38, 38);
+                background-color: var(--tint-error);
+                border: 1px solid var(--tint-error-border);
+                color: var(--semantic-error);
               "
               role="alert"
               data-testid="file-preview-modal-error"

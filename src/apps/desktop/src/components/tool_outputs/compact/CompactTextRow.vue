@@ -29,7 +29,7 @@ function toggle(): void {
 <template>
   <div class="px-2 py-0.5" :data-testid="`${testId}-row`">
     <div
-      class="flex items-center gap-2 cursor-pointer select-none rounded hover:bg-violet-500/5"
+      class="flex items-center gap-2 cursor-pointer select-none rounded hover:bg-[var(--tint-accent)]"
       role="button"
       tabindex="0"
       :aria-expanded="open"

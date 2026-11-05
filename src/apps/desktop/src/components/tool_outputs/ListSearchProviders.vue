@@ -65,7 +65,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !success }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !success }"
     data-testid="list-search-providers-card"
   >
     <ToolCardHeader
@@ -80,10 +80,10 @@ const handleToggle = (next: boolean) => {
       @update:expanded="handleToggle"
     />
 
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <div
         v-if="!success"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense border-b border-dashed border-[var(--color-border)]"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense border-b border-dashed border-[var(--color-border)]"
         data-testid="list-search-providers-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
@@ -122,7 +122,7 @@ const handleToggle = (next: boolean) => {
             >curl — put the key where {key} is</span
           >
           <pre
-            class="p-1.5 m-0 whitespace-pre-wrap break-words max-w-full min-w-0 overflow-x-auto rounded-sm bg-black/[0.03] text-[var(--semantic-text)] text-dense"
+            class="p-1.5 m-0 whitespace-pre-wrap break-words max-w-full min-w-0 overflow-x-auto rounded-sm bg-[var(--semantic-wash)] text-[var(--semantic-text)] text-dense"
             data-testid="search-provider-curl"
             >{{ provider.curl }}</pre
           >

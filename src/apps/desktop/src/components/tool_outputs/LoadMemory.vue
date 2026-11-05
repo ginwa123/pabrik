@@ -274,12 +274,12 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': isError }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': isError }"
     data-testid="load-memory"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -295,7 +295,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
       <!-- "showing N of M" badge when paginated -->
       <span
         v-if="isPaginated"
-        class="text-micro font-medium px-1.5 py-0.5 rounded bg-violet-500/10 text-[var(--color-violet)] shrink-0"
+        class="text-micro font-medium px-1.5 py-0.5 rounded bg-[var(--tint-accent)] text-[var(--color-violet)] shrink-0"
         :title="`Page contains ${count} hits out of ${totalCount} total matches`"
         data-testid="load-memory-page-badge"
       >
@@ -305,20 +305,20 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
       <!-- "with content" pill when with_content=true was passed -->
       <span
         v-if="withContent && hasEntries"
-        class="text-micro font-medium px-1.5 py-0.5 rounded bg-violet-500/10 text-[var(--color-violet)] shrink-0"
+        class="text-micro font-medium px-1.5 py-0.5 rounded bg-[var(--tint-accent)] text-[var(--color-violet)] shrink-0"
         title="Caller passed with_content=true — full bodies are available below"
         data-testid="load-memory-with-content-badge"
       >
         with content
       </span>
 
-      <span v-if="isError" class="text-red-500 text-micro font-medium shrink-0"> Error </span>
+      <span v-if="isError" class="text-[var(--semantic-error)] text-micro font-medium shrink-0"> Error </span>
 
       <!-- Live badge (tool call underway, envelope still empty) -->
       <span
         v-if="isRunning"
         data-testid="load-memory-running"
-        class="text-micro text-yellow-500 animate-pulse shrink-0"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse shrink-0"
       >
         running…
       </span>
@@ -335,7 +335,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
          user sees the failure without an extra click. -->
     <div
       v-if="isError"
-      class="border-t border-[var(--color-border)] px-3 py-2 text-red-500 text-meta break-words"
+      class="border-t border-[var(--color-border)] px-3 py-2 text-[var(--semantic-error)] text-meta break-words"
       data-testid="load-memory-error"
     >
       {{ errorMessage }}
@@ -356,13 +356,13 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
     <!-- Entry list — only when expanded and there are entries. -->
     <div
       v-if="isExpanded && hasEntries && !isError"
-      class="border-t border-[var(--color-border)] bg-black/[0.02]"
+      class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]"
       data-testid="load-memory-entries"
     >
       <div
         v-for="(entry, idx) in entries"
         :key="entry.id || idx"
-        class="px-3 py-2 text-[var(--semantic-text)] hover:bg-violet-500/5 border-b border-dashed border-[var(--color-border)] last:border-b-0"
+        class="px-3 py-2 text-[var(--semantic-text)] hover:bg-[var(--tint-accent)] border-b border-dashed border-[var(--color-border)] last:border-b-0"
         data-testid="load-memory-entry"
       >
         <!-- Top row: id + copy + tags chips + timestamps -->
@@ -419,7 +419,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
           :data-testid="`load-memory-entry-snippet-${idx}`"
         >
           <template v-for="(seg, segIdx) in parseSnippet(entry.snippet)" :key="segIdx">
-            <mark v-if="seg.match" class="bg-yellow-500/30 text-inherit rounded px-0.5">
+            <mark v-if="seg.match" class="bg-[var(--tint-warning)] text-inherit rounded px-0.5">
               {{ seg.text }}
             </mark>
             <span v-else>{{ seg.text }}</span>
@@ -439,7 +439,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
               {{ isContentExpanded(entry.id) ? 'Hide content' : 'Show content' }}
               <span
                 v-if="entry.content_truncated"
-                class="text-orange-500"
+                class="text-[var(--color-orange)]"
                 title="Backend truncated this content to fit the 2 KiB context budget"
               >
                 (truncated)
@@ -495,8 +495,8 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
 .tag-chip {
   font-family: monospace;
   font-size: var(--text-micro);
-  background-color: rgba(99, 102, 241, 0.12);
-  color: rgb(99, 102, 241);
+  background-color: var(--tint-accent);
+  color: var(--semantic-accent);
   padding: 1px 5px;
   border-radius: 3px;
   white-space: nowrap;

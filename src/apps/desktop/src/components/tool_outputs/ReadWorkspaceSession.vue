@@ -488,12 +488,12 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="isError ? 'border-red-500/50 opacity-90' : ''"
+    :class="isError ? 'border-[var(--tint-error-border)] opacity-90' : ''"
     data-testid="read-workspace-session"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -511,21 +511,21 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
       <!-- "showing N of M" badge when paginated -->
       <span
         v-if="count !== null && totalCount !== null && totalCount !== count"
-        class="text-micro font-medium px-1.5 py-0.5 rounded bg-violet-500/10 text-[var(--color-violet)] shrink-0"
+        class="text-micro font-medium px-1.5 py-0.5 rounded bg-[var(--tint-accent)] text-[var(--color-violet)] shrink-0"
         :title="`Page contains ${count} entries out of ${totalCount} total matches`"
         data-testid="read-workspace-session-page-badge"
       >
         {{ count }} of {{ totalCount }}
       </span>
 
-      <span v-if="isError" class="text-red-500 text-micro font-medium shrink-0"> Error </span>
+      <span v-if="isError" class="text-[var(--semantic-error)] text-micro font-medium shrink-0"> Error </span>
 
-      <span v-if="isDenied" class="text-yellow-500 text-micro font-medium shrink-0"> Denied </span>
+      <span v-if="isDenied" class="text-[var(--semantic-warning)] text-micro font-medium shrink-0"> Denied </span>
 
       <span
         v-if="isRunning"
         data-testid="read-workspace-session-running"
-        class="text-micro text-yellow-500 animate-pulse shrink-0"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse shrink-0"
         >running…</span
       >
 
@@ -541,7 +541,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
          user sees the failure without an extra click. -->
     <div
       v-if="isError"
-      class="border-t border-[var(--color-border)] px-3 py-2 text-red-500 text-meta break-words"
+      class="border-t border-[var(--color-border)] px-3 py-2 text-[var(--semantic-error)] text-meta break-words"
       data-testid="read-workspace-session-error"
     >
       {{ errorMessage }}
@@ -551,7 +551,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
          caller's workspace; no content is ever rendered here. -->
     <div
       v-else-if="isDenied"
-      class="border-t border-[var(--color-border)] px-3 py-2 text-yellow-500 text-meta break-words"
+      class="border-t border-[var(--color-border)] px-3 py-2 text-[var(--semantic-warning)] text-meta break-words"
       data-testid="read-workspace-session-denied"
     >
       {{ deniedMessage ?? 'Session is not in your workspace.' }}
@@ -577,7 +577,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
     <!-- Entry list — only when expanded and there are entries. -->
     <div
       v-if="isExpanded && hasEntries && !isError && !isDenied"
-      class="border-t border-[var(--color-border)] bg-black/[0.02]"
+      class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]"
     >
       <!-- behavior="list": workspace sessions -->
       <ul
@@ -588,7 +588,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
         <li
           v-for="(session, idx) in listSessions"
           :key="session.id || idx"
-          class="px-3 py-2 text-[var(--semantic-text)] hover:bg-violet-500/5"
+          class="px-3 py-2 text-[var(--semantic-text)] hover:bg-[var(--tint-accent)]"
           data-testid="read-workspace-session-list-entry"
         >
           <div class="flex items-start gap-2 min-w-0">
@@ -689,7 +689,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
             <li
               v-for="entry in group.entries"
               :key="entry.id || `${group.key}-${entry.snippet}`"
-              class="px-3 py-2 text-[var(--semantic-text)] hover:bg-violet-500/5"
+              class="px-3 py-2 text-[var(--semantic-text)] hover:bg-[var(--tint-accent)]"
               data-testid="read-workspace-session-search-entry"
             >
               <div class="flex items-start gap-2 min-w-0">
@@ -737,7 +737,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
                 :data-testid="`search-entry-snippet-${entryIndexById.get(entry.id)}`"
               >
                 <template v-for="(seg, segIdx) in parseSnippet(entry.snippet)" :key="segIdx">
-                  <mark v-if="seg.match" class="bg-yellow-500/30 text-inherit rounded px-0.5">
+                  <mark v-if="seg.match" class="bg-[var(--tint-warning)] text-inherit rounded px-0.5">
                     {{ seg.text }}
                   </mark>
                   <span v-else>{{ seg.text }}</span>
@@ -762,7 +762,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
                     {{ isContentExpanded(entry.id) ? 'Hide content' : 'Show content' }}
                     <span
                       v-if="fullContents.get(entry.id)?.content_truncated"
-                      class="text-orange-500"
+                      class="text-[var(--color-orange)]"
                       title="Backend truncated this content to fit context budget"
                     >
                       (truncated)
@@ -812,7 +812,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
         <li
           v-for="(entry, idx) in readEntries"
           :key="entry.id || idx"
-          class="px-3 py-2 text-[var(--semantic-text)] hover:bg-violet-500/5"
+          class="px-3 py-2 text-[var(--semantic-text)] hover:bg-[var(--tint-accent)]"
           data-testid="read-workspace-session-read-entry"
         >
           <div class="flex items-start gap-2 min-w-0">
@@ -885,7 +885,7 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
                 {{ isContentExpanded(entry.id) ? 'Hide content' : 'Show content' }}
                 <span
                   v-if="entry.content_truncated"
-                  class="text-orange-500"
+                  class="text-[var(--color-orange)]"
                   title="Backend truncated this content to fit context budget"
                 >
                   (truncated)
@@ -924,18 +924,18 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
 }
 
 .role-user {
-  background-color: rgba(34, 197, 94, 0.15);
-  color: rgb(34, 197, 94);
+  background-color: var(--tint-success);
+  color: var(--semantic-success);
 }
 
 .role-assistant {
-  background-color: rgba(99, 102, 241, 0.15);
-  color: rgb(99, 102, 241);
+  background-color: var(--tint-accent);
+  color: var(--semantic-accent);
 }
 
 .role-tool {
-  background-color: rgba(234, 179, 8, 0.15);
-  color: rgb(234, 179, 8);
+  background-color: var(--tint-warning);
+  color: var(--semantic-warning);
 }
 
 .role-unknown {
@@ -982,8 +982,8 @@ function parseSnippet(snippet: string): { text: string; match: boolean }[] {
 }
 
 .tool-name-pill {
-  background-color: rgba(99, 102, 241, 0.12);
-  color: rgb(99, 102, 241);
+  background-color: var(--tint-accent);
+  color: var(--semantic-accent);
 }
 
 .content-toggle {

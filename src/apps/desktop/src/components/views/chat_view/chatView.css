@@ -24,19 +24,19 @@
 }
 
 :deep(.tool-stderr) {
-  background-color: rgba(245, 158, 11, 0.1);
+  background-color: var(--tint-warning);
   border-left: 3px solid #f59e0b;
   color: var(--semantic-text);
 }
 
 :deep(.tool-success) {
-  background-color: rgba(34, 197, 94, 0.1);
+  background-color: var(--tint-success);
   border-left: 3px solid #22c55e;
   color: var(--semantic-text);
 }
 
 :deep(.tool-error) {
-  background-color: rgba(239, 68, 68, 0.1);
+  background-color: var(--tint-error);
   border-left: 3px solid #ef4444;
   color: var(--semantic-text);
 }
@@ -50,7 +50,7 @@
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: var(--text-dense);
   padding: 0.25rem 0.5rem;
-  background-color: rgba(139, 92, 246, 0.1);
+  background-color: var(--tint-accent);
   border-radius: 0.25rem;
   margin: 0.125rem 0;
   color: var(--semantic-text);
@@ -222,8 +222,9 @@
      - no full box border; a subtle 2px left rule marks the row instead
      - gentle hover tint so rows stay discoverable as expandable
    Error/warning variants still work: components bind
-   `border-red-500/50` / `border-orange-500/50` via :class, which now
-   recolors the left rule (border-left-color) instead of drawing a box.
+   `border-[var(--tint-error-border)]` / `border-[var(--tint-warning-border)]`
+   via :class, which now recolors the left rule (border-left-color) instead
+   of drawing a box.
    Scoped deep selector: the components are children of ChatView's tree. */
 :deep(.chat-tool-card) {
   background-color: transparent;

@@ -191,7 +191,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !parsed.success }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !parsed.success }"
     data-testid="update-plan"
   >
     <ToolCardHeader
@@ -209,13 +209,13 @@ const handleToggle = (next: boolean) => {
 
     <div
       v-if="isExpanded"
-      class="border-t border-[var(--color-border)] bg-black/[0.02]"
+      class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]"
       data-testid="update-plan-body"
     >
       <!-- Error body — always visible when expanded AND error. -->
       <div
         v-if="parsed.error"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense"
         data-testid="update-plan-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
@@ -259,7 +259,7 @@ const handleToggle = (next: boolean) => {
           >
             <span
               v-if="line.kind === 'checked'"
-              class="shrink-0 text-green-500 w-4 text-center"
+              class="shrink-0 text-[var(--semantic-success)] w-4 text-center"
               aria-hidden="true"
               >☑</span
             >

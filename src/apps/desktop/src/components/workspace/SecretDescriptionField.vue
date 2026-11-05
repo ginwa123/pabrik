@@ -56,7 +56,7 @@ function save(): void {
       placeholder="What is this credential for?"
       class="flex-1 min-w-0 px-2 h-7 rounded-md text-dense"
       style="
-        background-color: var(--semantic-bg);
+        background-color: var(--semantic-wash);
         color: var(--semantic-text);
         border: 1px solid var(--color-border);
       "

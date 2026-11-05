@@ -258,7 +258,7 @@ const errorRetryLabel = computed(() =>
       >
         <span
           class="w-3 h-3 rounded-full flex items-center justify-center"
-          style="background: rgba(196, 116, 110, 0.18); border: 1px solid var(--color-red)"
+          style="background: var(--tint-error); border: 1px solid var(--color-red)"
           aria-label="Agent error"
         >
           <span
@@ -278,7 +278,7 @@ const errorRetryLabel = computed(() =>
           class="error-tooltip absolute left-0 top-full mt-1.5 w-[240px] z-50 rounded-lg p-2 pointer-events-none opacity-0 invisible transition-opacity duration-150"
           style="
             background: var(--semantic-card-bg);
-            border: 1px solid rgba(196, 116, 110, 0.45);
+            border: 1px solid var(--tint-error-border);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
           "
           role="tooltip"
@@ -292,7 +292,7 @@ const errorRetryLabel = computed(() =>
             <span
               v-if="errorRetryLabel"
               class="text-micro px-1.5 py-0.5 rounded-full"
-              style="background: rgba(196, 116, 110, 0.18); color: #e8928c"
+              style="background: var(--tint-error); color: #e8928c"
               data-testid="task-agent-error-row-retry"
               >retry {{ errorRetryLabel }}</span
             >

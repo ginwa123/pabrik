@@ -696,7 +696,7 @@ const showTypeSpecificSection = computed(
             :disabled="readonly"
             data-testid="properties-delete-button"
             class="w-full px-3 py-1.5 rounded text-body font-medium transition-all"
-            style="background-color: rgba(220, 38, 38, 0.18); color: rgb(248, 113, 113); border: 1px solid rgba(220, 38, 38, 0.4);"
+            style="background-color: var(--tint-error); color: var(--semantic-error); border: 1px solid var(--tint-error-border);"
             @click="handleDeleteClick"
           >
             Delete element
@@ -722,7 +722,7 @@ const showTypeSpecificSection = computed(
               type="button"
               data-testid="properties-delete-confirm"
               class="flex-1 px-2 py-1 rounded text-dense font-medium"
-              style="background-color: rgba(220, 38, 38, 0.6); color: white;"
+              style="background-color: var(--semantic-error); color: var(--semantic-on-accent);"
               @click="handleDeleteConfirm"
             >Delete</button>
           </div>

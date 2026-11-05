@@ -86,11 +86,11 @@ const copyThought = async (e: Event) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-80': !isUpdated }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-80': !isUpdated }"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       :class="{ 'cursor-default': isUpdated && !errorMessage }"
       @click="toggle"
       role="button"
@@ -124,11 +124,11 @@ const copyThought = async (e: Event) => {
         {{ thoughtContent }}
       </span>
 
-      <span class="text-dense font-semibold" :class="isUpdated ? 'text-green-500' : 'text-red-500'">
+      <span class="text-dense font-semibold" :class="isUpdated ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'">
         {{ statusIcon }}
       </span>
       <button
-        class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+        class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
         @click="copyThought"
         title="Copy thought"
       >
@@ -140,9 +140,9 @@ const copyThought = async (e: Event) => {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Error message -->
-      <div v-if="errorMessage" class="flex gap-2 px-2 py-1.5 text-red-500 text-dense">
+      <div v-if="errorMessage" class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense">
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ errorMessage }}</span>
       </div>

@@ -117,15 +117,15 @@ const handleOpenInEditor = (e: Event, path: string) => {
   <div
     class="chat-tool-card font-mono text-dense"
     :class="{
-      'border-orange-500/50 opacity-85': warningMessage && !hasError,
-      'border-red-500/50 opacity-90': hasError,
+      'border-[var(--tint-warning-border)] opacity-85': warningMessage && !hasError,
+      'border-[var(--tint-error-border)] opacity-90': hasError,
     }"
   >
     <!-- Header -->
     <div
       role="button"
       tabindex="0"
-      class="group flex items-center flex-wrap gap-1.5 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center flex-wrap gap-1.5 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
     >
       <span class="gl-title">glob</span>
@@ -142,7 +142,7 @@ const handleOpenInEditor = (e: Event, path: string) => {
       <span
         v-if="isRunning"
         data-testid="glob-running"
-        class="text-micro text-yellow-500 animate-pulse"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse"
         >running…</span
       >
 
@@ -181,7 +181,7 @@ const handleOpenInEditor = (e: Event, path: string) => {
     <div v-if="isExpanded" class="gl-content">
       <div
         v-if="hasError && errorMessage"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense"
         data-testid="glob-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
@@ -231,7 +231,7 @@ const handleOpenInEditor = (e: Event, path: string) => {
 /* Root frame comes from the shared `.chat-tool-card` class defined in
  * ChatView.vue (:deep) and mirrored in SubAgentPeekPanel.vue (:deep).
  * Only content-level styles remain here. The warning variant binds
- * `border-orange-500/50` via :class which recolors the card's left rule,
+ * `border-[var(--tint-warning-border)]` via :class which recolors the card's left rule,
  * matching how ShellTool recolors on error/warning. */
 .gl-title {
   color: var(--color-violet);
@@ -271,7 +271,7 @@ const handleOpenInEditor = (e: Event, path: string) => {
 .gl-error-text {
   margin-left: auto;
   font-size: var(--text-micro);
-  color: #f87171;
+  color: var(--semantic-error);
 }
 
 .gl-toggle {
@@ -298,7 +298,7 @@ const handleOpenInEditor = (e: Event, path: string) => {
 }
 
 .gl-file:hover {
-  background: rgba(139, 92, 246, 0.04);
+  background: var(--semantic-wash);
 }
 
 .gl-file-path {

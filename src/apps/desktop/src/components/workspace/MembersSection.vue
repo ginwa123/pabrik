@@ -188,7 +188,7 @@ onMounted(() => {
             placeholder="teammate@example.com"
             class="w-full px-3 h-8 rounded-md text-dense"
             style="
-              background-color: var(--semantic-bg);
+              background-color: var(--semantic-wash);
               color: var(--semantic-text);
               border: 1px solid var(--color-border);
             "
@@ -209,7 +209,7 @@ onMounted(() => {
             data-testid="invite-role-select"
             class="w-full px-2 h-8 rounded-md text-dense"
             style="
-              background-color: var(--semantic-bg);
+              background-color: var(--semantic-wash);
               color: var(--semantic-text);
               border: 1px solid var(--color-border);
             "
@@ -338,7 +338,7 @@ onMounted(() => {
               :disabled="membersStore.saving"
               class="px-2 h-7 rounded-md text-dense disabled:opacity-50"
               style="
-                background-color: var(--semantic-bg);
+                background-color: var(--semantic-wash);
                 color: var(--semantic-text);
                 border: 1px solid var(--color-border);
               "
