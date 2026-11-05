@@ -217,9 +217,11 @@ export interface KanbanTaskEvent {
 
 export interface DocumentEvent {
   // Backend's action enum (src/agentic_loop/document_events.zig).
-  action: 'created' | 'updated' | 'deleted'
+  action: 'created' | 'updated' | 'deleted' | 'changed'
   workspace_id: string
   document_id: string
+  // Set by a folder write (create, rename, move, delete); `''` otherwise.
+  folder_id?: string
   // The title AFTER the mutation; `''` when the mutation did not read the row back.
   title: string
 }
@@ -244,9 +246,9 @@ export interface UnifiedChannels {
   gitFileStage?: (event: GitFileStageEvent) => void
   /** Subscribe to change-request state events. */
   gitPrState?: (event: GitPrStateEvent) => void
-  /** Subscribe to document mutations. The backend emits three granular names (`document_created`,
-   * `document_updated`, `document_deleted`) sharing one `DocumentEvent` payload. Only an agent tool
-   * emits these, so a tab never receives an echo of its own UI edit. */
+  /** Subscribe to document mutations: the agent tools and every HTTP write that
+   * changes the tree (`document_created` / `_updated` / `_deleted` / `_changed`), so
+   * a second window follows a drag the first one made. */
   documents?: (event: DocumentEvent) => void
   /** Subscribe to design-mode element mutations. The backend emits three granular event names
    * (`design_element_created`, `design_element_updated`, `design_element_deleted`) that share the

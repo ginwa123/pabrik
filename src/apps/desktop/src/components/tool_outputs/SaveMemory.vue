@@ -283,12 +283,12 @@ function formatBytes(n: number): string {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !isSuccess }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !isSuccess }"
     data-testid="save-memory"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -347,7 +347,7 @@ function formatBytes(n: number): string {
       </span>
 
       <!-- Status indicator -->
-      <span class="text-dense font-semibold" :class="isSuccess ? 'text-green-500' : 'text-red-500'">
+      <span class="text-dense font-semibold" :class="isSuccess ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'">
         {{ statusIndicator }}
       </span>
 
@@ -355,7 +355,7 @@ function formatBytes(n: number): string {
       <span
         v-if="isRunning"
         data-testid="save-memory-running"
-        class="text-micro text-yellow-500 animate-pulse shrink-0"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse shrink-0"
       >
         running…
       </span>
@@ -363,7 +363,7 @@ function formatBytes(n: number): string {
       <!-- Copy id button (only on success — there's something to copy) -->
       <button
         v-if="isSuccess && memoryId"
-        class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+        class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
         @click="copyId"
         title="Copy memory id"
         data-testid="save-memory-copy-id"
@@ -380,13 +380,13 @@ function formatBytes(n: number): string {
     <!-- Expanded content -->
     <div
       v-if="isExpanded"
-      class="border-t border-[var(--color-border)] bg-black/[0.02]"
+      class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]"
       data-testid="save-memory-body"
     >
       <!-- Error message -->
       <div
         v-if="errorMessage"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense"
         data-testid="save-memory-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
@@ -409,7 +409,7 @@ function formatBytes(n: number): string {
             </span>
             <span class="flex-1" />
             <button
-              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] hover:!text-violet-500 text-lead transition-opacity"
+              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
               @click.stop="copyContent"
               title="Copy the full memory body"
               data-testid="save-memory-copy-content"
@@ -420,7 +420,7 @@ function formatBytes(n: number): string {
           <pre class="content-body" data-testid="save-memory-content">{{ displayContent }}</pre>
           <p
             v-if="hiddenChars > 0"
-            class="mt-1 text-micro text-orange-500"
+            class="mt-1 text-micro text-[var(--color-orange)]"
             data-testid="save-memory-content-clipped"
           >
             … {{ hiddenChars.toLocaleString() }} more characters not shown — use ⎘ to copy the full
@@ -449,8 +449,8 @@ function formatBytes(n: number): string {
 .tag-chip {
   font-family: monospace;
   font-size: var(--text-micro);
-  background-color: rgba(99, 102, 241, 0.12);
-  color: rgb(99, 102, 241);
+  background-color: var(--tint-accent);
+  color: var(--semantic-accent);
   padding: 1px 5px;
   border-radius: 3px;
   white-space: nowrap;

@@ -49,7 +49,7 @@ function handleSave(): void {
           autocomplete="new-password"
           spellcheck="false"
           class="w-full px-3 h-8 rounded-md text-dense font-mono"
-          style="background-color: var(--semantic-bg); color: var(--semantic-text); border: 1px solid var(--color-border)"
+          style="background-color: var(--semantic-wash); color: var(--semantic-text); border: 1px solid var(--color-border)"
         />
         <div class="flex justify-end gap-2 pt-1">
           <button

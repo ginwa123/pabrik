@@ -52,7 +52,9 @@ pub fn fireWorkspaceRoutine(
     };
     const payload = try buildPayload(di.allocator, routine, next_sqlite);
     errdefer payload.deinit(di.allocator);
-    const cwd = try di.allocator.dupe(u8, "");
+    const effective_cwd = try effectiveCwd(allocator, db, routine);
+    defer allocator.free(effective_cwd);
+    const cwd = try di.allocator.dupe(u8, effective_cwd);
     errdefer di.allocator.free(cwd);
     const bmsg = try di.allocator.dupe(u8, "");
     errdefer di.allocator.free(bmsg);
@@ -105,6 +107,17 @@ fn loadRoutineItem(
 /// Make the run's chat session real and put it in the routine's workspace:
 /// nothing else writes that row on the fire path, and a session without the
 /// workspace stamp is invisible to the sidebar's scoped list.
+pub fn effectiveCwd(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    routine: model.Routine,
+) ![]u8 {
+    if (routine.cwd.len > 0) return allocator.dupe(u8, routine.cwd);
+    const item = try loadRoutineItem(allocator, db, routine.workspace_item_id);
+    defer item.deinit(allocator);
+    return allocator.dupe(u8, item.path);
+}
+
 pub fn ensureRunSession(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -113,6 +126,7 @@ pub fn ensureRunSession(
     const item = try loadRoutineItem(allocator, db, routine.workspace_item_id);
     defer item.deinit(allocator);
     const name = if (item.name.len > 0) item.name else routine.id;
+    const cwd = if (routine.cwd.len > 0) routine.cwd else item.path;
     // Only still-empty columns are filled (a renamed chat survives); `exec`
     // binds an empty slice as NULL, so each NOT NULL column needs the COALESCE
     // default — the idiom `model.insertWorkspaceRoutine` already uses.
@@ -125,7 +139,7 @@ pub fn ensureRunSession(
         \\    name = CASE WHEN COALESCE(sessions.name, '') = '' THEN excluded.name ELSE sessions.name END,
         \\    workspace_id = CASE WHEN COALESCE(sessions.workspace_id, '') = '' THEN excluded.workspace_id ELSE sessions.workspace_id END,
         \\    cwd = CASE WHEN COALESCE(sessions.cwd, '') = '' THEN excluded.cwd ELSE sessions.cwd END
-    , &.{ routine.id, name, item.path, item.workspace_id, routine.selected_profile_model });
+    , &.{ routine.id, name, cwd, item.workspace_id, routine.selected_profile_model });
 }
 
 /// The two slices are allocator-owned: free them with deinit, or hand them to
@@ -255,6 +269,7 @@ const testing = std.testing;
 const migration = pabrikcore.migrations_mod.migration;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration124AddRoutineSelectedProfileModel = migration.Migration124AddRoutineSelectedProfileModel;
+const Migration139AddRoutineCwd = migration.Migration139AddRoutineCwd;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
@@ -307,6 +322,7 @@ fn setupDb() !struct {
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
     try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
+    try Migration139AddRoutineCwd.up(&db, alloc);
 
     return .{ .db = db, .threaded = threaded };
 }

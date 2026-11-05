@@ -118,7 +118,7 @@ const title = computed(() => {
   line-height: 1.5;
   padding: 1px 6px;
   border-radius: 999px;
-  background-color: rgba(196, 178, 138, 0.16);
+  background-color: var(--tint-warning);
 }
 
 .worker-elapsed--text {
@@ -133,6 +133,6 @@ const title = computed(() => {
 }
 
 .worker-elapsed--chip.worker-elapsed--stale {
-  background-color: rgba(182, 146, 123, 0.16);
+  background-color: var(--tint-warning);
 }
 </style>

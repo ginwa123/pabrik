@@ -200,7 +200,7 @@ function openInNewTab() {
       >
     </div>
 
-    <div v-if="contentType === 'image'" class="flex justify-center bg-black/[0.04] p-2 rounded">
+    <div v-if="contentType === 'image'" class="flex justify-center bg-[var(--semantic-wash-strong)] p-2 rounded">
       <img
         v-if="imageSrc"
         :src="imageSrc"
@@ -212,7 +212,7 @@ function openInNewTab() {
           }
         "
       />
-      <div v-else class="text-dense text-red-500 italic">
+      <div v-else class="text-dense text-[var(--semantic-error)] italic">
         Image source invalid (expected data: URL or http(s) URL)
       </div>
     </div>
@@ -242,7 +242,7 @@ function openInNewTab() {
         data-testid="preview-html-iframe"
       />
       <div
-        class="flex items-center justify-end gap-2 px-2 py-1.5 border-t border-[var(--color-border)] bg-black/[0.02]"
+        class="flex items-center justify-end gap-2 px-2 py-1.5 border-t border-[var(--color-border)] bg-[var(--semantic-wash)]"
       >
         <button
           type="button"
@@ -319,7 +319,7 @@ function openInNewTab() {
 }
 
 .markdown-content :deep(pre) {
-  background: var(--color-code-bg, rgba(0, 0, 0, 0.05));
+  background: var(--semantic-code-bg, rgba(0, 0, 0, 0.05));
   padding: 0.5rem;
   border-radius: 0.25rem;
   overflow-x: auto;

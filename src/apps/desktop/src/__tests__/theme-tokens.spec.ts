@@ -35,7 +35,18 @@ for (const match of CSS.matchAll(/^:root\[data-theme='([a-z0-9-]+)'\]\s*\{([\s\S
 const isColour = (value: string): boolean =>
   /^(#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(|color-mix\(|oklch\()/.test(value)
 
-const COLOUR_TOKENS = [...BASE].filter(([, value]) => isColour(value)).map(([token]) => token)
+/** A value built from another token is DERIVED, not a per-theme decision: `--tint-error` mixes
+ * `--semantic-error`, so whichever palette declares that ink already owns the tint. Restating it in
+ * nine blocks would be nine chances to drift. Only a literal colour has to be declared per theme. */
+const isDerived = (value: string): boolean => value.includes('var(--')
+
+const COLOUR_TOKENS = [...BASE]
+  .filter(([, value]) => isColour(value) && !isDerived(value))
+  .map(([token]) => token)
+
+const DERIVED_TOKENS = [...BASE]
+  .filter(([, value]) => isDerived(value))
+  .map(([token]) => token)
 
 const missingIn = (block: Declarations): string[] =>
   COLOUR_TOKENS.filter((token) => !block.has(token))
@@ -73,5 +84,34 @@ describe('theme token coverage', () => {
 
   it('paints the base palette in the default scheme', () => {
     expect(BASE.get('--color-scheme')).toBe(THEMES.find((theme) => theme.isDefault)?.scheme)
+  })
+
+  it('derives every role tint from that role own ink, never from a literal', () => {
+    const tints = DERIVED_TOKENS.filter((token) => token.startsWith('--tint-'))
+    expect(tints.length).toBeGreaterThanOrEqual(14)
+
+    const pinned = tints.filter(
+      (token) =>
+        !/^color-mix\(in srgb, transparent \d+%, var\(--semantic-(?:error|warning|success|info|accent)\)\)$/.test(
+          BASE.get(token) ?? '',
+        ),
+    )
+    expect(pinned).toEqual([])
+  })
+
+  it('derives the surface washes from the ink, so they lift on dark and deepen on light', () => {
+    for (const token of ['--semantic-wash', '--semantic-wash-strong', '--semantic-code-bg']) {
+      expect(BASE.get(token)).toMatch(/^color-mix\(in srgb, transparent \d+%, var\(--color-fg\)\)$/)
+    }
+  })
+
+  it.each(
+    THEMES.filter((theme) => theme.scheme === 'light').map((theme) => theme.id),
+  )('gives the %s theme its own ink instead of the dark palette', (id) => {
+    const block = THEME_BLOCKS.get(id) ?? new Map<string, string>()
+    const copied = ['--semantic-error', '--semantic-text', '--semantic-card-bg'].filter(
+      (token) => block.get(token) === BASE.get(token),
+    )
+    expect(copied).toEqual([])
   })
 })

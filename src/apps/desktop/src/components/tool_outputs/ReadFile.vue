@@ -84,7 +84,7 @@ const handleToggle = (next: boolean) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-80': !!parsed.error }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-80': !!parsed.error }"
   >
     <ToolCardHeader
       tool-name="read_file"
@@ -98,18 +98,18 @@ const handleToggle = (next: boolean) => {
     />
 
     <div v-if="isExpanded" class="border-t border-[var(--color-border)]">
-      <div v-if="parsed.error" class="flex gap-2 px-2 py-1.5 text-red-500 text-dense">
+      <div v-if="parsed.error" class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense">
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error }}</span>
       </div>
       <div
         v-else-if="contentLines.length > 0"
-        class="p-2 m-0 bg-black/[0.02] overflow-x-auto leading-relaxed text-[var(--semantic-text)] text-dense"
+        class="p-2 m-0 bg-[var(--semantic-wash)] overflow-x-auto leading-relaxed text-[var(--semantic-text)] text-dense"
       >
         <div
           v-for="(tokens, idx) in highlightedLines"
           :key="idx"
-          class="flex hover:bg-violet-500/5"
+          class="flex hover:bg-[var(--tint-accent)]"
         >
           <span
             class="rf-gutter min-w-[3rem] text-right mr-3 text-[var(--semantic-text-dim)] select-none shrink-0"
@@ -124,7 +124,7 @@ const handleToggle = (next: boolean) => {
       </div>
       <pre
         v-else
-        class="p-2 m-0 bg-black/[0.02] whitespace-pre overflow-x-visible leading-relaxed text-[var(--semantic-text)] text-dense hover:bg-violet-500/5"
+        class="p-2 m-0 bg-[var(--semantic-wash)] whitespace-pre overflow-x-visible leading-relaxed text-[var(--semantic-text)] text-dense hover:bg-[var(--tint-accent)]"
       >
 (empty)</pre>
       <ToolParameters :parameters="parameters" />

@@ -8,6 +8,7 @@ const builtin = @import("builtin");
 /// A thing the user can ask for from the tray menu.
 pub const Action = enum {
     show_window,
+    change_server,
     open_in_browser,
     quit,
 
@@ -16,6 +17,7 @@ pub const Action = enum {
     pub fn id(self: Action) [:0]const u8 {
         return switch (self) {
             .show_window => "show",
+            .change_server => "server",
             .open_in_browser => "browser",
             .quit => "quit",
         };
@@ -25,6 +27,7 @@ pub const Action = enum {
     pub fn label(self: Action) [:0]const u8 {
         return switch (self) {
             .show_window => "Show Pabrik",
+            .change_server => "Change Server…",
             .open_in_browser => "Open in Browser",
             .quit => "Quit Pabrik",
         };
@@ -32,7 +35,7 @@ pub const Action = enum {
 };
 
 /// The tray menu, top to bottom. Order is the render order.
-pub const menu = [_]Action{ .show_window, .open_in_browser, .quit };
+pub const menu = [_]Action{ .show_window, .change_server, .open_in_browser, .quit };
 
 pub fn actionFor(id: []const u8) ?Action {
     for (menu) |action| {
@@ -138,6 +141,11 @@ test "the menu offers exactly one way to quit, and it is the last entry" {
     }
     try testing.expectEqual(@as(usize, 1), quits);
     try testing.expectEqual(Action.quit, menu[menu.len - 1]);
+}
+
+test "the tray offers a way to point the app at another server" {
+    try testing.expectEqual(Action.change_server, actionFor("server").?);
+    try testing.expectEqualStrings("Change Server…", Action.change_server.label());
 }
 
 test "an unknown menu id maps to no action" {

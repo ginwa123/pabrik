@@ -45,6 +45,9 @@ pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
 // after `SkillWriteToolRule` and before the gated Secrets rule.
 pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
 pub const PullRequestToolRule = prompts.PullRequestToolRule;
+// The `<ask_user>` question card — appended by `buildMessages` for the main
+// agent only, because a sub-agent cannot reach the human.
+pub const AskUserRule = prompts.AskUserRule;
 
 // ---------------------------------------------------------------------------
 // Thin delegating re-exports for the two pure helpers that `prompts_test.zig`
@@ -1275,6 +1278,35 @@ test "ResponseFormatting teaches the <html> wrapper tag" {
 }
 
 // -------------------------------------------------------------------------
+// ResponseFormatting — INTERACTIVE <html> (2026-11-04 interactive-html)
+// -------------------------------------------------------------------------
+
+test "ResponseFormatting teaches the interactive <html> contract" {
+    // The model must know a block is a LIVE document it can build a widget in.
+    // Every wall below was measured in Chromium against the frame's real
+    // attribute (`sandbox="allow-scripts allow-forms"`, ChatMessageRow.vue).
+    const prompt: []const u8 = ResponseFormatting;
+
+    // 1. The capability is advertised at all.
+    try std.testing.expect(contains(prompt, "Interactive HTML works"));
+    try std.testing.expect(contains(prompt, "allow-forms"));
+
+    // 2. A form submit fires there, and an un-prevented one navigates the frame
+    // away — the one rule that turns a widget into a blank frame.
+    try std.testing.expect(contains(prompt, "event.preventDefault()"));
+
+    // 3. The null-origin walls: storage/cookies/history throw, dialogs are
+    // silent, window.open is refused, and there is no network.
+    try std.testing.expect(contains(prompt, "localStorage"));
+    try std.testing.expect(contains(prompt, "SecurityError"));
+    try std.testing.expect(contains(prompt, "window.open"));
+    try std.testing.expect(contains(prompt, "no network"));
+
+    // 4. A mixed turn: several blocks in document order, never nested.
+    try std.testing.expect(contains(prompt, "never a block nested inside another"));
+}
+
+// -------------------------------------------------------------------------
 // ResponseFormatting — <mermaid> wrapper tag (2026-10-17 mermaid-support)
 // -------------------------------------------------------------------------
 
@@ -1465,6 +1497,17 @@ const mandate_order = [_][]const u8{
 /// Assemble one session's system prompt through the live path and hand
 /// back an owned copy of the returned bytes.
 fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8, tools: []AgentTool) ![]u8 {
+    return buildSystemPromptFor(ctx, cwd, session_id, session_id, false, tools);
+}
+
+fn buildSystemPromptFor(
+    ctx: *PromptDbCtx,
+    cwd: []const u8,
+    session_id: []const u8,
+    parent_session_id: []const u8,
+    is_sub_agent: bool,
+    tools: []AgentTool,
+) ![]u8 {
     const alloc = std.testing.allocator;
     const messages = try prompts_mod.buildMessages(
         alloc,
@@ -1472,7 +1515,8 @@ fn buildSystemPrompt(ctx: *PromptDbCtx, cwd: []const u8, session_id: []const u8,
         &ctx.db,
         cwd,
         session_id,
-        "",
+        parent_session_id,
+        is_sub_agent,
         &.{},
         tools,
         "",
@@ -1549,6 +1593,36 @@ test "buildMessages: the nine mandates reach the live prompt, ungated by the too
     // Planning is gated on `update_plan`), yet every mandate survived it.
     try std.testing.expect(contains(full, "## Task Planning"));
     try std.testing.expect(!contains(bare, "## Task Planning"));
+}
+
+test "buildMessages: only the main agent's prompt teaches the ask_user block" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &path_buf);
+    const cwd = try std.testing.allocator.dupe(u8, path_buf[0..n]);
+    defer std.testing.allocator.free(cwd);
+
+    var tools = [_]AgentTool{makeTool("command", "Run a shell command")};
+
+    // The desktop chat sends parent == session with is_sub_agent = false
+    // (`src/app.zig`), so a non-empty parent must not hide the rule.
+    const main_agent = try buildSystemPromptFor(&ctx, cwd, "sess_ask_main", "sess_ask_main", false, &tools);
+    defer std.testing.allocator.free(main_agent);
+    try std.testing.expect(contains(main_agent, AskUserRule));
+
+    const sub_agent = try buildSystemPromptFor(&ctx, cwd, "sess_ask_sub", "sess_ask_parent", true, &tools);
+    defer std.testing.allocator.free(sub_agent);
+    try std.testing.expect(!contains(sub_agent, AskUserRule));
+
+    // Non-vacuity: the sub-agent got a real prompt, and it differs from the
+    // main agent's only where this rule lives.
+    try std.testing.expect(contains(sub_agent, TemporaryFilesRule));
+    try std.testing.expect(!std.mem.eql(u8, main_agent, sub_agent));
 }
 
 test "buildMessages: the mandates hold a byte-identical prefix across sessions" {

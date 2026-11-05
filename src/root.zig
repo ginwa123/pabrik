@@ -226,6 +226,7 @@ pub const vmd_lifecycle = @import("vmd/lifecycle.zig");
 pub const agent_memories = @import("agentic_loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("agentic_loop/documents_store.zig");
+pub const document_folders_store = @import("agentic_loop/document_folders_store.zig");
 /// Workspace-scoped skill storage (Migration 101 + 119).
 pub const skills_store = @import("agentic_loop/skills_store.zig");
 /// THE parser/renderer for a SKILL.md `---` frontmatter block. Shared by

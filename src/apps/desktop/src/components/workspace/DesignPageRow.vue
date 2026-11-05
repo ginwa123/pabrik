@@ -266,7 +266,7 @@ const handleKeydown = (event: KeyboardEvent): void => {
           <button
             type="button"
             class="w-full px-3 py-2 text-left text-body hover:opacity-80"
-            style="color: #ef4444"
+            style="color: var(--semantic-error)"
             :data-testid="`design-page-menu-delete-${page.id}`"
             @click="handleMenuDelete"
           >
@@ -286,7 +286,7 @@ const handleKeydown = (event: KeyboardEvent): void => {
     -->
     <button
       type="button"
-      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-(--semantic-active-bg) hover:text-red-400"
+      class="shrink-0 w-6 h-6 flex items-center justify-center rounded opacity-60 hover:opacity-100 transition-opacity hover:bg-(--semantic-active-bg) hover:text-[var(--semantic-error)]"
       style="color: var(--semantic-text-dim)"
       title="Delete page"
       aria-label="Delete page"

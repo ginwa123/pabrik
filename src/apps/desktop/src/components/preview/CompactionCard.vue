@@ -363,10 +363,10 @@ if (parsedEnvelope.kind === 'ok') {
   border-radius: 8px;
   padding: 12px;
   margin: 8px 0;
-  background-color: var(--color-bg-elevated);
+  background-color: var(--semantic-card-bg);
   font-family: inherit;
   font-size: var(--text-dense);
-  color: var(--color-text);
+  color: var(--semantic-text);
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -391,7 +391,7 @@ if (parsedEnvelope.kind === 'ok') {
 
 .compaction-count {
   font-size: var(--text-meta);
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
   background-color: var(--color-bg);
   padding: 3px 8px;
   border-radius: 12px;
@@ -408,7 +408,7 @@ if (parsedEnvelope.kind === 'ok') {
 
 .section-note {
   font-size: var(--text-meta);
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
 }
 
 .compaction-plan {
@@ -442,7 +442,7 @@ if (parsedEnvelope.kind === 'ok') {
 }
 
 .workdir-list dt {
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
 }
 
 .workdir-list dd {
@@ -470,13 +470,13 @@ if (parsedEnvelope.kind === 'ok') {
 
 .metadata-label {
   font-size: var(--text-meta);
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
 }
 
 .metadata-value {
   font-family: monospace;
   font-size: var(--text-dense);
-  color: var(--color-text);
+  color: var(--semantic-text);
   word-break: break-all;
 }
 
@@ -484,7 +484,7 @@ if (parsedEnvelope.kind === 'ok') {
   margin: 0;
   font-size: var(--text-body);
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--semantic-text);
 }
 
 .compaction-index-header {
@@ -541,37 +541,37 @@ if (parsedEnvelope.kind === 'ok') {
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
-  background-color: var(--color-bg-elevated);
-  color: var(--color-text);
+  background-color: var(--semantic-card-bg);
+  color: var(--semantic-text);
   min-width: 64px;
   text-align: center;
   flex-shrink: 0;
 }
 
 .role-user {
-  background-color: rgba(34, 197, 94, 0.15);
-  color: rgb(34, 197, 94);
+  background-color: var(--tint-success);
+  color: var(--semantic-success);
 }
 
 .role-assistant {
-  background-color: rgba(99, 102, 241, 0.15);
-  color: rgb(99, 102, 241);
+  background-color: var(--tint-accent);
+  color: var(--semantic-accent);
 }
 
 .role-tool {
-  background-color: rgba(234, 179, 8, 0.15);
-  color: rgb(234, 179, 8);
+  background-color: var(--tint-warning);
+  color: var(--semantic-warning);
 }
 
 .role-unknown {
-  background-color: var(--color-bg-elevated);
-  color: var(--color-text-dim);
+  background-color: var(--semantic-card-bg);
+  color: var(--semantic-text-dim);
 }
 
 .entry-id {
   font-family: monospace;
   font-size: var(--text-micro);
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
   max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -585,16 +585,16 @@ if (parsedEnvelope.kind === 'ok') {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--color-text);
+  color: var(--semantic-text);
 }
 
 .entry-tool-call-id {
   font-family: monospace;
   font-size: var(--text-micro);
-  background-color: var(--color-bg-elevated);
+  background-color: var(--semantic-card-bg);
   padding: 1px 5px;
   border-radius: 3px;
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
   flex-shrink: 0;
 }
 
@@ -609,7 +609,7 @@ if (parsedEnvelope.kind === 'ok') {
   font: inherit;
   font-size: var(--text-dense);
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--semantic-text);
   padding: 0;
   display: flex;
   align-items: center;
@@ -632,7 +632,7 @@ if (parsedEnvelope.kind === 'ok') {
 .summary-toggle-hint {
   font-size: var(--text-micro);
   font-weight: 400;
-  color: var(--color-text-dim);
+  color: var(--semantic-text-dim);
   margin-left: auto;
 }
 

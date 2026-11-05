@@ -51,6 +51,9 @@ export function toDocumentRow(d: Document): DocumentRow {
 
 export interface DocumentDelta extends SyncDelta<DocumentRow> {
   total: number
+  /** The folder tree, carried through the same read as the rows (Migration
+   * 140) so the store can paint placement without a second request. */
+  folders: api.DocumentFolder[]
 }
 
 export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
@@ -102,6 +105,7 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
           // No cursor is persisted: the next revalidate is a full refetch.
           cursorToSave: null,
           total: data.count ?? items.length,
+          folders: data.folders ?? [],
         }
       }),
     )

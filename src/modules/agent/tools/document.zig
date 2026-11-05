@@ -316,6 +316,7 @@ pub fn executeAddDocument(
             error.WorkspaceIdRequired => "Could not resolve this session's workspace.",
             error.TitleRequired => "title is required and must contain at least one non-whitespace character",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.FolderNotFound => "No such folder in this workspace.",
             error.InsertFailed => "Could not store the document (database error).",
             error.RowNotFoundAfterInsert => "The document was written but could not be read back — the row is inconsistent, please retry.",
             error.OutOfMemory => "Out of memory",
@@ -359,6 +360,7 @@ pub fn executeEditDocument(
             // the tool becomes an oracle for other workspaces' row ids.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.FolderNotFound => "No such folder in this workspace.",
             error.UpdateFailed => "Could not save the document (database error).",
             error.QueryFailed => "Could not read the document (database error).",
             error.OutOfMemory => "Out of memory",
@@ -444,6 +446,7 @@ fn setupDb() !TestCtx {
     , &.{});
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
 
     // ws_1 owns item i1; ws_2 owns item i2. s1 is task-linked to i1, s2
     // to i2 — the exact-task-link branch of resolveWorkspaceId.
@@ -1226,6 +1229,7 @@ fn exec_setupDb() !exec_TestCtx {
     , &.{});
     try exec_migration.Migration098CreateDocuments.up(&db, exec_testing.allocator);
     try exec_migration.Migration122AddDocumentPosition.up(&db, exec_testing.allocator);
+    try exec_migration.Migration140AddDocumentFolders.up(&db, exec_testing.allocator);
 
     try db.exec(exec_testing.allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES

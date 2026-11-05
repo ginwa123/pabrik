@@ -152,6 +152,8 @@ const migration_135 = @import("migration_135.zig");
 const migration_136 = @import("migration_136.zig");
 const migration_138 = @import("migration_138.zig");
 const migration_139 = @import("migration_139.zig");
+const migration_140 = @import("migration_140.zig");
+const migration_141 = @import("migration_141.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -292,7 +294,9 @@ pub const Migration134ContractSessionPlan = migration_134.Migration134ContractSe
 pub const Migration135DropUnusedRbacTables = migration_135.Migration135DropUnusedRbacTables;
 pub const Migration136EnforceForeignKeys = migration_136.Migration136EnforceForeignKeys;
 pub const Migration138AddWorkspaceSecretDescription = migration_138.Migration138AddWorkspaceSecretDescription;
-pub const Migration139ContractSkillNameDescription = migration_139.Migration139ContractSkillNameDescription;
+pub const Migration139AddRoutineCwd = migration_139.Migration139AddRoutineCwd;
+pub const Migration140AddDocumentFolders = migration_140.Migration140AddDocumentFolders;
+pub const Migration141ContractSkillNameDescription = migration_141.Migration141ContractSkillNameDescription;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -553,7 +557,10 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration137ExpandKanbanOntoTasks.version, .name = Migration137ExpandKanbanOntoTasks.name, .up = Migration137ExpandKanbanOntoTasks.up },
     // Migration 138 — `workspace_secrets` learns what a credential is for.
     .{ .version = Migration138AddWorkspaceSecretDescription.version, .name = Migration138AddWorkspaceSecretDescription.name, .up = Migration138AddWorkspaceSecretDescription.up },
-    .{ .version = Migration139ContractSkillNameDescription.version, .name = Migration139ContractSkillNameDescription.name, .up = Migration139ContractSkillNameDescription.up },
+    .{ .version = Migration139AddRoutineCwd.version, .name = Migration139AddRoutineCwd.name, .up = Migration139AddRoutineCwd.up },
+    // Migration 140 — documents get folders, folders get folders.
+    .{ .version = Migration140AddDocumentFolders.version, .name = Migration140AddDocumentFolders.name, .up = Migration140AddDocumentFolders.up },
+    .{ .version = Migration141ContractSkillNameDescription.version, .name = Migration141ContractSkillNameDescription.name, .up = Migration141ContractSkillNameDescription.up },
 };
 
 /// Register all migrations with a MigrationManager

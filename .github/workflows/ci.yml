@@ -379,6 +379,31 @@ jobs:
           python3 scripts/lint-no-dead-doc-refs.py --selftest
           python3 scripts/lint-no-dead-doc-refs.py
 
+      - name: Kotlin comment blocks are at most two lines
+        # CODING_STANDARDS.md §7: the Android app's half of §4's rule, one
+        # line tighter. The Zig half is `zginlint/max-comment-lines`, the
+        # Vue/TS half is `local/max-comment-lines`; this is the third
+        # language and it had no cap at all.
+        #
+        # The tree carries 1,806 over-long blocks, so the rule ships with a
+        # counted per-file pin (`comment-lines-baseline.json`) exactly as
+        # §5 shipped the frontend's. The count may only fall: a file over
+        # its pin fails, and so does a file with findings that is not
+        # pinned. `--strict` asks for zero and is the finish line.
+        #
+        # The selftest covers both halves — the lexer AND the verdict — for
+        # the same reason as the two scans above: a gate that has quietly
+        # stopped failing is a silent outage.
+        shell: bash
+        run: |-
+          set -euo pipefail
+          command -v python3 >/dev/null 2>&1 || {
+            echo "x python3 not found on PATH -- the Kotlin comment scan cannot run" >&2
+            exit 1
+          }
+          python3 scripts/lint-kt-comment-lines.py --selftest
+          python3 scripts/lint-kt-comment-lines.py
+
   # ── 1a. desktop tests ───────────────────────────────────────────────
   # The webapp's vitest suite. Until now NOTHING ran it: `lint` runs the
   # linters and vue-tsc rides inside `pnpm run build` in the backend

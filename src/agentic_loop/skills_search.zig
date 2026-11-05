@@ -470,7 +470,7 @@ fn setupStoreDb() !StoreTestCtx {
     try test_db.openMemory(&db, io);
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
-    try migration.Migration139ContractSkillNameDescription.up(&db, alloc);
+    try migration.Migration141ContractSkillNameDescription.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 

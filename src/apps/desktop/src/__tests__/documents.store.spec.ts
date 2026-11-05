@@ -313,7 +313,7 @@ describe('documents store — reorder', () => {
     const saved = await store.reorderDocuments('ws_1', ['doc_c', 'doc_a', 'doc_b'])
 
     expect(saved).toBe(true)
-    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', ['doc_c', 'doc_a', 'doc_b'])
+    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', null, ['doc_c', 'doc_a', 'doc_b'])
     expect(store.documents.map((d) => d.id)).toEqual(['doc_c', 'doc_a', 'doc_b'])
     expect(store.documents.map((d) => d.position)).toEqual([0, 1, 2])
     expect(store.error).toBe(null)

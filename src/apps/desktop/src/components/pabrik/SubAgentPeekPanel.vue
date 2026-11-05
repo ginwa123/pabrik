@@ -259,7 +259,7 @@ const statusClass = computed(() => {
   white-space: nowrap;
 }
 .peek-open-full:hover {
-  background: rgba(139, 92, 246, 0.1);
+  background: var(--tint-accent);
   border-color: var(--color-violet);
 }
 .peek-close {
@@ -282,8 +282,8 @@ const statusClass = computed(() => {
 
 .peek-error-banner {
   padding: 8px 12px;
-  background: rgba(239, 68, 68, 0.1);
-  border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--tint-error);
+  border-bottom: 1px solid var(--tint-error-border);
   color: var(--color-red);
   display: flex;
   align-items: center;
@@ -295,12 +295,12 @@ const statusClass = computed(() => {
   font-size: var(--text-micro);
   padding: 2px 6px;
   border-radius: 3px;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid var(--tint-error-border);
   background: transparent;
   color: var(--color-red);
   cursor: pointer;
 }
-.peek-error-retry:hover { background: rgba(239, 68, 68, 0.1); }
+.peek-error-retry:hover { background: var(--tint-error-strong); }
 
 /* Embedded ChatView host — gives the inner ChatView (which is
  * `flex h-full w-full` with its own VirtualScroller at

@@ -154,12 +154,12 @@ const copyPath = async (e: Event, path: string) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !isSuccess }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !isSuccess }"
     :data-testid="`generate-image-card`"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -178,7 +178,7 @@ const copyPath = async (e: Event, path: string) => {
       </span>
 
       <!-- Status indicator -->
-      <span class="text-dense font-semibold" :class="isSuccess ? 'text-green-500' : 'text-red-500'">
+      <span class="text-dense font-semibold" :class="isSuccess ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'">
         {{ statusIndicator }}
       </span>
 
@@ -189,11 +189,11 @@ const copyPath = async (e: Event, path: string) => {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Error message -->
       <div
         v-if="parsed.error"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense border-b border-dashed border-[var(--color-border)]"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense border-b border-dashed border-[var(--color-border)]"
       >
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error }}</span>
@@ -218,7 +218,7 @@ const copyPath = async (e: Event, path: string) => {
             {{ (img.bytes / 1024).toFixed(1) }} KB · {{ img.mime }}
           </span>
           <button
-            class="px-1 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+            class="px-1 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
             title="Copy path"
             :data-testid="`generate-image-copy-${img.index}`"
             @click="(e) => copyPath(e, img.path)"

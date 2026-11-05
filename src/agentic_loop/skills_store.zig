@@ -700,7 +700,7 @@ fn setupStoreDb() !StoreTestCtx {
     }
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
-    try migration.Migration139ContractSkillNameDescription.up(&db, alloc);
+    try migration.Migration141ContractSkillNameDescription.up(&db, alloc);
     try test_db.enableForeignKeys(alloc, &db);
     return .{ .db = db, .threaded = threaded };
 }

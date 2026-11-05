@@ -32,7 +32,7 @@ const emit = defineEmits<{ addPage: [] }>()
   <div
     v-else-if="error"
     class="flex-1 flex items-center justify-center text-body"
-    style="color: rgb(248, 113, 113)"
+    style="color: var(--semantic-error)"
     data-testid="design-pages-error"
   >
     Failed to load pages: {{ error }}

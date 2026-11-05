@@ -1231,7 +1231,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             },
         );
 
-        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, db_messages, merged_tools, copy_inherited_context, sub_agent_system_prompt);
+        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, sub_agent_system_prompt);
 
         try messagesLists.appendSlice(allocator, initialMessages);
 

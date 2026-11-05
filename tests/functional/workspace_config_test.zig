@@ -9,8 +9,8 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// A user-level config with BOTH kinds of key: the ones that move to a
-/// workspace (profiles, tools) and the ones that must keep applying
-/// everywhere (notify_on_complete, retry_delay_ms).
+/// workspace (profiles, tools, the retry backoff) and the ones that must keep
+/// applying everywhere (notify_on_complete).
 const USER_CONFIG =
     \\{"profiles":{"stub":{"model":"stub-model","base_url":"http://127.0.0.1:1","api_key":"stub-key-not-real"},
     \\ "extra":{"model":"extra-model","base_url":"http://127.0.0.1:1","api_key":"extra-key-not-real"}},
@@ -93,9 +93,9 @@ fn readUserConfigFile(h: *Harness) ![]u8 {
     return try reader.interface.allocRemaining(gpa, .limited(1024 * 1024));
 }
 
-/// GET a workspace's effective config. `retry_delay_ms` being present is also
-/// the route-order probe: no sibling `/api/workspaces/:id/...` route answers
-/// with the config shape.
+/// GET a workspace's effective config. `notify_on_complete` being present is
+/// also the route-order probe: no sibling `/api/workspaces/:id/...` route
+/// answers with the config shape.
 fn getWorkspaceConfig(h: *Harness, workspace_id: []const u8) !struct { r: harness.Response, doc: harness.Json } {
     const path = try wsPath(gpa, workspace_id, "");
     defer gpa.free(path);
@@ -103,7 +103,7 @@ fn getWorkspaceConfig(h: *Harness, workspace_id: []const u8) !struct { r: harnes
     errdefer r.deinit();
     var doc = try r.json();
     errdefer doc.deinit();
-    if (doc.int("retry_delay_ms") == null) return error.NotTheConfigShape;
+    if (doc.boolean("notify_on_complete") == null) return error.NotTheConfigShape;
     return .{ .r = r, .doc = doc };
 }
 
@@ -131,7 +131,6 @@ test "workspace_config_route_answers_the_config_handler" {
     const id = try createWorkspace(&h, "Route Probe");
     defer gpa.free(id);
 
-    // The helper asserts the config SHAPE (`retry_delay_ms` + this route).
     // The extra assertion: a workspace created a moment ago carries no
     // profiles of its own, not even the stub the harness booted with.
     var got = try getWorkspaceConfig(&h, id);
@@ -167,10 +166,11 @@ test "workspace_config_is_empty_at_creation" {
     try testing.expect(got.doc.str("active_profile") == null);
     try testing.expect(got.doc.get("web_search") == null or got.doc.get("web_search").? == .null);
 
-    // The General keys were never workspace-scoped, so they still come from
-    // the user document - that is what "empty" leaves in place.
+    // The retry backoff is workspace-scoped, so this workspace has none of its
+    // own - it does not inherit the user's 1234. `notify_on_complete` was never
+    // workspace-scoped, so it still comes from the user document.
     try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
-    try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
+    try testing.expectEqual(@as(i64, 0), got.doc.int("retry_delay_ms").?);
 }
 
 test "workspace_config_does_not_adopt_profiles_the_user_adds_later" {
@@ -191,8 +191,8 @@ test "workspace_config_does_not_adopt_profiles_the_user_adds_later" {
     const profiles = got.doc.object("profiles");
     try testing.expect(profiles == null or profiles.?.count() == 0);
     try testing.expect(got.doc.str("active_profile") == null);
-    // General still tracks the user document.
-    try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
+    try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
+    try testing.expectEqual(@as(i64, 0), got.doc.int("retry_delay_ms").?);
 }
 
 // ============================================================================
@@ -240,10 +240,8 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
         // ...and the user's own profile is NOT part of this scope: the
         // workspace owns the list it just PUT.
         try testing.expect(profiles.get("stub") == null);
-        // The General keys are the USER's, not the body's: they were sliced
-        // out, so a change to them here cannot silently freeze them.
         try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
-        try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
+        try testing.expectEqual(@as(i64, 9), got.doc.int("retry_delay_ms").?);
     }
 
     // THE ISOLATION PROOF: the user-scope config did not move at all.
@@ -259,6 +257,54 @@ test "workspace_config_put_overrides_only_the_workspace_scoped_keys" {
         try testing.expectEqualStrings("glob", tools[1]);
         try testing.expectEqualStrings("extra", doc.str("active_profile").?);
     }
+}
+
+// ============================================================================
+// The retry backoff is the workspace's, and the clamp follows it there
+// ============================================================================
+
+test "workspace_retry_delay_overrides_the_users_and_clamps_on_the_way_in" {
+    var h = try boot();
+    defer h.deinit(io) catch |err| std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    try putUserConfig(&h);
+
+    const id = try createWorkspace(&h, "Retry Backoff");
+    defer gpa.free(id);
+    const path = try wsPath(gpa, id, "");
+    defer gpa.free(path);
+
+    {
+        var r = try h.http(io, .PUT, path, .{ .json_body = "{\"retry_delay_ms\":2500}", .expect = &.{200} });
+        defer r.deinit();
+    }
+
+    {
+        var got = try getWorkspaceConfig(&h, id);
+        defer got.doc.deinit();
+        defer got.r.deinit();
+        try testing.expectEqual(@as(i64, 2500), got.doc.int("retry_delay_ms").?);
+    }
+    {
+        // Above the cap. The user-scope PUT clamps at 60 000 and this one must
+        // too, or a workspace could store a 16-minute backoff the runtime
+        // would honour.
+        var r = try h.http(io, .PUT, path, .{ .json_body = "{\"retry_delay_ms\":999999}", .expect = &.{200} });
+        defer r.deinit();
+    }
+    {
+        var got = try getWorkspaceConfig(&h, id);
+        defer got.doc.deinit();
+        defer got.r.deinit();
+        try testing.expectEqual(@as(i64, 60_000), got.doc.int("retry_delay_ms").?);
+    }
+
+    // The user document never moved: their own value is still there, it just
+    // does not reach this workspace any more.
+    var r = try h.http(io, .GET, "/api/config/pabrik", .{ .expect = &.{200} });
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+    try testing.expectEqual(@as(i64, 1234), doc.int("retry_delay_ms") orelse return error.NoRetry);
 }
 
 // ============================================================================
@@ -280,7 +326,7 @@ test "workspace_config_put_refuses_a_body_with_nothing_workspace_scoped" {
         // Storing this would look like a successful save while every setting
         // the user typed stayed at user level - so it is a 400 instead.
         var r = try h.http(io, .PUT, path, .{
-            .json_body = "{\"retry_delay_ms\":9,\"notify_on_complete\":false}",
+            .json_body = "{\"notify_on_complete\":false,\"web_launch_enabled\":true}",
             .expect = &.{400},
         });
         defer r.deinit();
@@ -346,8 +392,8 @@ test "workspace_config_put_with_an_empty_body_leaves_no_scoped_settings" {
         try testing.expectEqual(@as(usize, 0), tools.len);
         const profiles = got.doc.object("profiles");
         try testing.expect(profiles == null or profiles.?.count() == 0);
-        // General is still the user's.
-        try testing.expectEqual(@as(i64, 1234), got.doc.int("retry_delay_ms").?);
+        try testing.expectEqual(@as(i64, 0), got.doc.int("retry_delay_ms").?);
+        try testing.expectEqual(true, got.doc.boolean("notify_on_complete").?);
     }
 }
 

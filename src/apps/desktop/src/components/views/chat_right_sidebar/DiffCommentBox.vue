@@ -260,7 +260,7 @@ onUpdated(() => {
       class="w-full rounded p-2 text-dense"
       style="
         min-height: 72px;
-        background: var(--semantic-input-bg, transparent);
+        background: var(--semantic-wash, transparent);
         color: var(--semantic-text);
         border: 1px solid var(--color-border);
       "

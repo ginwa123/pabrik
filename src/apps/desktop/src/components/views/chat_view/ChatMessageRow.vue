@@ -258,9 +258,10 @@ defineProps<{
                 :key="msg.id || `answer-${idx}`"
                 class="assistant-item"
               >
-                <!-- <html> and <mermaid> blocks render as themselves;
-                     `sandbox="allow-scripts"` with no same-origin is
-                     the null-origin security boundary. -->
+                <!-- <html> and <mermaid> blocks render as themselves.
+                     `allow-forms` is what makes an interactive block work — without it a
+                     <form> submit never fires its event. `allow-same-origin` must stay OUT:
+                     the null origin is the security boundary. -->
                 <template v-if="msg.role === 'assistant' && hasRichBlocks(msg.content)">
                   <template v-for="(seg, sIdx) in extractRichBlocks(msg.content || '')" :key="sIdx">
                     <!-- eslint-disable-next-line vue/no-v-html -->
@@ -271,7 +272,7 @@ defineProps<{
                     <iframe
                       v-else-if="seg.kind === 'html' && seg.payload"
                       class="chat-html-frame"
-                      sandbox="allow-scripts"
+                      sandbox="allow-scripts allow-forms"
                       scrolling="no"
                       style="overflow: hidden"
                       :srcdoc="htmlFrameSrcDoc(seg.payload)"

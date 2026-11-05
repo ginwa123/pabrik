@@ -19,6 +19,7 @@ instruction: []u8 = &.{},
 /// 09:00). Empty string = manual-run only (no auto-fire).
 /// Validated by `routines/cron.zig`.
 schedule: []u8 = &.{},
+cwd: []u8 = &.{},
 enabled: bool = true,
 last_run_at: ?[]u8 = null,
 /// Next scheduled fire time (`YYYY-MM-DD HH:MM:SS`). NULL on disk
@@ -40,6 +41,7 @@ pub const InitArgs = struct {
     description: []const u8 = "",
     instruction: []const u8 = "",
     schedule: []const u8 = "",
+    cwd: []const u8 = "",
     enabled: bool = true,
     last_run_at: ?[]const u8 = null,
     next_run_at: ?[]const u8 = null,
@@ -56,6 +58,7 @@ pub fn init(allocator: std.mem.Allocator, args: InitArgs) !Self {
         .description = try allocator.dupe(u8, args.description),
         .instruction = try allocator.dupe(u8, args.instruction),
         .schedule = try allocator.dupe(u8, args.schedule),
+        .cwd = try allocator.dupe(u8, args.cwd),
         .enabled = args.enabled,
         .last_run_at = if (args.last_run_at) |lr|
             try allocator.dupe(u8, lr)
@@ -78,6 +81,7 @@ pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
     if (self.description.len > 0) allocator.free(self.description);
     if (self.instruction.len > 0) allocator.free(self.instruction);
     if (self.schedule.len > 0) allocator.free(self.schedule);
+    if (self.cwd.len > 0) allocator.free(self.cwd);
     if (self.last_run_at) |lr| allocator.free(lr);
     if (self.next_run_at) |nr| allocator.free(nr);
     if (self.last_status.len > 0) allocator.free(self.last_status);
@@ -93,6 +97,7 @@ pub fn clone(self: *const Self, allocator: std.mem.Allocator) !Self {
         .description = self.description,
         .instruction = self.instruction,
         .schedule = self.schedule,
+        .cwd = self.cwd,
         .enabled = self.enabled,
         .last_run_at = if (self.last_run_at) |lr| lr else null,
         .next_run_at = if (self.next_run_at) |nr| nr else null,

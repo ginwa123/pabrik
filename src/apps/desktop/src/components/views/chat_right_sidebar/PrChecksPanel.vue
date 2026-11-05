@@ -89,19 +89,19 @@ const BUCKET_ICON: Record<string, string> = {
 }
 
 const BUCKET_CLASS: Record<string, string> = {
-  pass: 'text-emerald-400',
-  fail: 'text-red-400',
-  pending: 'text-amber-400',
-  skipping: 'text-neutral-500',
-  cancel: 'text-neutral-400',
+  pass: 'text-[var(--semantic-success)]',
+  fail: 'text-[var(--semantic-error)]',
+  pending: 'text-[var(--semantic-warning)]',
+  skipping: 'text-[var(--semantic-text-dim)]',
+  cancel: 'text-[var(--semantic-text-muted)]',
 }
 
 const STEP_CLASS: Record<string, string> = {
-  failure: 'text-red-400',
-  timed_out: 'text-red-400',
-  cancelled: 'text-amber-400',
-  skipped: 'text-neutral-500',
-  success: 'text-emerald-400',
+  failure: 'text-[var(--semantic-error)]',
+  timed_out: 'text-[var(--semantic-error)]',
+  cancelled: 'text-[var(--semantic-warning)]',
+  skipped: 'text-[var(--semantic-text-dim)]',
+  success: 'text-[var(--semantic-success)]',
 }
 
 /** Sorted so the failures are on top — the tab exists to read them. */
@@ -157,7 +157,7 @@ defineExpose({ reload: load })
       <h2 class="text-body font-medium">CI checks</h2>
       <div class="flex items-center gap-2">
         <span v-if="summary" class="text-dense" style="color: var(--semantic-text-dim)">
-          <span v-if="summary.failed" class="text-red-400" data-testid="checks-failed-count">
+          <span v-if="summary.failed" class="text-[var(--semantic-error)]" data-testid="checks-failed-count">
             {{ summary.failed }} failed
           </span>
           <span v-if="summary.failed && summary.passed"> · </span>
@@ -234,7 +234,7 @@ defineExpose({ reload: load })
         <div class="flex items-center gap-2 px-3 py-1.5">
           <span
             class="text-dense shrink-0"
-            :class="BUCKET_CLASS[check.bucket] ?? 'text-neutral-400'"
+            :class="BUCKET_CLASS[check.bucket] ?? 'text-[var(--semantic-text-muted)]'"
             data-testid="checks-row-icon"
           >
             {{ BUCKET_ICON[check.bucket] ?? '?' }}
@@ -295,7 +295,7 @@ defineExpose({ reload: load })
           >
             <span
               class="text-dense shrink-0"
-              :class="STEP_CLASS[step.conclusion] ?? 'text-neutral-400'"
+              :class="STEP_CLASS[step.conclusion] ?? 'text-[var(--semantic-text-muted)]'"
             >
               {{ step.conclusion === 'failure' ? '✗' : step.conclusion === 'skipped' ? '–' : '✓' }}
             </span>

@@ -149,7 +149,7 @@ describe('GetPlan.vue — present plan', () => {
       },
     })
     const root = wrapper.find('[data-testid="get-plan"]')
-    expect(root.classes()).not.toContain('border-red-500/50')
+    expect(root.classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('auto-expands (expanded by default)', () => {
@@ -353,7 +353,7 @@ describe('GetPlan.vue — empty plan (<empty/>)', () => {
       props: { message: { content: makeEmptyContent() } },
     })
     const root = wrapper.find('[data-testid="get-plan"]')
-    expect(root.classes()).not.toContain('border-red-500/50')
+    expect(root.classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('renders the "No plan set" hint when expanded', async () => {
@@ -397,7 +397,7 @@ describe('GetPlan.vue — error path', () => {
       props: { message: { content: makeErrorContent() } },
     })
     const root = wrapper.find('[data-testid="get-plan"]')
-    expect(root.classes()).toContain('border-red-500/50')
+    expect(root.classes()).toContain('border-[var(--tint-error-border)]')
   })
 
   it('shows "error" as the primary label on failure', () => {
@@ -477,7 +477,7 @@ describe('GetPlan.vue — inner envelope extraction', () => {
     })
     expect(wrapper.find('[data-testid="get-plan-error"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('boom')
-    expect(wrapper.find('[data-testid="get-plan"]').classes()).toContain('border-red-500/50')
+    expect(wrapper.find('[data-testid="get-plan"]').classes()).toContain('border-[var(--tint-error-border)]')
   })
 
   it('treats non-JSON content as an error (hard cut: no XML fallback)', () => {

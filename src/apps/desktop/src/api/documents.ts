@@ -15,17 +15,40 @@ export interface Document {
   created_at: string
   updated_at: string
   position: number
+  /** The folder this document sits in; `null` (or absent, in a row cached
+   * before Migration 140) means the root of the section. */
+  folder_id?: string | null
+}
+
+/** One folder in the documents tree (Migration 140). `parent_id: null` is a
+ * root folder; a folder's children are the folders and documents that point
+ * at it. */
+export interface DocumentFolder {
+  id: string
+  workspace_id: string
+  parent_id: string | null
+  name: string
+  position: number
 }
 
 /**  * GET /api/workspaces/:workspaceId/documents All documents in one workspace in the saved sidebar
  * order. Backs the sidebar's Documents section, so it runs on every sidebar load. */
 export async function listDocuments(
   workspaceId: string,
-): Promise<{ documents: Document[]; count: number }> {
-  return await apiFetch<{ documents: Document[]; count: number }>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/documents`,
-    { track: false },
-  )
+): Promise<{
+  documents: Document[]
+  /** Absent against a server older than Migration 140; the store then paints
+   * every document at the root. */
+  folders?: DocumentFolder[]
+  count: number
+  folder_count?: number
+}> {
+  return await apiFetch<{
+    documents: Document[]
+    folders?: DocumentFolder[]
+    count: number
+    folder_count?: number
+  }>(`/workspaces/${encodeURIComponent(workspaceId)}/documents`, { track: false })
 }
 
 /**  * GET /api/workspaces/:workspaceId/documents/:documentId Returns 404 for an id that does not exist
@@ -48,10 +71,16 @@ export async function createDocument(
   workspaceId: string,
   title: string,
   content = '',
+  folderId: string | null = null,
 ): Promise<{ document: Document }> {
   return await apiFetch<{ document: Document }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents`,
-    { method: 'POST', body: { title, content } },
+    {
+      method: 'POST',
+      // `folder_id` is omitted at the root: the column is nullable and an
+      // absent key is the documented "top level" body shape.
+      body: folderId ? { title, content, folder_id: folderId } : { title, content },
+    },
   )
 }
 
@@ -61,7 +90,7 @@ export async function createDocument(
 export async function updateDocument(
   workspaceId: string,
   documentId: string,
-  patch: { title?: string; content?: string },
+  patch: { title?: string; content?: string; folder_id?: string | null },
 ): Promise<{ document: Document }> {
   return await apiFetch<{ document: Document }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
@@ -69,13 +98,53 @@ export async function updateDocument(
   )
 }
 
+/** Renumber ONE level: `folderId` null is the root. Sibling order is per
+ * level, so the level is part of the request, not an inference. */
 export async function reorderDocuments(
   workspaceId: string,
+  folderId: string | null,
   orderedIds: string[],
-): Promise<{ documents: Document[]; count: number }> {
-  return await apiFetch<{ documents: Document[]; count: number }>(
+): Promise<{ documents: Document[]; folders: DocumentFolder[]; count: number }> {
+  return await apiFetch<{ documents: Document[]; folders: DocumentFolder[]; count: number }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents/reorder`,
-    { method: 'PATCH', body: { ordered_ids: orderedIds } },
+    { method: 'PATCH', body: { folder_id: folderId, ordered_ids: orderedIds } },
+  )
+}
+
+/** POST /api/workspaces/:workspaceId/document-folders */
+export async function createFolder(
+  workspaceId: string,
+  name: string,
+  parentId: string | null = null,
+): Promise<{ folder: DocumentFolder }> {
+  return await apiFetch<{ folder: DocumentFolder }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/document-folders`,
+    { method: 'POST', body: { name, parent_id: parentId } },
+  )
+}
+
+/** PATCH /api/workspaces/:workspaceId/document-folders/:folderId Renames when
+ * `name` is given; `parent_id` present (even null) moves the folder. */
+export async function updateFolder(
+  workspaceId: string,
+  folderId: string,
+  patch: { name?: string; parent_id?: string | null },
+): Promise<{ folder: DocumentFolder }> {
+  return await apiFetch<{ folder: DocumentFolder }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/document-folders/${encodeURIComponent(folderId)}`,
+    { method: 'PATCH', body: patch },
+  )
+}
+
+/** DELETE /api/workspaces/:workspaceId/document-folders/:folderId Deletes the
+ * folder only: its children move one level up and the count says how many. */
+export async function deleteFolder(
+  workspaceId: string,
+  folderId: string,
+): Promise<{ id: string; success: boolean; reparented_documents: number }> {
+  return await apiFetch<{ id: string; success: boolean; reparented_documents: number }>(
+    `/workspaces/${encodeURIComponent(workspaceId)}/document-folders/${encodeURIComponent(folderId)}`,
+    { method: 'DELETE' },
   )
 }
 

@@ -253,7 +253,7 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
       <span
         v-if="staged"
         class="text-dense px-1.5 py-0.5 rounded"
-        style="background: rgba(135, 169, 135, 0.15); color: var(--color-green)"
+        style="background: var(--tint-success); color: var(--color-green)"
       >
         Staged
       </span>
@@ -392,7 +392,7 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
                 <td
                   colspan="3"
                   class="px-3 py-1"
-                  style="background: rgba(139, 164, 176, 0.1); color: var(--color-blue)"
+                  style="background: var(--tint-info); color: var(--color-blue)"
                 >
                   {{ line.content }}
                 </td>
@@ -416,7 +416,7 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
                   class="px-2"
                   style="
                     border-left: 3px solid var(--color-green);
-                    background: rgba(135, 169, 135, 0.15);
+                    background: var(--tint-success);
                     color: var(--semantic-text);
                   "
                 >
@@ -448,7 +448,7 @@ const openFile = () => emit('open', { path: props.path, line: firstAddLine.value
                   class="px-2"
                   style="
                     border-left: 3px solid var(--color-red);
-                    background: rgba(169, 135, 135, 0.15);
+                    background: var(--tint-error);
                     color: var(--semantic-text);
                   "
                 >

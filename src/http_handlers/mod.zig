@@ -176,6 +176,9 @@ pub const workspaceRoutinesRunHandler = @import("workspace_routines_run.zig").wo
 // each carrying its own private `useCase` + inline tests — the house
 // shape (mirrors the routines block above).
 pub const documentsListHandler = @import("documents_list.zig").documentsListHandler;
+pub const documentFoldersCreateHandler = @import("document_folders_create.zig").documentFoldersCreateHandler;
+pub const documentFoldersUpdateHandler = @import("document_folders_update.zig").documentFoldersUpdateHandler;
+pub const documentFoldersDeleteHandler = @import("document_folders_delete.zig").documentFoldersDeleteHandler;
 pub const documentsCreateHandler = @import("documents_create.zig").documentsCreateHandler;
 pub const documentsGetHandler = @import("documents_get.zig").documentsGetHandler;
 pub const documentsUpdateHandler = @import("documents_update.zig").documentsUpdateHandler;

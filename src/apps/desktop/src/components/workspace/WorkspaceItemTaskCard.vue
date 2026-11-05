@@ -268,7 +268,7 @@ const runAgentFromMenu = () => {
 // (card-ux-v3 — Jira-style priority-bar pattern).
 function typeAccentShadow(): string {
   const t = props.task.task_type
-  if (t === 'memory') return 'inset 3px 0 0 0 rgb(96, 165, 250)' // blue-400
+  if (t === 'memory') return 'inset 3px 0 0 0 var(--semantic-info)'
   return ''
 }
 
@@ -514,8 +514,8 @@ onUpdated(() => {
         v-if="task.needs_human_review && task.last_finish_reason === 'stop'"
         class="w-2 h-2 rounded-full shrink-0"
         style="
-          background-color: rgb(251, 146, 60);
-          box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
+          background-color: var(--color-orange);
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-orange) 60%, transparent);
           animation: needs-review-pulse 2.4s ease-out 4 forwards;
         "
         title="AI finished — awaiting your review"
@@ -531,7 +531,7 @@ onUpdated(() => {
              during a session-status flip. -->
       <span
         v-else-if="task.last_finish_reason === 'stop'"
-        class="shrink-0 text-green-500"
+        class="shrink-0 text-[var(--semantic-success)]"
         title="Reviewed"
         data-testid="task-reviewed"
       >
@@ -564,7 +564,7 @@ onUpdated(() => {
       >
         <span
           class="error-pulse w-3.5 h-3.5 rounded-full flex items-center justify-center"
-          style="background: rgba(196, 116, 110, 0.18); border: 1px solid var(--color-red)"
+          style="background: var(--tint-error); border: 1px solid var(--color-red)"
           aria-label="Agent error — click card to view detail"
         >
           <span
@@ -580,7 +580,7 @@ onUpdated(() => {
           class="error-tooltip absolute left-0 top-full mt-1.5 w-[280px] z-50 rounded-lg p-2 pointer-events-none opacity-0 invisible transition-opacity duration-150"
           style="
             background: var(--semantic-card-bg);
-            border: 1px solid rgba(196, 116, 110, 0.45);
+            border: 1px solid var(--tint-error-border);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
           "
           role="tooltip"
@@ -594,7 +594,7 @@ onUpdated(() => {
             <span
               v-if="errorRetryLabel"
               class="text-micro px-1.5 py-0.5 rounded-full"
-              style="background: rgba(196, 116, 110, 0.18); color: #e8928c"
+              style="background: var(--tint-error); color: #e8928c"
               data-testid="task-agent-error-retry"
               >retry {{ errorRetryLabel }}</span
             >
@@ -615,7 +615,7 @@ onUpdated(() => {
       <!-- Pin indicator (always visible when pinned). -->
       <span
         v-if="task.is_pinned"
-        class="w-3 h-3 flex items-center justify-center shrink-0 text-yellow-400"
+        class="w-3 h-3 flex items-center justify-center shrink-0 text-[var(--semantic-warning)]"
         title="Pinned"
         data-testid="task-pin-indicator"
       >
@@ -739,7 +739,7 @@ onUpdated(() => {
     >
       <span
         class="inline-flex items-center gap-1 text-micro px-1.5 py-0.5 rounded font-medium"
-        style="background: rgba(249, 115, 22, 0.15); color: #fb923c"
+        style="background: var(--color-orange); color: var(--color-orange)"
       >
         <span aria-hidden="true">⛔</span>
         <span>blocked by {{ blockedCount }}</span>
@@ -833,7 +833,7 @@ onUpdated(() => {
       <span
         v-if="agentError"
         class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
-        style="background: rgba(196, 116, 110, 0.12); color: var(--color-red)"
+        style="background: var(--tint-error); color: var(--color-red)"
         data-testid="task-meta-agent-error"
       >
         <span aria-hidden="true">⚠</span>
@@ -891,13 +891,13 @@ onUpdated(() => {
 */
 @keyframes needs-review-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-orange) 60%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 12px rgba(251, 146, 60, 0);
+    box-shadow: 0 0 0 12px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -944,7 +944,7 @@ onUpdated(() => {
    matched and the error ring had not been rendering at all. Scoped to
    the data attribute instead. */
 [data-has-agent-error='true'] {
-  border-color: rgba(196, 116, 110, 0.55);
+  border-color: var(--tint-error);
   box-shadow: 0 0 0 1px rgba(196, 116, 110, 0.25);
 }
 </style>

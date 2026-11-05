@@ -118,7 +118,7 @@ describe('LoadMemory.vue — happy path', () => {
     const wrapper = mount(LoadMemory, {
       props: { content: makeSuccessContent() },
     })
-    expect(wrapper.find('[data-testid="load-memory"]').classes()).not.toContain('border-red-500/50')
+    expect(wrapper.find('[data-testid="load-memory"]').classes()).not.toContain('border-[var(--tint-error-border)]')
     expect(wrapper.text()).not.toContain('Error')
   })
 
@@ -126,7 +126,7 @@ describe('LoadMemory.vue — happy path', () => {
     const wrapper = mount(LoadMemory, {
       props: { content: makeSuccessContent() },
     })
-    expect(wrapper.find('[data-testid="load-memory"]').classes()).not.toContain('border-red-500/50')
+    expect(wrapper.find('[data-testid="load-memory"]').classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('does NOT auto-expand', () => {
@@ -364,7 +364,7 @@ describe('LoadMemory.vue — error path', () => {
       props: { content: makeErrorContent() },
     })
     expect(wrapper.text()).toContain('Error')
-    expect(wrapper.find('[data-testid="load-memory"]').classes()).toContain('border-red-500/50')
+    expect(wrapper.find('[data-testid="load-memory"]').classes()).toContain('border-[var(--tint-error-border)]')
   })
 })
 

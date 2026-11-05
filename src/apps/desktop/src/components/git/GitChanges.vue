@@ -405,7 +405,7 @@ const hasChanges = computed(
                 @click="unstageAllFiles"
                 :disabled="isStaging"
                 class="px-1.5 py-0.5 rounded text-dense transition-all hover:opacity-100 disabled:opacity-50"
-                style="background-color: rgba(34, 197, 94, 0.2); color: var(--color-green)"
+                style="background-color: var(--tint-success); color: var(--color-green)"
                 title="Unstage All"
               >
                 ↩ Unstage All
@@ -447,7 +447,7 @@ const hasChanges = computed(
               </button>
               <span
                 class="text-dense px-1.5 py-0.5 rounded"
-                style="background-color: rgba(34, 197, 94, 0.2); color: var(--color-green)"
+                style="background-color: var(--tint-success); color: var(--color-green)"
               >
                 {{ getDisplayStatus(file).text }}
               </span>
@@ -465,7 +465,7 @@ const hasChanges = computed(
                 @click="stageAllFiles"
                 :disabled="isStaging"
                 class="px-1.5 py-0.5 rounded text-dense transition-all hover:opacity-100 disabled:opacity-50"
-                style="background-color: rgba(245, 158, 11, 0.2); color: var(--color-orange)"
+                style="background-color: var(--tint-warning); color: var(--color-orange)"
                 title="Stage All"
               >
                 ↪ Stage All
@@ -506,7 +506,7 @@ const hasChanges = computed(
               </button>
               <span
                 class="text-dense px-1.5 py-0.5 rounded"
-                style="background-color: rgba(245, 158, 11, 0.2); color: var(--color-orange)"
+                style="background-color: var(--tint-warning); color: var(--color-orange)"
               >
                 {{ getDisplayStatus(file).text }}
               </span>
@@ -524,7 +524,7 @@ const hasChanges = computed(
                 @click="stageAllFiles"
                 :disabled="isStaging"
                 class="px-1.5 py-0.5 rounded text-dense transition-all hover:opacity-100 disabled:opacity-50"
-                style="background-color: rgba(156, 163, 175, 0.2); color: var(--semantic-text-dim)"
+                style="background-color: var(--semantic-wash-strong); color: var(--semantic-text-dim)"
                 title="Stage All"
               >
                 ↪ Stage All
@@ -564,7 +564,7 @@ const hasChanges = computed(
               </button>
               <span
                 class="text-dense px-1.5 py-0.5 rounded"
-                style="background-color: rgba(156, 163, 175, 0.2); color: var(--semantic-text-dim)"
+                style="background-color: var(--semantic-wash-strong); color: var(--semantic-text-dim)"
               >
                 Untracked
               </span>

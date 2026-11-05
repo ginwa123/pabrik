@@ -1,6 +1,13 @@
 /** Reactive state and derived values for the KanbanTaskDetail panel. Split out of the SFC so the
  * panel stays readable; behaviour (handlers, emitters) lives in useTaskDetailActions.ts. */
 import { computed, inject, ref } from 'vue'
+import {
+  browserSkillDefaultsStorage,
+  readSkillDefaults,
+  resolveDefaultSkills,
+  skillDefaultsKey as skillDefaultsStorageKey,
+  writeSkillDefaults,
+} from '../../helpers/kanbanSkillDefaults'
 import type { PreviewFile } from '../file/FilePreview.vue'
 import type {
   AgentEntry,
@@ -86,6 +93,29 @@ const skillSearch = ref('')
 const isSkillPickerOpen = ref(false)
 const availableSkills = ref<SkillEntry[]>([])
 const skillsLoading = ref(false)
+// True once the human touched the picker in this dialog session. Auto-fill
+// stops there so a stored default never overwrites a deliberate choice.
+const skillsUserEdited = ref(false)
+
+const skillDefaultsKey = (): string =>
+  skillDefaultsStorageKey(props.workspaceId ?? '', props.column?.workspace_item_id ?? '')
+
+const savedSkillDefaults = (): string[] =>
+  readSkillDefaults(browserSkillDefaultsStorage(), skillDefaultsKey())
+
+const rememberSkills = (names: string[]): void => {
+  skillsUserEdited.value = true
+  writeSkillDefaults(browserSkillDefaultsStorage(), skillDefaultsKey(), names)
+}
+
+const resetSkillsEdited = (): void => {
+  skillsUserEdited.value = false
+}
+
+const prefillSkillsIfUntouched = (availableNames: string[]): void => {
+  if (skillsUserEdited.value) return
+  selectedSkills.value = resolveDefaultSkills(savedSkillDefaults(), availableNames)
+}
 
 
 // NEW (plan: 2026-08-06-kanban-add-task-button-placement). Column dropdown state (create mode
@@ -267,6 +297,10 @@ const isMediaLoading = computed<boolean>(() => {
     isSkillPickerOpen,
     availableSkills,
     skillsLoading,
+    skillsUserEdited,
+    rememberSkills,
+    resetSkillsEdited,
+    prefillSkillsIfUntouched,
     selectedColumnId,
     isColumnPickerOpen,
     columnPickerRef,

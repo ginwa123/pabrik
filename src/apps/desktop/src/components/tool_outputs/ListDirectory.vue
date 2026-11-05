@@ -154,12 +154,12 @@ const canOpenInEditor = computed(() => !!props.cwd && !!openInEditor)
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !isSuccess }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !isSuccess }"
     data-testid="list-directory"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       role="button"
       tabindex="0"
       @click="toggle"
@@ -174,10 +174,10 @@ const canOpenInEditor = computed(() => !!props.cwd && !!openInEditor)
         {{ headerLabel }}
       </span>
       <span class="text-[var(--semantic-text-muted)] text-micro shrink-0">{{ countLabel }}</span>
-      <span v-if="isRunning" data-testid="list-directory-running" class="text-micro text-yellow-500 animate-pulse">running…</span>
+      <span v-if="isRunning" data-testid="list-directory-running" class="text-micro text-[var(--semantic-warning)] animate-pulse">running…</span>
       <span
         class="text-dense font-semibold shrink-0"
-        :class="isSuccess ? 'text-green-500' : 'text-red-500'"
+        :class="isSuccess ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'"
       >
         {{ statusIndicator }}
       </span>
@@ -187,11 +187,11 @@ const canOpenInEditor = computed(() => !!props.cwd && !!openInEditor)
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Error message -->
       <div
         v-if="!isSuccess && errorMessage"
-        class="flex gap-2 px-2 py-1.5 text-red-500 text-dense"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense"
         data-testid="list-directory-error"
       >
         <span class="font-semibold shrink-0">Error:</span>
@@ -207,7 +207,7 @@ const canOpenInEditor = computed(() => !!props.cwd && !!openInEditor)
         <div
           v-for="(entry, idx) in entries"
           :key="`${entry.name}-${idx}`"
-          class="group/row flex items-center gap-1 px-2 py-1 border-b border-dashed border-[var(--color-border)] last:border-b-0 hover:bg-violet-500/5"
+          class="group/row flex items-center gap-1 px-2 py-1 border-b border-dashed border-[var(--color-border)] last:border-b-0 hover:bg-[var(--tint-accent)]"
           :data-testid="'list-directory-row'"
           :data-kind="rowKind(entry)"
           :data-is-symlink="entry.isSymlink ? 'true' : 'false'"
@@ -228,14 +228,14 @@ const canOpenInEditor = computed(() => !!props.cwd && !!openInEditor)
             :title="entry.path"
           >{{ entry.path }}</span>
           <button
-            class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-violet-500 text-lead transition-opacity shrink-0"
+            class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity shrink-0"
             @click="(e) => copyPath(e, entry.path)"
             :title="`Copy ${entry.path}`"
             data-testid="list-directory-copy-path"
           >⎘</button>
           <button
             v-if="canOpenInEditor"
-            class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-violet-500 transition-opacity shrink-0"
+            class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-[var(--semantic-accent)] transition-opacity shrink-0"
             @click="(e) => openInEditorClick(e, entry.path)"
             title="Open in code editor"
           >

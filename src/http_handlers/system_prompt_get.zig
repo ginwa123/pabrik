@@ -87,6 +87,7 @@ pub fn systemPromptGetHandler(
         cwd_str,
         session_id,
         "",
+        false,
         db_messages,
         merged_tools,
         "",

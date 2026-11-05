@@ -256,7 +256,7 @@ fn setupSlashDb() !TestCtx {
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
-    try migration.Migration139ContractSkillNameDescription.up(&db, alloc);
+    try migration.Migration141ContractSkillNameDescription.up(&db, alloc);
     try db.exec(alloc,
         \\CREATE TABLE IF NOT EXISTS session_skills (session_id TEXT NOT NULL, skill_name TEXT NOT NULL, content TEXT NOT NULL, loaded_at_nano BIGINT DEFAULT (strftime('%s', 'now')), PRIMARY KEY (session_id, skill_name))
     , &.{});

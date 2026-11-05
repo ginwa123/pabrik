@@ -7,6 +7,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
+const folders_store = @import("../agentic_loop/document_folders_store.zig");
 
 pub const DocumentsListError = error{
     WorkspaceIdRequired,
@@ -22,6 +23,9 @@ pub const DocumentsListOutput = struct {
     /// Owned slice; the caller frees it with
     /// `documents_store.freeDocumentRows`.
     documents: []documents_store.DocumentRow,
+    /// Owned slice; the caller frees it with
+    /// `folders_store.freeFolderRows`.
+    folders: []folders_store.FolderRow,
 };
 
 // =====================================================================
@@ -34,7 +38,12 @@ fn useCase(
     input: DocumentsListInput,
 ) DocumentsListError!DocumentsListOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    return .{ .documents = try documents_store.listDocuments(allocator, db, input.workspace_id) };
+    // Both reads, one response: the client builds the tree from `parent_id`,
+    // and a second request per folder would be an N+1 on first paint.
+    return .{
+        .documents = try documents_store.listDocuments(allocator, db, input.workspace_id),
+        .folders = try folders_store.listFolders(allocator, db, input.workspace_id),
+    };
 }
 
 // =====================================================================
@@ -69,8 +78,9 @@ pub fn documentsListHandler(
         });
     };
     defer documents_store.freeDocumentRows(allocator, output.documents);
+    defer folders_store.freeFolderRows(allocator, output.folders);
 
-    const data = try http_response.makeDocumentListResponse(allocator, output.documents);
+    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders);
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
@@ -96,6 +106,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -119,7 +130,9 @@ test "useCase: a workspace with no documents returns an empty list" {
 
     const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
     defer documents_store.freeDocumentRows(alloc, output.documents);
+    defer folders_store.freeFolderRows(alloc, output.folders);
     try testing.expectEqual(@as(usize, 0), output.documents.len);
+    try testing.expectEqual(@as(usize, 0), output.folders.len);
 }
 
 test "useCase: never returns another workspace's documents" {
@@ -136,6 +149,7 @@ test "useCase: never returns another workspace's documents" {
 
     const mine = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
     defer documents_store.freeDocumentRows(alloc, mine.documents);
+    defer folders_store.freeFolderRows(alloc, mine.folders);
     try testing.expectEqual(@as(usize, 1), mine.documents.len);
     try testing.expectEqualStrings("doc_a", mine.documents[0].id);
     try testing.expectEqualStrings("body a", mine.documents[0].content);
@@ -144,6 +158,7 @@ test "useCase: never returns another workspace's documents" {
     // direction, and no "empty because mis-scoped" false negative.
     const theirs = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_2" });
     defer documents_store.freeDocumentRows(alloc, theirs.documents);
+    defer folders_store.freeFolderRows(alloc, theirs.folders);
     try testing.expectEqual(@as(usize, 1), theirs.documents.len);
     try testing.expectEqualStrings("doc_b", theirs.documents[0].id);
 }

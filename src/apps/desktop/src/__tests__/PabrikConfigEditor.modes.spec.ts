@@ -32,7 +32,7 @@ const mockRegistry = api.getAgentToolsRegistry as unknown as ReturnType<typeof v
 const mockGetWs = api.getWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
 const mockSaveWs = api.saveWorkspaceConfig as unknown as ReturnType<typeof vi.fn>
 
-const WORKSPACE_TABS = ['agents', 'mcp', 'tools', 'evals'] as const
+const WORKSPACE_TABS = ['agents', 'mcp', 'tools', 'evals', 'runtime'] as const
 
 /** A router already sitting on `/app/settings` (plus any query). */
 async function makeRouter(query: Record<string, string> = {}) {
@@ -128,7 +128,9 @@ describe('PabrikConfigEditor — JSON mode', () => {
     await textarea.setValue('[1, 2, 3]')
     await flushPromises()
     expect(wrapper.find('[data-testid="config-json-error"]').exists()).toBe(true)
-    expect((wrapper.find('[data-testid="config-json-apply"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(
+      (wrapper.find('[data-testid="config-json-apply"]').element as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('applies valid JSON to the config, which then saves itself', async () => {
@@ -139,9 +141,9 @@ describe('PabrikConfigEditor — JSON mode', () => {
     await wrapper.find('[data-testid="mode-json"]').trigger('click')
     await flushPromises()
 
-    await wrapper.find('[data-testid="config-json-textarea"]').setValue(
-      JSON.stringify({ active_profile: 'work', tools: ['read_file', 'bash'] }),
-    )
+    await wrapper
+      .find('[data-testid="config-json-textarea"]')
+      .setValue(JSON.stringify({ active_profile: 'work', tools: ['read_file', 'bash'] }))
     await flushPromises()
     await wrapper.find('[data-testid="config-json-apply"]').trigger('click')
     await settleAutosave()
@@ -210,7 +212,7 @@ describe('PabrikConfigEditor — workspace scope', () => {
     })
   })
 
-  it('accepts only the four moved sections, and General is not one of them', async () => {
+  it('accepts only the moved sections, and General is not one of them', async () => {
     // The editor no longer owns a nav, so "which sections does it offer?" is observable through
     // what it RENDERS for a given `?section=`: the first entry is the fallback, and a section
     // outside the list falls back to it rather than rendering a pane that belongs to the user.
@@ -270,6 +272,45 @@ describe('PabrikConfigEditor — workspace scope', () => {
     expect(mockSaveWs).toHaveBeenCalledTimes(1)
     expect(mockSave).not.toHaveBeenCalled()
     expect(mockSaveWs.mock.calls[0]![0]).toBe('ws_1')
+  })
+
+  it('the Runtime tab hydrates the retry delay from the workspace config', async () => {
+    const router = await makeRouter({ section: 'runtime' })
+    mockGetWs.mockResolvedValueOnce({ retry_delay_ms: 15000 })
+    const wrapper = mountEditor({
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
+      global: { plugins: [router], stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="pabrik-runtime-section"]').exists()).toBe(true)
+    expect(
+      Number(
+        (wrapper.find('[data-testid="input-retry-delay-seconds"]').element as HTMLInputElement)
+          .value,
+      ),
+    ).toBe(15)
+    expect(wrapper.find('[data-testid="retry-delay-ms-readout"]').text()).toContain('15000 ms')
+  })
+
+  it('typing a retry delay on the Runtime tab saves it to THIS workspace', async () => {
+    const router = await makeRouter({ section: 'runtime' })
+    mockGetWs.mockResolvedValueOnce({ retry_delay_ms: 0 })
+    mockSaveWs.mockResolvedValueOnce({ success: true })
+    const wrapper = mountEditor({
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
+      global: { plugins: [router], stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="input-retry-delay-seconds"]').setValue('5')
+    await flushPromises()
+    await settleAutosave()
+
+    expect(mockSaveWs.mock.calls[0]![0]).toBe('ws_1')
+    const saved = mockSaveWs.mock.calls[0]![1] as Record<string, unknown>
+    expect(saved.retry_delay_ms).toBe(5000)
+    expect(mockSave).not.toHaveBeenCalled()
   })
 
   it('owns no section nav of its own — the settings shell does', async () => {

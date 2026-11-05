@@ -255,7 +255,7 @@ describe('DiffView', () => {
     expect(firstBeforeRow.html()).not.toContain('line-through')
     // No green "insert" highlight inside the before side (was the
     // original visual confusion — strikethrough on green).
-    expect(firstBeforeRow.html()).not.toMatch(/bg-green/)
+    expect(firstBeforeRow.html()).not.toMatch(/bg-\[var\(--tint-success\)\]/)
   })
 
   it('split view: after-side changed row has the green bg color', () => {
@@ -422,7 +422,7 @@ describe('DiffView', () => {
     const changed = wrapper.findAll('[data-changed="true"]')
     expect(changed.length).toBeGreaterThan(0)
     for (const row of changed) {
-      // Nothing inside a changed row may carry an `!important` text tint (`!text-red-500`): it wins
+      // Nothing inside a changed row may carry an `!important` text tint (`!text-[var(--semantic-error)]`): it wins
       // over `.tok-*` in the compiled CSS and paints the whole line one color. The row BACKGROUND
       // is what marks added/removed.
       expect(importantTextTints(row)).toEqual([])
@@ -438,8 +438,8 @@ describe('DiffView', () => {
     expect(unifiedBtn).toBeTruthy()
     await unifiedBtn!.trigger('click')
 
-    expect(wrapper.findAll('[data-kind="delete"] span.text-red-500').length).toBeGreaterThan(0)
-    expect(wrapper.findAll('[data-kind="insert"] span.text-green-500').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('[data-kind="delete"] span[class*="--semantic-error"]').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('[data-kind="insert"] span[class*="--semantic-success"]').length).toBeGreaterThan(0)
 
     // The ROW carries the background tint only — an `!important` text tint
     // here is what would hide every token.

@@ -167,7 +167,7 @@ describe('DocumentsList — section chrome', () => {
     await flushPromises()
     await nextTick()
 
-    expect(createDocument).toHaveBeenCalledWith('ws_1', 'Untitled document', '')
+    expect(createDocument).toHaveBeenCalledWith('ws_1', 'Untitled document', '', null)
     // A document is a PAGE now, so the id lives in the path. Asserting the
     // query here would pass even if the view still rendered as an overlay.
     expect(router.currentRoute.value.path).toBe('/app/ws_1/doc/doc_new')
@@ -329,7 +329,7 @@ describe('DocumentsList — drag to reorder', () => {
     createDocument.mockReset()
     reorderDocuments.mockReset()
     listDocuments.mockResolvedValue({ documents: THREE, count: THREE.length })
-    reorderDocuments.mockImplementation(async (_ws: string, orderedIds: string[]) => ({
+    reorderDocuments.mockImplementation(async (_ws: string, _folderId: string | null, orderedIds: string[]) => ({
       documents: orderedIds.map((id, position) => ({ ...THREE.find((d) => d.id === id)!, position })),
       count: orderedIds.length,
     }))
@@ -376,7 +376,7 @@ describe('DocumentsList — drag to reorder', () => {
     dispatchDrag('drop', rows[0]!.element, dt, 0)
     await settle()
 
-    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', ['doc_3', 'doc_1', 'doc_2'])
+    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', null, ['doc_3', 'doc_1', 'doc_2'])
     expect(rowOrder(wrapper)).toEqual(['doc_3', 'doc_1', 'doc_2'])
     wrapper.unmount()
   })
@@ -393,7 +393,7 @@ describe('DocumentsList — drag to reorder', () => {
     dispatchDrag('drop', rows[1]!.element, dt, 5)
     await settle()
 
-    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', ['doc_2', 'doc_1', 'doc_3'])
+    expect(reorderDocuments).toHaveBeenCalledWith('ws_1', null, ['doc_2', 'doc_1', 'doc_3'])
     expect(rowOrder(wrapper)).toEqual(['doc_2', 'doc_1', 'doc_3'])
     wrapper.unmount()
   })

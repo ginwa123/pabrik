@@ -41,6 +41,19 @@ export function newestCursor(
   return nextCursor ?? prevCursor
 }
 
+/** Older-history cursor: the OLDEST row's exact timestamp, mirroring the server's `next_cursor` (the
+ * last row of a DESC page). The opposite end of {@link newestCursor}, which is the newer-direction
+ * sync cursor — the two are not interchangeable. */
+export function oldestCursor(items: ChatMessage[], prevCursor: string | null = null): string | null {
+  let best: number | null = null
+  for (const m of items) {
+    if (m.created_at_nano > 0 && (best === null || m.created_at_nano < best))
+      best = m.created_at_nano
+  }
+  if (best !== null) return String(best)
+  return prevCursor
+}
+
 /** Session metadata piggybacked on the messages endpoint (not cached). */
 export interface ChatDeltaExtra {
   cwd?: string

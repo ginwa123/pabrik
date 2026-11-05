@@ -304,7 +304,7 @@ defineExpose({ commitDraft })
   <div class="relative">
     <div
       class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg"
-      :class="hasError ? 'border border-red-500/60' : 'border border-(--color-border)'"
+      :class="hasError ? 'border border-[var(--tint-error-border)]' : 'border border-(--color-border)'"
       style="background-color: var(--semantic-sidebar-bg)"
       :data-testid="`${props.testId}-container`"
     >
@@ -319,7 +319,7 @@ defineExpose({ commitDraft })
         <button
           type="button"
           @click="removeTag(idx)"
-          class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-black/20 focus:outline-none"
+          class="inline-flex items-center justify-center w-3 h-3 rounded-full hover:bg-[var(--semantic-wash-strong)] focus:outline-none"
           :aria-label="`Remove tag ${tag}`"
           :data-testid="`${props.testId}-remove-${tag}`"
         >
@@ -357,7 +357,7 @@ defineExpose({ commitDraft })
           v-for="(suggestion, idx) in filteredSuggestions"
           :key="suggestion"
           class="px-3 py-1.5 cursor-pointer text-body transition-colors duration-100"
-          :class="idx === highlightedIndex ? 'bg-violet-500/20' : ''"
+          :class="idx === highlightedIndex ? 'bg-[var(--tint-accent-strong)]' : ''"
           :style="{ color: 'var(--semantic-text)' }"
           :data-testid="`${props.testId}-suggestion-${suggestion}`"
           @mousedown.prevent="commitSuggestion(suggestion)"
@@ -384,7 +384,7 @@ defineExpose({ commitDraft })
     <div
       v-if="hasError"
       class="mt-1 text-meta"
-      style="color: rgb(248, 113, 113)"
+      style="color: var(--semantic-error)"
       :data-testid="`${props.testId}-error`"
       role="alert"
     >

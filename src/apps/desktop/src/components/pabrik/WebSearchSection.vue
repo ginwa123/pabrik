@@ -142,7 +142,7 @@ function removeRow(id: string) {
                 class="w-3.5 h-3.5 rounded-full"
                 :style="
                   row.enabled
-                    ? { backgroundColor: 'var(--semantic-bg)' }
+                    ? { backgroundColor: 'var(--semantic-on-accent)' }
                     : { backgroundColor: 'var(--semantic-text-dim)' }
                 "
               ></span>
@@ -172,7 +172,7 @@ function removeRow(id: string) {
               data-testid="name-input"
               class="w-full px-2.5 h-8 rounded-md text-dense border outline-none"
               style="
-                background-color: var(--semantic-bg);
+                background-color: var(--semantic-wash);
                 border-color: var(--color-border);
                 color: var(--semantic-text);
               "
@@ -190,7 +190,7 @@ function removeRow(id: string) {
               data-testid="url-input"
               class="w-full px-2.5 h-8 rounded-md text-dense font-mono border outline-none"
               style="
-                background-color: var(--semantic-bg);
+                background-color: var(--semantic-wash);
                 border-color: var(--color-border);
                 color: var(--semantic-text);
               "
@@ -212,7 +212,7 @@ function removeRow(id: string) {
               data-testid="key-input"
               class="w-full px-2.5 h-8 rounded-md text-dense font-mono border outline-none"
               style="
-                background-color: var(--semantic-bg);
+                background-color: var(--semantic-wash);
                 border-color: var(--color-border);
                 color: var(--semantic-text);
               "
@@ -230,7 +230,7 @@ function removeRow(id: string) {
               data-testid="description-input"
               class="w-full px-2.5 h-8 rounded-md text-dense border outline-none"
               style="
-                background-color: var(--semantic-bg);
+                background-color: var(--semantic-wash);
                 border-color: var(--color-border);
                 color: var(--semantic-text);
               "
@@ -251,7 +251,7 @@ function removeRow(id: string) {
             data-testid="curl-textarea"
             class="w-full px-2.5 py-1.5 rounded-md text-dense font-mono border outline-none resize-y"
             style="
-              background-color: var(--semantic-bg);
+              background-color: var(--semantic-wash);
               border-color: var(--color-border);
               color: var(--semantic-text);
             "

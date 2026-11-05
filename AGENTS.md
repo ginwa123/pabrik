@@ -20,6 +20,30 @@ the test and the shard (`test mod_tests shard 3/8 (731 tests) 2 pass, 1 fail`).
 Enforced by `scripts/check-zig-test-output-clean.sh` in CI; run it locally with
 `--run`, or judge an existing log with `--summary <log>`.
 
+#Backend features — headless CLI coverage (MANDATORY)
+
+When developing a backend feature, add a CLI entry point in headless mode
+(`pabrik headless ...`) to test the feature, so an AI agent can interact
+with that part of the backend without running a backend port (no 8081/8080
+server, no `/health` polling, no teardown).
+
+- Put the command in `src/headless/` (`mod.zig` `Command` union, `args.zig`
+  for pure argv parsing, `boot.zig` for the no-server boot, plus a
+  `run.zig`/`sessions.zig`-style handler). Dispatch stays in
+  `src/boot/headless_dispatch.zig` (`argv[1] == "headless"`).
+- Reuse the production useCase/path (e.g. `sessionCreateUseCase` behind
+  `POST /api/llm/session`) — never re-implement backend logic in headless
+  mode. Headless adds only what HTTP does not need: waiting for completion
+  and reading the result. See `src/headless/README.md`.
+- stdout is the machine-readable channel: one JSON object, nothing else.
+  Diagnostics go to `--log-file` (default `$TMPDIR/agentic_coding.log`),
+  never stdout. Exit `0` on success, non-zero on timeout/error/no result,
+  so shell scripts can branch without parsing JSON.
+- Test with an isolated `HOME` (e.g. `HOME=/tmp/some-isolated-dir
+  ./zig-out/bin/pabrikcore-linux-x86_64 headless help`) so the real
+  `agent.db` is never touched, and cover the new command end-to-end in
+  `tests/functional/headless_*_test.zig`.
+
 ## XERJ (code search)
 
 This project uses XERJ for reference coding. Before writing code that touches

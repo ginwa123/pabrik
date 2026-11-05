@@ -14,7 +14,7 @@ describe('SetGitWorktree.vue — in-progress placeholder', () => {
     const html = wrapper.html()
     expect(html.toLowerCase()).toContain('running')
     expect(wrapper.find('[data-testid="tool-card-running"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="set-git-worktree"]').classes()).not.toContain('border-red-500/50')
+    expect(wrapper.find('[data-testid="set-git-worktree"]').classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('renders path/branch when completed (no running badge)', () => {

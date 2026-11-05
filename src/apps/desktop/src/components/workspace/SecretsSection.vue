@@ -193,7 +193,7 @@ function focusAddName(): void {
             placeholder="STRIPE_API_KEY"
             class="w-full px-3 h-8 rounded-md text-dense font-mono"
             style="
-              background-color: var(--semantic-bg);
+              background-color: var(--semantic-wash);
               color: var(--semantic-text);
               border: 1px solid var(--color-border);
             "
@@ -217,7 +217,7 @@ function focusAddName(): void {
             placeholder="Paste the credential"
             class="w-full px-3 h-8 rounded-md text-dense font-mono"
             style="
-              background-color: var(--semantic-bg);
+              background-color: var(--semantic-wash);
               color: var(--semantic-text);
               border: 1px solid var(--color-border);
             "
@@ -256,7 +256,7 @@ function focusAddName(): void {
           placeholder="What is this credential for? e.g. Read-only GitHub token for the PR bot"
           class="w-full px-3 h-8 rounded-md text-dense"
           style="
-            background-color: var(--semantic-bg);
+            background-color: var(--semantic-wash);
             color: var(--semantic-text);
             border: 1px solid var(--color-border);
           "
@@ -365,7 +365,7 @@ function focusAddName(): void {
           v-if="isRevealed(secret)"
           data-testid="revealed-value"
           class="mt-2 px-2 py-1.5 rounded-md text-dense font-mono break-all select-all"
-          style="background-color: var(--semantic-bg); color: var(--semantic-text); border: 1px solid var(--color-border)"
+          style="background-color: var(--semantic-wash); color: var(--semantic-text); border: 1px solid var(--color-border)"
         >
           {{ revealed[secret.id] }}
         </div>

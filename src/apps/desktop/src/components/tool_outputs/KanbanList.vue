@@ -170,12 +170,12 @@ const copyId = async (e: Event, id: string) => {
 <template>
   <div
     class="chat-tool-card font-mono text-dense"
-    :class="{ 'border-red-500/50 opacity-90': !isSuccess }"
+    :class="{ 'border-[var(--tint-error-border)] opacity-90': !isSuccess }"
     data-testid="kanban-list"
   >
     <!-- Header -->
     <div
-      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -189,7 +189,7 @@ const copyId = async (e: Event, id: string) => {
       </span>
 
       <!-- Status indicator -->
-      <span class="text-dense font-semibold" :class="isSuccess ? 'text-green-500' : 'text-red-500'">
+      <span class="text-dense font-semibold" :class="isSuccess ? 'text-[var(--semantic-success)]' : 'text-[var(--semantic-error)]'">
         {{ statusIndicator }}
       </span>
 
@@ -197,7 +197,7 @@ const copyId = async (e: Event, id: string) => {
       <span
         v-if="isRunning"
         data-testid="kanban-list-running"
-        class="text-micro text-yellow-500 animate-pulse shrink-0"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse shrink-0"
       >
         running…
       </span>
@@ -209,9 +209,9 @@ const copyId = async (e: Event, id: string) => {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <!-- Error message -->
-      <div v-if="errorMessage" class="flex gap-2 px-2 py-1.5 text-red-500 text-dense">
+      <div v-if="errorMessage" class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense">
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ errorMessage }}</span>
       </div>
@@ -229,7 +229,7 @@ const copyId = async (e: Event, id: string) => {
       <template v-if="isSuccess">
         <!-- Columns section -->
         <div
-          class="px-3 py-0.5 text-micro text-[var(--semantic-text-muted)] font-medium bg-black/[0.02] border-b border-dashed border-[var(--color-border)]"
+          class="px-3 py-0.5 text-micro text-[var(--semantic-text-muted)] font-medium bg-[var(--semantic-wash)] border-b border-dashed border-[var(--color-border)]"
         >
           Columns ({{ columns.length }})
         </div>
@@ -245,7 +245,7 @@ const copyId = async (e: Event, id: string) => {
           <div
             v-for="col in columns"
             :key="col.id"
-            class="group/row flex items-center gap-2 px-2 py-1 hover:bg-violet-500/5"
+            class="group/row flex items-center gap-2 px-2 py-1 hover:bg-[var(--tint-accent)]"
           >
             <span class="text-[var(--color-violet)] font-semibold shrink-0 w-12">
               #{{ col.position }}
@@ -263,8 +263,8 @@ const copyId = async (e: Event, id: string) => {
               class="shrink-0 px-1.5 py-0.5 rounded text-micro font-semibold"
               :class="
                 col.task_count > 0
-                  ? 'bg-violet-500/15 text-[var(--color-violet)]'
-                  : 'bg-black/[0.05] text-[var(--semantic-text-muted)]'
+                  ? 'bg-[var(--tint-accent-strong)] text-[var(--color-violet)]'
+                  : 'bg-[var(--semantic-wash-strong)] text-[var(--semantic-text-muted)]'
               "
               :title="col.task_count + ' task' + (col.task_count !== 1 ? 's' : '')"
             >
@@ -272,7 +272,7 @@ const copyId = async (e: Event, id: string) => {
             </span>
             <button
               v-if="col.id"
-              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-violet-500 text-lead transition-opacity shrink-0"
+              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity shrink-0"
               @click.stop="copyId($event, col.id)"
               title="Copy column id"
             >
@@ -284,7 +284,7 @@ const copyId = async (e: Event, id: string) => {
         <!-- Tasks section (only when there are tasks) -->
         <template v-if="tasks.length > 0">
           <div
-            class="px-3 py-0.5 text-micro text-[var(--semantic-text-muted)] font-medium bg-black/[0.02] border-y border-dashed border-[var(--color-border)]"
+            class="px-3 py-0.5 text-micro text-[var(--semantic-text-muted)] font-medium bg-[var(--semantic-wash)] border-y border-dashed border-[var(--color-border)]"
           >
             Tasks ({{ tasks.length }})
           </div>
@@ -293,7 +293,7 @@ const copyId = async (e: Event, id: string) => {
             <div
               v-for="task in assignedTasks"
               :key="task.id"
-              class="group/row flex items-center gap-2 px-2 py-1 hover:bg-violet-500/5"
+              class="group/row flex items-center gap-2 px-2 py-1 hover:bg-[var(--tint-accent)]"
             >
               <span
                 class="text-[var(--semantic-text-muted)] shrink-0 w-8 text-right text-micro"
@@ -310,15 +310,15 @@ const copyId = async (e: Event, id: string) => {
                 class="px-1.5 py-0.5 rounded text-micro font-medium truncate max-w-[8rem] shrink-0"
                 :class="
                   task.column_name
-                    ? 'bg-violet-500/15 text-[var(--color-violet)]'
-                    : 'bg-black/[0.05] text-[var(--semantic-text-muted)]'
+                    ? 'bg-[var(--tint-accent-strong)] text-[var(--color-violet)]'
+                    : 'bg-[var(--semantic-wash-strong)] text-[var(--semantic-text-muted)]'
                 "
                 :title="task.column_name || 'Unassigned'"
               >
                 {{ task.column_name || 'unassigned' }}
               </span>
               <button
-                class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-violet-500 text-lead transition-opacity shrink-0"
+                class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity shrink-0"
                 @click.stop="copyId($event, task.id)"
                 title="Copy task id"
               >
@@ -329,14 +329,14 @@ const copyId = async (e: Event, id: string) => {
             <!-- Unassigned tasks get their own subsection -->
             <template v-if="unassignedTasks.length > 0">
               <div
-                class="px-3 py-0.5 text-micro text-[var(--semantic-text-muted)] font-medium bg-black/[0.02] border-t border-dashed border-[var(--color-border)]"
+                class="px-3 py-0.5 text-micro text-[var(--semantic-text-muted)] font-medium bg-[var(--semantic-wash)] border-t border-dashed border-[var(--color-border)]"
               >
                 Unassigned ({{ unassignedTasks.length }})
               </div>
               <div
                 v-for="task in unassignedTasks"
                 :key="task.id"
-                class="group/row flex items-center gap-2 px-2 py-1 hover:bg-violet-500/5"
+                class="group/row flex items-center gap-2 px-2 py-1 hover:bg-[var(--tint-accent)]"
               >
                 <span
                   class="text-[var(--semantic-text-muted)] shrink-0 w-8 text-right text-micro"
@@ -350,12 +350,12 @@ const copyId = async (e: Event, id: string) => {
                   {{ task.name }}
                 </span>
                 <span
-                  class="px-1.5 py-0.5 rounded text-micro font-medium bg-black/[0.05] text-[var(--semantic-text-muted)] shrink-0"
+                  class="px-1.5 py-0.5 rounded text-micro font-medium bg-[var(--semantic-wash-strong)] text-[var(--semantic-text-muted)] shrink-0"
                 >
                   unassigned
                 </span>
                 <button
-                  class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-violet-500 text-lead transition-opacity shrink-0"
+                  class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover/row:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity shrink-0"
                   @click.stop="copyId($event, task.id)"
                   title="Copy task id"
                 >

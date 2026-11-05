@@ -31,6 +31,12 @@ per exhausted page (the commit comes from the buffer, not a fresh request);
 no two requests share a cursor; the prepend grows the content without
 duplicating rendered groups and without moving the reading anchor.
 
+A CACHED mount (the 2nd+ open of a chat) is the other half of the same story: it paints
+IndexedDB rows and refreshes only the TAIL, and that tail refresh is an ASCENDING request whose
+`has_more` / `next_cursor` describe the NEWER direction. `test_reopened_chat_keeps_paginating_...`
+below is the regression gate for that path: it reloads the page (so the next mount is cache-first),
+flings to the top, and requires a DESC cursored request whose cursor is OLDER than the tail's.
+
 Run (binary must be built first — a fresh worktree has no `zig-out/`):
     zig build
     PABRIK_BIN=./zig-out/bin/pabrikcore-linux-x86_64 \\
@@ -141,7 +147,7 @@ _PROBE_INIT_SCRIPT = r"""
   };
   window.__pickScroller = pickScroller;
   window.__probe = {
-    requests: [],   // { t, scrollTop, cursor } for /messages? (not queue_messages)
+    requests: [],   // { t, scrollTop, cursor, direction } for /messages? (not queue_messages)
     content: [],    // { t, scrollHeight } whenever the scroller's scrollHeight changed
     tFlingStart: null,
     tArrive: null,
@@ -156,8 +162,11 @@ _PROBE_INIT_SCRIPT = r"""
     if (/\/messages\?/.test(url) && !/queue_messages/.test(url)) {
       const el = pickScroller();
       let cursor = null;
+      let direction = null;
       try {
-        cursor = new URL(url, location.origin).searchParams.get('cursor');
+        const parsed = new URL(url, location.origin);
+        cursor = parsed.searchParams.get('cursor');
+        direction = parsed.searchParams.get('direction');
       } catch (e) {
         cursor = null;
       }
@@ -165,6 +174,7 @@ _PROBE_INIT_SCRIPT = r"""
         t: performance.now(),
         scrollTop: el ? el.scrollTop : -1,
         cursor,
+        direction,
       });
     }
     return origFetch.apply(this, arguments);
@@ -514,4 +524,99 @@ def test_pagination_continues_across_pages_with_distinct_cursors(ui_harness, pag
     # group check below catches a page actually committed twice.)
     assert len(set(cursors)) >= 2, f"pagination never advanced a cursor: {cursors}"
 
+    assert audit["duplicates"] == [], f"duplicate rendered groups: {audit['duplicates']}"
+
+
+#: How long the first open gets to flush its write-through cache (`putLocal` + `setCursor` are async
+#: IndexedDB writes). The reload below is only a *cached* mount once they have landed.
+CACHE_FLUSH_WAIT_MS = 2000
+
+
+def _scroll_back_requests(requests: list[dict]) -> list[dict]:
+    """Descending requests that carry a cursor — i.e. real older-history pages.
+
+    The tail refresh of a cached mount hits the SAME endpoint with a cursor, but ASCENDING
+    (``direction=asc``), and it fires wherever the reader happens to sit. Counting it as a
+    scroll-back would make this suite pass on a build that never paginates at all.
+    """
+    return [r for r in requests if r.get("cursor") and r.get("direction") != "asc"]
+
+
+def test_reopened_chat_keeps_paginating_older_pages_at_the_top(ui_harness, page) -> None:
+    """The reported regression: on the SECOND open of a chat the reader sits at the top and no
+    older page is ever fetched.
+
+    Cause (fixed in ``useChatPagination.runHistoryLoadAttempt``): the cached mount adopted the tail
+    refresh's ``has_more`` / ``next_cursor``. An already-cached tail answers ``has_more=false``,
+    which disarmed older-history pagination for the whole mount.
+
+    The gate: after the reload the reader flings to the top, and a DESC cursored request MUST be
+    issued — with a cursor OLDER than the tail's, because older pages are fetched backwards from
+    the oldest row on screen. Pre-fix there is no desc request at all.
+    """
+    h = ui_harness
+    session_id = "sess-cached-mount-scrollback"
+    workspace_id = create_workspace(h)
+    _seed_session(h, workspace_id, session_id, newer=NEWER_COUNT, older=OLDER_SINGLE_PAGE)
+
+    console_lines: list[str] = []
+    page.on("console", lambda msg: console_lines.append(msg.text))
+
+    # ── First open: fills the write-through cache (IndexedDB). ──────────────
+    _open_chatview_probed(page, h, workspace_id, session_id)
+    _wait_for_initial_load(page)
+    page.wait_for_timeout(CACHE_FLUSH_WAIT_MS)
+    assert _scroll_back_requests(_probe(page)["requests"]) == [], (
+        "the FIRST open fetched an older page without any scroll: "
+        f"{_scroll_back_requests(_probe(page)['requests'])}"
+    )
+
+    # ── Second open: reload → the mount is cache-first. ─────────────────────
+    page.reload()
+    _wait_for_initial_load(page)
+    try:
+        page.wait_for_function(
+            "() => window.__probe.requests.some((r) => r.direction === 'asc')", timeout=15000
+        )
+    except Exception as exc:  # noqa: BLE001 — reported as the failed precondition below
+        raise AssertionError(
+            "the reload did not take the cached-mount path (no ascending tail refresh), so this "
+            f"test cannot speak about cached pagination. requests={_probe(page)['requests']} "
+            f"prefetch log={[line for line in console_lines if 'load-more' in line]}"
+        ) from exc
+
+    assert page.evaluate(_OBSERVE_SCRIPT) is True, "chat scroller not found"
+    tail = [r for r in _probe(page)["requests"] if r.get("direction") == "asc"]
+
+    height_before = float(page.evaluate("() => window.__pickScroller().scrollHeight"))
+    _fling_to(page)
+    try:
+        page.wait_for_function(
+            "(before) => window.__pickScroller().scrollHeight > before + 100",
+            arg=height_before,
+            timeout=15000,
+        )
+    except Exception:  # noqa: BLE001 — asserted below, with the full probe in the message
+        pass
+    page.wait_for_timeout(900)  # give a refill arm / a late request a chance to appear
+
+    probe = _probe(page)
+    back = _scroll_back_requests(probe["requests"])
+    suppressed = [line for line in console_lines if "load-more-suppressed" in line]
+
+    assert back, (
+        "after reopening the chat, reaching the top fetched NO older page. "
+        f"requests={probe['requests']} suppressed={suppressed}"
+    )
+    assert int(back[0]["cursor"]) < int(tail[0]["cursor"]), (
+        "the older-history cursor does not point older than the cached tail: "
+        f"scroll-back cursor={back[0]['cursor']} tail cursor={tail[0]['cursor']}"
+    )
+
+    height_after = float(page.evaluate("() => window.__pickScroller().scrollHeight"))
+    assert height_after > height_before + 100, (
+        f"the fetched older page was never prepended ({height_before} → {height_after})"
+    )
+
+    audit = page.evaluate(_DOM_AUDIT_SCRIPT)
     assert audit["duplicates"] == [], f"duplicate rendered groups: {audit['duplicates']}"

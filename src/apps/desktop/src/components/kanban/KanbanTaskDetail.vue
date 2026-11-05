@@ -143,6 +143,8 @@ const {
   isSkillPickerOpen,
   name,
   pendingAction,
+  prefillSkillsIfUntouched,
+  resetSkillsEdited,
   selectedAgent,
   selectedColumnId,
   selectedSkills,
@@ -229,6 +231,9 @@ const loadSkills = async () => {
       name: sk.name,
       description: sk.description ?? '',
     }))
+    // Prefill from this board's last-created skill set unless the human
+    // already moved the picker in this dialog session.
+    prefillSkillsIfUntouched(availableSkills.value.map((sk) => sk.name))
     // eslint-disable-next-line local/no-try-catch -- mirrors loadAgents directly above: a failed fetch must degrade to an empty picker, not break the dialog
   } catch (err) {
     console.error('Failed to load skills:', err)
@@ -258,6 +263,7 @@ const openDialog = async (): Promise<void> => {
     selectedSkills.value = []
     skillSearch.value = ''
     isSkillPickerOpen.value = false
+    resetSkillsEdited()
     // NEW (plan: 2026-08-14-kanban-task-detail-edit-cwd). Sync cwdSession from the parent kanban's
     // path on dialog open so the picker shows the kanban-level fallback by default. The legacy code
     // initialized from the ref literal (`ref<string>(props.cwd ??
@@ -402,16 +408,16 @@ defineExpose({ selectCwd })
       v-if="errorMessage"
       class="shrink-0 px-5 py-3 text-body"
       style="
-        background-color: rgba(239, 68, 68, 0.12);
+        background-color: var(--tint-error);
         border-bottom: 1px solid var(--color-border);
-        color: rgb(220, 38, 38);
+        color: var(--semantic-error);
         position: relative;
         z-index: 10;
       "
       role="alert"
       data-testid="kanban-task-detail-error"
     >
-      <div class="px-3 py-2 rounded-lg" style="border: 1px solid rgba(239, 68, 68, 0.4)">
+      <div class="px-3 py-2 rounded-lg" style="border: 1px solid var(--tint-error-border)">
         {{ errorMessage }}
       </div>
     </div>

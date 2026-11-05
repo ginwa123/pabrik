@@ -131,13 +131,13 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
   <div
     class="chat-tool-card font-mono text-dense"
     :class="{
-      'border-orange-500/50 opacity-85': hasWarning || hasTruncation,
-      'border-red-500/50 opacity-85': hasError,
+      'border-[var(--tint-warning-border)] opacity-85': hasWarning || hasTruncation,
+      'border-[var(--tint-error-border)] opacity-85': hasError,
     }"
   >
     <!-- Header -->
     <div
-      class="group flex flex-wrap items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-violet-500/5"
+      class="group flex flex-wrap items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
       @click="toggle"
       role="button"
       tabindex="0"
@@ -158,7 +158,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
       <span
         v-if="isRunning"
         data-testid="search-running"
-        class="text-micro text-yellow-500 animate-pulse"
+        class="text-micro text-[var(--semantic-warning)] animate-pulse"
         >running…</span
       >
 
@@ -167,7 +167,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
         <span class="ml-auto text-[var(--semantic-text-muted)] text-micro">
           {{ totalFileCount }} {{ totalFileCount === 1 ? 'file' : 'files' }},
           <template v-if="searchSummary && searchSummary.truncated">
-            <span data-testid="search-truncated" class="text-orange-500">
+            <span data-testid="search-truncated" class="text-[var(--color-orange)]">
               {{ searchSummary.returned }} of {{ searchSummary.total }} matches (truncated)
             </span>
           </template>
@@ -180,7 +180,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
       <span
         v-if="truncationHint"
         data-testid="search-truncation-hint"
-        class="w-full text-orange-500 text-micro"
+        class="w-full text-[var(--color-orange)] text-micro"
         :title="truncationHint"
       >
         {{ truncationHint }}
@@ -188,10 +188,10 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
 
       <!-- Warning or error message -->
       <template v-else-if="hasWarning">
-        <span class="ml-auto text-orange-500 text-meta">{{ warningMessage }}</span>
+        <span class="ml-auto text-[var(--color-orange)] text-meta">{{ warningMessage }}</span>
       </template>
       <template v-else-if="hasError">
-        <span class="ml-auto text-red-500 text-meta">{{ errorMessage }}</span>
+        <span class="ml-auto text-[var(--semantic-error)] text-meta">{{ errorMessage }}</span>
       </template>
 
       <!-- Toggle indicator -->
@@ -205,7 +205,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
     </div>
 
     <!-- Expanded content -->
-    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-black/[0.02]">
+    <div v-if="isExpanded" class="border-t border-[var(--color-border)] bg-[var(--semantic-wash)]">
       <div v-if="fileResults.length > 0">
         <div
           v-for="(file, idx) in fileResults"
@@ -213,7 +213,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
           class="border-b border-dashed border-[var(--color-border)] last:border-b-0"
         >
           <!-- File header -->
-          <div class="flex items-center gap-1 px-2 py-1 bg-black/[0.02]">
+          <div class="flex items-center gap-1 px-2 py-1 bg-[var(--semantic-wash)]">
             <span
               class="flex-1 text-[var(--color-violet)] text-meta truncate"
               :title="file.path"
@@ -224,7 +224,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
               >{{ file.count }}/{{ file.total }}</span
             >
             <button
-              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 text-lead transition-opacity"
+              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] text-lead transition-opacity"
               @click="(e) => copyPath(e, file.path)"
               title="Copy path"
             >
@@ -232,7 +232,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
             </button>
             <button
               v-if="props.cwd && openInEditor"
-              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-violet-500 transition-opacity"
+              class="px-0.5 border-none bg-transparent cursor-pointer text-[var(--semantic-text-muted)] opacity-0 group-hover:opacity-100 hover:!text-[var(--semantic-accent)] transition-opacity"
               @click="(e) => handleOpenInEditor(e, file.path)"
               title="Open in code editor"
             >
@@ -252,7 +252,7 @@ const tokensForSnippet = (snippet: string, filePath: string): Token[] => {
             <div
               v-for="(m, mIdx) in file.matches"
               :key="mIdx"
-              class="flex py-0.5 px-2 leading-relaxed hover:bg-violet-500/5"
+              class="flex py-0.5 px-2 leading-relaxed hover:bg-[var(--tint-accent)]"
             >
               <span
                 class="min-w-[3rem] text-right mr-3 text-[var(--semantic-text-dim)] select-none shrink-0"

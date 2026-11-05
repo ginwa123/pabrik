@@ -185,13 +185,14 @@ describe('Rich-block support — ChatView render branch (source contract)', () =
     expect(presentation).toMatch(/renderResponse\(\s*\n\s*msg\.content,/)
   })
 
-  it('renders html blocks in a sandboxed iframe (allow-scripts only)', async () => {
+  it('renders html blocks in a sandboxed iframe that can submit a form but never reach the app origin', async () => {
     const source = await readChatViewSource()
-    // Security contract: sandbox WITHOUT allow-same-origin (null origin
-    // = the security boundary; inner scripts can't touch parent DOM).
-    expect(source).toMatch(/sandbox="allow-scripts"/)
+    // `allow-forms` is the interactive contract: without it a <form> submit never fires its
+    // event (measured in Chromium). `allow-same-origin` must stay out of the attribute — the
+    // null origin is the security boundary, so inner scripts cannot touch the parent DOM.
+    expect(source).toMatch(/sandbox="allow-scripts allow-forms"/)
     expect(source).toMatch(/:srcdoc=/)
-    expect(source).not.toMatch(/sandbox="allow-scripts allow-same-origin"/)
+    expect(source).not.toMatch(/sandbox="[^"]*allow-same-origin/)
   })
 
   it('splits a message into per-block segments with extractRichBlocks', async () => {

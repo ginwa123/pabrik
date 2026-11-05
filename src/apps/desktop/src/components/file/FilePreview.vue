@@ -194,7 +194,7 @@ const closePopup = () => {
   width: 100%;
   height: 100%;
   padding: 4px;
-  color: var(--color-text);
+  color: var(--semantic-text);
 }
 
 .preview-document-icon {
@@ -236,7 +236,8 @@ const closePopup = () => {
 }
 
 .remove-btn:hover {
-  background-color: rgba(220, 38, 38, 0.8);
+  background-color: var(--semantic-error);
+  color: var(--semantic-on-accent);
 }
 
 .file-name {

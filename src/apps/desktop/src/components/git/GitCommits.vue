@@ -374,7 +374,7 @@ defineExpose({ refresh })
             class="px-3 py-2 ml-4 mb-1 rounded"
             style="
               border-left: 2px solid var(--color-violet);
-              background-color: rgba(255, 255, 255, 0.02);
+              background-color: var(--semantic-wash);
             "
           >
             <div class="text-dense font-mono break-all" style="color: var(--color-green)">

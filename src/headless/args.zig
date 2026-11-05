@@ -34,6 +34,33 @@ pub const MessagesArgs = struct {
     limit: u32 = 50,
 };
 
+/// The document-folder verbs. One subcommand per write the HTTP API exposes,
+/// so an agent can drive the whole feature with no server and no port.
+pub const DocumentsOp = enum {
+    list,
+    folder_create,
+    folder_move,
+    folder_rename,
+    folder_delete,
+    doc_create,
+    doc_move,
+};
+
+pub const DocumentsArgs = struct {
+    op: DocumentsOp,
+    workspace_id: []const u8 = "",
+    /// Folder name for `folder-create` / `folder-rename`.
+    name: []const u8 = "",
+    /// Parent folder for `folder-create` / `folder-move` / `doc-create` /
+    /// `doc-move`. Null means the root.
+    parent_id: ?[]const u8 = null,
+    /// The folder being moved, renamed or deleted.
+    folder_id: ?[]const u8 = null,
+    /// The document being moved.
+    document_id: ?[]const u8 = null,
+    title: []const u8 = "",
+};
+
 /// Which flag was rejected. One variant per distinct user-facing message.
 pub const FailureKind = enum {
     unknown_subcommand,
@@ -41,6 +68,8 @@ pub const FailureKind = enum {
     run_requires_message,
     invalid_number,
     messages_requires_session,
+    documents_unknown_op,
+    documents_requires_flag,
 };
 
 pub const Failure = struct {
@@ -72,6 +101,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless run <message> [flags]     One agentic turn; prints the reply as JSON\n" ++
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
+    "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
+    "      ops: list | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move\n" ++
+    "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -91,6 +123,7 @@ pub const Outcome = union(enum) {
     run: RunArgs,
     sessions: SessionsArgs,
     messages: MessagesArgs,
+    documents: DocumentsArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -115,6 +148,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "run")) return try parseRun(rest);
     if (std.mem.eql(u8, verb, "sessions")) return try parseSessions(rest);
     if (std.mem.eql(u8, verb, "messages")) return try parseMessages(rest);
+    if (std.mem.eql(u8, verb, "documents")) return try parseDocuments(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
 }
@@ -163,6 +197,81 @@ fn parseMessages(argv: []const []const u8) ParseError!Outcome {
     return .{ .messages = .{ .session_id = words.items[0], .limit = got.limit orelse 50 } };
 }
 
+/// `documents` parses its own tiny flag set: the shared table in
+/// `cli/flags.zig` describes the server CLI, and these six flags exist only
+/// here.
+fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .documents_unknown_op });
+
+    const op: DocumentsOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "list")) break :blk .list;
+        if (std.mem.eql(u8, word, "folder-create")) break :blk .folder_create;
+        if (std.mem.eql(u8, word, "folder-move")) break :blk .folder_move;
+        if (std.mem.eql(u8, word, "folder-rename")) break :blk .folder_rename;
+        if (std.mem.eql(u8, word, "folder-delete")) break :blk .folder_delete;
+        if (std.mem.eql(u8, word, "doc-create")) break :blk .doc_create;
+        if (std.mem.eql(u8, word, "doc-move")) break :blk .doc_move;
+        return fail(.{ .kind = .documents_unknown_op, .value = word });
+    };
+
+    var got = DocumentsArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--workspace")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.workspace_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--name")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.name = argv[i];
+        } else if (std.mem.eql(u8, flag, "--parent")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.parent_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--folder")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.folder_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--document")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.document_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--title")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.title = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    if (got.workspace_id.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
+    switch (op) {
+        .list, .folder_delete => {},
+        .folder_create, .folder_rename => {
+            if (got.name.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--name" });
+            if (op == .folder_rename and got.folder_id == null) {
+                return fail(.{ .kind = .documents_requires_flag, .value = "--folder" });
+            }
+        },
+        .folder_move => {
+            if (got.folder_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--folder" });
+        },
+        .doc_create => {
+            if (got.title.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--title" });
+        },
+        .doc_move => {
+            if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
+        },
+    }
+
+    return .{ .documents = got };
+}
+
 /// Run the one engine over `verb`'s flags, collecting the bare words.
 fn parseFlags(
     comptime verb: []const u8,
@@ -196,6 +305,8 @@ pub fn reportFailure(f: Failure) void {
         .run_requires_message => std.log.err("headless: run requires a message: pabrik headless run <message>", .{}),
         .invalid_number => std.log.err("headless: '{s}' is not a number", .{f.value}),
         .messages_requires_session => std.log.err("headless: messages requires a session id: pabrik headless messages <id>", .{}),
+        .documents_unknown_op => std.log.err("headless: unknown documents op '{s}'", .{f.value}),
+        .documents_requires_flag => std.log.err("headless: documents needs {s}", .{f.value}),
     }
 }
 
@@ -293,6 +404,32 @@ test "parse: messages requires a session id" {
 test "parse: messages reads --limit" {
     const r = try parse(&.{ "messages", "sess_1", "--limit", "3" });
     try testing.expectEqual(@as(u32, 3), r.messages.limit);
+}
+
+test "parse: documents list needs only a workspace" {
+    const a = try parse(&.{ "documents", "list", "--workspace", "ws_1" });
+    try testing.expectEqual(DocumentsOp.list, a.documents.op);
+    try testing.expectEqualStrings("ws_1", a.documents.workspace_id);
+}
+
+test "parse: documents folder-create reads the name and the parent" {
+    const a = try parse(&.{ "documents", "folder-create", "--workspace", "ws_1", "--name", "Split bill", "--parent", "fld_1" });
+    try testing.expectEqualStrings("Split bill", a.documents.name);
+    try testing.expectEqualStrings("fld_1", a.documents.parent_id.?);
+}
+
+test "parse: documents refuses a write with no workspace" {
+    try expectFailure(&.{ "documents", "folder-create", "--name", "x" }, .documents_requires_flag);
+}
+
+test "parse: documents refuses an unknown op by name" {
+    try expectFailure(&.{ "documents", "folder-explode", "--workspace", "ws_1" }, .documents_unknown_op);
+}
+
+test "parse: documents doc-move needs the document id" {
+    try expectFailure(&.{ "documents", "doc-move", "--workspace", "ws_1" }, .documents_requires_flag);
+    const a = try parse(&.{ "documents", "doc-move", "--workspace", "ws_1", "--document", "doc_a", "--folder", "fld_1" });
+    try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
 }
 
 test "parse: an unknown verb is reported by name" {

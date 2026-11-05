@@ -144,6 +144,7 @@ const testing = std.testing;
 const migration = pabrikcore.migrations_mod.migration;
 const Migration084ReplaceRoutinesWithWorkspaceRoutines = migration.Migration084ReplaceRoutinesWithWorkspaceRoutines;
 const Migration124AddRoutineSelectedProfileModel = migration.Migration124AddRoutineSelectedProfileModel;
+const Migration139AddRoutineCwd = migration.Migration139AddRoutineCwd;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
@@ -180,6 +181,7 @@ fn setupDb() !struct {
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
     try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
+    try Migration139AddRoutineCwd.up(&db, alloc);
 
     return .{ .db = db, .threaded = threaded };
 }

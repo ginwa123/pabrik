@@ -1296,7 +1296,7 @@ fn setupSkillsDb() !TestCtx {
     , &.{});
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
-    try migration.Migration139ContractSkillNameDescription.up(&db, alloc);
+    try migration.Migration141ContractSkillNameDescription.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -2508,7 +2508,7 @@ fn setupDb() !exec_TestCtx {
     , &.{});
     try exec_migration.Migration102CreateSkills.up(&db, alloc);
     try exec_migration.Migration119CreateSkillMetadata.up(&db, alloc);
-    try exec_migration.Migration139ContractSkillNameDescription.up(&db, alloc);
+    try exec_migration.Migration141ContractSkillNameDescription.up(&db, alloc);
     return .{ .db = db, .threaded = threaded };
 }
 

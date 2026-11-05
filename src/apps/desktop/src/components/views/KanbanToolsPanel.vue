@@ -227,7 +227,7 @@ const handleApplyRecommended = async () => {
     <div
       v-if="loadError && !config && enabledCount === 0 && !searchQuery"
       class="px-3 py-2 rounded-lg text-dense text-center"
-      style="color: rgb(239, 68, 68); background-color: rgba(239, 68, 68, 0.08)"
+      style="color: var(--semantic-error); background-color: var(--tint-error)"
       data-testid="kanban-tools-error"
     >
       {{ loadError }}
@@ -284,7 +284,7 @@ const handleApplyRecommended = async () => {
         class="px-3 py-2 rounded-lg text-dense flex items-start gap-2"
         style="
           color: var(--semantic-text-muted);
-          background-color: rgba(137, 146, 167, 0.08);
+          background-color: var(--tint-accent);
           border: 1px dashed rgba(137, 146, 167, 0.35);
         "
         data-testid="kanban-tools-unconfigured"
@@ -447,7 +447,7 @@ const handleApplyRecommended = async () => {
     <p
       v-if="loadError && (config || enabledCount > 0 || searchQuery)"
       class="text-dense px-3 py-2 rounded-lg"
-      style="color: rgb(239, 68, 68); background-color: rgba(239, 68, 68, 0.08)"
+      style="color: var(--semantic-error); background-color: var(--tint-error)"
       data-testid="kanban-tools-mutation-error"
     >
       {{ loadError }}

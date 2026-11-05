@@ -104,7 +104,7 @@ describe('UpdatePlan.vue — happy path', () => {
       props: { message: { content: makeSuccessContent() } },
     })
     const root = wrapper.find('[data-testid="update-plan"]')
-    expect(root.classes()).not.toContain('border-red-500/50')
+    expect(root.classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('shows the updated_at timestamp in the right meta', () => {
@@ -183,7 +183,7 @@ describe('UpdatePlan.vue — error path', () => {
       props: { message: { content: makeErrorContent() } },
     })
     const root = wrapper.find('[data-testid="update-plan"]')
-    expect(root.classes()).toContain('border-red-500/50')
+    expect(root.classes()).toContain('border-[var(--tint-error-border)]')
   })
 
   it('shows "error" as the primary label on failure', () => {
@@ -233,7 +233,7 @@ describe('UpdatePlan.vue — empty envelope edge case', () => {
       props: { message: { content: makeEmptyContent() } },
     })
     const root = wrapper.find('[data-testid="update-plan"]')
-    expect(root.classes()).not.toContain('border-red-500/50')
+    expect(root.classes()).not.toContain('border-[var(--tint-error-border)]')
   })
 
   it('falls back to "unknown session" when session_id is missing on success', () => {

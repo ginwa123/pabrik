@@ -146,7 +146,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
   // ───────────────────────────────────────────────────────────────── Static-contract: the orange
   // dot must use the project's palette — matches the existing yellow-spinner so the card doesn't
   // introduce a third colour. ─────────────────────────────────────────────────────────────────
-  it('orange dot uses rgb(251, 146, 60) (orange-400, matches existing palette)', () => {
+  it('paints the review dot with the theme orange, so it flips with the palette', () => {
     wrapper = mountCard({
       id: 't1',
       name: 'X',
@@ -154,11 +154,7 @@ describe('WorkspaceItemTaskCard — kanban task notification icon (Chunk 6)', ()
       needs_human_review: true,
     })
     const dot = wrapper.find('[data-testid="task-needs-review"]')
-    // jsdom normalises inline rgb(...) per project memory `frontend-jsdom-normalizes-hex-colors`.
-    // We assert the inline-style bg colour contains the literal rgb() form (NOT the hex #fb923c —
-    // that would mean the browser never saw the literal).
-    const style = dot.attributes('style') ?? ''
-    expect(style).toMatch(/background-?color\s*:\s*rgb\(\s*251\s*,\s*146\s*,\s*60\s*\)/i)
+    expect(dot.attributes('style') ?? '').toContain('var(--color-orange)')
   })
 
   // ───────────────────────────────────────────────────────────────── Static-contract: the icon
