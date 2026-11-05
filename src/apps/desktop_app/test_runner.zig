@@ -11,4 +11,9 @@ test {
     _ = @import("webview_lib.zig");
     _ = @import("attach.zig");
     _ = @import("tray.zig");
+    _ = @import("json_text.zig");
+    _ = @import("server_url.zig");
+    _ = @import("desktop_config.zig");
+    _ = @import("startup.zig");
+    _ = @import("server_picker.zig");
 }

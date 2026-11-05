@@ -14,6 +14,7 @@ pub const Config = struct {
     /// If set, skip the spawn/healthcheck/asset-extraction path entirely and
     /// just point the webview at this URL.
     pabrik_url: ?[]const u8 = null,
+    choose_server: bool = false,
     /// Decoupled-service mode (added in 2026-07): when no `pabrik` daemon
     /// is running, refuse to auto-spawn one and surface an actionable
     /// error instead. Default: false (auto-spawn is the default).
@@ -84,6 +85,8 @@ const usage =
     \\  --pabrik-url URL          Connect mode: point webview at this URL
     \\                            (e.g. http://127.0.0.1:8081) instead of
     \\                            spawning a new pabrik
+    \\  --choose-server          Open the server picker on launch, even when a
+    \\                            server address is already saved
     \\  --window-size WxH        Window size in pixels (default: 1280x800)
     \\  --title TITLE            Window title (default: "Pabrik")
     \\  --user-agent UA          User-Agent string for the webview
@@ -123,12 +126,14 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) CliError!Co
             i += 1;
             if (i >= args.len) return error.MissingValue;
             cfg.pabrik_url = try allocator.dupe(u8, args[i]);
+        } else if (std.mem.eql(u8, arg, "--choose-server")) {
+            cfg.choose_server = true;
         } else if (std.mem.eql(u8, arg, "--window-size")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
             const x_idx = std.mem.indexOfScalar(u8, args[i], 'x') orelse return error.InvalidSize;
             const w = std.fmt.parseInt(u32, args[i][0..x_idx], 10) catch return error.InvalidSize;
-            const h = std.fmt.parseInt(u32, args[i][x_idx + 1..], 10) catch return error.InvalidSize;
+            const h = std.fmt.parseInt(u32, args[i][x_idx + 1 ..], 10) catch return error.InvalidSize;
             cfg.window_width = w;
             cfg.window_height = h;
         } else if (std.mem.eql(u8, arg, "--title")) {
@@ -231,6 +236,22 @@ test "parseArgs: --pabrik-url switches to connect mode" {
     // for honoring cfg.pabrik_url and ignoring the other fields).
     try testing.expectEqual(@as(u16, 0), cfg.port);
     try testing.expect(cfg.pabrik_path == null);
+}
+
+test "parseArgs: --choose-server opens the picker on launch" {
+    const allocator = testing.allocator;
+    const args = [_][]const u8{ "pabrik-desktop", "--choose-server" };
+    const cfg = try parse(allocator, &args);
+    defer cfg.deinit(allocator);
+    try testing.expect(cfg.choose_server);
+}
+
+test "parseArgs: the picker stays closed unless it is asked for" {
+    const allocator = testing.allocator;
+    const args = [_][]const u8{ "pabrik-desktop", "--pabrik-url", "https://pabrik.example.com" };
+    const cfg = try parse(allocator, &args);
+    defer cfg.deinit(allocator);
+    try testing.expect(!cfg.choose_server);
 }
 
 test "parseArgs: --window-size 1024x768" {
