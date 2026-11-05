@@ -5,6 +5,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
 const folders_store = @import("../agentic_loop/document_folders_store.zig");
+const document_events = @import("../agentic_loop/document_events.zig");
 
 const ReorderBody = struct {
     ordered_ids: []const []const u8 = &.{},
@@ -88,6 +89,15 @@ pub fn documentsReorderHandler(
     };
     defer documents_store.freeDocumentRows(allocator, output.documents);
     defer folders_store.freeFolderRows(allocator, output.folders);
+
+    // One event for the level that was renumbered: no single document names it.
+    document_events.emitDocumentsChanged(
+        allocator,
+        di.event_bus,
+        req.params.get("workspace_id") orelse "",
+        body.folder_id orelse "",
+        "",
+    );
 
     const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders);
     return res.jsonResponse(.{ .status_code = 200, .data = data });

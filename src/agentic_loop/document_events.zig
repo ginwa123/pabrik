@@ -15,15 +15,20 @@ pub const RoutingKey = "documents";
 pub const EventCreated = "document_created";
 pub const EventUpdated = "document_updated";
 pub const EventDeleted = "document_deleted";
+/// A change with no single document to name: a folder write, or a reorder.
+/// The payload is a hint to refetch the workspace, not the new state.
+pub const EventListChanged = "documents_changed";
 
 /// One document mutation. `workspace_id` is what the frontend filters on: the
 /// backend fans these out to every connected client, and only a tab showing
 /// THAT workspace may react.
 pub const DocumentEventInput = struct {
-    /// `created` | `updated` | `deleted`.
+    /// `created` | `updated` | `deleted` | `changed`.
     action: []const u8,
     workspace_id: []const u8,
-    document_id: []const u8,
+    document_id: []const u8 = "",
+    /// Set by a folder write, so a client can tell which tree moved.
+    folder_id: []const u8 = "",
     /// The document's title AFTER the mutation. Empty when the mutation did
     /// not read the row back — the frontend uses it for the row label only.
     title: []const u8 = "",
@@ -49,6 +54,8 @@ pub fn emitDocumentEvent(
         EventUpdated
     else if (std.mem.eql(u8, input.action, "deleted"))
         EventDeleted
+    else if (std.mem.eql(u8, input.action, "changed"))
+        EventListChanged
     else
         "document_unknown";
 
@@ -56,6 +63,23 @@ pub fn emitDocumentEvent(
         .session_id = RoutingKey,
         .data = data,
         .event_type = event_type_name,
+    });
+}
+
+/// A folder write or a reorder. Every client refetches the workspace on any
+/// `documents` event, so the payload only names what moved.
+pub fn emitDocumentsChanged(
+    allocator: std.mem.Allocator,
+    event_bus: ?*event_bus_mod.EventBus,
+    workspace_id: []const u8,
+    folder_id: []const u8,
+    title: []const u8,
+) void {
+    emitDocumentEvent(allocator, event_bus, .{
+        .action = "changed",
+        .workspace_id = workspace_id,
+        .folder_id = folder_id,
+        .title = title,
     });
 }
 
@@ -91,6 +115,7 @@ test "each document action maps to its own granular wire name" {
         .{ .action = "updated", .want = EventUpdated },
         .{ .action = "deleted", .want = EventDeleted },
         // An unrecognised action must NOT silently become a registered name.
+        .{ .action = "changed", .want = EventListChanged },
         .{ .action = "something_new", .want = "document_unknown" },
     };
 
@@ -162,6 +187,29 @@ test "an omitted title still reaches the wire as an empty string" {
         const parsed = try std.json.parseFromSlice(std.json.Value, alloc, captured_payload, .{});
         defer parsed.deinit();
         try testing.expectEqualStrings("", parsed.value.object.get("title").?.string);
+    }
+    releaseCapture();
+}
+
+test "a folder change names the folder and carries no document id" {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    defer threaded.deinit();
+    var bus = event_bus_mod.EventBus.init("test", alloc, threaded.io());
+    defer bus.deinit();
+
+    releaseCapture();
+    try bus.subscribe(SseEvent, RoutingKey, capture);
+    emitDocumentsChanged(alloc, &bus, "ws_1", "fld_7", "Split bill");
+
+    try testing.expect(captured != null);
+    try testing.expectEqualStrings(EventListChanged, captured.?.event_type orelse "");
+    {
+        const parsed = try std.json.parseFromSlice(std.json.Value, alloc, captured_payload, .{});
+        defer parsed.deinit();
+        try testing.expectEqualStrings("fld_7", parsed.value.object.get("folder_id").?.string);
+        try testing.expectEqualStrings("", parsed.value.object.get("document_id").?.string);
+        try testing.expectEqualStrings("Split bill", parsed.value.object.get("title").?.string);
     }
     releaseCapture();
 }

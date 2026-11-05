@@ -1,6 +1,6 @@
-/** DocumentsSse — bus-backed document-event handlers. The backend emits these from the AGENT TOOLS
- * only (`add_document` / `edit_document` / `delete_document`, see
- * `src/agentic_loop/document_events.zig`), so a tab never receives an echo of its own UI edit. */
+/** DocumentsSse — the `documents` channel. Emitted by the agent tools and by
+ * every HTTP write that changes the tree (folder CRUD, document create/update/
+ * delete, reorder), so a second window follows a drag the first one made. */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useSseBus, __getSseBusGlobalClient } from '../helpers/sseBus'

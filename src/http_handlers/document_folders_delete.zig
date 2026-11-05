@@ -8,6 +8,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const folders_store = @import("../agentic_loop/document_folders_store.zig");
+const document_events = @import("../agentic_loop/document_events.zig");
 
 pub const FolderDeleteInput = struct {
     workspace_id: []const u8,
@@ -63,6 +64,14 @@ pub fn documentFoldersDeleteHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
         });
     };
+
+    document_events.emitDocumentsChanged(
+        allocator,
+        di.event_bus,
+        req.params.get("workspace_id") orelse "",
+        output.folder_id,
+        "",
+    );
 
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .id = output.folder_id,

@@ -7,6 +7,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
+const document_events = @import("../agentic_loop/document_events.zig");
 
 pub const DocumentsDeleteError = error{
     IdsRequired,
@@ -69,6 +70,12 @@ pub fn documentsDeleteHandler(
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
         });
     };
+
+    document_events.emitDocumentEvent(allocator, di.event_bus, .{
+        .action = "deleted",
+        .workspace_id = req.params.get("workspace_id") orelse "",
+        .document_id = document_id,
+    });
 
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .id = document_id,

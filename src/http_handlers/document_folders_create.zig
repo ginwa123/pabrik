@@ -7,6 +7,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const folders_store = @import("../agentic_loop/document_folders_store.zig");
+const document_events = @import("../agentic_loop/document_events.zig");
 
 const CreateFolderBody = struct {
     name: []const u8 = "",
@@ -81,6 +82,16 @@ pub fn documentFoldersCreateHandler(
         });
     };
     defer folders_store.freeFolderRow(allocator, output.folder);
+
+    // Every window showing this workspace refetches; the payload only names
+    // what moved, because the list read is the source of truth.
+    document_events.emitDocumentsChanged(
+        allocator,
+        di.event_bus,
+        output.folder.workspace_id,
+        output.folder.id,
+        output.folder.name,
+    );
 
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .folder = http_response.makeFolderResponse(output.folder),
