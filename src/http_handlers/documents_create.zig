@@ -111,9 +111,9 @@ pub fn documentsCreateHandler(
     };
     defer documents_store.freeDocumentRow(allocator, output.document);
 
-    // A create or a folder move changes the tree every window is showing.
+    // A create changes the tree every window is showing.
     document_events.emitDocumentEvent(allocator, di.event_bus, .{
-        .action = "updated",
+        .action = "created",
         .workspace_id = output.document.workspace_id,
         .document_id = output.document.id,
         .folder_id = output.document.folder_id orelse "",
