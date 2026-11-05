@@ -73,6 +73,7 @@ pub fn dispatchHeadless(
         .run => |a| try runTurn(allocator, io, environment, a, log_file, db_request),
         .sessions => |a| try listSessions(allocator, io, environment, a, log_file, db_request),
         .messages => |a| try listMessages(allocator, io, environment, a, log_file, db_request),
+        .documents => |a| try runDocuments(allocator, io, environment, a, log_file, db_request),
     }
     return true;
 }
@@ -230,6 +231,39 @@ fn listMessages(
     try w.writeAll("]}\n");
 
     try writeStdout(io, out.written());
+    backend.finish(0);
+}
+
+/// Boot the backend, run one document-folder op, print its JSON, tear down.
+fn runDocuments(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.DocumentsArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    // Declared HERE, not returned by value: `App.db` / `.event_bus`
+    // point into this struct, so it must live in the caller's frame.
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const json = headless.documents.run(allocator, &backend, a) catch |err| {
+        // stdout is the machine channel: a failure never prints a half object.
+        std.log.err("headless: documents {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
+        std.process.exit(1);
+    };
+    defer allocator.free(json);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.Io.File.stdout().writer(io, &buf);
+    try w.interface.writeAll(json);
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+
     backend.finish(0);
 }
 

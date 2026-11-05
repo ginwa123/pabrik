@@ -398,6 +398,7 @@ fn testRow(
         .created_at = updated_at,
         .updated_at = updated_at,
         .position = 0,
+        .folder_id = null,
     };
 }
 

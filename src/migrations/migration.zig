@@ -152,6 +152,7 @@ const migration_135 = @import("migration_135.zig");
 const migration_136 = @import("migration_136.zig");
 const migration_138 = @import("migration_138.zig");
 const migration_139 = @import("migration_139.zig");
+const migration_140 = @import("migration_140.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -293,6 +294,7 @@ pub const Migration135DropUnusedRbacTables = migration_135.Migration135DropUnuse
 pub const Migration136EnforceForeignKeys = migration_136.Migration136EnforceForeignKeys;
 pub const Migration138AddWorkspaceSecretDescription = migration_138.Migration138AddWorkspaceSecretDescription;
 pub const Migration139AddRoutineCwd = migration_139.Migration139AddRoutineCwd;
+pub const Migration140AddDocumentFolders = migration_140.Migration140AddDocumentFolders;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -554,6 +556,8 @@ pub const allMigrations: []const Migration = &.{
     // Migration 138 — `workspace_secrets` learns what a credential is for.
     .{ .version = Migration138AddWorkspaceSecretDescription.version, .name = Migration138AddWorkspaceSecretDescription.name, .up = Migration138AddWorkspaceSecretDescription.up },
     .{ .version = Migration139AddRoutineCwd.version, .name = Migration139AddRoutineCwd.name, .up = Migration139AddRoutineCwd.up },
+    // Migration 140 — documents get folders, folders get folders.
+    .{ .version = Migration140AddDocumentFolders.version, .name = Migration140AddDocumentFolders.name, .up = Migration140AddDocumentFolders.up },
 };
 
 /// Register all migrations with a MigrationManager

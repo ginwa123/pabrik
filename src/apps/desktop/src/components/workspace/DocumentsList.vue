@@ -1,16 +1,15 @@
 <script setup lang="ts">
-// The "Documents" sidebar section (Migration 095) — a collapsible list rendered directly BELOW the
-// Projects section, not inside it. Three deliberate choices, each for a reason that is easy to get
-// wrong: 1. Header markup is copied from `ProjectsList.vue`, not re-invented.
+// The "Documents" sidebar section — a collapsible tree.
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidebarStore } from '../../stores/sidebar'
-import { useDocumentsStore } from '../../stores/documents'
+import { isAtOrBelow, useDocumentsStore } from '../../stores/documents'
 import { useNavigationStore } from '../../stores/navigation'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { buildAppUrl } from '../../helpers/appUrl'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
+import type { Document, DocumentFolder } from '../../api'
 
 const props = defineProps<{
   workspaceId: string | null
@@ -34,6 +33,45 @@ const isCurrentDocument = (id: string): boolean =>
 
 const documents = computed(() => documentsStore.documents)
 
+/** Folders whose children are hidden. A collapsed folder still renders its own
+ * row, so the count stays visible while the level below it does not. */
+const collapsed = ref<Set<string>>(new Set())
+
+const toggleFolder = (id: string) => {
+  const next = new Set(collapsed.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  collapsed.value = next
+}
+
+type Row =
+  | { kind: 'folder'; folder: DocumentFolder; depth: number }
+  | { kind: 'document'; document: Document; depth: number }
+
+/** Flattened visible tree, depth-first. Folders come before documents at every
+ * level (the store owns that rule) and a collapsed folder contributes one row. */
+const rows = computed<Row[]>(() => {
+  const out: Row[] = []
+  const walk = (parentId: string | null, depth: number) => {
+    for (const entry of documentsStore.level(parentId)) {
+      if (entry.kind === 'folder') {
+        out.push({ kind: 'folder', folder: entry.folder, depth })
+        if (!collapsed.value.has(entry.folder.id)) walk(entry.folder.id, depth + 1)
+      } else {
+        out.push({ kind: 'document', document: entry.document, depth })
+      }
+    }
+  }
+  walk(null, 0)
+  return out
+})
+
+/** The visible distance from the rail's left edge. `--sb-mark` is 16px, the
+ * same step the shipped list already spends on its one mark column. */
+const indent = (depth: number) => `calc(var(--sb-gutter) + ${depth * 16}px)`
+
+const directChildCount = (folderId: string): number => documentsStore.level(folderId).length
+
 const toggleDocumentsSection = () => {
   const wasExpanded = sidebarStore.documentsExpanded
   sidebarStore.toggleDocumentsExpanded()
@@ -44,8 +82,10 @@ const toggleDocumentsSection = () => {
   }
 }
 
+const activeWorkspaceId = () => props.workspaceId ?? workspacesStore.activeWorkspace?.id ?? null
+
 const selectDocument = (id: string) => {
-  const wsId = props.workspaceId ?? workspacesStore.activeWorkspace?.id ?? null
+  const wsId = activeWorkspaceId()
   if (!wsId) {
     // No workspace means no document page to build a URL for. The rows
     // only render with a workspace selected, so this is a guard against
@@ -53,103 +93,171 @@ const selectDocument = (id: string) => {
     return
   }
   // `replace`, not `push`: clicking through five documents should not bury the previous four under
-  // Back. The document is a PAGE, so this replaces whatever main view was open — the chat is
-  // unmounted and the URL says plainly which document this is.
+  // Back. The document is a PAGE, so this replaces whatever main view was open.
   router.replace(buildAppUrl({ workspaceId: wsId, documentId: id })).catch(() => {
     // A duplicate navigation (clicking the already-open row) rejects.
-    // Nothing to recover: the URL already says what the user asked for.
   })
-  // The document is the chat-equivalent of an open view, so the chat and project selections must
-  // clear — two "active" rows is the visual bug the single-active-state spec exists to prevent.
   workspacesStore.setActiveWorkspaceItem(null)
   workspacesStore.setActiveTask(null)
   navigationStore.clearActiveChat()
 }
 
-const draggingId = ref<string | null>(null)
-const dragOverId = ref<string | null>(null)
-const dragOverInsertAfter = ref(false)
+// ─── Drag state ──────────────────────────────────────────────────────────
+const draggingDoc = ref<string | null>(null)
+const draggingFolder = ref<string | null>(null)
+/** Folder row currently outlined as "drop inside me". */
+const overFolder = ref<string | null>(null)
+/** Document row the drop would land next to, and on which side. */
+const overDoc = ref<{ id: string; after: boolean } | null>(null)
 
-const rowUnder = (event: DragEvent): HTMLElement | null => {
-  const target = event.target as HTMLElement | null
-  return target?.closest('[data-doc-id]') ?? null
+const clearDragState = () => {
+  draggingDoc.value = null
+  draggingFolder.value = null
+  overFolder.value = null
+  overDoc.value = null
 }
 
-const startDrag = (event: DragEvent, id: string) => {
-  draggingId.value = id
+const startDragDocument = (event: DragEvent, id: string) => {
+  draggingDoc.value = id
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
     event.dataTransfer.setData('application/x-document-id', id)
   }
 }
 
-const handleDragOver = (event: DragEvent) => {
+const startDragFolder = (event: DragEvent, id: string) => {
+  draggingFolder.value = id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-document-folder-id', id)
+  }
+}
+
+/** Dragging over a folder row means "into"; over a document row it means
+ * "before/after", the same two halves the shipped reorder used. */
+const handleDragOver = (event: DragEvent, row: Row) => {
+  if (!draggingDoc.value && !draggingFolder.value) return
   event.preventDefault()
-  const row = rowUnder(event)
-  const id = row?.dataset.docId ?? null
-  if (!id || id === draggingId.value) {
-    dragOverId.value = null
-    dragOverInsertAfter.value = false
+  if (row.kind === 'folder') {
+    // A folder cannot be dropped into itself or its own descendant; the store
+    // refuses it too, but a dead drop target should not look alive.
+    const source = draggingFolder.value
+    if (
+      source &&
+      (source === row.folder.id || isAtOrBelow(documentsStore.folders, source, row.folder.id))
+    ) {
+      return
+    }
+    overFolder.value = row.folder.id
+    overDoc.value = null
     return
   }
-  dragOverId.value = id
-  const rect = row!.getBoundingClientRect()
-  dragOverInsertAfter.value = event.clientY > rect.top + rect.height / 2
+  if (!draggingDoc.value) return
+  overFolder.value = null
+  const target = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  overDoc.value = { id: row.document.id, after: event.clientY > target.top + target.height / 2 }
 }
 
-const handleDragLeave = (event: DragEvent) => {
-  const row = rowUnder(event)
-  if (!row) return
-  const related = event.relatedTarget as Node | null
-  if (related && row.contains(related)) return
-  if (dragOverId.value === row.dataset.docId) {
-    dragOverId.value = null
-    dragOverInsertAfter.value = false
+const levelDocumentIds = (folderId: string | null): string[] =>
+  documentsStore
+    .level(folderId)
+    .filter((entry): entry is { kind: 'document'; document: Document } => entry.kind === 'document')
+    .map((entry) => entry.document.id)
+
+const reorderWithin = (
+  folderId: string | null,
+  sourceId: string,
+  targetId: string,
+  after: boolean,
+) => {
+  const ids = levelDocumentIds(folderId)
+  const from = ids.indexOf(sourceId)
+  const to = ids.indexOf(targetId)
+  if (from === -1 || to === -1) return
+  const [moved] = ids.splice(from, 1)
+  if (!moved) return
+  const targetIdx = to > from ? to - 1 : to
+  ids.splice(targetIdx + (after ? 1 : 0), 0, moved)
+  const wsId = activeWorkspaceId()
+  if (!wsId) return
+  void documentsStore.reorderDocuments(wsId, ids, folderId)
+}
+
+const handleDrop = (event: DragEvent, row: Row) => {
+  event.preventDefault()
+  const wsId = activeWorkspaceId()
+  const doc = draggingDoc.value
+  const folder = draggingFolder.value
+  const after = overDoc.value?.after ?? false
+  const into = overFolder.value
+  clearDragState()
+  if (!wsId) return
+
+  if (row.kind === 'folder' && into === row.folder.id) {
+    if (doc) void documentsStore.moveDocument(wsId, doc, row.folder.id)
+    else if (folder && folder !== row.folder.id)
+      void documentsStore.moveFolder(wsId, folder, row.folder.id)
+    return
+  }
+  if (row.kind === 'document' && doc && doc !== row.document.id) {
+    reorderWithin(row.document.folder_id ?? null, doc, row.document.id, after)
   }
 }
 
-const endDrag = () => {
-  draggingId.value = null
-  dragOverId.value = null
-  dragOverInsertAfter.value = false
-}
-
-const dropOrder = (sourceId: string, targetId: string, insertAfter: boolean): string[] | null => {
-  const ids = documents.value.map((d) => d.id)
-  const fromIdx = ids.indexOf(sourceId)
-  const toIdx = ids.indexOf(targetId)
-  if (fromIdx === -1 || toIdx === -1) return null
-  const removed = ids.splice(fromIdx, 1)
-  const moved = removed[0]
-  if (!moved) return null
-  const targetIdxInModified = toIdx > fromIdx ? toIdx - 1 : toIdx
-  ids.splice(targetIdxInModified + (insertAfter ? 1 : 0), 0, moved)
-  return ids
-}
-
-const handleDrop = (event: DragEvent) => {
+/** Dropping on the empty space below the tree moves the row to the root. */
+const handleRootDrop = (event: DragEvent) => {
   event.preventDefault()
-  const row = rowUnder(event)
-  const targetId = row?.dataset.docId ?? null
-  const sourceId = draggingId.value
-  const insertAfter = dragOverInsertAfter.value
-  endDrag()
-  if (!targetId || !sourceId || targetId === sourceId) return
-  const wsId = props.workspaceId ?? workspacesStore.activeWorkspace?.id ?? null
+  const wsId = activeWorkspaceId()
+  const doc = draggingDoc.value
+  const folder = draggingFolder.value
+  clearDragState()
   if (!wsId) return
-  const orderedIds = dropOrder(sourceId, targetId, insertAfter)
-  if (!orderedIds) return
-  void documentsStore.reorderDocuments(wsId, orderedIds)
+  if (doc) void documentsStore.moveDocument(wsId, doc, null)
+  else if (folder) void documentsStore.moveFolder(wsId, folder, null)
 }
 
-const createDocument = () => {
-  if (!props.workspaceId) return
-  void documentsStore.createDocument(props.workspaceId, 'Untitled document').then((doc) => {
+// ─── Create / rename / delete ────────────────────────────────────────────
+const createDocument = (folderId: string | null = null) => {
+  const wsId = activeWorkspaceId()
+  if (!wsId) return
+  void documentsStore.createDocument(wsId, 'Untitled document', '', folderId).then((doc) => {
     if (doc) {
       selectDocument(doc.id)
       emit('created', doc.id)
     }
   })
+}
+
+const renamingId = ref<string | null>(null)
+const renameValue = ref('')
+
+const startRename = (folder: DocumentFolder) => {
+  renamingId.value = folder.id
+  renameValue.value = folder.name
+}
+
+const commitRename = (folder: DocumentFolder) => {
+  const wsId = activeWorkspaceId()
+  const name = renameValue.value.trim()
+  renamingId.value = null
+  if (!wsId || name.length === 0 || name === folder.name) return
+  void documentsStore.renameFolder(wsId, folder.id, name)
+}
+
+const createFolder = (parentId: string | null = null) => {
+  const wsId = activeWorkspaceId()
+  if (!wsId) return
+  void documentsStore.createFolder(wsId, 'New folder', parentId).then((folder) => {
+    if (!folder) return
+    if (folder.parent_id) collapsed.value.delete(folder.parent_id)
+    startRename(folder)
+  })
+}
+
+const removeFolder = (folder: DocumentFolder) => {
+  const wsId = activeWorkspaceId()
+  if (!wsId) return
+  void documentsStore.deleteFolder(wsId, folder.id)
 }
 
 // Refetch on workspace switch so a stale list is never shown under a new header. `reset()` on the
@@ -222,10 +330,28 @@ onUpdated(() => {
           v-if="sidebarStore.documentsExpanded && workspaceId"
           class="ml-auto w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center shrink-0"
           style="color: var(--semantic-text-dim); opacity: 0.7"
+          title="New Folder"
+          aria-label="New Folder"
+          data-testid="documents-new-folder-button"
+          @click.stop="createFolder(null)"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M1.5 4.2c0-.6.5-1.1 1.1-1.1h3.1l1.3 1.4h6.4c.6 0 1.1.5 1.1 1.1v6.2c0 .6-.5 1.1-1.1 1.1H2.6c-.6 0-1.1-.5-1.1-1.1V4.2Z"
+              stroke="currentColor"
+              stroke-width="1.2"
+            />
+            <path d="M8 7.4v3.2M6.4 9h3.2" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+        </button>
+        <button
+          v-if="sidebarStore.documentsExpanded && workspaceId"
+          class="w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center shrink-0"
+          style="color: var(--semantic-text-dim); opacity: 0.7"
           title="New Document"
           aria-label="New Document"
           data-testid="documents-add-button"
-          @click.stop="createDocument"
+          @click.stop="createDocument(null)"
         >
           +
         </button>
@@ -262,13 +388,13 @@ onUpdated(() => {
            empty state on a slow boot. Refreshes keep old rows, so no
            skeleton there. -->
       <SidebarSkeleton
-        v-else-if="workspaceId && documents.length === 0 && documentsStore.loading"
+        v-else-if="workspaceId && rows.length === 0 && documentsStore.loading"
         :rows="3"
         test-id="documents-loading-skeleton"
       />
 
       <p
-        v-else-if="documents.length === 0 && !documentsStore.loading"
+        v-else-if="rows.length === 0 && !documentsStore.loading"
         class="px-[var(--sb-gutter)] text-meta py-1"
         style="color: var(--semantic-text-dim); opacity: 0.7"
         data-testid="documents-empty"
@@ -276,40 +402,129 @@ onUpdated(() => {
         No documents yet
       </p>
 
-      <ul v-else class="space-y-0">
+      <ul v-else class="space-y-0" role="tree" aria-label="Documents">
         <li
-          v-for="doc in documents"
-          :key="doc.id"
-          draggable="true"
-          :data-doc-id="doc.id"
-          :class="draggingId === doc.id ? 'opacity-50' : ''"
-          :style="
-            dragOverId === doc.id && draggingId !== doc.id
-              ? dragOverInsertAfter
-                ? 'box-shadow: 0 2px 0 0 var(--color-violet);'
-                : 'box-shadow: 0 -2px 0 0 var(--color-violet);'
+          v-for="row in rows"
+          :key="row.kind === 'folder' ? `folder:${row.folder.id}` : `doc:${row.document.id}`"
+          :draggable="renamingId !== (row.kind === 'folder' ? row.folder.id : '')"
+          :data-folder-id="row.kind === 'folder' ? row.folder.id : undefined"
+          :data-doc-id="row.kind === 'document' ? row.document.id : undefined"
+          role="none"
+          :class="
+            (row.kind === 'document' && draggingDoc === row.document.id) ||
+            (row.kind === 'folder' && draggingFolder === row.folder.id)
+              ? 'opacity-50'
               : ''
           "
-          @dragstart="startDrag($event, doc.id)"
-          @dragover="handleDragOver"
-          @dragleave="handleDragLeave"
-          @drop="handleDrop"
-          @dragend="endDrag"
+          :style="
+            row.kind === 'document' &&
+            overDoc?.id === row.document.id &&
+            draggingDoc !== row.document.id
+              ? overDoc?.after
+                ? 'box-shadow: 0 2px 0 0 var(--color-violet);'
+                : 'box-shadow: 0 -2px 0 0 var(--color-violet);'
+              : row.kind === 'folder' && overFolder === row.folder.id
+                ? 'box-shadow: inset 0 0 0 1px var(--color-violet);'
+                : ''
+          "
+          @dragstart="
+            row.kind === 'folder'
+              ? startDragFolder($event, row.folder.id)
+              : startDragDocument($event, row.document.id)
+          "
+          @dragover="handleDragOver($event, row)"
+          @drop="handleDrop($event, row)"
+          @dragend="clearDragState"
         >
+          <!-- Folder row: chevron, name, child count, delete. -->
+          <div
+            v-if="row.kind === 'folder'"
+            class="relative w-full flex items-center h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 overflow-hidden text-left"
+            :data-testid="`document-folder-${row.folder.id}`"
+            :style="`padding-left: ${indent(row.depth)}; color: var(--semantic-text-muted);`"
+            role="treeitem"
+            tabindex="0"
+            :aria-expanded="!collapsed.has(row.folder.id)"
+            :aria-level="row.depth + 1"
+            @click="toggleFolder(row.folder.id)"
+            @keydown.enter.prevent="toggleFolder(row.folder.id)"
+            @keydown.space.prevent="toggleFolder(row.folder.id)"
+          >
+            <span class="w-[var(--sb-mark)] shrink-0 flex items-center" aria-hidden="true">
+              <span
+                class="text-meta inline-block transition-transform duration-200"
+                :style="{
+                  transform: collapsed.has(row.folder.id) ? 'rotate(0deg)' : 'rotate(90deg)',
+                }"
+                >▶</span
+              >
+            </span>
+            <input
+              v-if="renamingId === row.folder.id"
+              v-model="renameValue"
+              class="flex-1 min-w-0 bg-transparent text-dense outline-none"
+              style="
+                color: inherit;
+                border-bottom: 1px solid var(--color-violet);
+              "
+              data-testid="document-folder-rename-input"
+              @click.stop
+              @keydown.enter.prevent="commitRename(row.folder)"
+              @keydown.esc.prevent="renamingId = null"
+              @blur="commitRename(row.folder)"
+            />
+            <span v-else class="flex-1 min-w-0 truncate" :title="row.folder.name">{{
+              row.folder.name
+            }}</span>
+            <span
+              class="text-micro ml-1.5"
+              style="
+                color: var(--semantic-text-dim);
+                opacity: 0.7;
+                font-variant-numeric: tabular-nums;
+              "
+              >{{ directChildCount(row.folder.id) }}</span
+            >
+            <button
+              class="w-[var(--sb-mark)] h-[var(--sb-hit)] flex items-center justify-center shrink-0 transition-opacity hover:opacity-100"
+              style="color: var(--semantic-text-dim); opacity: 0.55"
+              :title="`Delete folder ${row.folder.name}`"
+              :aria-label="`Delete folder ${row.folder.name}`"
+              :data-testid="`document-folder-delete-${row.folder.id}`"
+              @click.stop="removeFolder(row.folder)"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.3" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Document row: unchanged from the shipped list, plus its indent. -->
           <button
-            class="relative w-full flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
-            :data-testid="`document-row-${doc.id}`"
+            v-else
+            class="relative w-full flex items-center h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
+            :data-testid="`document-row-${row.document.id}`"
+            role="treeitem"
+            :aria-level="row.depth + 1"
             :style="
-              isCurrentDocument(doc.id)
-                ? 'background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);'
-                : 'color: var(--semantic-text-muted);'
+              isCurrentDocument(row.document.id)
+                ? `padding-left: ${indent(row.depth)}; background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);`
+                : `padding-left: ${indent(row.depth)}; color: var(--semantic-text-muted);`
             "
-            @click="selectDocument(doc.id)"
+            @click="selectDocument(row.document.id)"
           >
             <span class="w-[var(--sb-mark)] shrink-0" aria-hidden="true"></span>
-            <span class="flex-1 min-w-0 truncate">{{ doc.title }}</span>
+            <span class="flex-1 min-w-0 truncate">{{ row.document.title }}</span>
           </button>
         </li>
+        <!-- Drop here to move a row back to the root. -->
+        <li
+          class="h-4"
+          aria-hidden="true"
+          data-testid="documents-root-drop"
+          @dragover.prevent
+          @drop="handleRootDrop"
+        ></li>
       </ul>
     </div>
   </div>

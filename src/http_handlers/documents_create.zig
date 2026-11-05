@@ -7,18 +7,22 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../agentic_loop/documents_store.zig");
+const document_events = @import("../agentic_loop/document_events.zig");
 
 /// Request body.
 const CreateDocumentBody = struct {
     title: []const u8 = "",
     content: []const u8 = "",
     format: []const u8 = "",
+    /// Absent or null creates the document at the root.
+    folder_id: ?[]const u8 = null,
 };
 
 pub const DocumentsCreateError = error{
     WorkspaceIdRequired,
     TitleRequired,
     ContentTooLarge,
+    FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
     OutOfMemory,
@@ -48,6 +52,7 @@ fn useCase(
         .title = input.body.title,
         .content = input.body.content,
         .format = input.body.format,
+        .folder_id = input.body.folder_id,
     }) };
 }
 
@@ -87,12 +92,14 @@ pub fn documentsCreateHandler(
         const status: u16 = switch (err) {
             error.WorkspaceIdRequired, error.TitleRequired => 400,
             error.ContentTooLarge => 413,
+            error.FolderNotFound => 404,
             error.InsertFailed, error.RowNotFoundAfterInsert, error.OutOfMemory => 500,
         };
         const message: []const u8 = switch (err) {
             error.WorkspaceIdRequired => "workspace_id required",
             error.TitleRequired => "title is required",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.FolderNotFound => "folder not found in this workspace",
             error.InsertFailed => "DB error",
             error.RowNotFoundAfterInsert => "row missing after insert (DB inconsistency)",
             error.OutOfMemory => "Out of memory",
@@ -103,6 +110,15 @@ pub fn documentsCreateHandler(
         });
     };
     defer documents_store.freeDocumentRow(allocator, output.document);
+
+    // A create changes the tree every window is showing.
+    document_events.emitDocumentEvent(allocator, di.event_bus, .{
+        .action = "created",
+        .workspace_id = output.document.workspace_id,
+        .document_id = output.document.id,
+        .folder_id = output.document.folder_id orelse "",
+        .title = output.document.title,
+    });
 
     const data = try std.json.Stringify.valueAlloc(allocator, .{
         .document = http_response.makeDocumentResponse(output.document),
@@ -132,6 +148,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
+    try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

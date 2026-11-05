@@ -1,13 +1,31 @@
-// Pinia store for workspace-scoped documents (Migration 095). Two things this store deliberately
-// does NOT do: 1. No client-side workspace filter.
 import { defineStore } from 'pinia'
 import { Effect } from 'effect'
 import { computed, ref } from 'vue'
 import * as api from '../api'
-import type { Document } from '../api'
+import type { Document, DocumentFolder } from '../api'
 import { documentEngineDb } from '../sync/DocumentEngineDb'
 import { SyncRemoteError } from '../sync/SyncError'
 import { runSyncEffectOr, runSyncResult, runSyncVoid } from '../sync/runtime'
+import {
+  folderPath,
+  isAtOrBelow,
+  mergeLevel,
+  readCachedFolders,
+  writeCachedFolders,
+} from './documentTree'
+
+export { folderCacheKey, folderPath, isAtOrBelow, mergeLevel } from './documentTree'
+export type { TreeEntry } from './documentTree'
+
+/** Wrap one remote write so its failure reaches the rendered `error` ref
+ * instead of an `unknown` binding. */
+function remote<T>(op: string, run: () => Promise<T>) {
+  return Effect.tryPromise({
+    try: run,
+    catch: (cause) =>
+      new SyncRemoteError({ op, reason: cause instanceof Error ? cause.message : String(cause) }),
+  })
+}
 
 export function applyReorder(docs: Document[], orderedIds: string[]): Document[] {
   const remaining = new Map(docs.map((d) => [d.id, d]))
@@ -23,6 +41,7 @@ export function applyReorder(docs: Document[], orderedIds: string[]): Document[]
 
 export const useDocumentsStore = defineStore('documents', () => {
   const documents = ref<Document[]>([])
+  const folders = ref<DocumentFolder[]>([])
   const loading = ref(false)
   const saving = ref(false)
   /** Last failure message, or null. Rendered by the view — never write-only. */
@@ -33,6 +52,13 @@ export const useDocumentsStore = defineStore('documents', () => {
   const loaded = ref(false)
 
   const count = computed(() => documents.value.length)
+  const folderCount = computed(() => folders.value.length)
+
+  /** One level of the tree, folders first. The sidebar walks this. */
+  const level = (parentId: string | null) => mergeLevel(folders.value, documents.value, parentId)
+
+  /** The path to a document's folder, in the same shape `folderPath` returns. */
+  const pathOf = (folderId: string | null) => folderPath(folders.value, folderId)
 
   const findById = (id: string): Document | null => documents.value.find((d) => d.id === id) ?? null
 
@@ -56,19 +82,25 @@ export const useDocumentsStore = defineStore('documents', () => {
       )
       if (cached.length > 0) {
         documents.value = cached.map((r) => r.raw)
+        folders.value = readCachedFolders(workspaceId)
         loaded.value = true
         loading.value = false
       }
 
       // 2. Revalidate in the background and replace with the server's truth. `runSyncResult` (not
-      // `runSyncEffect`) because this failure is RENDERED: the section shows `error` instead of the
-      // empty state, so the reason has to survive to the UI.
+      //    `runSyncEffect`) because this failure is RENDERED: the section shows `error` instead of
+      //    the empty state, so the reason has to survive to the UI.
       const result = await runSyncResult(
         documentEngineDb.loadDelta(workspaceId),
         'documents.loadDelta',
       )
       if (result.ok) {
         documents.value = result.value.items.map((r) => r.raw)
+        // The list read returns the whole tree, so this is the one place the
+        // folder cache is written. A cached paint keeps its placement.
+        const listed = result.value.folders ?? readCachedFolders(workspaceId)
+        folders.value = listed
+        writeCachedFolders(workspaceId, listed)
         loaded.value = true
       } else {
         error.value = result.reason
@@ -88,12 +120,13 @@ export const useDocumentsStore = defineStore('documents', () => {
     workspaceId: string,
     title: string,
     content = '',
+    folderId: string | null = null,
   ): Promise<Document | null> {
     if (!workspaceId) return null
     saving.value = true
     error.value = null
     try {
-      const { document } = await api.createDocument(workspaceId, title, content)
+      const { document } = await api.createDocument(workspaceId, title, content, folderId)
       // Prepend rather than refetch: the backend positions a new document above
       // every existing one, so the prepend IS the saved order.
       documents.value = [document, ...documents.value]
@@ -158,7 +191,11 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  async function reorderDocuments(workspaceId: string, orderedIds: string[]): Promise<boolean> {
+  async function reorderDocuments(
+    workspaceId: string,
+    orderedIds: string[],
+    folderId: string | null = null,
+  ): Promise<boolean> {
     if (!workspaceId || orderedIds.length === 0) return false
     const previous = documents.value
     documents.value = applyReorder(previous, orderedIds)
@@ -166,14 +203,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     error.value = null
     try {
       const result = await runSyncResult(
-        Effect.tryPromise({
-          try: () => api.reorderDocuments(workspaceId, orderedIds),
-          catch: (cause) =>
-            new SyncRemoteError({
-              op: 'documents.reorder',
-              reason: cause instanceof Error ? cause.message : String(cause),
-            }),
-        }),
+        remote('documents.reorder', () => api.reorderDocuments(workspaceId, folderId, orderedIds)),
         'documents.reorder',
       )
       if (!result.ok) {
@@ -182,9 +212,179 @@ export const useDocumentsStore = defineStore('documents', () => {
         return false
       }
       documents.value = result.value.documents
+      if (result.value.folders) folders.value = result.value.folders
       loaded.value = true
       for (const doc of result.value.documents) {
         await runSyncVoid(documentEngineDb.putDocument(workspaceId, doc), 'documents.put')
+      }
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** Move one document into `folderId` (null = the root). Optimistic: the row
+   * takes its new place at once, and goes back where it was if the write
+   * fails. */
+  async function moveDocument(
+    workspaceId: string,
+    documentId: string,
+    folderId: string | null,
+  ): Promise<boolean> {
+    if (!workspaceId) return false
+    const previous = documents.value
+    documents.value = previous.map((d) => (d.id === documentId ? { ...d, folder_id: folderId } : d))
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.move', () =>
+          api.updateDocument(workspaceId, documentId, { folder_id: folderId }),
+        ),
+        'documents.move',
+      )
+      if (!result.ok) {
+        documents.value = previous
+        error.value = result.reason
+        return false
+      }
+      const { document } = result.value
+      documents.value = documents.value.map((d) => (d.id === document.id ? document : d))
+      await runSyncVoid(documentEngineDb.putDocument(workspaceId, document), 'documents.put')
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function createFolder(
+    workspaceId: string,
+    name: string,
+    parentId: string | null = null,
+  ): Promise<DocumentFolder | null> {
+    if (!workspaceId) return null
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.folderCreate', () => api.createFolder(workspaceId, name, parentId)),
+        'documents.folderCreate',
+      )
+      if (!result.ok) {
+        error.value = result.reason
+        return null
+      }
+      folders.value = [result.value.folder, ...folders.value]
+      writeCachedFolders(workspaceId, folders.value)
+      return result.value.folder
+    } finally {
+      saving.value = false
+    }
+  }
+
+  async function renameFolder(
+    workspaceId: string,
+    folderId: string,
+    name: string,
+  ): Promise<boolean> {
+    if (!workspaceId) return false
+    const previous = folders.value
+    folders.value = previous.map((f) => (f.id === folderId ? { ...f, name } : f))
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.folderRename', () => api.updateFolder(workspaceId, folderId, { name })),
+        'documents.folderRename',
+      )
+      if (!result.ok) {
+        folders.value = previous
+        error.value = result.reason
+        return false
+      }
+      folders.value = folders.value.map((f) =>
+        f.id === result.value.folder.id ? result.value.folder : f,
+      )
+      writeCachedFolders(workspaceId, folders.value)
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** Nest a folder, or send it back to the root with `parentId = null`. A
+   * cycle is refused HERE, before the request: the server refuses it too, but
+   * a round trip for a drop the UI can already see is wrong is still wrong. */
+  async function moveFolder(
+    workspaceId: string,
+    folderId: string,
+    parentId: string | null,
+  ): Promise<boolean> {
+    if (!workspaceId || folderId === parentId) return false
+    if (parentId !== null && isAtOrBelow(folders.value, folderId, parentId)) {
+      error.value = 'A folder cannot be moved inside itself'
+      return false
+    }
+    const previous = folders.value
+    folders.value = previous.map((f) => (f.id === folderId ? { ...f, parent_id: parentId } : f))
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.folderMove', () =>
+          api.updateFolder(workspaceId, folderId, { parent_id: parentId }),
+        ),
+        'documents.folderMove',
+      )
+      if (!result.ok) {
+        folders.value = previous
+        error.value = result.reason
+        return false
+      }
+      folders.value = folders.value.map((f) =>
+        f.id === result.value.folder.id ? result.value.folder : f,
+      )
+      writeCachedFolders(workspaceId, folders.value)
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** Delete a folder ONLY. Its children move up one level, documents included:
+   * the count the server returns says how many were kept, never deleted. */
+  async function deleteFolder(workspaceId: string, folderId: string): Promise<boolean> {
+    if (!workspaceId) return false
+    const existing = folders.value.find((f) => f.id === folderId)
+    if (!existing) return false
+    const previousFolders = folders.value
+    const previousDocuments = documents.value
+    const newParent = existing.parent_id
+
+    folders.value = previousFolders
+      .filter((f) => f.id !== folderId)
+      .map((f) => (f.parent_id === folderId ? { ...f, parent_id: newParent } : f))
+    documents.value = previousDocuments.map((d) =>
+      d.folder_id === folderId ? { ...d, folder_id: newParent } : d,
+    )
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.folderDelete', () => api.deleteFolder(workspaceId, folderId)),
+        'documents.folderDelete',
+      )
+      if (!result.ok) {
+        folders.value = previousFolders
+        documents.value = previousDocuments
+        error.value = result.reason
+        return false
+      }
+      writeCachedFolders(workspaceId, folders.value)
+      for (const doc of documents.value) {
+        if (previousDocuments.find((d) => d.id === doc.id)?.folder_id === folderId) {
+          await runSyncVoid(documentEngineDb.putDocument(workspaceId, doc), 'documents.put')
+        }
       }
       return true
     } finally {
@@ -212,6 +412,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   /** Called on workspace switch so a stale list is never shown under a new header. */
   function reset(): void {
     documents.value = []
+    folders.value = []
     error.value = null
     loaded.value = false
     loading.value = false
@@ -220,17 +421,26 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   return {
     documents,
+    folders,
+    count,
+    folderCount,
+    level,
+    pathOf,
     loading,
     saving,
     error,
     loaded,
-    count,
     findById,
     fetchDocuments,
     createDocument,
     updateDocument,
     deleteDocument,
     reorderDocuments,
+    moveDocument,
+    createFolder,
+    renameFolder,
+    moveFolder,
+    deleteFolder,
     loadDocument,
     reset,
   }
