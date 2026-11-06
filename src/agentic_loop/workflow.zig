@@ -62,6 +62,7 @@ const sse_on_event_send_session_mod = @import("sse_on_event_send_session.zig");
 const sse_send_event_worker_mod = @import("sse_send_event_worker.zig");
 const update_session_name_mod = @import("update_session_name.zig");
 const update_worker_mod = @import("update_worker.zig");
+const session_group_mod = @import("session_group.zig");
 
 // Re-exports (formerly from mod.zig).
 pub const updateWorker = update_worker_mod.updateWorker;
@@ -1023,10 +1024,41 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (ov.temperature) |t| agent_temperature = t;
             sub_agent_session_name = ov.resolved_name;
         }
+        // A group session takes its speaker from the roster instead: the
+        // newest row names who is addressed, and a thread that has said
+        // everything it can say closes instead of picking another speaker.
+        var group_speaker_buf: [160]u8 = undefined;
+        var group_speaker: []const u8 = "";
+        if (!copy_is_sub_agent) {
+            if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
+                var resolved = speaker;
+                defer resolved.deinit(allocator);
+                switch (resolved.decision) {
+                    .speak => |name| {
+                        if (name.len <= group_speaker_buf.len) {
+                            @memcpy(group_speaker_buf[0..name.len], name);
+                            group_speaker = group_speaker_buf[0..name.len];
+                        } else {
+                            logger.warnFmt("GROUP: member name is too long to route session_id={s} len={d}", .{ copy_session_id, name.len });
+                        }
+                    },
+                    .close => |reason| {
+                        logger.infoFmt("GROUP: turn closed session_id={s} reason={s} hops={d}", .{ copy_session_id, @tagName(reason), resolved.hops });
+                        break;
+                    },
+                }
+            }
+        }
+        if (group_speaker.len > 0) {
+            eff = effectiveAgentForSubAgent(config.resolveEffectiveAgent(group_speaker), params.sub_agent_overrides);
+        }
+
         // For sub-agent flow: replace `current_agent` (the session's last
         // `agent_name` from llm_history) with the resolved sub-agent name.
         const effective_agent_name: []const u8 = if (sub_agent_session_name.len > 0)
             sub_agent_session_name
+        else if (group_speaker.len > 0)
+            group_speaker
         else
             current_agent;
 

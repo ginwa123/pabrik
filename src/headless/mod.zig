@@ -7,6 +7,7 @@ pub const boot = @import("boot.zig");
 pub const run = @import("run.zig");
 pub const sessions = @import("sessions.zig");
 pub const documents = @import("documents.zig");
+pub const group = @import("group.zig");
 
 /// The subcommand to run, with its arguments already parsed. `help` is a
 /// first-class variant rather than an error so `pabrik headless --help` exits
@@ -20,6 +21,8 @@ pub const Command = union(enum) {
     messages: args.MessagesArgs,
     /// Read or change document folders (Migration 140).
     documents: args.DocumentsArgs,
+    /// Read or change a multi-agent session: its roster and who speaks next.
+    group: args.GroupArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -34,6 +37,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .sessions => |a| .{ .sessions = a },
         .messages => |a| .{ .messages = a },
         .documents => |a| .{ .documents = a },
+        .group => |a| .{ .group = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };
@@ -47,5 +51,7 @@ test "parseCommand: maps every Outcome variant onto a Command" {
     const bad = try parseCommand(&.{"nope"});
     const docs = try parseCommand(&.{ "documents", "list", "--workspace", "ws_1" });
     try std.testing.expect(docs == .documents);
+    const grp = try parseCommand(&.{ "group", "members", "--session", "s_1" });
+    try std.testing.expect(grp == .group);
     try std.testing.expect(bad == .invalid);
 }
