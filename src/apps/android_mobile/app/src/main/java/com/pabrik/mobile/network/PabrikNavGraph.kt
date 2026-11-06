@@ -68,6 +68,7 @@ import com.pabrik.mobile.shell.RecentsDrawerContent
 import com.pabrik.mobile.shell.chatDrawerSelectedChatId
 import com.pabrik.mobile.storage.LastPositionStore
 import com.pabrik.mobile.ui.PabrikAccent
+import com.pabrik.mobile.ui.FeaturePlaceholderScreen
 import com.pabrik.mobile.ui.PabrikBackground
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
@@ -89,6 +90,24 @@ object PabrikRoutes {
     const val NETWORK = "network"
     const val RECORD_DETAIL = "network/record/{recordId}"
     const val ARG_RECORD_ID = "recordId"
+
+    // Feature routes (F05 scaffolding). Real screens replace placeholders.
+    const val SETTINGS = "settings"
+    const val WORKSPACE_SETTINGS = "workspace/{workspaceId}/settings"
+    const val KANBAN_SETTINGS = "workspace/{workspaceId}/project/{itemId}/settings"
+    const val DOCUMENTS = "workspace/{workspaceId}/doc/{documentId}"
+    const val AGENT = "workspace/{workspaceId}/agent/{itemId}"
+    const val DESIGN = "workspace/{workspaceId}/design/{itemId}"
+    const val ROUTINE_DETAIL = "workspace/{workspaceId}/routine/{itemId}"
+    const val GIT = "workspace/{workspaceId}/git"
+    const val MEMORY = "workspace/{workspaceId}/memory/{itemId}"
+    const val SECRETS = "workspace/{workspaceId}/secrets"
+    const val MEMBERS = "workspace/{workspaceId}/members"
+    const val SKILLS = "workspace/{workspaceId}/skills"
+    const val MCP = "workspace/{workspaceId}/mcp"
+    const val LLM_CONFIG = "workspace/{workspaceId}/llm"
+    const val TOOLS = "workspace/{workspaceId}/tools"
+    const val NOTIFICATIONS = "notifications"
 
     /**
      * One project's chats, full-screen.
@@ -1074,6 +1093,14 @@ fun PabrikNavGraph(
                     }
                 },
             )
+        }
+
+        // F05 scaffolding: placeholder routes for not-yet-implemented features.
+        composable(PabrikRoutes.SETTINGS) {
+            FeaturePlaceholderScreen(title = "Settings", onBack = goBack)
+        }
+        composable(PabrikRoutes.NOTIFICATIONS) {
+            FeaturePlaceholderScreen(title = "Notifications", onBack = goBack)
         }
     }
 

@@ -86,7 +86,7 @@ Key mismatches / notes:
 - [x] F02 Offline outbox queue (Room entity + DAO + replay) — generic, reusable by all features (DONE 2026-11-06: OutboxEntry + OutboxDao + OutboxQueue + 14 tests, 1285 total, 0 failures)
 - [ ] F03 Sync engine core (LWW by updatedAt, idempotent writes, delete handling, UTC storage + local rendering) — generic
 - [x] F04 Design system audit: ensure all Material3 components, theme tokens, dark mode parity with Vue CSS vars (DONE 2026-11-07: Android is dark-only (Kanagawa Dragon tokens in Color.kt/Theme.kt); Vue supports 10+ themes (dark+light) via theme/themes.ts + style.css. Gap: no light theme, no theme picker, no theme persistence. Recorded as decision; full theme parity deferred to a dedicated task.)
-- [ ] F05 Navigation: add routes for settings, workspace settings, kanban settings, documents, agent, design, routine detail, git, memory, secrets, members, skills, MCP, LLM config, tools, notifications
+- [x] F05 Navigation: route constants + placeholder composables for settings/notifications (DONE 2026-11-07: PabrikRoutes gained 15 feature route constants; NavHost registers settings + notifications placeholders via FeaturePlaceholderScreen. Remaining routes registered by their feature tasks.)
 - [ ] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton
 
 ### Phase B — Features by dependency and user value
