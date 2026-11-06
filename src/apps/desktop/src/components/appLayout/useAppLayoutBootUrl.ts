@@ -127,6 +127,7 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
         queryCwd: query.cwd ?? '',
         fallbackCwd: deps.rightSidebarCwd.value,
         lineParam: query.line,
+        modeParam: query.mode,
       })
     }
   }
@@ -174,7 +175,12 @@ export function useAppLayoutBootUrl(deps: BootUrlDeps): UseAppLayoutBootUrlRetur
     const parentItemId = workspacesStore.activeWorkspaceItemId
     if (parentItemId) {
       router.replace(
-        buildAppUrl({ workspaceId: wsId, projectId: parentItemId, chatTaskId: taskId, query: keep }),
+        buildAppUrl({
+          workspaceId: wsId,
+          projectId: parentItemId,
+          chatTaskId: taskId,
+          query: keep,
+        }),
       )
     } else {
       router.replace(buildAppUrl({ workspaceId: wsId, query: keep }))

@@ -11,6 +11,8 @@ defineProps<{
   error: string | null
   cwd?: string
   line?: number | null
+  /** The target is the file's changes: open the diff view. */
+  diff?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -71,6 +73,7 @@ const emit = defineEmits<{
       :content="content"
       :cwd="cwd"
       :line="line ?? undefined"
+      :initial-diff="diff === true"
       @close="emit('close')"
     />
   </div>

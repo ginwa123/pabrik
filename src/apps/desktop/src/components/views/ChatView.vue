@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import * as api from '../../api'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
@@ -19,6 +19,8 @@ import Bash from '../preview/Bash.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
+import SessionTabStrip from '../session/SessionTabStrip.vue'
+import { useTabsStore } from '../../stores/tabs'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
 import { centerDiffSectionId } from './chat_right_sidebar/parseUnifiedDiff'
 import type { DiffSelection } from './chat_right_sidebar/parseUnifiedDiff'
@@ -61,7 +63,12 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const { presetClass: chatWidthClass } = useChatContentWidth()
+const {
+  presetClass: chatWidthClass,
+  label: widthLabel,
+  nextLabel: widthNextLabel,
+  cycleWidth,
+} = useChatContentWidth()
 
 // Copy code content to clipboard
 const copyCodeContent = async (codeContent: string) => {
@@ -100,6 +107,23 @@ function persistSavedReviewComments(comments: SavedReviewComment[]): void {
 
 // Session ID extracted from props on mount
 const sessionId = ref('')
+
+// ── The session's own tab strip ────────────────────────────────────────────
+// The strip belongs to THIS session: its owner is the session id the URL carries, so switching
+// sessions swaps the whole row instead of appending to a shared one.
+const tabsStore = useTabsStore()
+// The session owns its row, and this surface is what creates it — the URL funnel names artefacts
+// only. `rowOwner` is who this chat is; `stripOwner` is who owns a row worth drawing (a 36px bar
+// with no title would be worse than the app bar it replaced).
+const rowOwner = computed(() => {
+  if (!tabsStore.enabled) return ''
+  return sessionId.value || props.chatId.replace(/^chat-/, '')
+})
+const stripOwner = computed(() => {
+  const owner = rowOwner.value
+  return owner && tabsStore.stripOf(owner).length > 0 ? owner : ''
+})
+onMounted(() => tabsStore.ensureRow(rowOwner.value))
 
 // State
 const messages = ref<Message[]>([])
@@ -372,8 +396,20 @@ const compactSession = async () => {
         cleanup so the ChatView stays decoupled from router + store
         concerns.
       -->
+      <SessionTabStrip
+        v-if="showHeader && !embedded && stripOwner"
+        :owner="stripOwner"
+        :title="chatName"
+        :show-sidebar-toggle="!embedded"
+        @toggle-sidebar="chatSidebar.toggle()"
+        @close="emit('close')"
+      >
+        <template #extras>
+          <slot name="app-bar-extras" />
+        </template>
+      </SessionTabStrip>
       <ChatAppBar
-        v-if="showHeader && !embedded"
+        v-else-if="showHeader && !embedded"
         :title="chatName"
         :show-sidebar-toggle="!embedded"
         :data-chat-header="chatId"
@@ -639,7 +675,10 @@ const compactSession = async () => {
                             <span
                               v-if="activeAgent === p.name"
                               class="text-micro ml-1 px-1 py-0.5 rounded"
-                              :style="{ backgroundColor: 'var(--color-violet)', color: 'var(--semantic-on-accent)' }"
+                              :style="{
+                                backgroundColor: 'var(--color-violet)',
+                                color: 'var(--semantic-on-accent)',
+                              }"
                               data-testid="agent-picker-active-badge"
                               >(active)</span
                             >
@@ -693,6 +732,18 @@ const compactSession = async () => {
                 </div>
                 <!-- Right zone: context (pushed right, truncates first) -->
                 <div class="flex items-center gap-1 ml-auto pl-1 shrink-0">
+                  <!-- Transcript width lives with the thing it widens: the composer's own row,
+                       now that the strip has taken over the session's title bar. -->
+                  <button
+                    @click="cycleWidth"
+                    class="composer-tool-btn"
+                    :title="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
+                    :aria-label="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
+                    data-testid="composer-width-toggle"
+                  >
+                    <span aria-hidden="true">⇔</span>
+                    <span class="text-micro">{{ widthLabel }}</span>
+                  </button>
                   <!-- Git status indicator — always clickable; opens a dropdown
                        menu with context-appropriate actions (worktree-bound vs.
                        no-worktree). -->
@@ -896,6 +947,7 @@ const compactSession = async () => {
           :error="codeViewerModel.error"
           :cwd="codeViewerModel.cwd"
           :line="codeViewerModel.line"
+          :diff="codeViewerModel.diff"
           @close="codeViewerModel.close()"
         />
       </div>

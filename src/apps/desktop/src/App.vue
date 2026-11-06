@@ -171,8 +171,8 @@ onMounted(() => {
   // cache — see helpers/prStatusCache.ts.
   offPrState = subscribePrStatusEvents(bus)
 
-  // Tab titles for chat sessions.
-  useTabsStore().initTitleFeed()
+  // Tab titles for chat sessions — the store maps the events, the layout owns the bus.
+  useTabsStore().initTitleFeed(bus)
 
   // Frontend log client (POST /api/logs) is DISABLED — the block below is now a harmless no-op:
   // `window.__pabrikLogCtx` is never set by `main.ts`, so `logCtx` is undefined and the `if` is

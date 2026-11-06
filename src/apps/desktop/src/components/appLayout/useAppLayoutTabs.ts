@@ -88,8 +88,10 @@ export function useAppLayoutTabs(deps: TabsDeps): UseAppLayoutTabsReturn {
     isEnabled: () => tabsStore.enabled,
     tabCount: () => tabsStore.tabCount,
     handlers: {
+      // The row belongs to one session, so "new tab" cannot mean "new session": it is the way back
+      // to the session's own (pinned) tab, and the rail is where sessions are opened.
       newTab: () => {
-        tabsStore.openHomeTab()
+        tabsStore.goHome()
         applyActiveTabToUrl()
       },
       closeTab: () => {
