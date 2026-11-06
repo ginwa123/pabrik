@@ -61,12 +61,17 @@ pub fn buildCommand(allocator: std.mem.Allocator, title: []const u8, body: []con
         },
         .windows => {
             // PowerShell stub: uses MessageBox (a blocking modal) instead of
-            // a proper toast.
+            // a proper toast. Single quotes are doubled to avoid breaking out
+            // of the single-quoted literal (SEC-20).
+            const title_esc = try escapePowerShell(allocator, title);
+            defer allocator.free(title_esc);
+            const body_esc = try escapePowerShell(allocator, truncated);
+            defer allocator.free(body_esc);
             const script = try std.fmt.allocPrint(
                 allocator,
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; " ++
                     "[System.Windows.Forms.MessageBox]::Show('{s}', '{s}')",
-                .{ title, truncated },
+                .{ title_esc, body_esc },
             );
             errdefer allocator.free(script);
             try args.append(allocator, try allocator.dupe(u8, "powershell"));
@@ -175,6 +180,18 @@ fn escapeAppleScript(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
             '"', '\\' => try out.append(allocator, '\\'),
             else => {},
         }
+        try out.append(allocator, c);
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+fn escapePowerShell(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    // In a PowerShell single-quoted string a literal single quote is
+    // written by doubling it.
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    for (s) |c| {
+        if (c == '\'') try out.append(allocator, '\'');
         try out.append(allocator, c);
     }
     return out.toOwnedSlice(allocator);
