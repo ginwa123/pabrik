@@ -26,8 +26,17 @@ import {
 } from '../helpers/tabTarget'
 import { getWindowId } from '../helpers/windowId'
 import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
-import { useSseBus } from '../helpers/sseBus'
-import { boundedClosed, keyIn, lastClosedOf, rowOf, stepWithin, successorOf } from './tabsRows'
+import { dropDraft, readDraft, writeDraft } from './tabDrafts'
+import { createTitles } from './tabsTitles'
+import {
+  boundedClosed,
+  keyIn,
+  lastClosedOf,
+  rowOf,
+  stepWithin,
+  successorOf,
+  withAnchor,
+} from './tabsRows'
 import {
   ENABLED_KEY,
   listKey,
@@ -82,6 +91,14 @@ export const useTabsStore = defineStore('tabs', () => {
   /** The owner of the row that is on screen right now. */
   const activeOwner = computed(() => (activeTab.value ? ownerOf(activeTab.value) : WINDOW_OWNER))
   const activeStrip = computed(() => stripOf(activeOwner.value))
+
+  /** A row never lacks its anchor, even when the session was entered through a file link. */
+  function ensureAnchor(owner: string): void {
+    const next = withAnchor(tabs.value, owner)
+    if (!next) return
+    tabs.value = next
+    persist()
+  }
 
   function byKeyIn(owner: string, key: string): Tab | null {
     return keyIn(tabs.value, owner, key)
@@ -404,6 +421,7 @@ export const useTabsStore = defineStore('tabs', () => {
     refreshFromInput,
     rekeyTab,
     activate,
+    ensureAnchor,
     open: (input) => open(input),
   })
 
@@ -435,104 +453,21 @@ export const useTabsStore = defineStore('tabs', () => {
   /**    * Live tab titles. The backend already announces renames on the `session` channel (`SessionEvent
    * { action, id, name }`), so a chat tab keeps up with the auto-rename-on-first-message cascade
    * without polling. Guarded because the bus is not installed until App.vue mounts. */
-  let offTitleFeed: (() => void) | null = null
-
-  function initTitleFeed(): void {
-    if (offTitleFeed) return
-    try {
-      offTitleFeed = useSseBus().on('session', (event) => {
-        if (event.action !== 'created' && event.action !== 'updated') return
-        setChatTitle(event.id, event.name)
-      })
-    } catch {
-      // No bus yet (early boot / unit test): titles keep whatever the chats
-      // list last published.
-      offTitleFeed = null
-    }
-  }
-
-  function disposeTitleFeed(): void {
-    if (!offTitleFeed) return
-    offTitleFeed()
-    offTitleFeed = null
-  }
-
-  /** Follow a session-id change *in place*. */
-  function renameChatTab(oldSessionId: string, newSessionId: string): boolean {
-    if (!oldSessionId || !newSessionId || oldSessionId === newSessionId) return false
-    const oldKey = `chat:${oldSessionId}`
-    const newKey = `chat:${newSessionId}`
-    const renamed = byKey(oldKey)
-    if (!renamed) return false
-
-    const alreadyOpen = byKey(newKey)
-    if (alreadyOpen && alreadyOpen.id !== renamed.id) {
-      // The live chat is already open: drop the dead pointer and focus it. This is the one removal a
-      // pinned tab allows, because the row must never carry two anchors for the same session.
-      tabs.value = tabs.value.filter((tab) => tab.id !== renamed.id)
-      activeTabId.value = alreadyOpen.id
-      persist()
-      return true
-    }
-
-    tabs.value = tabs.value.map((tab) => {
-      if (tab.id === renamed.id)
-        return {
-          ...tab,
-          key: newKey,
-          query: { ...tab.query, session: newSessionId },
-          owner: newSessionId,
-        }
-      // Artifacts the session opened move with it: the row is keyed by the session id.
-      if (ownerOf(tab) === oldSessionId) return { ...tab, owner: newSessionId }
-      return tab
-    })
-    persist()
-    return true
-  }
-
-  /** Live title feed (session SSE + the chats list). */
-  function setChatTitle(sessionId: string, name: string): void {
-    const tab = tabs.value.find(
-      (candidate) => candidate.kind === 'chat' && candidate.key === `chat:${sessionId}`,
-    )
-    if (tab) setTabTitle(tab.id, name)
-  }
-
-  /**    * Store a title the caller resolved from live state (the workspace tree, the chats list, a rename
-   * event). Used by the strip so the persisted label is a real name rather than the generic kind
-   * fallback. */
-  function setTabTitle(id: string, title: string): void {
-    if (!id || !title) return
-    let touched = false
-    tabs.value = tabs.value.map((tab) => {
-      if (tab.id !== id || tab.title === title) return tab
-      touched = true
-      return { ...tab, title }
-    })
-    if (touched) persist()
-  }
+  const titles = createTitles({ tabs, activeTabId, persist, byKey })
+  const { initTitleFeed, disposeTitleFeed, renameChatTab, setChatTitle, setTabTitle } = titles
 
   function getDraft(key: string): string {
-    if (!key) return ''
-    return drafts.value[key] ?? ''
+    return readDraft(drafts.value, key)
   }
 
   function setDraft(key: string, text: string): void {
-    if (!key) return
-    if (!text) {
-      clearDraft(key)
-      return
-    }
-    if (drafts.value[key] === text) return
-    drafts.value = { ...drafts.value, [key]: text }
+    const next = writeDraft(drafts.value, key, text)
+    if (next) drafts.value = next
   }
 
   function clearDraft(key: string): void {
-    if (!key || !(key in drafts.value)) return
-    const remaining = { ...drafts.value }
-    delete remaining[key]
-    drafts.value = remaining
+    const next = dropDraft(drafts.value, key)
+    if (next) drafts.value = next
   }
 
   /** Forget everything this window knows (used by the "reset tabs" escape hatch). */
@@ -590,5 +525,6 @@ export const useTabsStore = defineStore('tabs', () => {
     stripOf,
     byKey,
     byKeyIn,
+    ensureAnchor,
   }
 })

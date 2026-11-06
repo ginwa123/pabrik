@@ -38,9 +38,7 @@ const marks = computed(() => new Map(row.value.map((tab) => [tab.id, markOfTab(t
 const canOpenDiff = computed(() => {
   const tab = activeTab.value
   if (!tab || tab.pinned) return false
-  if (isDiffQuery(tab.query)) return false
-  const file = tab.query.file ?? ''
-  return file !== '' && (tab.query.cwd ?? '') !== ''
+  return !isDiffQuery(tab.query) && (tab.query.file ?? '') !== ''
 })
 
 function activate(tabId: string): void {

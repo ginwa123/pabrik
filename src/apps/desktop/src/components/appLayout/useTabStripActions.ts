@@ -8,6 +8,8 @@ type Deps = {
   tabsStore: ReturnType<typeof useTabsStore>
   applyActiveTabToUrl: () => void
   openInCodeEditor: OpenInCodeEditorFn
+  /** The session's working directory, for a tab whose URL carries none. */
+  cwd: () => string
 }
 
 /**    * The layout owns the router and the tab funnel, so it is the only place a tab gesture becomes
@@ -27,7 +29,7 @@ export function useProvideTabStripActions(deps: Deps): TabStripActions {
       const tab = deps.tabsStore.tabs.find((candidate) => candidate.id === tabId)
       if (!tab || isDiffQuery(tab.query)) return
       const file = tab.query.file ?? ''
-      const cwd = tab.query.cwd ?? ''
+      const cwd = tab.query.cwd || deps.cwd()
       if (!file || !cwd) return
       void deps.openInCodeEditor({ filePath: file, cwd, diff: true })
     },

@@ -218,7 +218,14 @@ onMounted(() => {
 let prevEditorLine = props.line
 let prevEditorContent = props.content
 let prevAnnoKey = ''
+let prevInitialDiff = props.initialDiff === true
 onUpdated(() => {
+  // The tab that names this file decides code vs changes: following a tab click must not be left to
+  // whatever the previous file was showing.
+  if ((props.initialDiff === true) !== prevInitialDiff) {
+    prevInitialDiff = props.initialDiff === true
+    showDiff.value = prevInitialDiff
+  }
   const key = annoKey()
   if (key !== prevAnnoKey) {
     prevAnnoKey = key

@@ -266,7 +266,7 @@ const currentView = computed(() => {
 useProvideTabStripActions({
   tabsStore,
   applyActiveTabToUrl: tabs.applyActiveTabToUrl,
-  openInCodeEditor,
+  openInCodeEditor, cwd: () => rightSidebarCwd.value,
 })
 
 useAppLayoutPumps({

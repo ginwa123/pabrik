@@ -4,7 +4,7 @@ import { createApp } from 'vue'
 
 import { MAX_TABS, type Tab } from '../helpers/tabTarget'
 import { __resetWindowIdForTests } from '../helpers/windowId'
-import { __dispatchSseBus, __resetSseBus, installSseBus } from '../helpers/sseBus'
+import { __dispatchSseBus, __resetSseBus, installSseBus, useSseBus } from '../helpers/sseBus'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
 
@@ -743,7 +743,8 @@ describe('tabs store', () => {
     it('tolerates a title feed with no bus installed', () => {
       __resetSseBus()
       const tabs = useTabsStore()
-      expect(() => tabs.initTitleFeed()).not.toThrow()
+      // no feed (the bus is not installed yet): nothing to subscribe, nothing to throw
+      expect(() => tabs.initTitleFeed(null)).not.toThrow()
       expect(() => tabs.disposeTitleFeed()).not.toThrow()
     })
 
@@ -752,7 +753,7 @@ describe('tabs store', () => {
       installSseBus(createApp({}))
       const tabs = useTabsStore()
       const a = tabs.open({ query: chat('sa'), title: 'Old' })
-      tabs.initTitleFeed()
+      tabs.initTitleFeed(useSseBus())
 
       __dispatchSseBus('session', { action: 'updated', id: 'sa', name: 'Renamed live' } as never)
       expect(tabs.tabs.find((t) => t.id === a.id)?.title).toBe('Renamed live')
@@ -765,7 +766,7 @@ describe('tabs store', () => {
       expect(tabs.tabs.find((t) => t.id === a.id)?.title).toBe('Renamed live')
 
       // idempotent registration: a second init must not double-subscribe
-      tabs.initTitleFeed()
+      tabs.initTitleFeed(useSseBus())
       tabs.disposeTitleFeed()
       __dispatchSseBus('session', { action: 'updated', id: 'sa', name: 'After dispose' } as never)
       expect(tabs.tabs.find((t) => t.id === a.id)?.title).toBe('Renamed live')

@@ -1,6 +1,6 @@
 /** Pure row arithmetic for the tab store. A strip is a filter over the tab list, so everything that
  * decides *which* tab comes next belongs here, where it can be read and tested without a store. */
-import { ownerOf, type ClosedTab, type Tab } from '../helpers/tabTarget'
+import { fallbackTitle, newTabId, ownerOf, type ClosedTab, type Tab } from '../helpers/tabTarget'
 
 /** The row one owner sees. Two sessions never share one, by construction. */
 export function rowOf(tabs: Tab[], owner: string): Tab[] {
@@ -48,4 +48,41 @@ export function lastClosedOf(
 /** Bounded closed stack: the oldest entries fall off first. */
 export function boundedClosed(closed: ClosedTab[], max: number): ClosedTab[] {
   return closed.length > max ? closed.slice(0, max) : closed
+}
+
+/** A session's own tab: first in its row, never closable, the way back to the conversation. */
+export function anchorTab(owner: string): Tab {
+  return {
+    id: newTabId(),
+    key: `chat:${owner}`,
+    kind: 'chat',
+    title: fallbackTitle('chat'),
+    path: '/app',
+    query: { view: 'chat', session: owner },
+    createdAt: Date.now(),
+    owner,
+    pinned: true,
+  }
+}
+
+/** The list with `owner`'s anchor first in its row, or null when the row already has one. */
+export function withAnchor(tabs: Tab[], owner: string): Tab[] | null {
+  if (!owner) return null
+  if (tabs.some((tab) => ownerOf(tab) === owner && tab.pinned)) return null
+  const at = tabs.findIndex((tab) => ownerOf(tab) === owner)
+  const anchor = anchorTab(owner)
+  if (at === -1) return [...tabs, anchor]
+  return [...tabs.slice(0, at), anchor, ...tabs.slice(at)]
+}
+
+/** The list with `id`'s title changed, or null when nothing moved. */
+export function withTitle(tabs: Tab[], id: string, title: string): Tab[] | null {
+  if (!id || !title) return null
+  let touched = false
+  const next = tabs.map((tab) => {
+    if (tab.id !== id || tab.title === title) return tab
+    touched = true
+    return { ...tab, title }
+  })
+  return touched ? next : null
 }

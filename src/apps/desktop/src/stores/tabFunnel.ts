@@ -31,6 +31,8 @@ export type FunnelDeps = {
   refreshFromInput: (tab: Tab, input: { path: string; query: TabQuery }) => void
   rekeyTab: (id: string, key: string, query: TabQuery) => void
   activate: (id: string) => void
+  /** Give the row its anchor tab when the target is an artifact and the row has none. */
+  ensureAnchor: (owner: string) => void
   open: (input: {
     path: string
     query: Record<string, unknown>
@@ -85,6 +87,8 @@ export function createFunnel(deps: FunnelDeps) {
       deps.rekeyTab(existing.id, canonical, plain)
     }
     deps.activate(tab.id)
+    // An artifact's row is created by the artifact itself: give it the anchor it must stand beside.
+    deps.ensureAnchor(owner)
     const desired = withTabParam(plain, tab.id)
     return { path, query: desired, changed: !sameRouteQuery(desired, query) }
   }
