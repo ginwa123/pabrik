@@ -37,10 +37,22 @@ const documents = computed(() => documentsStore.documents)
  * row, so the count stays visible while the level below it does not. */
 const collapsed = ref<Set<string>>(new Set())
 
+/** A drop lands as a click on some browsers; toggling the folder shut right
+ * after the document fell into it reads as "the move did nothing". */
+let lastDropAt = 0
+
 const toggleFolder = (id: string) => {
+  if (Date.now() - lastDropAt < 300) return
   const next = new Set(collapsed.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
+  collapsed.value = next
+}
+
+const expand = (id: string) => {
+  if (!collapsed.value.has(id)) return
+  const next = new Set(collapsed.value)
+  next.delete(id)
   collapsed.value = next
 }
 
@@ -183,24 +195,49 @@ const reorderWithin = (
   void documentsStore.reorderDocuments(wsId, ids, folderId)
 }
 
+/** The element under the pointer is the truth: a drag can skip a `dragover`
+ * frame, and a drop that trusts the last hover frame is a silent no-op on any
+ * part of a folder row that is not its exact middle. */
+const rowUnder = (event: DragEvent) => {
+  const el = event.target as HTMLElement | null
+  const rowEl = el?.closest('[data-folder-id], [data-doc-id]') as HTMLElement | null
+  return {
+    rowEl,
+    folderId: rowEl?.getAttribute('data-folder-id') ?? null,
+    documentId: rowEl?.getAttribute('data-doc-id') ?? null,
+  }
+}
+
 const handleDrop = (event: DragEvent, row: Row) => {
   event.preventDefault()
   const wsId = activeWorkspaceId()
   const doc = draggingDoc.value
   const folder = draggingFolder.value
-  const after = overDoc.value?.after ?? false
-  const into = overFolder.value
+  const { rowEl, folderId, documentId } = rowUnder(event)
+  const hovered = overDoc.value
+  const rect = rowEl?.getBoundingClientRect()
+  const after = rect ? event.clientY > rect.top + rect.height / 2 : (hovered?.after ?? false)
+  lastDropAt = Date.now()
   clearDragState()
   if (!wsId) return
 
-  if (row.kind === 'folder' && into === row.folder.id) {
-    if (doc) void documentsStore.moveDocument(wsId, doc, row.folder.id)
-    else if (folder && folder !== row.folder.id)
-      void documentsStore.moveFolder(wsId, folder, row.folder.id)
+  // A folder row means "into", whatever part of the row you let go on.
+  const targetFolder = folderId ?? (row.kind === 'folder' ? row.folder.id : null)
+  if (targetFolder) {
+    if (doc) {
+      expand(targetFolder)
+      void documentsStore.moveDocument(wsId, doc, targetFolder)
+    } else if (folder && folder !== targetFolder) {
+      expand(targetFolder)
+      void documentsStore.moveFolder(wsId, folder, targetFolder)
+    }
     return
   }
-  if (row.kind === 'document' && doc && doc !== row.document.id) {
-    reorderWithin(row.document.folder_id ?? null, doc, row.document.id, after)
+
+  const targetDocument = documentId ?? (row.kind === 'document' ? row.document.id : null)
+  if (targetDocument && doc && doc !== targetDocument) {
+    const target = documentsStore.documents.find((d) => d.id === targetDocument)
+    reorderWithin(target?.folder_id ?? null, doc, targetDocument, after)
   }
 }
 

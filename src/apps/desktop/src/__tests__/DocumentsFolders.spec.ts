@@ -314,6 +314,72 @@ describe('document folders — the sidebar', () => {
     wrapper.unmount()
   })
 
+  it('a drop anywhere on a folder row moves the document in, with no hover frame', async () => {
+    const router = await makeRouter()
+    const wrapper = mount(DocumentsList, {
+      props: { workspaceId: 'ws_1' },
+      global: { plugins: [router] },
+    })
+    await settle()
+    updateDocument.mockResolvedValue({ document: { ...DOCS[2], folder_id: 'fld_debit' } })
+
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', wrapper.get('[data-doc-id="doc_root"]').element, dt)
+    // No `dragover`: a real drag can skip a hover frame, and a drop must not
+    // depend on one. The row under the pointer is the target.
+    dispatchDrag('drop', wrapper.get('[data-testid="document-folder-fld_debit"]').element, dt)
+    await settle()
+
+    expect(updateDocument).toHaveBeenCalledWith('ws_1', 'doc_root', { folder_id: 'fld_debit' })
+    wrapper.unmount()
+  })
+
+  it('opens the folder so the moved document is visible, not swallowed', async () => {
+    const router = await makeRouter()
+    const wrapper = mount(DocumentsList, {
+      props: { workspaceId: 'ws_1' },
+      global: { plugins: [router] },
+    })
+    await settle()
+
+    await wrapper.get('[data-testid="document-folder-fld_debit"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="document-folder-fld_split"]').exists()).toBe(false)
+
+    updateDocument.mockResolvedValue({ document: { ...DOCS[2], folder_id: 'fld_debit' } })
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', wrapper.get('[data-doc-id="doc_root"]').element, dt)
+    dispatchDrag('drop', wrapper.get('[data-testid="document-folder-fld_debit"]').element, dt)
+    await settle()
+
+    expect(wrapper.find('[data-testid="document-folder-fld_split"]').exists()).toBe(true)
+    const moved = wrapper.get('[data-testid="document-row-doc_root"]')
+    expect(moved.attributes('style')).toContain('+ 16px')
+    wrapper.unmount()
+  })
+
+  it('a click right after the drop does not fold the folder shut again', async () => {
+    const router = await makeRouter()
+    const wrapper = mount(DocumentsList, {
+      props: { workspaceId: 'ws_1' },
+      global: { plugins: [router] },
+    })
+    await settle()
+    updateDocument.mockResolvedValue({ document: { ...DOCS[2], folder_id: 'fld_debit' } })
+
+    const dt = makeDragStore()
+    dispatchDrag('dragstart', wrapper.get('[data-doc-id="doc_root"]').element, dt)
+    dispatchDrag('drop', wrapper.get('[data-testid="document-folder-fld_debit"]').element, dt)
+    await settle()
+
+    // Some browsers deliver the mouse-up after a drop as a click on the row;
+    // that click must not undo the view of what just landed.
+    await wrapper.get('[data-testid="document-folder-fld_debit"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="document-row-doc_root"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('the folder button creates a folder and opens its name for typing', async () => {
     createFolder.mockResolvedValue({
       folder: {
