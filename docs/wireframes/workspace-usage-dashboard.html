@@ -559,7 +559,6 @@
         <p class="page-sub">Cache, tokens and tool work for the agentic coding workspace, 2 Oct to 1 Nov 2026.</p>
       </div>
       <div class="range" data-ui="range-switch" role="group" aria-label="Time range">
-        <button type="button" aria-pressed="false">1 day</button>
         <button type="button" aria-pressed="false">7 days</button>
         <button type="button" class="on" aria-pressed="true">30 days</button>
         <button type="button" aria-pressed="false">90 days</button>
@@ -823,7 +822,7 @@
     <section class="doc">
       <h2>What it takes to be real</h2>
 
-      <p>One endpoint, five queries, no new table. <code>GET /api/workspaces/:workspace_id/usage?range=1d|7d|30d|90d</code>, authed, in the shape the panels already need.</p>
+      <p>One endpoint, five queries, no new table. <code>GET /api/workspaces/:workspace_id/usage?range=7d|30d|90d</code>, authed, in the shape the panels already need.</p>
 
       <pre>{
   "workspace_id": "ws_1785055733544_28e79c9db8950100",
