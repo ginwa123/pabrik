@@ -74,6 +74,7 @@ pub fn dispatchHeadless(
         .sessions => |a| try listSessions(allocator, io, environment, a, log_file, db_request),
         .messages => |a| try listMessages(allocator, io, environment, a, log_file, db_request),
         .documents => |a| try runDocuments(allocator, io, environment, a, log_file, db_request),
+        .usage => |a| try runUsage(allocator, io, environment, a, log_file, db_request),
         .group => |a| try runGroup(allocator, io, environment, a, log_file, db_request),
     }
     return true;
@@ -255,6 +256,38 @@ fn runDocuments(
     const json = headless.documents.run(allocator, &backend, a) catch |err| {
         // stdout is the machine channel: a failure never prints a half object.
         std.log.err("headless: documents {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
+        std.process.exit(1);
+    };
+    defer allocator.free(json);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.Io.File.stdout().writer(io, &buf);
+    try w.interface.writeAll(json);
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+
+    backend.finish(0);
+}
+
+fn runUsage(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.UsageArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const json = headless.usage.run(allocator, &backend, a) catch |err| {
+        switch (err) {
+            error.InvalidRange => std.log.err("headless: usage range must be {s}", .{headless.usage.range_hint}),
+            else => std.log.err("headless: usage failed: {s}", .{@errorName(err)}),
+        }
         std.process.exit(1);
     };
     defer allocator.free(json);

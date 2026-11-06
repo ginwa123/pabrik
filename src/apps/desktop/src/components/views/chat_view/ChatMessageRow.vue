@@ -91,27 +91,9 @@ defineProps<{
       >
         <!-- A shared thread names its author. Set only when the thread has
              more than one agent, so a one-agent chat is unchanged. -->
-        <div
-          v-if="group.role === 'assistant' && group.author"
-          style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px"
-        >
-          <span
-            style="
-              width: 18px;
-              height: 18px;
-              border-radius: 50%;
-              display: grid;
-              place-items: center;
-              font-size: 10px;
-              font-weight: 700;
-              color: #181616;
-              background: var(--color-violet);
-            "
-            >{{ group.author.slice(0, 1).toUpperCase() }}</span
-          >
-          <span style="font-size: 12.5px; font-weight: 600; color: var(--semantic-text)">{{
-            group.author
-          }}</span>
+        <div v-if="group.role === 'assistant' && group.author" class="msg-author">
+          <span class="msg-author-avatar">{{ group.author.slice(0, 1).toUpperCase() }}</span>
+          <span class="msg-author-name">{{ group.author }}</span>
         </div>
         <div
           v-if="hasBubbleContent(group, groupIndex)"

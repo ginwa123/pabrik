@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const Backend = pabrikcore.database.Db;
+const dialect = pabrikcore.dialect;
 
 pub const RoutineRunStatus = enum {
     idle,
@@ -173,14 +174,23 @@ pub fn reclaimStaleRuns(allocator: std.mem.Allocator, db: *Backend, stale_after_
     const err_msg = "run did not finish before its timeout";
     const offset = try std.fmt.allocPrint(allocator, "-{d} seconds", .{stale_after_seconds});
     defer allocator.free(offset);
-    _ = try db.exec(allocator,
+    const heart_beat_horizon = try std.fmt.allocPrint(allocator, "{d}", .{stale_after_seconds});
+    defer allocator.free(heart_beat_horizon);
+    const sql = try std.fmt.allocPrint(allocator,
         \\UPDATE workspace_routines
         \\   SET last_status = 'failed',
         \\       last_error = ?,
         \\       updated_at = datetime('now')
         \\ WHERE last_status = 'running'
         \\   AND updated_at <= datetime('now', ?)
-    , &.{ err_msg, offset });
+        \\   AND NOT EXISTS (
+        \\       SELECT 1 FROM worker w
+        \\        WHERE w.session_id = workspace_routines.id
+        \\          AND w.last_activity_nano >= ({s} - ?)
+        \\   )
+    , .{dialect.now_epoch});
+    defer allocator.free(sql);
+    _ = try db.exec(allocator, sql, &.{ err_msg, offset, heart_beat_horizon });
     const changed = db.changes();
     if (changed <= 0) return 0;
     return @intCast(changed);
@@ -244,6 +254,13 @@ fn setupDb() !struct {
         \\    item_type TEXT NOT NULL
         \\)
     , &.{});
+    try db.exec(alloc,
+        \\CREATE TABLE worker (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT NOT NULL,
+        \\    last_activity_nano INTEGER
+        \\)
+    , &.{});
 
     try Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
     try Migration124AddRoutineSelectedProfileModel.up(&db, alloc);
@@ -268,6 +285,15 @@ fn scalarText(alloc: std.mem.Allocator, db: *database.Db, sql: []const u8, args:
 /// Insert a parent workspace_item row.
 fn insertParentItem(db: *database.Db, alloc: std.mem.Allocator, id: []const u8) !void {
     try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES (?, 'ws1', 'routine')", &.{id});
+}
+
+/// The heart-beat `updateWorker` writes every loop iteration in production.
+fn insertWorkerHeartBeat(db: *database.Db, alloc: std.mem.Allocator, session_id: []const u8, seconds_ago: i64) !void {
+    const ago = try std.fmt.allocPrint(alloc, "{d}", .{seconds_ago});
+    defer alloc.free(ago);
+    try db.exec(alloc,
+        "INSERT INTO worker (id, session_id, last_activity_nano) VALUES (?, ?, CAST(strftime('%s','now') AS INTEGER) - ?)",
+        &.{ session_id, session_id, ago });
 }
 
 // ─── Test 1: insert + load round-trip ─────────────────────────────────────
@@ -571,6 +597,91 @@ test "Routine: reclaimStaleRuns fails only the runs that outlived the timeout" {
     try testing.expectEqual(RoutineRunStatus.failed, stale.last_status);
     try testing.expectEqualStrings("run did not finish before its timeout", stale.last_error.?);
     try testing.expectEqual(RoutineRunStatus.running, fresh.last_status);
+}
+
+test "Routine: reclaimStaleRuns spares a long run whose session worker still heart-beats" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "long",
+        .schedule = "0 * * * *",
+        .enabled = true,
+        .next_run_at = "2000-01-01 00:00:00",
+    });
+    _ = try claimForRun(alloc, &ctx.db, "item_1");
+    try ctx.db.exec(alloc, "UPDATE workspace_routines SET updated_at = datetime('now', '-3 hours') WHERE id = 'item_1'", &.{});
+    try insertWorkerHeartBeat(&ctx.db, alloc, "item_1", 5);
+
+    const reclaimed = try reclaimStaleRuns(alloc, &ctx.db, 30 * 60);
+
+    try testing.expectEqual(@as(usize, 0), reclaimed);
+    var loaded = try loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+    try testing.expectEqual(RoutineRunStatus.running, loaded.last_status);
+    try testing.expect(loaded.last_error == null);
+}
+
+test "Routine: a run still heart-beating is never listed as due, so it cannot fire twice" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "long",
+        .schedule = "0 * * * *",
+        .enabled = true,
+        .next_run_at = "2000-01-01 00:00:00",
+    });
+    _ = try claimForRun(alloc, &ctx.db, "item_1");
+    try ctx.db.exec(alloc, "UPDATE workspace_routines SET updated_at = datetime('now', '-3 hours') WHERE id = 'item_1'", &.{});
+    try insertWorkerHeartBeat(&ctx.db, alloc, "item_1", 29 * 60);
+
+    _ = try reclaimStaleRuns(alloc, &ctx.db, 30 * 60);
+
+    const due = try listDueWorkspaceRoutineIds(alloc, &ctx.db, "2025-01-01 00:00:00");
+    defer {
+        for (due) |id| alloc.free(id);
+        alloc.free(due);
+    }
+    try testing.expectEqual(@as(usize, 0), due.len);
+}
+
+test "Routine: reclaimStaleRuns fails a run whose worker stopped heart-beating" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try insertParentItem(&ctx.db, alloc, "item_1");
+    try insertWorkspaceRoutine(alloc, &ctx.db, .{
+        .id = "item_1",
+        .workspace_item_id = "item_1",
+        .instruction = "dead",
+        .schedule = "0 * * * *",
+        .enabled = true,
+        .next_run_at = "2000-01-01 00:00:00",
+    });
+    _ = try claimForRun(alloc, &ctx.db, "item_1");
+    try ctx.db.exec(alloc, "UPDATE workspace_routines SET updated_at = datetime('now', '-3 hours') WHERE id = 'item_1'", &.{});
+    try insertWorkerHeartBeat(&ctx.db, alloc, "item_1", 31 * 60);
+
+    const reclaimed = try reclaimStaleRuns(alloc, &ctx.db, 30 * 60);
+
+    try testing.expectEqual(@as(usize, 1), reclaimed);
+    var loaded = try loadWorkspaceRoutineById(alloc, &ctx.db, "item_1");
+    defer loaded.deinit(alloc);
+    try testing.expectEqual(RoutineRunStatus.failed, loaded.last_status);
+    try testing.expectEqualStrings("run did not finish before its timeout", loaded.last_error.?);
 }
 
 test "Routine: a routine is not due while its previous run is still in flight" {

@@ -48,6 +48,7 @@ import androidx.room.RoomDatabase
         CachedAuthMeEntity::class,
         CachedProjectEntity::class,
         CachedProjectChatEntity::class,
+        OutboxEntry::class,
     ],
     // 2 adds the two projects tables. Bumped because the schema changed, not
     // because the data is worth migrating: `fallbackToDestructiveMigration` below
@@ -56,7 +57,7 @@ import androidx.room.RoomDatabase
     // the cost of the bump is one empty sidebar and one spinner on the first
     // launch after the upgrade. Leaving it at 1 would fail Room's identity
     // check outright and crash on open.
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class PabrikCacheDatabase : RoomDatabase() {
@@ -68,6 +69,8 @@ abstract class PabrikCacheDatabase : RoomDatabase() {
     abstract fun authMeCacheDao(): AuthMeCacheDao
 
     abstract fun projectsCacheDao(): ProjectsCacheDao
+
+    abstract fun outboxDao(): OutboxDao
 
     companion object {
         const val NAME = "pabrik_cache.db"
