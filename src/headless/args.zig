@@ -34,6 +34,11 @@ pub const MessagesArgs = struct {
     limit: u32 = 50,
 };
 
+pub const UsageArgs = struct {
+    workspace_id: []const u8 = "",
+    range: []const u8 = "",
+};
+
 /// The document-folder verbs. One subcommand per write the HTTP API exposes,
 /// so an agent can drive the whole feature with no server and no port.
 pub const DocumentsOp = enum {
@@ -70,6 +75,7 @@ pub const FailureKind = enum {
     messages_requires_session,
     documents_unknown_op,
     documents_requires_flag,
+    usage_requires_flag,
 };
 
 pub const Failure = struct {
@@ -104,6 +110,8 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
     "      ops: list | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
+    "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
+    "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -124,6 +132,7 @@ pub const Outcome = union(enum) {
     sessions: SessionsArgs,
     messages: MessagesArgs,
     documents: DocumentsArgs,
+    usage: UsageArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -149,6 +158,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "sessions")) return try parseSessions(rest);
     if (std.mem.eql(u8, verb, "messages")) return try parseMessages(rest);
     if (std.mem.eql(u8, verb, "documents")) return try parseDocuments(rest);
+    if (std.mem.eql(u8, verb, "usage")) return try parseUsage(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
 }
@@ -272,6 +282,28 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     return .{ .documents = got };
 }
 
+fn parseUsage(argv: []const []const u8) ParseError!Outcome {
+    var got = UsageArgs{};
+    var i: usize = 0;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--workspace")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.workspace_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--range")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.range = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+    if (got.workspace_id.len == 0) return fail(.{ .kind = .usage_requires_flag, .value = "--workspace" });
+    return .{ .usage = got };
+}
+
 /// Run the one engine over `verb`'s flags, collecting the bare words.
 fn parseFlags(
     comptime verb: []const u8,
@@ -307,6 +339,7 @@ pub fn reportFailure(f: Failure) void {
         .messages_requires_session => std.log.err("headless: messages requires a session id: pabrik headless messages <id>", .{}),
         .documents_unknown_op => std.log.err("headless: unknown documents op '{s}'", .{f.value}),
         .documents_requires_flag => std.log.err("headless: documents needs {s}", .{f.value}),
+        .usage_requires_flag => std.log.err("headless: usage needs {s}", .{f.value}),
     }
 }
 
@@ -430,6 +463,23 @@ test "parse: documents doc-move needs the document id" {
     try expectFailure(&.{ "documents", "doc-move", "--workspace", "ws_1" }, .documents_requires_flag);
     const a = try parse(&.{ "documents", "doc-move", "--workspace", "ws_1", "--document", "doc_a", "--folder", "fld_1" });
     try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
+}
+
+test "parse: usage reads the workspace and the range" {
+    const a = try parse(&.{ "usage", "--workspace", "ws_1", "--range", "1d" });
+    try testing.expectEqualStrings("ws_1", a.usage.workspace_id);
+    try testing.expectEqualStrings("1d", a.usage.range);
+}
+
+test "parse: usage defaults to no range, so the endpoint's own default applies" {
+    const a = try parse(&.{ "usage", "--workspace", "ws_1" });
+    try testing.expectEqualStrings("", a.usage.range);
+}
+
+test "parse: usage refuses to guess which workspace was meant" {
+    try expectFailure(&.{"usage"}, .usage_requires_flag);
+    try expectFailure(&.{ "usage", "--range", "7d" }, .usage_requires_flag);
+    try expectFailure(&.{ "usage", "--workspace" }, .missing_value);
 }
 
 test "parse: an unknown verb is reported by name" {

@@ -1,13 +1,14 @@
 import { apiFetch } from './client'
 
-/** The three ranges the endpoint accepts. Anything else is a 400, so the type is the
+/** The four ranges the endpoint accepts. Anything else is a 400, so the type is the
  * allow-list rather than a free string. */
-export type WorkspaceUsageRange = '7d' | '30d' | '90d'
+export type WorkspaceUsageRange = '1d' | '7d' | '30d' | '90d'
 
 export interface WorkspaceUsageTotals {
   calls: number
   sessions: number
   input_tokens: number
+  reported_input_tokens: number
   output_tokens: number
   cache_read_tokens: number
   cache_creation_tokens: number
@@ -17,8 +18,8 @@ export interface WorkspaceUsageTotals {
    * every rate above, so a broken provider mapping cannot print a rate over 100%. */
   excluded_calls: number
   tool_calls: number
-  /** Percentage 0..100, or null when nothing divided into it: null means "no counter was
-   * reported", which is not the same answer as 0%. */
+  /** Percentage 0..100 over `reported_input_tokens`, or null when nothing divided into it:
+   * null means "no counter was reported", which is not the same answer as 0%. */
   cache_hit_rate: number | null
 }
 

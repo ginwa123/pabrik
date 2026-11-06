@@ -21,10 +21,12 @@ pub const Range = struct {
 };
 
 pub const default_range = "30d";
+pub const range_hint = "1d, 7d, 30d or 90d";
 
 pub fn parseRange(raw: ?[]const u8) ?Range {
     const value = raw orelse return .{ .days = 30, .label = default_range };
     if (value.len == 0) return .{ .days = 30, .label = default_range };
+    if (std.mem.eql(u8, value, "1d")) return .{ .days = 1, .label = "1d" };
     if (std.mem.eql(u8, value, "7d")) return .{ .days = 7, .label = "7d" };
     if (std.mem.eql(u8, value, "30d")) return .{ .days = 30, .label = "30d" };
     if (std.mem.eql(u8, value, "90d")) return .{ .days = 90, .label = "90d" };
@@ -35,6 +37,7 @@ pub const Totals = struct {
     calls: i64 = 0,
     sessions: i64 = 0,
     input_tokens: i64 = 0,
+    reported_input_tokens: i64 = 0,
     output_tokens: i64 = 0,
     cache_read_tokens: i64 = 0,
     cache_creation_tokens: i64 = 0,
@@ -105,28 +108,36 @@ const SCOPE =
 
 const RATED_READ = "CASE WHEN h.cache_read_input_tokens <= h.prompt_tokens THEN h.cache_read_input_tokens ELSE 0 END";
 
+const REPORTED = "CASE WHEN h.cache_read_input_tokens > 0 OR h.cache_creation_input_tokens > 0 THEN 1 ELSE 0 END";
+
+const REPORTED_INPUT = "CASE WHEN h.cache_read_input_tokens <= h.prompt_tokens AND (" ++
+    "h.cache_read_input_tokens > 0 OR h.cache_creation_input_tokens > 0) THEN h.prompt_tokens ELSE 0 END";
+
 const TOTALS_SQL =
     "SELECT COUNT(*), " ++
-    "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens <= h.prompt_tokens THEN h.prompt_tokens ELSE 0 END), 0), " ++
+    "       COALESCE(SUM(h.prompt_tokens), 0), " ++
     "       COALESCE(SUM(h.completion_tokens), 0), " ++
     "       COALESCE(SUM(" ++ RATED_READ ++ "), 0), " ++
     "       COALESCE(SUM(h.cache_creation_input_tokens), 0), " ++
-    "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens > 0 OR h.cache_creation_input_tokens > 0 THEN 1 ELSE 0 END), 0), " ++
+    "       COALESCE(SUM(" ++ REPORTED ++ "), 0), " ++
     "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens > h.prompt_tokens THEN 1 ELSE 0 END), 0), " ++
+    "       COALESCE(SUM(" ++ REPORTED_INPUT ++ "), 0), " ++
     "       COUNT(DISTINCT h.session_id) " ++ SCOPE;
 
 const DAILY_SQL =
     "SELECT substr(h.created_iso, 1, 10), COUNT(*), " ++
     "       COALESCE(SUM(h.prompt_tokens), 0), " ++
     "       COALESCE(SUM(" ++ RATED_READ ++ "), 0), " ++
-    "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens > 0 OR h.cache_creation_input_tokens > 0 THEN 1 ELSE 0 END), 0) " ++
+    "       COALESCE(SUM(" ++ REPORTED ++ "), 0), " ++
+    "       COALESCE(SUM(" ++ REPORTED_INPUT ++ "), 0) " ++
     SCOPE ++ " GROUP BY 1 ORDER BY 1";
 
 const MODELS_SQL =
     "SELECT COALESCE(h.model, ''), COUNT(*), " ++
-    "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens <= h.prompt_tokens THEN h.prompt_tokens ELSE 0 END), 0), " ++
+    "       COALESCE(SUM(h.prompt_tokens), 0), " ++
     "       COALESCE(SUM(" ++ RATED_READ ++ "), 0), " ++
-    "       COALESCE(SUM(CASE WHEN h.cache_read_input_tokens > 0 OR h.cache_creation_input_tokens > 0 THEN 1 ELSE 0 END), 0) " ++
+    "       COALESCE(SUM(" ++ REPORTED ++ "), 0), " ++
+    "       COALESCE(SUM(" ++ REPORTED_INPUT ++ "), 0) " ++
     SCOPE ++ " GROUP BY 1 ORDER BY 3 DESC LIMIT 8";
 
 const SHAPE_SCOPE =
@@ -217,7 +228,7 @@ pub fn useCase(
         var rows = db.query(allocator, TOTALS_SQL, &.{ workspace_id, cutoff }) catch return error.QueryFailed;
         defer rows.deinit();
         if (rows.next() catch return error.QueryFailed) |row| {
-            if (row.values.len >= 8) {
+            if (row.values.len >= 9) {
                 totals.calls = colInt(row.values[0]);
                 totals.input_tokens = colInt(row.values[1]);
                 totals.output_tokens = colInt(row.values[2]);
@@ -225,12 +236,13 @@ pub fn useCase(
                 totals.cache_creation_tokens = colInt(row.values[4]);
                 totals.calls_with_cache = colInt(row.values[5]);
                 totals.excluded_calls = colInt(row.values[6]);
-                totals.sessions = colInt(row.values[7]);
+                totals.reported_input_tokens = colInt(row.values[7]);
+                totals.sessions = colInt(row.values[8]);
             }
             row.deinit(allocator);
         }
     }
-    totals.cache_hit_rate = reportedRate(totals.cache_read_tokens, totals.input_tokens, totals.calls_with_cache);
+    totals.cache_hit_rate = reportedRate(totals.cache_read_tokens, totals.reported_input_tokens, totals.calls_with_cache);
 
     var daily: std.ArrayList(DailyPoint) = .empty;
     var models: std.ArrayList(ModelRow) = .empty;
@@ -245,15 +257,16 @@ pub fn useCase(
             defer rows.deinit();
             while (rows.next() catch return error.QueryFailed) |row| {
                 defer row.deinit(allocator);
-                if (row.values.len < 5) continue;
+                if (row.values.len < 6) continue;
                 const input = colInt(row.values[2]);
                 const read = colInt(row.values[3]);
+                const reported = colInt(row.values[4]);
                 daily.append(allocator, .{
                     .day = try dupe(allocator, row.values[0]),
                     .calls = colInt(row.values[1]),
                     .input_tokens = input,
                     .cache_read_tokens = read,
-                    .cache_hit_rate = reportedRate(read, input, colInt(row.values[4])),
+                    .cache_hit_rate = reportedRate(read, colInt(row.values[5]), reported),
                 }) catch return error.OutOfMemory;
             }
         }
@@ -262,7 +275,7 @@ pub fn useCase(
             defer rows.deinit();
             while (rows.next() catch return error.QueryFailed) |row| {
                 defer row.deinit(allocator);
-                if (row.values.len < 5) continue;
+                if (row.values.len < 6) continue;
                 const input = colInt(row.values[2]);
                 const read = colInt(row.values[3]);
                 const with_cache = colInt(row.values[4]);
@@ -271,7 +284,7 @@ pub fn useCase(
                     .calls = colInt(row.values[1]),
                     .input_tokens = input,
                     .calls_with_cache = with_cache,
-                    .cache_hit_rate = reportedRate(read, input, with_cache),
+                    .cache_hit_rate = reportedRate(read, colInt(row.values[5]), with_cache),
                 }) catch return error.OutOfMemory;
             }
         }
@@ -411,7 +424,7 @@ pub fn workspaceUsageHandler(
     const range = parseRange(req.query.get("range")) orelse {
         return res.jsonResponse(.{
             .status_code = 400,
-            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "range must be 7d, 30d or 90d" }),
+            .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "range must be " ++ range_hint }),
         });
     };
 
@@ -429,7 +442,7 @@ pub fn workspaceUsageHandler(
 
     const body = useCase(allocator, di.db, workspace_id, range, cutoff_ns) catch |err| {
         const message: []const u8 = switch (err) {
-            error.InvalidRange => "range must be 7d, 30d or 90d",
+            error.InvalidRange => "range must be " ++ range_hint,
             error.QueryFailed => "Database query failed",
             error.OutOfMemory => "Out of memory",
         };
@@ -563,7 +576,9 @@ fn at(json: std.json.Value, comptime path: []const u8) std.json.Value {
     return current;
 }
 
-test "parseRange accepts the three ranges, defaults to 30d, and rejects the rest" {
+test "parseRange accepts the four ranges, defaults to 30d, and rejects the rest" {
+    try testing.expectEqual(@as(i64, 1), parseRange("1d").?.days);
+    try testing.expectEqualStrings("1d", parseRange("1d").?.label);
     try testing.expectEqual(@as(i64, 7), parseRange("7d").?.days);
     try testing.expectEqual(@as(i64, 30), parseRange("30d").?.days);
     try testing.expectEqual(@as(i64, 90), parseRange("90d").?.days);
@@ -584,7 +599,8 @@ test "the empty workspace answers zeros and a null rate, never a fabricated 0%" 
 
     try testing.expectEqualStrings(
         "{\"workspace_id\":\"ws_none\",\"range\":\"30d\",\"totals\":{\"calls\":0,\"sessions\":0,\"input_tokens\":0," ++
-            "\"output_tokens\":0,\"cache_read_tokens\":0,\"cache_creation_tokens\":0,\"calls_with_cache\":0," ++
+            "\"reported_input_tokens\":0,\"output_tokens\":0,\"cache_read_tokens\":0,\"cache_creation_tokens\":0," ++
+            "\"calls_with_cache\":0," ++
             "\"excluded_calls\":0,\"tool_calls\":0,\"cache_hit_rate\":null},\"daily\":[],\"models\":[],\"tools\":[]," ++
             "\"finish_reasons\":[],\"cache_series\":null}",
         json,
@@ -607,11 +623,12 @@ test "totals sum only this workspace and only calls inside the range" {
 
     try testing.expectEqual(@as(i64, 2), at(parsed.value, "totals.calls").integer);
     try testing.expectEqual(@as(i64, 2000), at(parsed.value, "totals.input_tokens").integer);
+    try testing.expectEqual(@as(i64, 1000), at(parsed.value, "totals.reported_input_tokens").integer);
     try testing.expectEqual(@as(i64, 30), at(parsed.value, "totals.output_tokens").integer);
     try testing.expectEqual(@as(i64, 900), at(parsed.value, "totals.cache_read_tokens").integer);
     try testing.expectEqual(@as(i64, 1), at(parsed.value, "totals.calls_with_cache").integer);
     try testing.expectEqual(@as(i64, 1), at(parsed.value, "totals.sessions").integer);
-    try expectRate(45, at(parsed.value, "totals.cache_hit_rate"));
+    try expectRate(90, at(parsed.value, "totals.cache_hit_rate"));
     try testing.expectEqual(@as(i64, 0), at(parsed.value, "totals.excluded_calls").integer);
 }
 
@@ -628,9 +645,39 @@ test "a cache read larger than its prompt is excluded from the numerator, the de
 
     try testing.expectEqual(@as(i64, 2), at(parsed.value, "totals.calls").integer);
     try testing.expectEqual(@as(i64, 1), at(parsed.value, "totals.excluded_calls").integer);
-    try testing.expectEqual(@as(i64, 1000), at(parsed.value, "totals.input_tokens").integer);
+    try testing.expectEqual(@as(i64, 18932), at(parsed.value, "totals.input_tokens").integer);
+    try testing.expectEqual(@as(i64, 1000), at(parsed.value, "totals.reported_input_tokens").integer);
     try testing.expectEqual(@as(i64, 500), at(parsed.value, "totals.cache_read_tokens").integer);
     try expectRate(50, at(parsed.value, "totals.cache_hit_rate"));
+}
+
+test "a call whose provider reported no counter is left out of the rate, not counted as a miss" {
+    var ctx = try setupDb();
+    defer teardown(&ctx);
+    try insertWorkspace(&ctx, "s1", "ws_a");
+
+    try insertRow(&ctx, .{ .id = "cached", .session_id = "s1", .model = "deepseek", .prompt = 1000, .read = 950, .iso = "2026-10-20 10:00:00", .at = 2000 });
+    try insertRow(&ctx, .{ .id = "silent", .session_id = "s1", .model = "alpha", .prompt = 4000, .read = 0, .iso = "2026-10-20 11:00:00", .at = 2000 });
+
+    const parsed = try run(&ctx, "ws_a", .{ .days = 7, .label = "7d" }, 1000);
+    defer parsed.deinit();
+
+    try testing.expectEqual(@as(i64, 2), at(parsed.value, "totals.calls").integer);
+    try testing.expectEqual(@as(i64, 5000), at(parsed.value, "totals.input_tokens").integer);
+    try testing.expectEqual(@as(i64, 1000), at(parsed.value, "totals.reported_input_tokens").integer);
+    try testing.expectEqual(@as(i64, 1), at(parsed.value, "totals.calls_with_cache").integer);
+    try expectRate(95, at(parsed.value, "totals.cache_hit_rate"));
+
+    const models = at(parsed.value, "models").array;
+    try testing.expectEqualStrings("alpha", models.items[0].object.get("model").?.string);
+    try testing.expect(std.json.Value.null == models.items[0].object.get("cache_hit_rate").?);
+    try testing.expectEqualStrings("deepseek", models.items[1].object.get("model").?.string);
+    try expectRate(95, models.items[1].object.get("cache_hit_rate").?);
+
+    const daily = at(parsed.value, "daily").array;
+    try testing.expectEqual(@as(usize, 1), daily.items.len);
+    try testing.expectEqual(@as(i64, 5000), daily.items[0].object.get("input_tokens").?.integer);
+    try expectRate(95, daily.items[0].object.get("cache_hit_rate").?);
 }
 
 test "daily, models, tools and finish reasons stay under eight rows and keep their order" {
@@ -659,7 +706,7 @@ test "daily, models, tools and finish reasons stay under eight rows and keep the
     try testing.expectEqualStrings("big", models.items[0].object.get("model").?.string);
     try testing.expectEqual(@as(i64, 1000), models.items[0].object.get("input_tokens").?.integer);
     try testing.expectEqual(@as(i64, 1), models.items[0].object.get("calls_with_cache").?.integer);
-    try expectRate(80, models.items[0].object.get("cache_hit_rate").?);
+    try expectRate(88.89, models.items[0].object.get("cache_hit_rate").?);
     try testing.expectEqual(std.json.Value.null, models.items[1].object.get("cache_hit_rate").?);
 
     try testing.expectEqual(@as(i64, 3), at(parsed.value, "totals.tool_calls").integer);

@@ -73,6 +73,17 @@ pabrik headless sessions [--limit N]
 pabrik headless messages <id> [--limit N]
 ```
 
+### `usage` — a workspace's token, cache and tool totals
+
+```
+pabrik headless usage --workspace <id> [--range 1d|7d|30d|90d]
+```
+
+Prints exactly the body `GET /api/workspaces/:workspace_id/usage` returns,
+including `totals.reported_input_tokens` and `cache_hit_rate`. `--range`
+defaults to the endpoint's own default (`30d`); a range the endpoint
+rejects exits non-zero with nothing on stdout.
+
 ### `help`
 
 ```
@@ -152,6 +163,7 @@ src/headless/
 ├── boot.zig       the backend boot sequence (no server, no port)
 ├── run.zig        `headless run` — one agentic turn
 ├── sessions.zig   `headless sessions` / `headless messages`
+├── usage.zig      `headless usage` — the workspace usage payload
 └── README.md      this file
 
 src/boot/headless_dispatch.zig   argv[1] == "headless" → dispatch
