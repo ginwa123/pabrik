@@ -201,6 +201,17 @@ describe('ChatView floating composer', () => {
     expect(column.classList.contains('relative')).toBe(true)
   })
 
+  it('the transcript width control lives in the composer row, not in the session strip', async () => {
+    await mountChat()
+
+    // The strip took over the session's title bar, so the width control moved to the row of the
+    // thing it widens: the composer.
+    const toggle = wrapper!.find('[data-testid="composer-width-toggle"]')
+    expect(toggle.exists()).toBe(true)
+    expect(toggle.attributes('title')).toContain('Transcript width')
+    expect(wrapper!.find('[data-testid="session-strip-width-toggle"]').exists()).toBe(false)
+  })
+
   it("the dock's ResizeObserver publishes its height as --chat-composer-inset on the column", async () => {
     await mountChat()
     const column = wrapper!.element.querySelector('.chat-column') as HTMLElement
