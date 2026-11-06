@@ -293,8 +293,9 @@ describe('parseTabList', () => {
     )
     const tab = list.tabs[0]
     expect(tab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-    expect(tab?.kind).toBe('workspace')
-    expect(tab?.title).toBe('Workspace')
+    // a task chat is a session of its own, so the rebuilt kind is the chat's, not the board's
+    expect(tab?.kind).toBe('chat')
+    expect(tab?.title).toBe('Chat')
   })
 
   it('caps the reopen stack', () => {
@@ -331,6 +332,14 @@ describe('path-form targets', () => {
   it('gives a project chat the task it names', () => {
     expect(ownerOfTarget('/app/ws_1/projects/item_7/chat/task_9', {})).toBe('task_9')
     expect(tabKeyOf('/app/ws_1/projects/item_7/chat/task_9', {})).toBe('chat:task_9')
+  })
+
+  it('gives a kanban task chat its own chat identity, not the board', () => {
+    const task = { view: 'workspace', workspaceId: 'ws_1', itemId: 'item_7/chat/task_9' }
+    expect(kindOf('/app', task, 'kanban')).toBe('chat')
+    expect(ownerOfTarget('/app', task)).toBe('task_9')
+    // a design item shows the same chat as a dialog INSIDE the item, so the item keeps one tab
+    expect(kindOf('/app', task, 'design')).toBe('workspace')
   })
 
   it('keys a project settings page', () => {

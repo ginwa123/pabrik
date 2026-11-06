@@ -141,7 +141,7 @@ export const useTabsStore = defineStore('tabs', () => {
   function createTab(input: OpenTabInput): Tab {
     const path = input.path || '/app'
     const query = tabQueryOf(input.query)
-    const kind = input.kind ?? kindOf(path, query)
+    const kind = input.kind ?? kindOf(path, query, input.itemType)
     const hasChatSuffix = !!parseItemIdWithChat(query.itemId ?? '').chatTaskId
     const owner = input.owner ?? ownerOfTarget(path, query)
     return {

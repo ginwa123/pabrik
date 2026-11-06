@@ -339,7 +339,11 @@ export function shouldTabify(
   return true
 }
 
-export function kindOf(path: string, query: Record<string, unknown> | null | undefined): TabKind {
+export function kindOf(
+  path: string,
+  query: Record<string, unknown> | null | undefined,
+  itemType?: string | null,
+): TabKind {
   if (kanbanSettingsItemId(path)) return 'kanban-settings'
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return 'settings'
   const q = stripTabParam(query)
@@ -349,7 +353,12 @@ export function kindOf(path: string, query: Record<string, unknown> | null | und
   if (byPath) return byPath.kind
   if (view === 'chat') return q.session ? 'chat' : 'home'
   if (view === 'task') return q.task ? 'chat' : 'home'
-  if (view === 'workspace') return 'workspace'
+  if (view === 'workspace') {
+    // A task chat renders as its own view (its own session) unless the item shows it as a dialog.
+    const chatTaskId = parseItemIdWithChat(q.itemId ?? '').chatTaskId
+    if (chatTaskId && !taskChatRendersInItemTab(itemType)) return 'chat'
+    return 'workspace'
+  }
   return 'other'
 }
 
