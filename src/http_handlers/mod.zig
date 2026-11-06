@@ -97,6 +97,7 @@ pub const workspaceItemsListHandler = @import("workspace_items_get.zig").workspa
 pub const workspaceItemsGetHandler = @import("workspace_items_get.zig").workspaceItemsGetHandler;
 pub const workspaceDefaultProjectHandler = @import("workspace_items_default.zig").workspaceDefaultProjectHandler;
 pub const workspaceUsageHandler = @import("workspace_usage_get.zig").workspaceUsageHandler;
+pub const workspace_usage = @import("workspace_usage_get.zig");
 
 pub const workspaceItemsUpdateHandler = @import("workspace_items_update.zig").workspaceItemsUpdateHandler;
 pub const workspaceItemsReorderHandler = @import("workspace_items_reorder.zig").workspaceItemsReorderHandler;

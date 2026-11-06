@@ -21,6 +21,7 @@ function usage(overrides: Partial<WorkspaceUsage> = {}): WorkspaceUsage {
       calls: 20_026,
       sessions: 89,
       input_tokens: 5_559_477_914,
+      reported_input_tokens: 0,
       output_tokens: 17_262_188,
       cache_read_tokens: 0,
       cache_creation_tokens: 0,
@@ -135,6 +136,57 @@ describe('WorkspaceUsageSection', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="usage-error"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="usage-figure-calls"]').text()).toBe('20,026')
+  })
+
+  it('measures the cache rate over the calls that reported a counter, and says so', async () => {
+    const reported = usage()
+    reported.totals = {
+      ...reported.totals,
+      calls: 20_077,
+      input_tokens: 4_836_147_847,
+      reported_input_tokens: 734_838_496,
+      cache_read_tokens: 703_806_208,
+      calls_with_cache: 3_427,
+      cache_hit_rate: 95.78,
+    }
+    mockedFetch.mockResolvedValue(reported)
+    const wrapper = mountSection()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="usage-figure-cache-read-rate"]').text()).toBe('95.78%')
+    expect(wrapper.get('[data-testid="usage-figures"]').text()).toContain(
+      'over 734.8M of 4.84B input tokens',
+    )
+    expect(wrapper.get('[data-testid="usage-figures"]').text()).toContain('3,427 of 20,077 calls')
+    expect(wrapper.get('[data-testid="usage-models-panel"]').text()).toContain(
+      'left out of every rate',
+    )
+  })
+
+  it('asks for the last day when the user picks one day', async () => {
+    mockedFetch.mockResolvedValue(usage())
+    const wrapper = mountSection()
+    await flushPromises()
+    expect(mockedFetch).toHaveBeenCalledWith('ws_1', '30d')
+
+    await wrapper.get('[data-testid="usage-range-1d"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedFetch).toHaveBeenLastCalledWith('ws_1', '1d')
+    expect(wrapper.get('[data-testid="usage-range-1d"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('names the window it found empty', async () => {
+    const empty = usage({ range: '1d' })
+    empty.totals = { ...empty.totals, calls: 0, input_tokens: 0, sessions: 0, tool_calls: 0 }
+    mockedFetch.mockResolvedValue(empty)
+    const wrapper = mountSection()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="usage-range-1d"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="usage-empty"]').text()).toContain('last 1 day')
   })
 
   it('refetches with the range the user picked', async () => {
