@@ -23,7 +23,14 @@ const fileIn = (session: string, path: string, cwd = '/repo') => ({
 const board = (itemId: string, workspaceId = 'ws_1') => ({ view: 'workspace', workspaceId, itemId })
 
 /** Read the persisted tab list regardless of which window id keyed it. */
-function rawList(): { v: number; active: string; tabs: Tab[]; closed: unknown[] } | null {
+type RawPayload = {
+  v: number
+  active?: Record<string, string>
+  strips?: Record<string, Tab[]>
+  closed?: Record<string, unknown[]>
+}
+
+function rawList(): RawPayload | null {
   const store = localStorage
   for (let i = 0; i < store.length; i += 1) {
     const key = store.key(i)
@@ -278,19 +285,24 @@ describe('tabs store', () => {
     const tabs = useTabsStore()
     const a = tabs.open({ query: chat('sa'), title: 'Chat A' })
     const b = tabs.open({ query: board('item_7') })
-    tabs.reorder(0, 2)
     tabs.activate(a.id)
 
     const stored = rawList()
     expect(stored?.v).toBe(2)
-    expect(stored?.active).toBe(a.id)
-    expect(stored?.tabs.map((t) => t.key)).toEqual(tabs.tabs.map((t) => t.key))
+    // one list per owner: the session's row, and the window's own row (`home` + the board)
+    expect(Object.keys(stored?.strips ?? {}).sort()).toEqual(['', 'sa'])
+    expect(stored?.strips?.sa?.map((t) => t.key)).toEqual(['chat:sa'])
+    expect(stored?.strips?.['']?.map((t) => t.key)).toEqual(['home', 'ws:ws_1:item_7'])
+    expect(stored?.active?.sa).toBe(a.id)
 
     // a reload = the same window id + a fresh pinia
     __resetWindowIdForTests()
     setActivePinia(createPinia())
     const reloaded = useTabsStore()
-    expect(reloaded.tabs.map((t) => t.key)).toEqual(tabs.tabs.map((t) => t.key))
+    // Rows come back contiguous (the payload is grouped by owner), so compare the rows themselves.
+    expect(reloaded.stripOf('sa').map((t) => t.key)).toEqual(['chat:sa'])
+    expect(reloaded.stripOf('').map((t) => t.key)).toEqual(['home', 'ws:ws_1:item_7'])
+    expect(reloaded.tabCount).toBe(tabs.tabCount)
     expect(reloaded.activeTabId).toBe(a.id)
     expect(reloaded.tabCount).toBe(3)
     expect(reloaded.tabs.find((t) => t.id === b.id)?.kind).toBe('workspace')
@@ -341,7 +353,7 @@ describe('tabs store', () => {
     expect(tabs.tabCount).toBe(1)
     expect(tabs.activeTabId).toBe(fresh.id)
     expect(tabs.closedStack).toHaveLength(0)
-    expect(rawList()?.tabs).toHaveLength(1)
+    expect(rawList()?.strips?.['']?.map((t) => t.key)).toEqual(['home'])
   })
 
   describe('ownership: the strip belongs to the session', () => {
@@ -651,8 +663,14 @@ describe('tabs store', () => {
       expect(renamed?.title).toBe('New Chat')
       expect(tabs.tabs.map((t) => t.id)).toEqual([tabs.tabs[0]?.id, first.id, synthetic.id])
       expect(tabs.activeTabId).toBe(synthetic.id)
-      // and it persists, so a reload does not resurrect the dead id
-      expect(rawList()?.tabs.map((t) => t.key)).toContain('chat:real-7')
+      // and it persists under its NEW owner, so a reload does not resurrect the dead id
+      const stored = rawList()?.strips ?? {}
+      expect(stored['real-7']?.map((t) => t.key)).toEqual(['chat:real-7'])
+      expect(
+        Object.values(stored)
+          .flat()
+          .map((t) => t.key),
+      ).not.toContain('chat:session-1789000000000')
     })
 
     it('drops the dead pointer when the real chat is already open', () => {

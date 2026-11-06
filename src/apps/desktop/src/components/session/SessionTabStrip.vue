@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useTabsStore } from '../../stores/tabs'
 import { useInjectTabStripActions } from '../../composables/useTabStrip'
-import { useChatContentWidth } from '../../composables/useChatContentWidth'
+import { useTabMarks } from '../../composables/useTabMarks'
 import { isDiffQuery } from '../../helpers/tabTarget'
 
 const props = withDefaults(
@@ -21,11 +21,18 @@ const emit = defineEmits<{
 
 const tabsStore = useTabsStore()
 const actions = useInjectTabStripActions()
-const { label: widthLabel, nextLabel: widthNextLabel, cycleWidth } = useChatContentWidth()
 
 const row = computed(() => tabsStore.stripOf(props.owner))
 const activeId = computed(() => tabsStore.activeTabId)
 const activeTab = computed(() => row.value.find((tab) => tab.id === activeId.value) ?? null)
+
+// `+N −M` per file tab, and the square when those numbers moved while you were elsewhere.
+const { markOfTab, refresh: refreshMarks } = useTabMarks({
+  tabs: () => row.value,
+  activeId: () => activeId.value,
+  enabled: () => props.owner !== '',
+})
+const marks = computed(() => new Map(row.value.map((tab) => [tab.id, markOfTab(tab)])))
 
 /** The active tab shows a file, and a file has changes worth a click. */
 const canOpenDiff = computed(() => {
@@ -38,19 +45,15 @@ const canOpenDiff = computed(() => {
 
 function activate(tabId: string): void {
   if (tabId === activeId.value) return
-  if (actions) {
-    actions.activate(tabId)
-    return
-  }
-  tabsStore.activate(tabId)
+  if (actions) actions.activate(tabId)
+  else tabsStore.activate(tabId)
+  void refreshMarks()
 }
 
 function close(tabId: string): void {
-  if (actions) {
-    actions.close(tabId)
-    return
-  }
-  tabsStore.close(tabId)
+  if (actions) actions.close(tabId)
+  else tabsStore.close(tabId)
+  void refreshMarks()
 }
 
 function openDiff(): void {
@@ -131,6 +134,21 @@ function openDiff(): void {
 
         <span class="min-w-0 flex-1 truncate">{{ tab.title }}</span>
 
+        <span
+          v-if="marks.get(tab.id)?.counts"
+          class="session-tab-counts shrink-0 text-micro"
+          data-testid="session-tab-counts"
+        >
+          <span class="session-tab-add">+{{ marks.get(tab.id)?.counts?.added }}</span>
+          <span class="session-tab-del">−{{ marks.get(tab.id)?.counts?.removed }}</span>
+        </span>
+        <span
+          v-if="marks.get(tab.id)?.unseen"
+          class="session-tab-unseen shrink-0"
+          aria-hidden="true"
+          data-testid="session-tab-unseen"
+        />
+
         <button
           v-if="!tab.pinned"
           type="button"
@@ -180,19 +198,6 @@ function openDiff(): void {
         >
           <path d="M1.6 3.4h8.8M1.6 8.6h8.8" />
         </svg>
-      </button>
-
-      <button
-        type="button"
-        class="shrink-0 h-7 px-1.5 rounded flex items-center gap-1 text-micro hover:opacity-70 transition-opacity"
-        style="color: var(--semantic-text-dim)"
-        :title="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
-        :aria-label="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
-        data-testid="session-strip-width-toggle"
-        @click="cycleWidth"
-      >
-        <span aria-hidden="true">⇔</span>
-        <span>{{ widthLabel }}</span>
       </button>
 
       <button
@@ -257,6 +262,26 @@ function openDiff(): void {
 .session-tab.is-pinned {
   color: var(--semantic-text);
   font-weight: 600;
+}
+
+.session-tab-counts {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.session-tab-add {
+  color: var(--color-green);
+}
+
+.session-tab-del {
+  color: var(--color-red);
+}
+
+.session-tab-unseen {
+  width: 6px;
+  height: 6px;
+  border-radius: 1.5px;
+  background-color: var(--color-yellow);
 }
 
 .session-tab-close {

@@ -56,6 +56,39 @@ export interface PersistedTabs {
   closed: ClosedTab[]
 }
 
+/**    * What a window writes to storage: one list per owner, so a row is a key rather than a filter the
+ * payload has to be searched for. The store keeps the tabs flat in memory (`stripOf` filters), so this
+ * shape exists only on the way in and out. */
+export interface PersistedStrips {
+  v: number
+  strips: Record<string, Tab[]>
+  active: Record<string, string>
+  closed: Record<string, ClosedTab[]>
+}
+
+/** Group a flat list into the per-owner payload, in the order the rows first appear. */
+export function groupPayload(tabs: Tab[], active: string, closed: ClosedTab[]): PersistedStrips {
+  const strips: Record<string, Tab[]> = {}
+  const activeByOwner: Record<string, string> = {}
+  for (const tab of tabs) {
+    const owner = ownerOf(tab)
+    if (!strips[owner]) strips[owner] = []
+    ;(strips[owner] as Tab[]).push(tab)
+    if (tab.id === active) activeByOwner[owner] = tab.id
+  }
+  // A row with no active tab of its own points at its first tab, so every row restores to something.
+  for (const [owner, row] of Object.entries(strips)) {
+    if (!activeByOwner[owner] && row[0]) activeByOwner[owner] = row[0].id
+  }
+  const closedByOwner: Record<string, ClosedTab[]> = {}
+  for (const tab of closed) {
+    const owner = ownerOf(tab)
+    if (!closedByOwner[owner]) closedByOwner[owner] = []
+    ;(closedByOwner[owner] as ClosedTab[]).push(tab)
+  }
+  return { v: TABS_VERSION, strips, active: activeByOwner, closed: closedByOwner }
+}
+
 /** Upper bounds so a long-lived window cannot grow storage without limit. */
 export const MAX_TABS = 50
 export const MAX_CLOSED = 10
@@ -445,6 +478,46 @@ function freshList(): PersistedTabs {
   return { active: tab.id, tabs: [tab], closed: [] }
 }
 
+function parseStrips(root: Record<string, unknown>): PersistedTabs {
+  const strips = asRecord(root.strips)
+  if (!strips) return freshList()
+  const tabs: Tab[] = []
+  const seenIds = new Set<string>()
+  for (const [owner, row] of Object.entries(strips)) {
+    if (!Array.isArray(row)) continue
+    for (const value of row) {
+      const tab = coerceTab(value)
+      if (!tab || seenIds.has(tab.id)) continue
+      seenIds.add(tab.id)
+      // The row a tab was filed under is authoritative: it is what made it two strips.
+      tabs.push({ ...tab, ...(owner ? { owner } : {}) })
+    }
+  }
+  if (tabs.length === 0) return freshList()
+
+  const closed: ClosedTab[] = []
+  const closedByOwner = asRecord(root.closed)
+  if (closedByOwner) {
+    for (const row of Object.values(closedByOwner)) {
+      if (!Array.isArray(row)) continue
+      for (const value of row) {
+        const tab = coerceClosedTab(value)
+        if (tab) closed.push(tab)
+      }
+    }
+  }
+
+  const activeByOwner = asRecord(root.active)
+  const firstOwnerActive = activeByOwner
+    ? Object.values(activeByOwner).find((value): value is string => typeof value === 'string')
+    : ''
+  const active =
+    firstOwnerActive && tabs.some((tab) => tab.id === firstOwnerActive)
+      ? firstOwnerActive
+      : (tabs[0]?.id ?? '')
+  return { active, tabs, closed: closed.slice(0, MAX_CLOSED) }
+}
+
 /** Total: any input at all yields a usable list. A corrupt, older-version
  * or hand-edited value must never throw at boot — it starts over. */
 export function parseTabList(raw: string | null | undefined): PersistedTabs {
@@ -459,6 +532,9 @@ export function parseTabList(raw: string | null | undefined): PersistedTabs {
   if (!root) return freshList()
   const version = typeof root.v === 'number' ? root.v : 0
   if (version !== TABS_VERSION && version !== TABS_VERSION_LEGACY) return freshList()
+  // v2 writes one list per owner; v1 wrote one flat list. Both parse, and the flat list is what the
+  // store works with.
+  if (root.strips) return parseStrips(root)
   if (!Array.isArray(root.tabs)) return freshList()
 
   const tabs: Tab[] = []

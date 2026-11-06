@@ -63,7 +63,12 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const { presetClass: chatWidthClass } = useChatContentWidth()
+const {
+  presetClass: chatWidthClass,
+  label: widthLabel,
+  nextLabel: widthNextLabel,
+  cycleWidth,
+} = useChatContentWidth()
 
 // Copy code content to clipboard
 const copyCodeContent = async (codeContent: string) => {
@@ -722,6 +727,18 @@ const compactSession = async () => {
                 </div>
                 <!-- Right zone: context (pushed right, truncates first) -->
                 <div class="flex items-center gap-1 ml-auto pl-1 shrink-0">
+                  <!-- Transcript width lives with the thing it widens: the composer's own row,
+                       now that the strip has taken over the session's title bar. -->
+                  <button
+                    @click="cycleWidth"
+                    class="composer-tool-btn"
+                    :title="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
+                    :aria-label="`Transcript width: ${widthLabel}. Click for ${widthNextLabel}.`"
+                    data-testid="composer-width-toggle"
+                  >
+                    <span aria-hidden="true">⇔</span>
+                    <span class="text-micro">{{ widthLabel }}</span>
+                  </button>
                   <!-- Git status indicator — always clickable; opens a dropdown
                        menu with context-appropriate actions (worktree-bound vs.
                        no-worktree). -->

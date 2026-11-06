@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   MAX_CLOSED,
+  TABS_VERSION,
   fallbackTitle,
+  groupPayload,
   homeTab,
   isBackgroundOpenEvent,
   kindOf,
@@ -15,6 +17,7 @@ import {
   tabKeyVariants,
   taskChatRendersInItemTab,
   withTabParam,
+  type ClosedTab,
   type Tab,
   type TabKind,
 } from '../helpers/tabTarget'
@@ -312,6 +315,80 @@ describe('parseTabList', () => {
     // the owner is what a v1 payload could not know: it comes from the target
     expect(list.tabs.map((t) => t.owner)).toEqual(['sa', 'sb'])
     expect(list.active).toBe('tab_a')
+  })
+})
+
+describe('groupPayload / parseTabList (the per-owner payload)', () => {
+  const chatTab = (id: string, session: string): Tab => ({
+    id,
+    key: `chat:${session}`,
+    kind: 'chat',
+    title: `Title ${session}`,
+    path: '/app',
+    query: { view: 'chat', session },
+    createdAt: 1,
+    owner: session,
+    pinned: true,
+  })
+  const fileTab = (id: string, session: string, file: string): Tab => ({
+    id,
+    key: `file:/repo:${file}`,
+    kind: 'file',
+    title: file,
+    path: '/app',
+    query: { view: 'code-editor', file, cwd: '/repo', session },
+    createdAt: 2,
+    owner: session,
+  })
+
+  it('groups one list per owner and points every row at its own active tab', () => {
+    const tabs = [chatTab('a1', 'sa'), fileTab('a2', 'sa', 'a.ts'), chatTab('b1', 'sb')]
+    const payload = groupPayload(tabs, 'a2', [])
+    expect(Object.keys(payload.strips)).toEqual(['sa', 'sb'])
+    expect(payload.strips.sa?.map((t) => t.id)).toEqual(['a1', 'a2'])
+    expect(payload.strips.sb?.map((t) => t.id)).toEqual(['b1'])
+    expect(payload.active).toEqual({ sa: 'a2', sb: 'b1' })
+    expect(payload.v).toBe(TABS_VERSION)
+  })
+
+  it('keeps the closed stacks apart by owner too', () => {
+    const closed: ClosedTab[] = [
+      { ...fileTab('x', 'sa', 'x.ts'), closedAt: 3 },
+      { ...fileTab('y', 'sb', 'y.ts'), closedAt: 4 },
+    ]
+    const payload = groupPayload([chatTab('a1', 'sa')], 'a1', closed)
+    expect(payload.closed.sa?.map((t) => t.id)).toEqual(['x'])
+    expect(payload.closed.sb?.map((t) => t.id)).toEqual(['y'])
+  })
+
+  it('round-trips: a grouped payload parses back to the same flat list', () => {
+    const tabs = [chatTab('a1', 'sa'), fileTab('a2', 'sa', 'a.ts'), chatTab('b1', 'sb')]
+    const payload = groupPayload(tabs, 'a2', [])
+    const parsed = parseTabList(JSON.stringify(payload))
+    expect(parsed.tabs.map((t) => t.id)).toEqual(['a1', 'a2', 'b1'])
+    expect(parsed.tabs.map((t) => t.owner)).toEqual(['sa', 'sa', 'sb'])
+    expect(parsed.active).toBe('a2')
+  })
+
+  it('stamps the owner from the row a tab was filed under', () => {
+    const orphan = { ...fileTab('a2', 'sa', 'a.ts') }
+    delete (orphan as { owner?: string }).owner
+    const parsed = parseTabList(
+      JSON.stringify({ v: 2, strips: { sa: [orphan] }, active: { sa: 'a2' }, closed: {} }),
+    )
+    expect(parsed.tabs[0]?.owner).toBe('sa')
+  })
+
+  it('still parses the v1 flat payload', () => {
+    const legacy = JSON.stringify({
+      v: 1,
+      active: 'a1',
+      tabs: [{ ...chatTab('a1', 'sa') }],
+      closed: [],
+    })
+    const parsed = parseTabList(legacy)
+    expect(parsed.tabs.map((t) => t.id)).toEqual(['a1'])
+    expect(parsed.active).toBe('a1')
   })
 })
 

@@ -1,12 +1,31 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SessionTabStrip from '../SessionTabStrip.vue'
 import { TAB_STRIP_ACTIONS_KEY, type TabStripActions } from '../../../composables/useTabStrip'
+import { fetchFolderDiff } from '../../../helpers/folderDiffCache'
 import { __resetWindowIdForTests } from '../../../helpers/windowId'
 import { useTabsStore } from '../../../stores/tabs'
 import { makeLocalStorageStub } from '../../../__tests__/helpers'
+
+// The strip's counts come from the same folder snapshot the right sidebar uses; the spec answers for
+// it so the numbers are deterministic.
+vi.mock('../../../helpers/folderDiffCache', () => ({ fetchFolderDiff: vi.fn() }))
+
+const mockDiff = fetchFolderDiff as unknown as ReturnType<typeof vi.fn>
+
+/** A unified diff the counter can read: a hunk header, then the added and removed lines. */
+const diffWith = (added: number, removed: number) => ({
+  path: 'x',
+  staged: false,
+  diff_content: [
+    'diff --git a/x b/x',
+    '@@ -1,2 +1,2 @@',
+    ...Array.from({ length: added }, () => '+added line'),
+    ...Array.from({ length: removed }, () => '-removed line'),
+  ].join('\n'),
+})
 
 const fileIn = (session: string, path: string, cwd = '/repo') => ({
   view: 'code-editor',
@@ -66,6 +85,8 @@ describe('SessionTabStrip', () => {
     installStorage()
     __resetWindowIdForTests()
     setActivePinia(createPinia())
+    mockDiff.mockReset()
+    mockDiff.mockResolvedValue(diffWith(0, 0))
   })
 
   it('renders its own session row and nothing from another session', () => {
@@ -173,5 +194,68 @@ describe('SessionTabStrip', () => {
     seedTwoSessions()
     const wrapper = mountStrip({ owner: 'sa', showSidebarToggle: false })
     expect(wrapper.find('[data-testid="session-strip-sidebar-toggle"]').exists()).toBe(false)
+  })
+
+  // The width control moved to the composer row: the strip is the title bar now.
+  it('does not carry the transcript width control', () => {
+    seedTwoSessions()
+    const wrapper = mountStrip({ owner: 'sa' })
+    expect(wrapper.find('[data-testid="session-strip-width-toggle"]').exists()).toBe(false)
+  })
+
+  it("wears the file's own +N \u2212M once the diff arrives", async () => {
+    mockDiff.mockResolvedValue(diffWith(3, 1))
+    const tabs = seedTwoSessions()
+    activateFileOf('sa')
+
+    const wrapper = mountStrip({ owner: 'sa' })
+    await flushPromises()
+
+    const counts = wrapper.findAll('[data-testid="session-tab-counts"]')
+    expect(counts).toHaveLength(1)
+    expect(counts[0]?.text()).toContain('+3')
+    expect(counts[0]?.text()).toContain('\u22121')
+    // the file is on screen, so nothing is unseen
+    expect(wrapper.find('[data-testid="session-tab-unseen"]').exists()).toBe(false)
+    // the session's own tab never wears counts
+    expect(tabs.stripOf('sa')[0]?.kind).toBe('chat')
+  })
+
+  it('stays quiet for a clean file', async () => {
+    seedTwoSessions()
+    activateFileOf('sa')
+    const wrapper = mountStrip({ owner: 'sa' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="session-tab-counts"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="session-tab-unseen"]').exists()).toBe(false)
+  })
+
+  it('squares a tab whose numbers moved while you were looking elsewhere', async () => {
+    // 1. the file is open and looked at: the mount refresh records what it saw
+    mockDiff.mockResolvedValue(diffWith(3, 1))
+    const tabs = seedTwoSessions()
+    activateFileOf('sa')
+    const wrapper = mountStrip({ owner: 'sa' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="session-tab-unseen"]').exists()).toBe(false)
+
+    // 2. the agent edits it, and the user opens another file: looking at the new tab is the gesture
+    //    that refreshes, and it finds the first file changed underneath
+    mockDiff.mockResolvedValue(diffWith(9, 4))
+    // opened in the background so the click below is the gesture that activates it
+    tabs.openInBackground({ query: fileIn('sa', 'src/other.ts') })
+    await wrapper.vm.$nextTick()
+    const fileTabs = wrapper.findAll('[data-testid="session-tab-file"]')
+    expect(fileTabs).toHaveLength(2)
+    await fileTabs[1]?.trigger('click')
+    await flushPromises()
+
+    const marks = wrapper.findAll('[data-testid="session-tab-unseen"]')
+    expect(marks).toHaveLength(1)
+    // the square belongs to the tab you are NOT on, and that tab is off screen
+    expect(wrapper.findAll('[aria-selected="true"]')).toHaveLength(1)
+    expect(wrapper.find('.session-tab.is-active [data-testid="session-tab-unseen"]').exists()).toBe(
+      false,
+    )
   })
 })

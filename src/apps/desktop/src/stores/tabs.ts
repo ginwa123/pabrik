@@ -6,8 +6,8 @@ import { createFunnel } from './tabFunnel'
 import {
   MAX_CLOSED,
   MAX_TABS,
-  TABS_VERSION,
   fallbackTitle,
+  groupPayload,
   homeTab,
   kindOf,
   ownerOf,
@@ -95,12 +95,8 @@ export const useTabsStore = defineStore('tabs', () => {
   let lastSerialized = ''
 
   function persist(): void {
-    const payload = JSON.stringify({
-      v: TABS_VERSION,
-      active: activeTabId.value,
-      tabs: tabs.value,
-      closed: closedStack.value,
-    })
+    // One list per owner: the payload mirrors the rows, the store keeps them flat.
+    const payload = JSON.stringify(groupPayload(tabs.value, activeTabId.value, closedStack.value))
     if (payload === lastSerialized) return
     lastSerialized = payload
     writeStorage(listKey(windowId.value), payload)
