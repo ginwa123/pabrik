@@ -130,10 +130,18 @@ describe('tabKeyOf', () => {
 })
 
 describe('shouldTabify', () => {
-  it('refuses the full-surface overlays', () => {
+  it('refuses the two remaining full-surface overlays', () => {
     expect(shouldTabify('/app', { view: 'gitfile', file: 'aGk=' })).toBe(false)
     expect(shouldTabify('/app', { view: 'skill', skill: 'brainstorming' })).toBe(false)
-    expect(shouldTabify('/app', { view: 'code-editor', file: 'aGk=' })).toBe(false)
+  })
+
+  it('tabifies a file opened inside a session, and its diff', () => {
+    expect(shouldTabify('/app', { view: 'code-editor', file: 'src/a.ts', session: 'sa' })).toBe(
+      true,
+    )
+    expect(
+      shouldTabify('/app', { view: 'code-editor', file: 'src/a.ts', mode: 'diff', session: 'sa' }),
+    ).toBe(true)
   })
 
   it('refuses the delete-chat event flag', () => {
@@ -295,10 +303,14 @@ describe('parseTabList', () => {
     expect(list.closed).toHaveLength(MAX_CLOSED)
   })
 
-  it('preserves a valid list unchanged', () => {
+  it('preserves a legacy list and stamps the owner its payload did not carry', () => {
     const tabs = [chatTab('tab_a', 'sa'), chatTab('tab_b', 'sb')]
     const list = parseTabList(stored(tabs, 'tab_a'))
-    expect(list.tabs).toEqual(tabs)
+    expect(list.tabs.map((t) => [t.id, t.key, t.kind, t.title])).toEqual(
+      tabs.map((t) => [t.id, t.key, t.kind, t.title]),
+    )
+    // the owner is what a v1 payload could not know: it comes from the target
+    expect(list.tabs.map((t) => t.owner)).toEqual(['sa', 'sb'])
     expect(list.active).toBe('tab_a')
   })
 })

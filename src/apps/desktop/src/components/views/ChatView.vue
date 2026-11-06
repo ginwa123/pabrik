@@ -19,6 +19,8 @@ import Bash from '../preview/Bash.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
+import SessionTabStrip from '../session/SessionTabStrip.vue'
+import { useTabsStore } from '../../stores/tabs'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
 import { centerDiffSectionId } from './chat_right_sidebar/parseUnifiedDiff'
 import type { DiffSelection } from './chat_right_sidebar/parseUnifiedDiff'
@@ -100,6 +102,18 @@ function persistSavedReviewComments(comments: SavedReviewComment[]): void {
 
 // Session ID extracted from props on mount
 const sessionId = ref('')
+
+// ── The session's own tab strip ────────────────────────────────────────────
+// The strip belongs to THIS session: its owner is the session id the URL carries, so switching
+// sessions swaps the whole row instead of appending to a shared one.
+const tabsStore = useTabsStore()
+const stripOwner = computed(() => {
+  if (!tabsStore.enabled) return ''
+  const owner = sessionId.value || props.chatId.replace(/^chat-/, '')
+  // Before the funnel has named this session in a tab there is no row to draw, and a 36px bar with
+  // no title is worse than the app bar: fall back to it until the row exists.
+  return tabsStore.stripOf(owner).length > 0 ? owner : ''
+})
 
 // State
 const messages = ref<Message[]>([])
@@ -372,8 +386,20 @@ const compactSession = async () => {
         cleanup so the ChatView stays decoupled from router + store
         concerns.
       -->
+      <SessionTabStrip
+        v-if="showHeader && !embedded && stripOwner"
+        :owner="stripOwner"
+        :title="chatName"
+        :show-sidebar-toggle="!embedded"
+        @toggle-sidebar="chatSidebar.toggle()"
+        @close="emit('close')"
+      >
+        <template #extras>
+          <slot name="app-bar-extras" />
+        </template>
+      </SessionTabStrip>
       <ChatAppBar
-        v-if="showHeader && !embedded"
+        v-else-if="showHeader && !embedded"
         :title="chatName"
         :show-sidebar-toggle="!embedded"
         :data-chat-header="chatId"
@@ -639,7 +665,10 @@ const compactSession = async () => {
                             <span
                               v-if="activeAgent === p.name"
                               class="text-micro ml-1 px-1 py-0.5 rounded"
-                              :style="{ backgroundColor: 'var(--color-violet)', color: 'var(--semantic-on-accent)' }"
+                              :style="{
+                                backgroundColor: 'var(--color-violet)',
+                                color: 'var(--semantic-on-accent)',
+                              }"
                               data-testid="agent-picker-active-badge"
                               >(active)</span
                             >
@@ -896,6 +925,7 @@ const compactSession = async () => {
           :error="codeViewerModel.error"
           :cwd="codeViewerModel.cwd"
           :line="codeViewerModel.line"
+          :diff="codeViewerModel.diff"
           @close="codeViewerModel.close()"
         />
       </div>

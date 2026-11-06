@@ -10,6 +10,9 @@ export type OpenInCodeEditorOptions = {
    * opens at line 1. Threaded through from the diff-view's `@jump-to-line` emit so the user can
    * click a line in the diff and land on that exact line in the editor. */
   line?: number
+  /**    * Open the same file on its changes: `?mode=diff`. A file and its diff are two entries in a
+   * session's strip, not one entry with a toggle. */
+  diff?: boolean
 }
 
 export type OpenInCodeEditorFn = (opts: OpenInCodeEditorOptions) => Promise<void> | void
@@ -34,6 +37,8 @@ export type CodeViewerState = {
   requestedLine: Ref<number | null>
   /** The cwd the file was opened with (never a recomputed sidebar value). */
   cwd: Ref<string>
+  /** True when this target is the file's changes rather than the file. */
+  diff: Ref<boolean>
   /** Close the viewer: clear the session and strip the URL keys. */
   close: () => void
 }
@@ -59,5 +64,6 @@ export type CodeViewerView = {
   error: string | null
   line: number | null
   cwd: string
+  diff: boolean
   close: () => void
 }

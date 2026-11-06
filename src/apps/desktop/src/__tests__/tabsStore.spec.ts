@@ -13,6 +13,13 @@ import { makeLocalStorageStub } from './helpers'
 const WINDOW_ID = 'w_testwindow'
 
 const chat = (session: string) => ({ view: 'chat', session })
+/** A file opened inside a session: the artifact tabs a session's strip holds. */
+const fileIn = (session: string, path: string, cwd = '/repo') => ({
+  view: 'code-editor',
+  file: path,
+  cwd,
+  session,
+})
 const board = (itemId: string, workspaceId = 'ws_1') => ({ view: 'workspace', workspaceId, itemId })
 
 /** Read the persisted tab list regardless of which window id keyed it. */
@@ -52,12 +59,13 @@ describe('tabs store', () => {
     setActivePinia(createPinia())
   })
 
-  it('boots with exactly one home tab, active, tab mode off by default', () => {
+  it('boots with exactly one home tab, active, tab mode on by default', () => {
     const tabs = useTabsStore()
     expect(tabs.tabCount).toBe(1)
     expect(tabs.tabs[0]?.key).toBe('home')
     expect(tabs.activeTabId).toBe(tabs.tabs[0]?.id)
-    expect(tabs.enabled).toBe(false)
+    // The strip is a session's title bar now, so it starts on.
+    expect(tabs.enabled).toBe(true)
     expect(tabs.activeTab?.query).toEqual({ view: 'chat' })
     expect(tabs.windowId).toBe(WINDOW_ID)
   })
@@ -124,35 +132,37 @@ describe('tabs store', () => {
 
   it('closing an inactive tab leaves the active one alone', () => {
     const tabs = useTabsStore()
-    const a = tabs.open({ query: chat('sa') })
-    const b = tabs.open({ query: chat('sb') })
+    tabs.open({ query: chat('sa') })
+    const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+    const b = tabs.open({ query: fileIn('sa', 'src/b.ts') })
     expect(tabs.activeTabId).toBe(b.id)
     expect(tabs.close(a.id)?.id).toBe(b.id)
     expect(tabs.activeTabId).toBe(b.id)
-    expect(tabs.tabCount).toBe(2)
-    expect(tabs.closedStack[0]?.key).toBe('chat:sa')
+    expect(tabs.stripOf('sa')).toHaveLength(2)
+    expect(tabs.closedStack[0]?.key).toBe('file:/repo:src/a.ts')
   })
 
   it('closing the active tab activates the right neighbour', () => {
     const tabs = useTabsStore()
-    const home = tabs.tabs[0] as Tab
-    const a = tabs.open({ query: chat('sa') })
-    const b = tabs.open({ query: chat('sb') })
-    const c = tabs.open({ query: chat('sc') })
-    expect(tabs.tabs.map((t) => t.id)).toEqual([home.id, a.id, b.id, c.id])
+    const pin = tabs.open({ query: chat('sa') })
+    const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+    const b = tabs.open({ query: fileIn('sa', 'src/b.ts') })
+    const c = tabs.open({ query: fileIn('sa', 'src/c.ts') })
+    expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([pin.id, a.id, b.id, c.id])
     tabs.activate(b.id)
     expect(tabs.close(b.id)?.id).toBe(c.id)
     expect(tabs.activeTabId).toBe(c.id)
-    expect(tabs.tabs.map((t) => t.id)).toEqual([home.id, a.id, c.id])
+    expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([pin.id, a.id, c.id])
   })
 
   it('closing the rightmost active tab activates the left neighbour', () => {
     const tabs = useTabsStore()
-    const a = tabs.open({ query: chat('sa') })
-    const b = tabs.open({ query: chat('sb') })
-    tabs.activate(b.id)
-    expect(tabs.close(b.id)?.id).toBe(a.id)
-    expect(tabs.activeTabId).toBe(a.id)
+    const pin = tabs.open({ query: chat('sa') })
+    const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+    tabs.activate(a.id)
+    expect(tabs.close(a.id)?.id).toBe(pin.id)
+    expect(tabs.activeTabId).toBe(pin.id)
+    expect(tabs.activeTab?.pinned).toBe(true)
   })
 
   it('closing the last remaining tab recreates a fresh home tab', () => {
@@ -171,31 +181,31 @@ describe('tabs store', () => {
     expect(tabs.tabCount).toBe(1)
   })
 
-  it('closes everything to the right, then everything else', () => {
+  it('closes everything to the right, then everything else, inside one row', () => {
     const tabs = useTabsStore()
-    const home = tabs.tabs[0] as Tab
-    const a = tabs.open({ query: chat('sa') })
-    const b = tabs.open({ query: chat('sb') })
-    const c = tabs.open({ query: chat('sc') })
+    const pin = tabs.open({ query: chat('sa') })
+    const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+    const b = tabs.open({ query: fileIn('sa', 'src/b.ts') })
+    const c = tabs.open({ query: fileIn('sa', 'src/c.ts') })
     tabs.activate(b.id)
 
     tabs.closeToRight(b.id)
-    expect(tabs.tabs.map((t) => t.id)).toEqual([home.id, a.id, b.id])
+    expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([pin.id, a.id, b.id])
     expect(tabs.activeTabId).toBe(b.id)
     expect(tabs.closedStack[0]?.id).toBe(c.id)
 
     // idempotent when there is nothing to the right
     tabs.closeToRight(b.id)
-    expect(tabs.tabs.map((t) => t.id)).toEqual([home.id, a.id, b.id])
+    expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([pin.id, a.id, b.id])
 
     tabs.closeOthers(b.id)
-    expect(tabs.tabs.map((t) => t.id)).toEqual([b.id])
+    // the row keeps its anchor: "close others" can never end the session
+    expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([pin.id, b.id])
     expect(tabs.activeTabId).toBe(b.id)
-    expect(tabs.closedStack.length).toBeGreaterThanOrEqual(3)
+    expect(tabs.closedStack.length).toBeGreaterThanOrEqual(2)
 
-    // closing others on the only tab is a harmless no-op
     tabs.closeOthers(b.id)
-    expect(tabs.tabCount).toBe(1)
+    expect(tabs.stripOf('sa')).toHaveLength(2)
   })
 
   it('reorders and keeps the active tab active', () => {
@@ -219,49 +229,49 @@ describe('tabs store', () => {
     expect(tabs.tabs.map((t) => t.key)).toEqual(['chat:sc', 'chat:sa', 'chat:sb', 'home'])
   })
 
-  it('cycles next and previous with wrapping', () => {
+  it('cycles next and previous inside the row, with wrapping', () => {
     const tabs = useTabsStore()
-    const a = tabs.open({ query: chat('sa') })
-    const b = tabs.open({ query: chat('sb') })
-    tabs.activate(a.id)
-    expect(tabs.next()?.id).toBe(b.id)
-    expect(tabs.next()?.key).toBe('home')
-    expect(tabs.prev()?.id).toBe(b.id)
+    const pin = tabs.open({ query: chat('sa') })
+    const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+    tabs.activate(pin.id)
+    expect(tabs.next()?.id).toBe(a.id)
+    expect(tabs.next()?.id).toBe(pin.id)
+    expect(tabs.prev()?.id).toBe(a.id)
+    // another session's tabs are never part of this cycle
+    tabs.open({ query: chat('sb') })
+    tabs.activate(pin.id)
+    expect(tabs.next()?.owner).toBe('sa')
   })
 
-  it('reopens the last closed tab, focusing it instead when the key is live again', () => {
+  it('reopens the last closed tab of this row, focusing it when the key is live again', () => {
     const tabs = useTabsStore()
-    const a = tabs.open({ query: chat('sa'), title: 'Chat A' })
+    tabs.open({ query: chat('sa') })
+    const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
     tabs.close(a.id)
     expect(tabs.canReopenLastClosed).toBe(true)
     const reopened = tabs.reopenLastClosed()
-    expect(reopened?.key).toBe('chat:sa')
-    expect(reopened?.title).toBe('Chat A')
+    expect(reopened?.key).toBe('file:/repo:src/a.ts')
     expect(tabs.activeTabId).toBe(reopened?.id)
     expect(tabs.closedStack).toHaveLength(0)
     expect(tabs.reopenLastClosed()).toBeNull()
 
     tabs.close(reopened?.id ?? '')
-    const live = tabs.open({ query: chat('sa') })
+    const live = tabs.open({ query: fileIn('sa', 'src/a.ts') })
     const focused = tabs.reopenLastClosed()
     expect(focused?.id).toBe(live.id)
-    expect(tabs.tabCount).toBe(2)
+    expect(tabs.stripOf('sa')).toHaveLength(2)
     expect(tabs.closedStack).toHaveLength(0)
   })
 
-  it('caps the list without evicting the active tab', () => {
+  it('caps a row without evicting its anchor or the active tab', () => {
     const tabs = useTabsStore()
+    const pin = tabs.open({ query: chat('sa') })
     for (let i = 0; i < MAX_TABS + 12; i += 1) {
-      tabs.open({ query: chat(`s${i}`) })
+      tabs.open({ query: fileIn('sa', `src/f${i}.ts`) })
     }
-    expect(tabs.tabCount).toBe(MAX_TABS)
-    const pinned = tabs.open({ query: chat('pinned') })
-    expect(tabs.tabs.some((t) => t.id === pinned.id)).toBe(true)
-    tabs.open({ query: chat('x1') })
-    tabs.open({ query: chat('x2') })
-    expect(tabs.tabCount).toBe(MAX_TABS)
-    expect(tabs.tabs.some((t) => t.id === pinned.id)).toBe(true)
-    expect(tabs.tabs.some((t) => t.id === tabs.activeTabId)).toBe(true)
+    expect(tabs.stripOf('sa')).toHaveLength(MAX_TABS)
+    expect(tabs.stripOf('sa').some((t) => t.id === pin.id)).toBe(true)
+    expect(tabs.stripOf('sa').some((t) => t.id === tabs.activeTabId)).toBe(true)
   })
 
   it('persists the list per window and reloads it', () => {
@@ -272,7 +282,7 @@ describe('tabs store', () => {
     tabs.activate(a.id)
 
     const stored = rawList()
-    expect(stored?.v).toBe(1)
+    expect(stored?.v).toBe(2)
     expect(stored?.active).toBe(a.id)
     expect(stored?.tabs.map((t) => t.key)).toEqual(tabs.tabs.map((t) => t.key))
 
@@ -313,11 +323,12 @@ describe('tabs store', () => {
 
   it('persists the enabled preference globally', () => {
     const tabs = useTabsStore()
-    expect(tabs.enabled).toBe(false)
+    expect(tabs.enabled).toBe(true)
+    tabs.setEnabled(false)
+    expect(localStorage.getItem('pabrik-tabs-enabled')).toBe('false')
     tabs.setEnabled(true)
     expect(localStorage.getItem('pabrik-tabs-enabled')).toBe('true')
     tabs.setEnabled(false)
-    expect(localStorage.getItem('pabrik-tabs-enabled')).toBe('false')
     setActivePinia(createPinia())
     expect(useTabsStore().enabled).toBe(false)
   })
@@ -331,6 +342,111 @@ describe('tabs store', () => {
     expect(tabs.activeTabId).toBe(fresh.id)
     expect(tabs.closedStack).toHaveLength(0)
     expect(rawList()?.tabs).toHaveLength(1)
+  })
+
+  describe('ownership: the strip belongs to the session', () => {
+    it('keeps two sessions in two rows that never mix', () => {
+      const tabs = useTabsStore()
+      const a = tabs.open({ query: chat('sa') })
+      const aFile = tabs.open({ query: fileIn('sa', 'src/tabs.ts') })
+      const b = tabs.open({ query: chat('sb') })
+      const bFile = tabs.open({ query: fileIn('sb', 'src/tabs.ts') })
+
+      expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([a.id, aFile.id])
+      expect(tabs.stripOf('sb').map((t) => t.id)).toEqual([b.id, bFile.id])
+      // one file, two owners: the same key, two different tabs
+      expect(aFile.key).toBe(bFile.key)
+      expect(aFile.id).not.toBe(bFile.id)
+      expect(tabs.tabs.filter((t) => t.key === aFile.key)).toHaveLength(2)
+    })
+
+    it('dedupes inside one row only', () => {
+      const tabs = useTabsStore()
+      tabs.open({ query: chat('sa') })
+      const first = tabs.open({ query: fileIn('sa', 'src/tabs.ts') })
+      const again = tabs.open({ query: fileIn('sa', 'src/tabs.ts') })
+      expect(again.id).toBe(first.id)
+      expect(tabs.stripOf('sa')).toHaveLength(2)
+
+      const other = tabs.open({ query: fileIn('sb', 'src/tabs.ts') })
+      expect(other.id).not.toBe(first.id)
+      expect(tabs.tabs.filter((t) => t.key === first.key)).toHaveLength(2)
+    })
+
+    it('gives a session its own anchor tab, and a tab gesture cannot end it', () => {
+      const tabs = useTabsStore()
+      const pin = tabs.open({ query: chat('sa') })
+      expect(pin.pinned).toBe(true)
+      expect(pin.owner).toBe('sa')
+
+      const file = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      expect(file.pinned).toBeUndefined()
+
+      expect(tabs.close(pin.id)?.id).toBe(file.id)
+      expect(tabs.stripOf('sa')).toHaveLength(2)
+      expect(tabs.closedStack).toHaveLength(0)
+
+      tabs.closeOthers(file.id)
+      expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([pin.id, file.id])
+    })
+
+    it('splits a file and its diff into two tabs of one row', () => {
+      const tabs = useTabsStore()
+      tabs.open({ query: chat('sa') })
+      const file = tabs.open({ query: fileIn('sa', 'src/deep/a.ts') })
+      const diff = tabs.open({ query: { ...fileIn('sa', 'src/deep/a.ts'), mode: 'diff' } })
+
+      expect(file.key).toBe('file:/repo:src/deep/a.ts')
+      expect(diff.key).toBe('diff:/repo:src/deep/a.ts')
+      expect(file.kind).toBe('file')
+      expect(diff.kind).toBe('diff')
+      // the tab wears the file's own name, not its path
+      expect(file.title).toBe('a.ts')
+      expect(diff.title).toBe('a.ts')
+      expect(tabs.stripOf('sa').map((t) => t.kind)).toEqual(['chat', 'file', 'diff'])
+    })
+
+    it('keeps the window row for destinations that belong to no session', () => {
+      const tabs = useTabsStore()
+      const home = tabs.tabs[0] as Tab
+      const boardTab = tabs.open({ query: board('item_7') })
+      expect(boardTab.owner).toBeUndefined()
+      expect(tabs.stripOf('').map((t) => t.id)).toEqual([home.id, boardTab.id])
+      expect(tabs.stripOf('sa')).toHaveLength(0)
+    })
+
+    it('opens into the owner the caller names, whatever the target says', () => {
+      const tabs = useTabsStore()
+      const forced = tabs.openInSession('sa', {
+        query: { view: 'code-editor', file: 'x.ts', cwd: '/repo' },
+      })
+      expect(forced.owner).toBe('sa')
+      expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([forced.id])
+      expect(tabs.stripOf('').some((t) => t.id === forced.id)).toBe(false)
+    })
+
+    it('moves the whole row when the session id is renamed', () => {
+      const tabs = useTabsStore()
+      tabs.open({ query: chat('session-1') })
+      tabs.open({ query: fileIn('session-1', 'src/a.ts') })
+      expect(tabs.renameChatTab('session-1', 'real-7')).toBe(true)
+      expect(tabs.stripOf('session-1')).toHaveLength(0)
+      expect(tabs.stripOf('real-7').map((t) => t.kind)).toEqual(['chat', 'file'])
+    })
+
+    it('does not honour a ?tab= that belongs to another session', () => {
+      const tabs = useTabsStore()
+      tabs.setEnabled(true)
+      const aFile = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      // the URL names session sb but the tab id belongs to sa's row
+      const result = tabs.syncFromTarget('/app', {
+        ...chat('sb'),
+        tab: aFile.id,
+      })
+      expect(result.query.tab).not.toBe(aFile.id)
+      expect(tabs.activeTab?.owner).toBe('sb')
+      expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([aFile.id])
+    })
   })
 
   describe('syncFromTarget (the route funnel)', () => {

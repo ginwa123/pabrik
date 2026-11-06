@@ -4,7 +4,12 @@ import * as api from '../../api'
 import type { OpenInCodeEditorFn, OpenInCodeEditorOptions } from '../../composables/useCodeEditor'
 import type { useCodeEditorSession } from '../../composables/useCodeEditorSession'
 import type { useCurrentMainView } from '../../composables/useCurrentMainView'
-import { buildAppUrl, buildTaskAppUrl, parseAppPath, type AppUrlLocation } from '../../helpers/appUrl'
+import {
+  buildAppUrl,
+  buildTaskAppUrl,
+  parseAppPath,
+  type AppUrlLocation,
+} from '../../helpers/appUrl'
 import type { useWorkspacesStore, Task } from '../../stores/workspaces'
 
 type OverlaysDeps = {
@@ -130,7 +135,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
       const next: Record<string, string> = {}
       for (const [k, v] of Object.entries(route.query)) {
         if (typeof v !== 'string' || v.length === 0) continue
-        if (k === 'file' || k === 'line' || k === 'cwd') continue
+        if (k === 'file' || k === 'line' || k === 'cwd' || k === 'mode') continue
         if (k === 'view' && v === 'code-editor') continue
         next[k] = v
       }
@@ -190,6 +195,7 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
       queryCwd: typeof q.cwd === 'string' ? q.cwd : '',
       fallbackCwd: cwd,
       lineParam: q.line,
+      modeParam: q.mode,
     })
   }
 
