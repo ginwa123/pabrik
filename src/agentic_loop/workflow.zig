@@ -1049,8 +1049,12 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 }
             }
         }
+        // The speaker runs with its own configuration, not the session's:
+        // model, and the persona that tells it whether it leads or works.
+        var group_system_prompt: []const u8 = "";
         if (group_speaker.len > 0) {
             eff = effectiveAgentForSubAgent(config.resolveEffectiveAgent(group_speaker), params.sub_agent_overrides);
+            if (config.getAgent(group_speaker)) |member| group_system_prompt = member.system_prompt;
         }
 
         // For sub-agent flow: replace `current_agent` (the session's last
@@ -1263,7 +1267,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             },
         );
 
-        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, sub_agent_system_prompt);
+        const active_agent_prompt: []const u8 = if (sub_agent_system_prompt.len > 0) sub_agent_system_prompt else group_system_prompt;
+        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, active_agent_prompt);
 
         try messagesLists.appendSlice(allocator, initialMessages);
 
