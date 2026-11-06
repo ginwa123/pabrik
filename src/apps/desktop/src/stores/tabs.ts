@@ -203,9 +203,9 @@ export const useTabsStore = defineStore('tabs', () => {
     if (touched) persist()
   }
 
-  /** Find the tab this target already has **in this row**: the canonical key first, then — only for
-   * a tab whose identity was provisional — the other reading of the same URL. Two sessions that open
-   * the same file hold two tabs, so the lookup can never be window-wide. */
+  /** Find the tab this target already has **in this row**: the canonical key first, then the other
+   * readings of the same URL. A file's unresolved spelling is provably the same file; a workspace
+   * URL's other reading is only adopted by a tab that is still provisional. */
   function findExisting(variants: string[], owner: string): Tab | null {
     const canonical = variants[0]
     if (canonical) {
@@ -214,7 +214,10 @@ export const useTabsStore = defineStore('tabs', () => {
     }
     for (const variant of variants.slice(1)) {
       const candidate = byKeyIn(owner, variant)
-      if (candidate?.provisional) return candidate
+      if (!candidate) continue
+      if (candidate.provisional || candidate.kind === 'file' || candidate.kind === 'diff') {
+        return candidate
+      }
     }
     return null
   }
