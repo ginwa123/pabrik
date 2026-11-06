@@ -248,12 +248,15 @@ export function hasTabIdentity(
   path: string,
   query: Record<string, unknown> | null | undefined,
 ): boolean {
-  if (ownerOfTarget(path, query)) return true
+  if (ownerOfTarget(path, query)) return true // a session, a task chat, a file: it has a row
   if (kanbanSettingsItemId(path)) return true
-  if (path === '/app' || path === '/app/') return true
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return true
   const view = stripTabParam(query).view ?? ''
-  return view !== ''
+  // A workspace item (a board, an agent, a folder) belongs to the window: the funnel leaves its URL
+  // exactly as the app built it, canonicalisation included.
+  if (view === 'workspace') return false
+  if (view !== '') return true
+  return path === '/app' || path === '/app/'
 }
 
 /** The owner of a file target, preferring the tab's own record. */

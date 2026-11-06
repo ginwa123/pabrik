@@ -421,6 +421,7 @@ export const useTabsStore = defineStore('tabs', () => {
     refreshFromInput,
     rekeyTab,
     activate,
+    activeId: () => activeTabId.value,
     ensureAnchor,
     open: (input) => open(input),
   })

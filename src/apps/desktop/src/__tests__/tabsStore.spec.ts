@@ -465,53 +465,61 @@ describe('tabs store', () => {
     beforeEach(() => {
       useTabsStore().setEnabled(true)
     })
-    it('creates a tab for a fresh target and names it in the URL', () => {
+    it('creates the session tab and leaves the URL as the session named it', () => {
       const tabs = useTabsStore()
       const result = tabs.syncFromTarget('/app', chat('sa'))
-      expect(result.changed).toBe(true)
-      expect(result.path).toBe('/app')
-      expect(result.query).toEqual({ view: 'chat', session: 'sa', tab: tabs.activeTabId })
+      // the session's own tab needs no ?tab= — the URL already names the session
+      expect(result.query).toEqual({ view: 'chat', session: 'sa' })
+      expect(result.changed).toBe(false)
       expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'chat:sa'])
       expect(tabs.activeTab?.key).toBe('chat:sa')
+      expect(tabs.activeTab?.pinned).toBe(true)
     })
 
-    it('is a no-op when the URL already names this target', () => {
+    it('names an artifact in the URL, and is a no-op once it does', () => {
       const tabs = useTabsStore()
-      const first = tabs.syncFromTarget('/app', chat('sa'))
-      const second = tabs.syncFromTarget('/app', { ...chat('sa'), tab: String(first.query.tab) })
+      tabs.open({ query: chat('sa') })
+      const first = tabs.syncFromTarget('/app', fileIn('sa', 'src/a.ts'))
+      expect(first.query.tab).toBe(tabs.activeTabId)
+      const second = tabs.syncFromTarget('/app', {
+        ...fileIn('sa', 'src/a.ts'),
+        tab: String(first.query.tab),
+      })
       expect(second.changed).toBe(false)
-      expect(tabs.tabCount).toBe(2)
+      expect(tabs.stripOf('sa')).toHaveLength(2)
     })
 
-    it('focuses an existing tab and normalizes the URL to its id', () => {
+    it('focuses an existing artifact and names it in the URL', () => {
       const tabs = useTabsStore()
-      const a = tabs.open({ query: chat('sa') })
-      tabs.open({ query: chat('sb') })
-      const result = tabs.syncFromTarget('/app', chat('sa'))
+      tabs.open({ query: chat('sa') })
+      const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      tabs.open({ query: fileIn('sa', 'src/b.ts') })
+      const result = tabs.syncFromTarget('/app', fileIn('sa', 'src/a.ts'))
       expect(result.query.tab).toBe(a.id)
-      expect(result.changed).toBe(true)
       expect(tabs.activeTabId).toBe(a.id)
-      expect(tabs.tabCount).toBe(3)
+      expect(tabs.stripOf('sa')).toHaveLength(3)
     })
 
-    it('repairs a ?tab= that does not name this target', () => {
+    it('repairs a ?tab= that names another tab', () => {
       const tabs = useTabsStore()
-      const stale = tabs.open({ query: chat('sa') })
-      const result = tabs.syncFromTarget('/app', { ...chat('sb'), tab: stale.id })
-      expect(result.changed).toBe(true)
+      tabs.open({ query: chat('sa') })
+      const stale = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      const result = tabs.syncFromTarget('/app', {
+        ...fileIn('sa', 'src/b.ts'),
+        tab: stale.id,
+      })
+      const created = tabs.stripOf('sa').find((t) => t.key === 'file:src/b.ts')
       expect(result.query.tab).not.toBe(stale.id)
-      const created = tabs.tabs.find((t) => t.key === 'chat:sb')
-      expect(created).toBeTruthy()
       expect(result.query.tab).toBe(created?.id)
       expect(tabs.activeTabId).toBe(created?.id)
     })
 
-    it('honours a ?tab= that names exactly this target', () => {
+    it('honours a ?tab= that names exactly this artifact', () => {
       const tabs = useTabsStore()
-      const a = tabs.open({ query: chat('sa') })
-      const b = tabs.open({ query: chat('sb') })
-      expect(tabs.activeTabId).toBe(b.id)
-      const result = tabs.syncFromTarget('/app', { ...chat('sa'), tab: a.id })
+      tabs.open({ query: chat('sa') })
+      const a = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      tabs.open({ query: fileIn('sa', 'src/b.ts') })
+      const result = tabs.syncFromTarget('/app', { ...fileIn('sa', 'src/a.ts'), tab: a.id })
       expect(result.changed).toBe(false)
       expect(tabs.activeTabId).toBe(a.id)
     })
@@ -523,7 +531,8 @@ describe('tabs store', () => {
 
       // a card click lands on its own tab — never the board's
       const result = tabs.syncFromTarget('/app', withTask, 'kanban')
-      expect(result.query.tab).not.toBe(boardTab.id)
+      // a task chat is a session: it is not named in the URL, and it never becomes the board tab
+      expect(result.query.tab).toBeUndefined()
       expect(tabs.tabCount).toBe(3)
       expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
       // the tab's stored target is the chat, so a reload restores the chat
@@ -541,29 +550,32 @@ describe('tabs store', () => {
       expect(tabs.tabCount).toBe(4)
       expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
 
-      // going back to the bare board focuses the board tab again
+      // A bare board is not a tab target: it belongs to the window, so the funnel leaves its URL
+      // exactly as the app built it (the board tab a caller opened stays open, just not focused).
       const backToBoard = tabs.syncFromTarget('/app', board('item_7'), 'kanban')
-      expect(backToBoard.query.tab).toBe(boardTab.id)
+      expect(backToBoard.query.tab).toBeUndefined()
+      expect(backToBoard.changed).toBe(false)
       expect(tabs.tabCount).toBe(4)
-      expect(tabs.activeTabId).toBe(boardTab.id)
+      expect(tabs.tabs.some((tab) => tab.id === boardTab.id)).toBe(true)
     })
 
     it('opens a separate tab for a task chat on item types that render it standalone', () => {
       const tabs = useTabsStore()
-      const itemTab = tabs.open({ query: board('item_7'), itemType: 'agent' })
+      tabs.open({ query: board('item_7'), itemType: 'agent' })
       const result = tabs.syncFromTarget(
         '/app',
         { ...board('item_7'), itemId: 'item_7/chat/task_9' },
         'agent',
       )
-      expect(result.query.tab).not.toBe(itemTab.id)
-      expect(result.changed).toBe(true)
+      expect(result.query.tab).toBeUndefined()
+      // the URL already names the task chat, so nothing is rewritten
+      expect(result.changed).toBe(false)
       expect(tabs.tabCount).toBe(3)
       expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
       // re-selecting the same task focuses it rather than adding another
       const again = tabs.syncFromTarget(
         '/app',
-        { ...board('item_7'), itemId: 'item_7/chat/task_9', tab: String(result.query.tab) },
+        { ...board('item_7'), itemId: 'item_7/chat/task_9' },
         'agent',
       )
       expect(again.changed).toBe(false)
