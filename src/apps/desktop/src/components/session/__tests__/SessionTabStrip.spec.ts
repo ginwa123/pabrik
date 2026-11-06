@@ -184,8 +184,8 @@ describe('SessionTabStrip', () => {
   it('hands the sidebar toggle and the close up to its host', async () => {
     seedTwoSessions()
     const wrapper = mountStrip({ owner: 'sa' })
-    await wrapper.find('[data-testid="session-strip-sidebar-toggle"]').trigger('click')
-    await wrapper.find('[data-testid="session-strip-close-session"]').trigger('click')
+    await wrapper.find('[data-testid="chat-app-bar-sidebar-toggle"]').trigger('click')
+    await wrapper.find('[data-testid="chat-app-bar-close"]').trigger('click')
     expect(wrapper.emitted('toggle-sidebar')).toHaveLength(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
@@ -193,7 +193,7 @@ describe('SessionTabStrip', () => {
   it('drops the sidebar toggle when the host has none to offer', () => {
     seedTwoSessions()
     const wrapper = mountStrip({ owner: 'sa', showSidebarToggle: false })
-    expect(wrapper.find('[data-testid="session-strip-sidebar-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="chat-app-bar-sidebar-toggle"]').exists()).toBe(false)
   })
 
   // The width control moved to the composer row: the strip is the title bar now.

@@ -77,7 +77,7 @@ function openDiff(): void {
     class="session-strip shrink-0 flex items-stretch"
     role="tablist"
     :aria-label="`Tabs opened in ${title}`"
-    data-testid="session-tab-strip"
+    data-testid="chat-app-bar"
     style="height: 36px; background-color: var(--semantic-sidebar-bg)"
   >
     <div class="session-strip-tabs flex items-end flex-1 min-w-0 overflow-x-auto">
@@ -142,7 +142,11 @@ function openDiff(): void {
           <path d="M6.8 1.7V4h2.5" />
         </svg>
 
-        <span class="min-w-0 flex-1 truncate">{{ tab.title }}</span>
+        <span
+          class="min-w-0 flex-1 truncate"
+          :data-testid="tab.pinned ? 'chat-app-bar-title' : undefined"
+          >{{ tab.title }}</span
+        >
 
         <span
           v-if="marks.get(tab.id)?.counts"
@@ -217,7 +221,7 @@ function openDiff(): void {
         style="color: var(--semantic-text-dim)"
         title="Toggle changes sidebar (Cmd/Ctrl+B)"
         aria-label="Toggle changes sidebar"
-        data-testid="session-strip-sidebar-toggle"
+        data-testid="chat-app-bar-sidebar-toggle"
         @click="emit('toggle-sidebar')"
       >
         ◫
@@ -229,7 +233,7 @@ function openDiff(): void {
         style="color: var(--semantic-text-dim)"
         title="Close chat"
         aria-label="Close chat"
-        data-testid="session-strip-close-session"
+        data-testid="chat-app-bar-close"
         @click="emit('close')"
       >
         ✕
