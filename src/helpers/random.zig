@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const process = @import("process.zig");
 
 /// Hex digits for ID generation
 pub const hex_digits = "0123456789abcdef";
@@ -8,16 +7,10 @@ pub const hex_digits = "0123456789abcdef";
 pub fn generateSessionId(allocator: std.mem.Allocator, io: std.Io) ![]u8 {
     const ts = std.Io.Clock.now(.real, io);
     const timestamp: i64 = ts.toSeconds();
-    // `process.getCurrentProcessId()` returns `i32` on all platforms (POSIX
-    // and Windows).
-    const pid = process.getCurrentProcessId();
-    // Use timestamp + PID + pointer for pseudo-random entropy
-    const entropy: u64 = (@as(u64, @intCast(pid)) << 32) ^ @as(u64, @intCast(timestamp));
+    // Cryptographically random entropy (SEC-11): the previous pid^timestamp
+    // scheme collided for two sessions created in the same second.
     var random_bytes: [8]u8 = undefined;
-    // std.mem.writeInt handles alignment internally — safe on any
-    // stack-allocated buffer. Avoids Zig 0.16's strict `@alignCast`
-    // panic when the buffer happens to land on a non-8-byte boundary.
-    std.mem.writeInt(u64, &random_bytes, entropy, .little);
+    io.random(&random_bytes);
 
     // Convert random bytes to hex string
     var hex_chars: [16]u8 = undefined;
