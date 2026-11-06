@@ -317,6 +317,17 @@ pub fn gitPrDiffHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, re
     }
     const base_param = query.get("base");
     const head_param = query.get("head");
+    // Reject flag-like refs to prevent argv injection (SEC-21).
+    if (base_param) |b| {
+        if (b.len > 0 and b[0] == '-') {
+            return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "base must not start with '-'" ) });
+        }
+    }
+    if (head_param) |h| {
+        if (h.len > 0 and h[0] == '-') {
+            return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeGitStatusErrorResponse(allocator, "head must not start with '-'" ) });
+        }
+    }
 
     const result = useCase(allocator, io, path_param, pr_url_param, provider_param, base_param, head_param, git_route.options(req)) catch |err| switch (err) {
         error.NotARepository => {
