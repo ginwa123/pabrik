@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agents group in one session — pabrik wireframe</title>
+<style>
+  :root {
+    --bg-page: #181616;
+    --bg-rail: #12120f;
+    --bg-panel: #1D1C19;
+    --bg-panel-2: #22211e;
+    --bg-strip: #262421;
+    --bg-active: #2e2d2a;
+    --ink: #c5c9c5;
+    --ink-muted: #a6a69c;
+    --ink-dim: #8d8d84;
+    --blue: #8ba4b0;
+    --green: #87a987;
+    --yellow: #c4b28a;
+    --red: #c4746e;
+    --accent: #8992a7;
+    --bubble: #223249;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { background: var(--bg-page); }
+
+  body {
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--ink);
+    background: var(--bg-page);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 14px; overflow-wrap: anywhere; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 0 32px 120px; }
+
+  .intro { padding: 80px 0 56px; }
+
+  .fold { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 44px; align-items: start; margin-top: 26px; }
+
+  @media (max-width: 1000px) { .fold { grid-template-columns: minmax(0, 1fr); gap: 24px; } }
+
+  h1 {
+    font-size: clamp(27px, 3.6vw, 46px);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 640;
+    max-width: 22ch;
+  }
+
+  .lead {
+    font-size: clamp(17px, 1.5vw, 21px);
+    line-height: 1.5;
+    max-width: 60ch;
+  }
+
+  .verdict {
+    background: var(--bg-panel);
+    padding: 24px 28px;
+    max-width: 62ch;
+  }
+
+  .verdict p + p { margin-top: 14px; }
+
+  .action {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 30px;
+    height: 46px;
+    padding: 0 24px;
+    border-radius: 4px;
+    background: var(--accent);
+    color: #181616;
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .action:hover, .action:focus-visible { background: #9aa3b8; }
+
+  .screen-label {
+    font-size: 15px;
+    color: var(--ink-muted);
+    margin-bottom: 12px;
+    max-width: 66ch;
+  }
+
+  .screen {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr) 322px;
+    background: var(--bg-panel);
+    overflow: hidden;
+    border-radius: 4px;
+  }
+
+  .two-up {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 24px;
+    margin-top: 48px;
+    align-items: stretch;
+  }
+
+  /* ── inside the fragments the app's own borders are allowed ── */
+  [data-ui] h2, [data-ui] .u-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  [data-ui] { color: var(--ink); }
+
+  [data-ui] .dim { color: var(--ink-muted); }
+  [data-ui] .faint { color: var(--ink-dim); }
+
+  [data-ui].rail {
+    background: var(--bg-rail);
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  [data-ui] .rail-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px 10px;
+    border-bottom: 1px solid #282727;
+  }
+
+  [data-ui] .brand { font-size: 14px; font-weight: 600; }
+
+  [data-ui] .new-chat {
+    font-size: 12px;
+    color: var(--ink-muted);
+    border: 1px solid #393836;
+    border-radius: 5px;
+    padding: 3px 8px;
+  }
+
+  [data-ui] .rail-head {
+    font-size: 12px;
+    color: var(--ink-dim);
+    padding: 12px 4px 4px;
+  }
+
+  [data-ui] .rail-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 5px;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+
+  [data-ui] .rail-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid #282727; }
+
+  [data-ui] .rail-row.on {
+    background: var(--bg-active);
+    color: var(--ink);
+  }
+
+  [data-ui] .rail-row .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  [data-ui] .stack { display: flex; }
+
+  [data-ui] .stack span {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    margin-left: -4px;
+    display: grid;
+    place-items: center;
+    font-size: 8px;
+    font-weight: 700;
+    color: #181616;
+    border: 1px solid var(--bg-rail);
+  }
+
+  [data-ui] .stack span:first-child { margin-left: 0; }
+
+  [data-ui] .av-lead { background: var(--accent); }
+  [data-ui] .av-sec { background: var(--red); }
+  [data-ui] .av-and { background: var(--green); }
+  [data-ui] .av-deep { background: var(--yellow); }
+
+  [data-ui].thread {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-page);
+    min-width: 0;
+  }
+
+  [data-ui] .thread-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    border-bottom: 1px solid #282727;
+  }
+
+  [data-ui] .thread-head .grow { flex: 1; min-width: 0; }
+
+  [data-ui] .thread-title { font-size: 14px; font-weight: 600; }
+
+  [data-ui] .thread-sub { font-size: 12px; color: var(--ink-dim); }
+
+  [data-ui] .stop {
+    font-size: 12px;
+    color: var(--ink-muted);
+    border: 1px solid #393836;
+    border-radius: 5px;
+    padding: 3px 9px;
+  }
+
+  [data-ui] .thread-body {
+    flex: 1;
+    padding: 18px 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+  }
+
+  [data-ui] .msg-you { align-self: flex-end; max-width: 88%; }
+
+  [data-ui] .msg-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+
+  [data-ui] .msg-you .msg-head { justify-content: flex-end; }
+
+  [data-ui] .av {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    font-weight: 700;
+    color: #181616;
+  }
+
+  [data-ui] .who { font-weight: 600; font-size: 12.5px; }
+
+  [data-ui] .tag {
+    font-size: 11px;
+    color: var(--ink-dim);
+    border: 1px solid #393836;
+    border-radius: 3px;
+    padding: 0 5px;
+  }
+
+  [data-ui] .tag-lead { color: var(--accent); border-color: #3d4354; }
+
+  [data-ui] .when { color: var(--ink-dim); font-size: 11px; }
+
+  [data-ui] .bubble {
+    background: var(--bubble);
+    border-radius: 10px;
+    padding: 10px 13px;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  [data-ui] .body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    max-width: 60ch;
+  }
+
+  [data-ui] .body + .body { margin-top: 8px; }
+
+  [data-ui] .board {
+    margin-top: 10px;
+    background: var(--bg-panel);
+    border-radius: 6px;
+    padding: 4px;
+    max-width: 470px;
+  }
+
+  [data-ui] .board-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    font-size: 12.5px;
+  }
+
+  [data-ui] .board-row + .board-row { border-top: 1px solid #262421; }
+
+  [data-ui] .board-row .task { flex: 1; min-width: 0; }
+
+  [data-ui] .chip {
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11.5px;
+    background: var(--bg-active);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  [data-ui] .state { font-size: 11.5px; white-space: nowrap; }
+  [data-ui] .s-work { color: var(--blue); }
+  [data-ui] .s-done { color: var(--green); }
+  [data-ui] .s-wait { color: var(--ink-dim); }
+
+  [data-ui] .steer {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 12px;
+    color: var(--yellow);
+    margin-bottom: 8px;
+  }
+
+  [data-ui] .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-top: 5px;
+    flex: none;
+  }
+
+  [data-ui] .composer {
+    padding: 12px 20px 16px;
+    border-top: 1px solid #282727;
+    background: var(--bg-panel);
+    position: relative;
+  }
+
+  [data-ui] .composer-box {
+    border: 1px solid #393836;
+    border-radius: 8px;
+    background: var(--bg-panel-2);
+    padding: 9px 11px;
+  }
+
+  [data-ui] .composer-box textarea {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    resize: none;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 13.5px;
+    line-height: 1.5;
+    height: 42px;
+    outline: none;
+  }
+
+  [data-ui] .composer-box textarea::placeholder { color: var(--ink-dim); }
+
+  [data-ui] .composer-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  [data-ui] .composer-foot .hint { flex: 1; font-size: 11.5px; color: var(--ink-dim); }
+
+  [data-ui] .btn {
+    border-radius: 5px;
+    font-size: 12.5px;
+    padding: 4px 12px;
+    height: 26px;
+    border: 1px solid #393836;
+    background: var(--bg-strip);
+    color: var(--ink);
+    font-family: inherit;
+  }
+
+  [data-ui] .btn-send { background: var(--accent); color: #181616; border-color: var(--accent); font-weight: 600; }
+
+  [data-ui] .mention {
+    position: absolute;
+    left: 20px;
+    bottom: 132px;
+    width: 274px;
+    background: var(--bg-strip);
+    border: 1px solid #393836;
+    border-radius: 7px;
+    padding: 5px;
+    display: none;
+  }
+
+  [data-ui] .mention.open { display: block; }
+
+  [data-ui] .mention-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 7px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+
+  [data-ui] .mention-row:hover { background: var(--bg-active); }
+
+  [data-ui] .mention-row .r { margin-left: auto; font-size: 11px; color: var(--ink-dim); }
+
+  [data-ui].roster {
+    background: var(--bg-panel);
+    padding: 14px 14px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  [data-ui] .roster-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid #282727;
+    padding-bottom: 9px;
+  }
+
+  [data-ui] .member {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 0;
+  }
+
+  [data-ui] .member + .member { border-top: 1px solid #262421; }
+
+  [data-ui] .member .nm { font-size: 13px; font-weight: 600; }
+  [data-ui] .member .sub { font-size: 11.5px; color: var(--ink-dim); }
+  [data-ui] .member .right { margin-left: auto; text-align: right; }
+
+  [data-ui] .route {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+
+  [data-ui] .route .node {
+    background: var(--bg-strip);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+
+  [data-ui] .route .node.you { background: var(--bubble); }
+
+  [data-ui] .budget {
+    height: 5px;
+    background: var(--bg-strip);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 9px;
+  }
+
+  [data-ui] .budget i {
+    display: block;
+    height: 100%;
+    width: 37%;
+    background: var(--accent);
+  }
+
+  [data-ui] .note {
+    font-size: 11.5px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+  }
+
+  /* the two small artifacts */
+  [data-ui].artifact {
+    background: var(--bg-panel);
+    min-height: 216px;
+    padding: 16px 18px 18px;
+    border-radius: 4px;
+  }
+
+  [data-ui] .rows { margin-top: 12px; display: flex; flex-direction: column; }
+
+  [data-ui] .list-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 9px;
+    border-radius: 5px;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+
+  [data-ui] .list-row.on { background: var(--bg-active); color: var(--ink); }
+
+  [data-ui] .list-row .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  [data-ui] .list-row .cnt { font-size: 11.5px; color: var(--ink-dim); }
+
+  [data-ui] .hop {
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 10px;
+    padding: 8px 0;
+    font-size: 12.5px;
+    align-items: baseline;
+  }
+
+  [data-ui] .hop + .hop { border-top: 1px solid #262421; }
+
+  [data-ui] .hop .from { font-weight: 600; }
+
+  [data-ui] .hop .did { color: var(--ink-muted); line-height: 1.5; }
+
+  [data-ui] .mark { border-radius: 3px; padding: 0 4px; font-size: 11.5px; background: var(--bg-strip); }
+
+  /* ── document sections ── */
+  .doc { margin-top: 96px; }
+
+  .doc > p, .doc > ol, .doc > pre { max-width: 66ch; }
+
+  .doc h2 {
+    font-size: clamp(23px, 2.4vw, 29px);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 640;
+    margin-bottom: 18px;
+  }
+
+  .doc p + p { margin-top: 16px; }
+
+  .doc ol { margin: 18px 0 0 22px; display: flex; flex-direction: column; gap: 14px; }
+
+  .doc li { padding-left: 4px; }
+
+  .doc code {
+    background: var(--bg-panel);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  .doc pre {
+    background: var(--bg-panel);
+    padding: 20px 22px;
+    border-radius: 4px;
+    overflow-x: auto;
+    line-height: 1.65;
+    margin-top: 20px;
+    color: var(--ink);
+  }
+
+  .doc pre code { background: none; padding: 0; }
+
+  .files { margin-top: 20px; max-width: 1020px; display: flex; flex-direction: column; gap: 2px; }
+
+  .files div {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 20px;
+    background: var(--bg-panel);
+    padding: 14px 18px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .files div span:first-child { color: var(--ink); overflow-wrap: anywhere; }
+
+  .files div span:last-child { color: var(--ink-muted); }
+
+  .checks { margin-top: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+  .checks div {
+    padding: 10px 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink-muted);
+    max-width: 66ch;
+  }
+
+  .checks div b { color: var(--ink); font-weight: 600; }
+
+  .provenance {
+    margin-top: 80px;
+    max-width: 68ch;
+    font-size: 15px;
+    color: var(--ink-dim);
+    line-height: 1.6;
+  }
+
+  @media (max-width: 1100px) {
+    .screen { grid-template-columns: 200px minmax(0, 1fr); }
+    [data-ui].roster { grid-column: 1 / -1; }
+  }
+
+  @media (max-width: 900px) {
+    main { padding: 0 18px 80px; }
+    .intro { padding: 48px 0 36px; }
+    .screen { grid-template-columns: minmax(0, 1fr); }
+    .screen > .rail { display: none; }
+    [data-ui] .mention { position: static; width: auto; margin-bottom: 8px; bottom: auto; }
+    .two-up { grid-template-columns: minmax(0, 1fr); }
+    .files div { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .doc { margin-top: 64px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .arrive { animation: none; }
+  }
+
+  .arrive { animation: arrive 0.18s ease-out both; }
+
+  @keyframes arrive {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <header class="intro">
+    <h1>Agents group in one session</h1>
+    <div class="fold">
+      <div>
+        <p class="lead">Four agents share one thread. The lead splits your request, an @mention hands a piece to a worker, and anything you type reaches whoever is running.</p>
+        <a class="action" href="#router">Read how a turn is routed</a>
+      </div>
+      <div class="verdict">
+        <p><b>It is buildable, and about two thirds of it already runs.</b> Every message row already records which agent wrote it, the loop already takes a per-turn agent override, and an interrupt already reaches a running agent at its next step.</p>
+        <p>What is missing is narrower than it looks: a session can hold exactly one agent, nothing in the schema says who a message is addressed to, and no agent may hand work to another agent. Those three are the whole job.</p>
+      </div>
+    </div>
+  </header>
+
+  <p class="screen-label">The screen. Left: the session list, with a group thread counted by members. Middle: one thread, every message stamped with its author. Right: the roster and the mention chain that decides who speaks next.</p>
+
+  <section class="screen" aria-label="Proposed group chat screen">
+    <aside class="rail" data-ui="group-rail" aria-label="Session list">
+      <div class="rail-top">
+        <span class="brand">pabrik</span>
+        <span class="new-chat">New chat</span>
+      </div>
+      <div class="rail-head">Pinned</div>
+      <div class="rail-row on">
+        <span class="stack" aria-hidden="true">
+          <span class="av-lead">E</span><span class="av-sec">S</span><span class="av-and">A</span><span class="av-deep">D</span>
+        </span>
+        <span class="txt">Agents group, rate limiting</span>
+      </div>
+      <div class="rail-head">Recent</div>
+      <div class="rail-row"><span class="txt">Rate limit audit</span><span class="dim">1</span></div>
+      <div class="rail-row"><span class="txt">Android sync crash</span></div>
+      <div class="rail-row"><span class="txt">Migration 116 cleanup</span></div>
+      <div class="rail-row"><span class="txt">Cache hit rate query</span></div>
+      <div class="rail-foot">
+        <div class="rail-row"><span class="txt">Documents</span><span class="dim">12</span></div>
+        <div class="rail-row"><span class="txt">pabrik, 4 members</span></div>
+      </div>
+    </aside>
+
+    <div class="thread" data-ui="group-thread">
+      <div class="thread-head">
+        <div class="grow">
+          <div class="thread-title">Agents group, rate limiting</div>
+          <div class="thread-sub">4 agents, lead Engineer, 12 turns</div>
+        </div>
+        <span class="stop">Stop</span>
+      </div>
+
+      <div class="thread-body" id="thread-body">
+        <div class="msg msg-you">
+          <div class="msg-head"><span class="when">14:02</span><span class="who">You</span></div>
+          <div class="bubble">Add rate limiting to POST /api/llm/session and open a PR. Keep it small.</div>
+        </div>
+
+        <div class="msg">
+          <div class="msg-head">
+            <span class="av av-lead" aria-hidden="true">E</span>
+            <span class="who">Engineer</span>
+            <span class="tag tag-lead">lead</span>
+            <span class="when">14:02</span>
+          </div>
+          <p class="body">Three pieces. Audit first, because the bucket design depends on what the route already exposes.</p>
+          <div class="board">
+            <div class="board-row">
+              <span class="task">Audit the route's abuse surface</span>
+              <span class="chip">@security-engineer</span>
+              <span class="state s-done">done</span>
+            </div>
+            <div class="board-row">
+              <span class="task">Token bucket in middleware + tests</span>
+              <span class="chip">@engineer</span>
+              <span class="state s-work">working</span>
+            </div>
+            <div class="board-row">
+              <span class="task">The Android client's retry path</span>
+              <span class="chip">@android-engineer</span>
+              <span class="state s-wait">waiting</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg">
+          <div class="msg-head">
+            <span class="av av-sec" aria-hidden="true">S</span>
+            <span class="who">Security Engineerr</span>
+            <span class="tag">worker</span>
+            <span class="when">14:04</span>
+          </div>
+          <p class="body">Three unauthenticated paths reach the handler, and there is no per-key counter anywhere. A per-session bucket is the cheap fix; a per-key bucket needs a table. Handing back to <span class="chip">@engineer</span>.</p>
+        </div>
+
+        <div class="msg msg-you">
+          <div class="msg-head"><span class="when">14:06</span><span class="who">You</span></div>
+          <div class="bubble">Hold on, do not restart the 8081 server while you test this.</div>
+          <div class="steer"><i class="dot"></i><span>Steering Engineer. It reads this after the current step.</span></div>
+        </div>
+
+        <div class="msg">
+          <div class="msg-head">
+            <span class="av av-lead" aria-hidden="true">E</span>
+            <span class="who">Engineer</span>
+            <span class="tag tag-lead">lead</span>
+            <span class="when">14:06</span>
+          </div>
+          <p class="body">Understood: 8081 stays up and untouched. I will test on 8080 and say so in the PR body. Picking the per-session bucket now, and handing the retry path to <span class="chip">@android-engineer</span> once the shape lands.</p>
+        </div>
+
+        <div class="msg">
+          <div class="msg-head">
+            <span class="av av-and" aria-hidden="true">A</span>
+            <span class="who">Android Engineer</span>
+            <span class="tag">worker</span>
+            <span class="when">now</span>
+          </div>
+          <p class="body dim">Reading the thread, waiting on the response shape. 24s.</p>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="steer"><i class="dot"></i><span>Engineer is mid-run. A message without a mention steers it; a mention queues work for that agent.</span></div>
+        <div class="mention" id="mention">
+          <div class="mention-row" data-name="engineer"><span class="av av-lead">E</span><span>engineer</span><span class="r">lead</span></div>
+          <div class="mention-row" data-name="security-engineer"><span class="av av-sec">S</span><span>security-engineer</span><span class="r">worker</span></div>
+          <div class="mention-row" data-name="android-engineer"><span class="av av-and">A</span><span>android-engineer</span><span class="r">worker</span></div>
+          <div class="mention-row" data-name="deepseek-auto"><span class="av av-deep">D</span><span>deepseek-auto</span><span class="r">worker</span></div>
+        </div>
+        <div class="composer-box">
+          <textarea id="composer-input" placeholder="Message the group. Type @ to hand work to one agent." aria-label="Message the group"></textarea>
+          <div class="composer-foot">
+            <span class="hint">4 agents see this thread</span>
+            <span class="btn">Stop</span>
+            <button class="btn btn-send" id="send">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="roster" data-ui="group-roster" aria-label="Agents">
+      <div class="roster-top">
+        <span class="u-title">Agents</span>
+        <span class="dim" style="font-size:12px">4 in this thread</span>
+      </div>
+
+      <div>
+        <div class="member">
+          <span class="av av-lead" aria-hidden="true">E</span>
+          <div><div class="nm">Engineer</div><div class="sub">crouton-alpha</div></div>
+          <div class="right"><div class="s-work" style="font-size:11.5px">working</div><div class="sub">2nd turn</div></div>
+        </div>
+        <div class="member">
+          <span class="av av-sec" aria-hidden="true">S</span>
+          <div><div class="nm">Security Engineerr</div><div class="sub">crouton-alpha</div></div>
+          <div class="right"><div class="s-done" style="font-size:11.5px">done</div><div class="sub">1 report</div></div>
+        </div>
+        <div class="member">
+          <span class="av av-and" aria-hidden="true">A</span>
+          <div><div class="nm">Android Engineer</div><div class="sub">crouton-alpha</div></div>
+          <div class="right"><div class="s-work" style="font-size:11.5px">reading</div><div class="sub">24s</div></div>
+        </div>
+        <div class="member">
+          <span class="av av-deep" aria-hidden="true">D</span>
+          <div><div class="nm">deepseek auto</div><div class="sub">flash</div></div>
+          <div class="right"><div class="s-wait" style="font-size:11.5px">idle</div><div class="sub">not mentioned</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="u-title" style="margin-bottom:8px">Mention chain</div>
+        <div class="route">
+          <span class="node you">you</span>
+          <span aria-hidden="true">→</span>
+          <span class="node">engineer</span>
+          <span aria-hidden="true">→</span>
+          <span class="node">security-engineer</span>
+          <span aria-hidden="true">→</span>
+          <span class="node">engineer</span>
+          <span aria-hidden="true">→</span>
+          <span class="node you">you</span>
+          <span aria-hidden="true">→</span>
+          <span class="node">android-engineer</span>
+        </div>
+        <div class="budget" aria-hidden="true"><i></i></div>
+        <p class="note" style="margin-top:7px">3 of 8 hops used. At 8 the lead closes the turn and asks you.</p>
+      </div>
+
+      <div>
+        <div class="u-title" style="margin-bottom:6px">Rules in force</div>
+        <p class="note">One writer at a time, held by the session lock. A worker speaks only when mentioned. A message from you is always delivered, mentioned or not.</p>
+      </div>
+    </aside>
+  </section>
+
+  <div class="two-up">
+    <section class="artifact" data-ui="group-list" aria-label="Session list rows">
+      <div class="u-title">How a group thread reads in the list</div>
+      <div class="rows">
+        <div class="list-row on">
+          <span class="stack" aria-hidden="true">
+            <span class="av-lead">E</span><span class="av-sec">S</span><span class="av-and">A</span><span class="av-deep">D</span>
+          </span>
+          <span class="txt">Agents group, rate limiting</span>
+          <span class="cnt">4</span>
+        </div>
+        <div class="list-row">
+          <span class="txt">Rate limit audit</span>
+          <span class="cnt">1</span>
+        </div>
+        <div class="list-row">
+          <span class="txt">Android sync crash</span>
+          <span class="cnt">1</span>
+        </div>
+      </div>
+      <p class="note" style="margin-top:10px">The member stack replaces the sub-agent badge a single-agent session already shows. Count on the right is how many agents belong to the thread, not how many are running.</p>
+    </section>
+
+    <section class="artifact" data-ui="group-route" aria-label="Turn trace">
+      <div class="u-title">One turn, as the router sees it</div>
+      <div class="rows">
+        <div class="hop"><span class="from">you</span><span class="did">Add rate limiting and open a PR.</span></div>
+        <div class="hop"><span class="from">engineer</span><span class="did">No mention of a member, so the lead answers. It writes three rows and mentions <span class="mark">@security-engineer</span>.</span></div>
+        <div class="hop"><span class="from">security-engineer</span><span class="did">Mentioned, so it runs. It ends with <span class="mark">@engineer</span>.</span></div>
+        <div class="hop"><span class="from">you</span><span class="did">No mention. Delivered to whoever is running, as a steer.</span></div>
+        <div class="hop"><span class="from">engineer</span><span class="did">Cites your correction in its next step, then mentions the next worker.</span></div>
+      </div>
+      <p class="note" style="margin-top:10px">A lead reply with no mention and no open subtask closes the turn. Eight hops without a close is also a close, and both leave the thread waiting for you.</p>
+    </section>
+  </div>
+
+  <section class="doc" id="router">
+    <h2>The turn router</h2>
+    <p>The loop already runs one iteration per model call, and each iteration already does four things in order: check for a cancellation, check for an unanswered question, drain the message queue, then resolve which agent is speaking. A group thread needs no second loop. It needs the fourth step to consult a router.</p>
+    <ol>
+      <li>Drain the queue as today. A row from you arrives as a user turn, so an interrupt needs no new delivery path at all. It is read at the top of the next iteration, which means after the tool call in flight finishes, not mid-call.</li>
+      <li>Read the newest row of the thread. If it carries an <code>addressed_to</code> mention, that agent speaks next. If it carries none, the lead speaks. If the last speaker was a worker and it mentioned nobody, the lead speaks.</li>
+      <li>Set the speaking agent through the same override slot a spawned sub-agent already uses, so the system prompt, model, temperature, reasoning effort and tool set all come from that agent's stored config.</li>
+      <li>Render the transcript with an author on every row. The agent must read the room, not its own private history, so each row arrives as <code>[Security Engineerr] …</code> and the system prompt names the author set.</li>
+      <li>Write the reply with the author's name in the <code>agent</code> column that every row already has, plus the mentions its text produced.</li>
+      <li>Count the hop. On the eighth, or on a lead reply with no mention and no open subtask, close the turn and leave the thread waiting for you.</li>
+    </ol>
+  </section>
+
+  <section class="doc">
+    <h2>What already runs</h2>
+    <p>Every message row already records its author. <code>llm_history.agent</code> is a per-row text column with a default of <code>'Agent'</code>, added in migration 6 and written from the saving call's agent name. A shared thread with four authors needs no new column to tell them apart, only a renderer that prints the value.</p>
+    <p>The loop re-reads the speaking agent from the database on every iteration and lets a per-turn override replace it. That override is how an agent's own system prompt, model and tool set reach a turn it did not start. It is the exact seam a mention router needs, and it is already wired.</p>
+    <p>An interrupt already works. The queue is a real table, ordered by creation, and the loop drains it at the top of every iteration. What it does not have is a target: a row is addressed to the session, so it always reaches whoever happens to be running.</p>
+    <p>Parallel agents already exist too, as a fan-out of up to twenty at a time, each on its own thread with the parent's session id. That is a different topology from a room, and it is worth keeping both: the fan-out for a burst of independent research, the room when the agents have to argue.</p>
+  </section>
+
+  <section class="doc">
+    <h2>A session has exactly one agent</h2>
+    <p>This is the real blocker, and it is structural rather than incidental.</p>
+    <p>The table that remembers the current agent is keyed by session id, so a session holds one name, not a roster. The loop derives a single speaking agent per iteration from that row. Handing work sideways is refused by design: the three tools that start or fan out work are stripped from every agent that is not the main one, so a worker cannot mention another worker and have it act.</p>
+    <p>A spawned agent does not even join the room. It gets a freshly minted session id and its own history rows, so nothing it writes is visible to its siblings. Requirement one, that every message is visible to every agent, fails there by construction.</p>
+    <p>Nothing in the schema carries an address either. No mention column exists anywhere in the migration chain, and the queue row is keyed by session alone. On the client, the message type has no author field at all, and the event stream deliberately drops session events for sub-agent ids, so a group view cannot even discover the other agents from the live feed.</p>
+  </section>
+
+  <section class="doc">
+    <h2>The tables it needs</h2>
+    <p>Three additions, all of them additive. No existing row is rewritten, which is why this can land without a data migration.</p>
+    <pre><code>CREATE TABLE IF NOT EXISTS session_group_members (
+    session_id  TEXT NOT NULL,
+    agent_name  TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'worker',
+    position    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (session_id, agent_name)
+);
+
+ALTER TABLE llm_history            ADD COLUMN addressed_to TEXT;
+ALTER TABLE session_queue_messages ADD COLUMN target_agent TEXT;
+ALTER TABLE sessions               ADD COLUMN group_lead   TEXT;</code></pre>
+    <p><code>addressed_to</code> holds the mention list the row produced, empty for a message that addressed nobody. <code>target_agent</code> is null for a message meant for whoever is running, and names an agent when you address one. <code>group_lead</code> on the session is what makes the router treat the thread as a room instead of a single-agent chat, and it keeps the old behaviour as the default.</p>
+  </section>
+
+  <section class="doc">
+    <h2>What can go wrong</h2>
+    <ol>
+      <li><b>Agents that mention each other forever.</b> Two workers can hand the same task back and forth and burn tokens with no progress. The hop budget on the session is the stop, and the lead closing the turn is the escape.</li>
+      <li><b>A room costs more than one session does.</b> Every agent reads the whole thread, so a turn re-sends the text of every author. The compaction path already exists and already runs on a threshold; group threads need a lower one and a summary the whole room shares.</li>
+      <li><b>An agent that believes it wrote the others.</b> If the transcript is rendered as one undifferentiated assistant history, every worker will answer for work it did not do. Author stamps on every row and a system prompt that names the roster are the fix, not a nicety.</li>
+      <li><b>Names with spaces.</b> Three of the agents in this workspace are named with a space in them. The composer's mention matcher only takes a word character run, so it cannot see <code>@Security Engineerr</code>. Resolve mentions against the roster by longest match, or give each member a slug, and keep the display name for the bubble.</li>
+      <li><b>Two agents writing at once.</b> The session lock exists and is what an HTTP run already takes. A group thread has to take it per turn, not per session, or the second agent blocks the first one's thread for the whole run.</li>
+      <li><b>A worker that stops caring.</b> A mention that nobody answers leaves the thread hanging with no state. The roster needs a per-member status that is read from the run, not inferred by the UI.</li>
+    </ol>
+  </section>
+
+  <section class="doc">
+    <h2>Files an implementation touches</h2>
+    <div class="files">
+      <div><span>src/migrations/migration_137.zig</span><span>the membership table and the three columns, additive, with a down path that drops only what it added</span></div>
+      <div><span>src/agentic_loop/group_router.zig</span><span>new: owns the mention match, the next speaker, the hop count and the close condition. Pure functions over the newest row and the roster, so it tests without a database</span></div>
+      <div><span>src/agentic_loop/workflow.zig</span><span>one branch at the override site: a group session takes the next speaker from the router instead of the session row</span></div>
+      <div><span>src/agentic_loop/prompts_build_messages_for_agent_prompt.zig</span><span>author stamps on history rows, plus the roster block that tells an agent who else is in the room</span></div>
+      <div><span>src/agentic_loop/insert_queue_message.zig, get_queue_message.zig</span><span>carry and return target_agent, and let the router pass over a row aimed at someone else</span></div>
+      <div><span>src/headless/group.zig</span><span>a headless entry point, so a run can be driven without a server: send one message as one named member and read the resulting thread as JSON on stdout</span></div>
+      <div><span>.../views/chat_view/ChatMessageRow.vue</span><span>an author line and an avatar on assistant rows, from a field the message type does not have today</span></div>
+      <div><span>.../views/chat_view/GroupRoster.vue</span><span>new: members, roles, live status, the mention chain and the hop budget</span></div>
+    </div>
+  </section>
+
+  <section class="doc">
+    <h2>Checks</h2>
+    <div class="checks">
+      <div><b>lint.mjs</b>: 0 FAIL, 0 WARN. The source scan passes; the numbers below come from the rendered page.</div>
+      <div><b>inspect.mjs</b>: 1 FAIL and 2 WARN across 1440, 768 and 390. All three are named below with their reason rather than switched off with an allow flag.</div>
+      <div><b>still-page</b>: a wireframe of an app screen is a document, not a landing page. The only motion is the one the product itself would have, a message arriving when you send one, and it is dropped under a reduced-motion preference. Animating the document to clear the meter would fake what the meter is for.</div>
+      <div><b>no-footage, no-real-pictures</b>: an internal chat screen carries no photography. The picture floor is met by interface fragments marked as such, which the inspector counts for software.</div>
+      <div><b>Live in the frame</b>: the composer opens the member list on <code>@</code>, a click inserts the mention, and Send appends your message to the thread. Everything else on the page is a still.</div>
+      <div><b>Data</b>: the four agents, their models and their names are the ones configured in this workspace. The thread, the subtasks and the timings are written for the wireframe.</div>
+    </div>
+  </section>
+
+  <p class="provenance">Wireframe, not a shipped screen. The rail, the thread and the composer follow the desktop app's own layout at 236 px and 322 px, on its Kanagawa Dragon tokens. The agent panel, the mention chain and the hop budget are new. Every file and line reference on this page was read in this worktree.</p>
+
+</main>
+
+<script>
+  const input = document.getElementById('composer-input');
+  const mention = document.getElementById('mention');
+  const thread = document.getElementById('thread-body');
+  const send = document.getElementById('send');
+
+  const closeMention = () => mention.classList.remove('open');
+
+  input.addEventListener('input', () => {
+    const before = input.value.slice(0, input.selectionStart);
+    mention.classList.toggle('open', /@[\w-]*$/.test(before));
+  });
+
+  mention.addEventListener('click', (event) => {
+    const row = event.target.closest('.mention-row');
+    if (!row) return;
+    const name = row.dataset.name;
+    const caret = input.selectionStart;
+    const before = input.value.slice(0, caret).replace(/@[\w-]*$/, '@' + name + ' ');
+    input.value = before + input.value.slice(caret);
+    input.focus();
+    closeMention();
+  });
+
+  send.addEventListener('click', () => {
+    const text = input.value.trim();
+    if (!text) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'msg msg-you arrive';
+    wrap.innerHTML = '<div class="msg-head"><span class="when">now</span><span class="who">You</span></div><div class="bubble"></div>';
+    wrap.querySelector('.bubble').textContent = text;
+    thread.appendChild(wrap);
+    input.value = '';
+    closeMention();
+    thread.scrollTop = thread.scrollHeight;
+  });
+</script>
+</body>
+</html>
