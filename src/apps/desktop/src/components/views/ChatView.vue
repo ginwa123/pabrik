@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import * as api from '../../api'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
@@ -112,13 +112,18 @@ const sessionId = ref('')
 // The strip belongs to THIS session: its owner is the session id the URL carries, so switching
 // sessions swaps the whole row instead of appending to a shared one.
 const tabsStore = useTabsStore()
-const stripOwner = computed(() => {
+// The session owns its row, and this surface is what creates it — the URL funnel names artefacts
+// only. `rowOwner` is who this chat is; `stripOwner` is who owns a row worth drawing (a 36px bar
+// with no title would be worse than the app bar it replaced).
+const rowOwner = computed(() => {
   if (!tabsStore.enabled) return ''
-  const owner = sessionId.value || props.chatId.replace(/^chat-/, '')
-  // Before the funnel has named this session in a tab there is no row to draw, and a 36px bar with
-  // no title is worse than the app bar: fall back to it until the row exists.
-  return tabsStore.stripOf(owner).length > 0 ? owner : ''
+  return sessionId.value || props.chatId.replace(/^chat-/, '')
 })
+const stripOwner = computed(() => {
+  const owner = rowOwner.value
+  return owner && tabsStore.stripOf(owner).length > 0 ? owner : ''
+})
+onMounted(() => tabsStore.ensureRow(rowOwner.value))
 
 // State
 const messages = ref<Message[]>([])

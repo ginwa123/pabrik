@@ -541,10 +541,9 @@ onMounted(() => {
 // had; no immediate run, matching the old watcher).
 async function syncCwdScope(next: string, prev: string) {
   if (next === prev || disposed) return
-  // Initial '' → dir resolution is NOT a scope change: fresh mounts already waited for cwd in
-  // newSession, and restored sessions re-attach by id (cwd-independent). Dropping here is what
-  // wiped restored sessions on every chat return ("always a new term").
-  if (!prev) return
+  // '' on either side is NOT a scope change: the mount resolving, or the chat being torn down.
+  // Dropping here is what wiped restored sessions on every chat return ("always a new term").
+  if (!prev || !next) return
   // Mount-time resolution grace (git worktree '' → session → worktree
   // flips): ignore dir → dir changes inside the grace window, only a
   // settled scope change restarts shells.
@@ -587,10 +586,9 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
   if (hasSessionKey()) {
-    // Persistent mode: the server keeps the shells alive; only record
-    // the ids so the next mount re-attaches (LRU eviction bounds the
-    // registry server-side).
-    saveStored()
+    // The server keeps the shells alive; record the ids so the next mount re-attaches. An empty
+    // live list means a cwd scope change cleared it on the way out, not that the user closed them.
+    if (sessions.value.length > 0) saveStored()
   } else {
     const ids = sessions.value.map((s) => s.id)
     for (const id of ids) void deleteTerminalSession(id).catch(() => {})

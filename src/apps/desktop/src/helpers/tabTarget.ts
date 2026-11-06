@@ -248,14 +248,14 @@ export function hasTabIdentity(
   path: string,
   query: Record<string, unknown> | null | undefined,
 ): boolean {
-  if (ownerOfTarget(path, query)) return true // a session, a task chat, a file: it has a row
+  // Only ARTIFACTS are named in the URL (`?tab=` says which file a session is showing). A session's
+  // own row is created by the surface that shows the session — see `tabsStore.ensureRow` — because
+  // rewriting a chat URL on arrival re-renders what is underneath it.
+  const view = stripTabParam(query).view ?? ''
+  if (view === CODE_EDITOR_VIEW) return true
   if (kanbanSettingsItemId(path)) return true
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return true
-  const view = stripTabParam(query).view ?? ''
-  // A workspace item (a board, an agent, a folder) belongs to the window: the funnel leaves its URL
-  // exactly as the app built it, canonicalisation included.
-  if (view === 'workspace') return false
-  if (view !== '') return true
+  if (view !== '') return false
   return path === '/app' || path === '/app/'
 }
 

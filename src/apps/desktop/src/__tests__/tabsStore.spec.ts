@@ -448,16 +448,17 @@ describe('tabs store', () => {
 
     it('does not honour a ?tab= that belongs to another session', () => {
       const tabs = useTabsStore()
-      tabs.setEnabled(true)
+      tabs.open({ query: chat('sa') })
       const aFile = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      tabs.open({ query: chat('sb') })
       // the URL names session sb but the tab id belongs to sa's row
       const result = tabs.syncFromTarget('/app', {
-        ...chat('sb'),
+        ...fileIn('sb', 'src/other.ts'),
         tab: aFile.id,
       })
       expect(result.query.tab).not.toBe(aFile.id)
-      expect(tabs.activeTab?.owner).toBe('sb')
-      expect(tabs.stripOf('sa').map((t) => t.id)).toEqual([aFile.id])
+      expect(tabs.stripOf('sa').map((t) => t.id)).toContain(aFile.id)
+      expect(tabs.stripOf('sb').map((t) => t.key)).toEqual(['chat:sb', 'file:src/other.ts'])
     })
   })
 
@@ -465,15 +466,13 @@ describe('tabs store', () => {
     beforeEach(() => {
       useTabsStore().setEnabled(true)
     })
-    it('creates the session tab and leaves the URL as the session named it', () => {
+    it('leaves a chat target alone: its row belongs to the surface that shows it', () => {
       const tabs = useTabsStore()
       const result = tabs.syncFromTarget('/app', chat('sa'))
-      // the session's own tab needs no ?tab= — the URL already names the session
       expect(result.query).toEqual({ view: 'chat', session: 'sa' })
       expect(result.changed).toBe(false)
-      expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'chat:sa'])
-      expect(tabs.activeTab?.key).toBe('chat:sa')
-      expect(tabs.activeTab?.pinned).toBe(true)
+      expect(tabs.tabCount).toBe(1)
+      expect(tabs.stripOf('sa')).toHaveLength(0)
     })
 
     it('names an artifact in the URL, and is a no-op once it does', () => {
@@ -524,106 +523,28 @@ describe('tabs store', () => {
       expect(tabs.activeTabId).toBe(a.id)
     })
 
-    it('gives every kanban task chat its own tab, leaving the board tab open', () => {
+    it('leaves a task chat row to the surface that shows it', () => {
       const tabs = useTabsStore()
       const boardTab = tabs.open({ query: board('item_7'), itemType: 'kanban' })
       const withTask = { ...board('item_7'), itemId: 'item_7/chat/task_9' }
 
-      // a card click lands on its own tab — never the board's
+      // The URL names artefacts; a session's row is created by the surface that shows the session.
       const result = tabs.syncFromTarget('/app', withTask, 'kanban')
-      // a task chat is a session: it is not named in the URL, and it never becomes the board tab
       expect(result.query.tab).toBeUndefined()
-      expect(tabs.tabCount).toBe(3)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-      // the tab's stored target is the chat, so a reload restores the chat
-      expect(tabs.activeTab?.query).toEqual(withTask)
-      // ...and the board tab is untouched and still open
-      expect(tabs.tabs.find((t) => t.id === boardTab.id)?.query).toEqual(board('item_7'))
+      expect(tabs.stripOf('task_9')).toHaveLength(0)
 
-      // a second card is a second tab
-      tabs.syncFromTarget('/app', { ...board('item_7'), itemId: 'item_7/chat/task_10' }, 'kanban')
-      expect(tabs.tabCount).toBe(4)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_10')
-
-      // re-selecting one of them focuses that tab rather than adding another
-      tabs.syncFromTarget('/app', withTask, 'kanban')
-      expect(tabs.tabCount).toBe(4)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-
-      // A bare board is not a tab target: it belongs to the window, so the funnel leaves its URL
-      // exactly as the app built it (the board tab a caller opened stays open, just not focused).
-      const backToBoard = tabs.syncFromTarget('/app', board('item_7'), 'kanban')
-      expect(backToBoard.query.tab).toBeUndefined()
-      expect(backToBoard.changed).toBe(false)
-      expect(tabs.tabCount).toBe(4)
-      expect(tabs.tabs.some((tab) => tab.id === boardTab.id)).toBe(true)
-    })
-
-    it('opens a separate tab for a task chat on item types that render it standalone', () => {
-      const tabs = useTabsStore()
-      tabs.open({ query: board('item_7'), itemType: 'agent' })
-      const result = tabs.syncFromTarget(
-        '/app',
-        { ...board('item_7'), itemId: 'item_7/chat/task_9' },
-        'agent',
-      )
-      expect(result.query.tab).toBeUndefined()
-      // the URL already names the task chat, so nothing is rewritten
-      expect(result.changed).toBe(false)
-      expect(tabs.tabCount).toBe(3)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-      // re-selecting the same task focuses it rather than adding another
-      const again = tabs.syncFromTarget(
-        '/app',
-        { ...board('item_7'), itemId: 'item_7/chat/task_9' },
-        'agent',
-      )
-      expect(again.changed).toBe(false)
-      expect(tabs.tabCount).toBe(3)
-    })
-
-    it('needs no adoption for a kanban task chat — the cold-boot key is canonical', () => {
-      const tabs = useTabsStore()
-      // the tree has not loaded yet → the type is unknown → task-level identity
-      const first = tabs.syncFromTarget('/app', {
-        ...board('item_7'),
-        itemId: 'item_7/chat/task_9',
-      })
-      expect(tabs.tabCount).toBe(2)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-
-      // learning the type is a no-op: same tab, same key, no re-key, no duplicate
-      const second = tabs.syncFromTarget(
-        '/app',
-        { ...board('item_7'), itemId: 'item_7/chat/task_9' },
-        'kanban',
-      )
-      expect(second.query.tab).toBe(first.query.tab)
-      expect(tabs.tabCount).toBe(2)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-    })
-
-    it('adopts a cold-boot tab once the type is known (design still shares the item tab)', () => {
-      const tabs = useTabsStore()
-      // the tree has not loaded yet → the type is unknown → task-level identity
-      const first = tabs.syncFromTarget('/app', {
-        ...board('item_7'),
-        itemId: 'item_7/chat/task_9',
-      })
-      expect(tabs.tabCount).toBe(2)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-
-      // design renders its chat INSIDE the canvas tab, so the provisional tab is
-      // re-keyed onto the item's identity in place — never duplicated
-      const second = tabs.syncFromTarget(
-        '/app',
-        { ...board('item_7'), itemId: 'item_7/chat/task_9' },
-        'design',
-      )
-      expect(second.query.tab).toBe(first.query.tab)
-      expect(tabs.tabCount).toBe(2)
-      expect(tabs.activeTab?.key).toBe('ws:ws_1:item_7')
-      expect(tabs.tabs.some((t) => t.key === 'ws:ws_1:item_7:chat:task_9')).toBe(false)
+      // …and when that surface mounts, the row is there, anchor first, and it is its own row.
+      tabs.ensureRow('task_9')
+      const row = tabs.stripOf('task_9')
+      expect(row.map((t) => t.kind)).toEqual(['chat'])
+      expect(row[0]?.pinned).toBe(true)
+      expect(row[0]?.key).toBe('chat:task_9')
+      // a second task is a second row
+      tabs.ensureRow('task_10')
+      expect(tabs.stripOf('task_9')).toHaveLength(1)
+      expect(tabs.stripOf('task_10')).toHaveLength(1)
+      // the board is the window's, untouched
+      expect(tabs.tabs.some((t) => t.id === boardTab.id)).toBe(true)
     })
 
     it('never touches the URL of an overlay view and creates no tab', () => {

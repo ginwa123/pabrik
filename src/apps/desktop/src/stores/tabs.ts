@@ -100,6 +100,16 @@ export const useTabsStore = defineStore('tabs', () => {
     persist()
   }
 
+  /**    * The session's row, created by the surface that shows it: the anchor first, and focused when it
+   * is new. ChatView calls this on mount, so a deep link into a file still has a way back. */
+  function ensureRow(owner: string): void {
+    if (!owner) return
+    const before = stripOf(owner).length
+    ensureAnchor(owner)
+    const anchor = stripOf(owner).find((tab) => tab.pinned)
+    if (anchor && (stripOf(owner).length !== before || !activeTabId.value)) activate(anchor.id)
+  }
+
   function byKeyIn(owner: string, key: string): Tab | null {
     return keyIn(tabs.value, owner, key)
   }
@@ -527,5 +537,6 @@ export const useTabsStore = defineStore('tabs', () => {
     byKey,
     byKeyIn,
     ensureAnchor,
+    ensureRow,
   }
 })

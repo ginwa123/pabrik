@@ -326,7 +326,8 @@ describe('path-form targets', () => {
     expect(ownerOfTarget('/app/ws_1/chat/ses_9', {})).toBe('ses_9')
     expect(tabKeyOf('/app/ws_1/chat/ses_9', {})).toBe('chat:ses_9')
     expect(kindOf('/app/ws_1/chat/ses_9', {})).toBe('chat')
-    expect(hasTabIdentity('/app/ws_1/chat/ses_9', {})).toBe(true)
+    // the row is ChatView's to create; the URL names artefacts only, so the funnel leaves this alone
+    expect(hasTabIdentity('/app/ws_1/chat/ses_9', {})).toBe(false)
   })
 
   it('gives a project chat the task it names', () => {
