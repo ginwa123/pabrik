@@ -5,11 +5,13 @@ import {
   TABS_VERSION,
   fallbackTitle,
   groupPayload,
+  hasTabIdentity,
   homeTab,
   isBackgroundOpenEvent,
   kindOf,
   migrateLegacySettingsTab,
   newTabId,
+  ownerOfTarget,
   parseTabList,
   shouldTabify,
   stripTabParam,
@@ -318,6 +320,29 @@ describe('parseTabList', () => {
   })
 })
 
+describe('path-form targets', () => {
+  it('gives a /app/{ws}/chat/{sid} URL the session it names', () => {
+    expect(ownerOfTarget('/app/ws_1/chat/ses_9', {})).toBe('ses_9')
+    expect(tabKeyOf('/app/ws_1/chat/ses_9', {})).toBe('chat:ses_9')
+    expect(kindOf('/app/ws_1/chat/ses_9', {})).toBe('chat')
+    expect(hasTabIdentity('/app/ws_1/chat/ses_9', {})).toBe(true)
+  })
+
+  it('gives a project chat the task it names', () => {
+    expect(ownerOfTarget('/app/ws_1/projects/item_7/chat/task_9', {})).toBe('task_9')
+    expect(tabKeyOf('/app/ws_1/projects/item_7/chat/task_9', {})).toBe('chat:task_9')
+  })
+
+  it('keys a project settings page', () => {
+    expect(tabKeyOf('/app/ws_1/projects/item_7/settings', {})).toBe('ks:item_7')
+  })
+
+  it('leaves a document page without an identity, so it never becomes a home tab', () => {
+    expect(ownerOfTarget('/app/ws_1/doc/doc_7', {})).toBe('')
+    expect(hasTabIdentity('/app/ws_1/doc/doc_7', {})).toBe(false)
+  })
+})
+
 describe('groupPayload / parseTabList (the per-owner payload)', () => {
   const chatTab = (id: string, session: string): Tab => ({
     id,
@@ -332,7 +357,7 @@ describe('groupPayload / parseTabList (the per-owner payload)', () => {
   })
   const fileTab = (id: string, session: string, file: string): Tab => ({
     id,
-    key: `file:/repo:${file}`,
+    key: `file:${file}`,
     kind: 'file',
     title: file,
     path: '/app',

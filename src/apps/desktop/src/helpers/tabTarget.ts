@@ -1,4 +1,5 @@
 /** Pure helpers for browser-style tabs. */
+import { parseAppPath } from './appUrl'
 import { parseItemIdWithChat } from './buildItemIdWithChat'
 
 export type TabQuery = Record<string, string>
@@ -198,14 +199,30 @@ export function isDiffQuery(query: Record<string, unknown> | null | undefined): 
   return stripTabParam(query).mode === DIFF_MODE
 }
 
-/** A file's key. The cwd is part of it: the same relative path in two worktrees is two files. */
-export function fileTabKey(cwd: string, file: string): string {
-  return `file:${cwd}:${file}`
+/**    * A file's key: the path only. The editor URL carries no `cwd` on purpose, so a key with the cwd
+ * would make an in-app open and a deep link two tabs for one file. */
+export function fileTabKey(file: string): string {
+  return `file:${file}`
 }
 
 /** The same file's changes, as its own tab — one tab of each kind per file. */
-export function diffTabKey(cwd: string, file: string): string {
-  return `diff:${cwd}:${file}`
+export function diffTabKey(file: string): string {
+  return `diff:${file}`
+}
+
+/** Targets the app navigates to by PATH: `/app/{ws}/chat/{sid}` is a session with no `view`. */
+export function pathTarget(path: string): { owner: string; key: string; kind: TabKind } | null {
+  const parsed = parseAppPath(path)
+  if (parsed.kind === 'chat') {
+    return { owner: parsed.sessionId, key: `chat:${parsed.sessionId}`, kind: 'chat' }
+  }
+  if (parsed.kind === 'projectChat') {
+    return { owner: parsed.chatTaskId, key: `chat:${parsed.chatTaskId}`, kind: 'chat' }
+  }
+  if (parsed.kind === 'projectSettings') {
+    return { owner: '', key: `ks:${parsed.projectId}`, kind: 'kanban-settings' }
+  }
+  return null
 }
 
 /** The owner (session id) a target belongs to, or `''` for the window's own row. */
@@ -214,11 +231,13 @@ export function ownerOfTarget(
   query: Record<string, unknown> | null | undefined,
 ): string {
   const q = stripTabParam(query)
-  const view = q.view || 'chat'
-  if (view === 'chat') return q.session || ''
+  const view = q.view ?? ''
+  if (view === 'chat') return q.session || pathTarget(path)?.owner || ''
   if (view === 'task') return q.task || q.session || ''
   if (view === CODE_EDITOR_VIEW) return q.session || ''
   if (view === 'workspace') return parseItemIdWithChat(q.itemId ?? '').chatTaskId || ''
+  // No `view` at all: a path-form destination (`/app/{ws}/chat/{sid}`) still names a session.
+  if (!view) return pathTarget(path)?.owner ?? ''
   return ''
 }
 
@@ -251,11 +270,13 @@ export function tabKeyOf(
   if ((q.view ?? '') === CODE_EDITOR_VIEW) {
     const file = q.file ?? ''
     if (!file) return 'file:'
-    return isDiffQuery(q) ? diffTabKey(q.cwd ?? '', file) : fileTabKey(q.cwd ?? '', file)
+    return isDiffQuery(q) ? diffTabKey(file) : fileTabKey(file)
   }
   const kanbanSettings = kanbanSettingsItemId(path)
   if (kanbanSettings) return `ks:${kanbanSettings}`
   if (path === SETTINGS_PATH || path === `${SETTINGS_PATH}/`) return 'settings'
+  const byPath = pathTarget(path)
+  if (byPath && byPath.owner) return byPath.key
 
   const view = q.view || 'chat'
   if (view === 'chat') return q.session ? `chat:${q.session}` : 'home'
@@ -324,6 +345,8 @@ export function kindOf(path: string, query: Record<string, unknown> | null | und
   const q = stripTabParam(query)
   const view = q.view || 'chat'
   if (view === CODE_EDITOR_VIEW) return isDiffQuery(q) ? 'diff' : 'file'
+  const byPath = pathTarget(path)
+  if (byPath) return byPath.kind
   if (view === 'chat') return q.session ? 'chat' : 'home'
   if (view === 'task') return q.task ? 'chat' : 'home'
   if (view === 'workspace') return 'workspace'

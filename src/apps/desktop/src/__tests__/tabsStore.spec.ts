@@ -146,7 +146,7 @@ describe('tabs store', () => {
     expect(tabs.close(a.id)?.id).toBe(b.id)
     expect(tabs.activeTabId).toBe(b.id)
     expect(tabs.stripOf('sa')).toHaveLength(2)
-    expect(tabs.closedStack[0]?.key).toBe('file:/repo:src/a.ts')
+    expect(tabs.closedStack[0]?.key).toBe('file:src/a.ts')
   })
 
   it('closing the active tab activates the right neighbour', () => {
@@ -257,7 +257,7 @@ describe('tabs store', () => {
     tabs.close(a.id)
     expect(tabs.canReopenLastClosed).toBe(true)
     const reopened = tabs.reopenLastClosed()
-    expect(reopened?.key).toBe('file:/repo:src/a.ts')
+    expect(reopened?.key).toBe('file:src/a.ts')
     expect(tabs.activeTabId).toBe(reopened?.id)
     expect(tabs.closedStack).toHaveLength(0)
     expect(tabs.reopenLastClosed()).toBeNull()
@@ -408,8 +408,8 @@ describe('tabs store', () => {
       const file = tabs.open({ query: fileIn('sa', 'src/deep/a.ts') })
       const diff = tabs.open({ query: { ...fileIn('sa', 'src/deep/a.ts'), mode: 'diff' } })
 
-      expect(file.key).toBe('file:/repo:src/deep/a.ts')
-      expect(diff.key).toBe('diff:/repo:src/deep/a.ts')
+      expect(file.key).toBe('file:src/deep/a.ts')
+      expect(diff.key).toBe('diff:src/deep/a.ts')
       expect(file.kind).toBe('file')
       expect(diff.kind).toBe('diff')
       // the tab wears the file's own name, not its path

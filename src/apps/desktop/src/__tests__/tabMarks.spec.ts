@@ -5,7 +5,7 @@ import { cwdOf, fileOf, markOf, recordSeen, type TabCounts } from '../helpers/ta
 
 const tab = (file: string, extra: Record<string, string> = {}): Tab => ({
   id: `tab_${file}`,
-  key: `file:/repo:${file}`,
+  key: `file:${file}`,
   kind: 'file',
   title: file,
   path: '/app',

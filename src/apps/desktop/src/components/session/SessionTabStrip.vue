@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUpdated } from 'vue'
 import { useTabsStore } from '../../stores/tabs'
 import { useInjectTabStripActions } from '../../composables/useTabStrip'
 import { useTabMarks } from '../../composables/useTabMarks'
@@ -55,6 +55,18 @@ function close(tabId: string): void {
   else tabsStore.close(tabId)
   void refreshMarks()
 }
+
+// The pinned tab wears the session's name — the strip IS the session's title bar, and a tab that
+// says "Chat" while the rail says the real name is the one thing this row must never do.
+function syncTitle(): void {
+  const pinned = row.value.find((tab) => tab.pinned)
+  if (pinned && props.title && pinned.title !== props.title) {
+    tabsStore.setTabTitle(pinned.id, props.title)
+  }
+}
+
+onMounted(syncTitle)
+onUpdated(syncTitle)
 
 function openDiff(): void {
   if (!actions || !activeTab.value) return
