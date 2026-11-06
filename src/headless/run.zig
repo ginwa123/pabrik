@@ -161,7 +161,12 @@ pub fn run(
         Watch.lock();
         const finished = Watch.done;
         Watch.unlock();
-        if (finished) break;
+        if (finished) {
+            // A group keeps talking after its first `stop`, so the run is
+            // over when the loop releases the session's worker row — the same
+            // signal for a one-agent session.
+            if (!workflow.isWorkerRunning(allocator, backend.ctx.db, session_id)) break;
+        }
 
         if (deadline_ms) |d| {
             if (std.Io.Timestamp.now(io, .awake).toMilliseconds() >= d) {

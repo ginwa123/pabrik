@@ -1517,6 +1517,33 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     continue;
                 }
 
+                // A group hands the turn on with no queued message: the row
+                // just written names who it addresses. The hop budget, read by
+                // the router, is what stops the room talking to itself.
+                if (!copy_is_sub_agent and asked == null) {
+                    if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
+                        var resolved = speaker;
+                        defer resolved.deinit(allocator);
+                        switch (resolved.decision) {
+                            .speak => |name| {
+                                if (!std.mem.eql(u8, name, effective_agent_name)) {
+                                    logger.infoFmt(
+                                        "GROUP: handing the turn to '{s}' session_id={s} hops={d}",
+                                        .{ name, copy_session_id, resolved.hops },
+                                    );
+                                    continue;
+                                }
+                            },
+                            .close => |reason| {
+                                logger.infoFmt(
+                                    "GROUP: nothing left to say session_id={s} reason={s}",
+                                    .{ copy_session_id, @tagName(reason) },
+                                );
+                            },
+                        }
+                    }
+                }
+
                 if (asked != null) {
                     logger.infoFmt(
                         "[CHECKPOINT] awaiting_user — ending the turn session_id={s} loop_counter={d}",
