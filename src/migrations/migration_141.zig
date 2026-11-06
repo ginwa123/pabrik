@@ -327,6 +327,8 @@ test "Migration141 keeps every row and its children when foreign keys are enforc
         try countRows(&ctx, "SELECT COUNT(*) FROM skill_metadata WHERE skill_id = 'sk_4'"),
     );
 
+    if (dialect.is_postgres) return;
+
     var check = try ctx.db.query(testing.allocator, "PRAGMA foreign_key_check", &[_][]const u8{});
     defer check.deinit();
     try testing.expect((try check.next()) == null);
