@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The "Documents" sidebar section — a collapsible tree.
-import { computed, onMounted, onUpdated, ref } from 'vue'
+import { computed, nextTick, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidebarStore } from '../../stores/sidebar'
 import { isAtOrBelow, useDocumentsStore } from '../../stores/documents'
@@ -47,6 +47,16 @@ const toggleFolder = (id: string) => {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   collapsed.value = next
+}
+
+/** Only a key pressed ON the row toggles it. Without this guard a keydown from
+ * the rename field (or the delete button) bubbles here and is swallowed —
+ * which is why a space typed into the field never appeared. */
+const onFolderKeydown = (event: KeyboardEvent, id: string) => {
+  if (event.target !== event.currentTarget) return
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  toggleFolder(id)
 }
 
 const expand = (id: string) => {
@@ -267,10 +277,22 @@ const createDocument = (folderId: string | null = null) => {
 
 const renamingId = ref<string | null>(null)
 const renameValue = ref('')
+/** A function ref, not `ref()`: a string ref inside `v-for` collects into an
+ * array, and `.focus()` on that array throws. */
+let renameInput: HTMLInputElement | null = null
+const setRenameInput = (el: unknown) => {
+  renameInput = (el as HTMLInputElement | null) ?? null
+}
 
 const startRename = (folder: DocumentFolder) => {
   renamingId.value = folder.id
   renameValue.value = folder.name
+  // The field is the next thing to type into: focus it and select the old
+  // name so the first keystroke replaces it.
+  void nextTick(() => {
+    renameInput?.focus()
+    renameInput?.select()
+  })
 }
 
 const commitRename = (folder: DocumentFolder) => {
@@ -484,8 +506,8 @@ onUpdated(() => {
             :aria-expanded="!collapsed.has(row.folder.id)"
             :aria-level="row.depth + 1"
             @click="toggleFolder(row.folder.id)"
-            @keydown.enter.prevent="toggleFolder(row.folder.id)"
-            @keydown.space.prevent="toggleFolder(row.folder.id)"
+            @dblclick="startRename(row.folder)"
+            @keydown="onFolderKeydown($event, row.folder.id)"
           >
             <span class="w-[var(--sb-mark)] shrink-0 flex items-center" aria-hidden="true">
               <span
@@ -505,7 +527,9 @@ onUpdated(() => {
                 border-bottom: 1px solid var(--color-violet);
               "
               data-testid="document-folder-rename-input"
+              :ref="setRenameInput"
               @click.stop
+              @keydown.stop
               @keydown.enter.prevent="commitRename(row.folder)"
               @keydown.esc.prevent="renamingId = null"
               @blur="commitRename(row.folder)"

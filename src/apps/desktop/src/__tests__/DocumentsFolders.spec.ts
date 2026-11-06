@@ -405,6 +405,58 @@ describe('document folders — the sidebar', () => {
     wrapper.unmount()
   })
 
+  it('a space typed into the rename field is not swallowed by the folder row', async () => {
+    const router = await makeRouter()
+    const wrapper = mount(DocumentsList, {
+      props: { workspaceId: 'ws_1' },
+      global: { plugins: [router] },
+    })
+    await settle()
+
+    await wrapper.get('[data-testid="document-folder-fld_debit"]').trigger('dblclick')
+    await nextTick()
+    const input = wrapper.get('[data-testid="document-folder-rename-input"]')
+
+    const space = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    input.element.dispatchEvent(space)
+
+    // The row's toggle must not eat the keypress — that is what stopped a
+    // space from ever reaching the field.
+    expect(space.defaultPrevented).toBe(false)
+    expect(wrapper.get('[data-testid="document-folder-fld_debit"]').attributes('aria-expanded')).toBe(
+      'true',
+    )
+
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    input.element.dispatchEvent(enter)
+    // Enter commits the name; it must not also fold the folder.
+    expect(wrapper.get('[data-testid="document-folder-fld_debit"]').attributes('aria-expanded')).toBe(
+      'true',
+    )
+    wrapper.unmount()
+  })
+
+  it('double-clicking a folder opens its name for editing', async () => {
+    const router = await makeRouter()
+    // Attached to the document: focus() is a no-op on a detached element.
+    const wrapper = mount(DocumentsList, {
+      props: { workspaceId: 'ws_1' },
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await settle()
+
+    expect(wrapper.find('[data-testid="document-folder-rename-input"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="document-folder-fld_debit"]').trigger('dblclick')
+    await nextTick()
+
+    const input = wrapper.get('[data-testid="document-folder-rename-input"]')
+    expect((input.element as HTMLInputElement).value).toBe('Sales debit note')
+    // Typing is the next thing the user does: the field must already hold focus.
+    expect(document.activeElement).toBe(input.element)
+    wrapper.unmount()
+  })
+
   it('the folder row delete button deletes the folder, not its documents', async () => {
     deleteFolder.mockResolvedValue({ id: 'fld_split', success: true, reparented_documents: 1 })
     const router = await makeRouter()
