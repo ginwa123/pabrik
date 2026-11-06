@@ -103,7 +103,7 @@ pub const WorkspaceUsageJson = struct {
 const SCOPE =
     \\FROM llm_history h JOIN sessions s ON s.id = h.session_id
     \\WHERE s.workspace_id = ? AND h.prompt_tokens > 0
-    \\  AND h.created_at_nano > CAST(? AS INTEGER)
+    \\  AND h.created_at_nano > CAST(? AS BIGINT)
 ;
 
 const RATED_READ = "CASE WHEN h.cache_read_input_tokens <= h.prompt_tokens THEN h.cache_read_input_tokens ELSE 0 END";
@@ -142,7 +142,7 @@ const MODELS_SQL =
 
 const SHAPE_SCOPE =
     \\FROM llm_history h JOIN sessions s ON s.id = h.session_id
-    \\WHERE s.workspace_id = ? AND h.created_at_nano > CAST(? AS INTEGER)
+    \\WHERE s.workspace_id = ? AND h.created_at_nano > CAST(? AS BIGINT)
 ;
 
 /// Every distinct `tool_name` in range, ungrouped beyond that: the handler
