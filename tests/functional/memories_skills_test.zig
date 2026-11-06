@@ -8,10 +8,10 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-/// Python `_seed_skill_row`'s un-formatted default `content`. A default
-/// argument is NOT a format string, so Python seeded the literal `%s`
-/// placeholders.
-const DEFAULT_SKILL_CONTENT = "---\nname: %s\ndescription: %s\n---\n\nbody\n";
+/// Python `_seed_skill_row`'s un-formatted default `content`: the body only,
+/// because the seed helper writes the fence from the row's name and
+/// description.
+const DEFAULT_SKILL_CONTENT = "\nbody\n";
 
 // ============================================================================
 // sqlite3 CLI helpers
@@ -108,7 +108,7 @@ fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
 
 /// Python `_seed_skill_row`. There is no HTTP create route for skills -
 /// `add_skill` is an agent tool - so a test that needs a row to read writes
-/// one.
+/// one, body and the name/description rows projected out of it.
 fn seedSkillRow(
     temp_dir: []const u8,
     workspace_id: []const u8,
@@ -122,7 +122,13 @@ fn seedSkillRow(
     defer gpa.free(name_lit);
     const desc_lit = try sqlLit(description);
     defer gpa.free(desc_lit);
-    const content_lit = try sqlLit(content);
+
+    const fenced = if (std.mem.startsWith(u8, content, "---\n"))
+        try gpa.dupe(u8, content)
+    else
+        try std.fmt.allocPrint(gpa, "---\nname: {s}\ndescription: {s}\n---\n{s}", .{ name, description, content });
+    defer gpa.free(fenced);
+    const content_lit = try sqlLit(fenced);
     defer gpa.free(content_lit);
     const raw_id = try std.fmt.allocPrint(gpa, "sk_seed_{s}_{s}", .{ workspace_id, name });
     defer gpa.free(raw_id);
@@ -131,10 +137,11 @@ fn seedSkillRow(
 
     const sql = try std.fmt.allocPrint(
         gpa,
-        "INSERT INTO skills (id, workspace_id, name, description, content, created_at, updated_at) " ++
-            "VALUES ({s}, {s}, {s}, COALESCE(NULLIF({s}, ''), ''), " ++
-            "COALESCE(NULLIF({s}, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-        .{ id_lit, ws_lit, name_lit, desc_lit, content_lit },
+        "INSERT INTO skills (id, workspace_id, content, created_at, updated_at) " ++
+            "VALUES ({s}, {s}, COALESCE(NULLIF({s}, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP); " ++
+            "INSERT INTO skill_metadata (id, skill_id, key, value) VALUES " ++
+            "({s}_n, {s}, 'name', {s}), ({s}_d, {s}, 'description', {s})",
+        .{ id_lit, ws_lit, content_lit, id_lit, id_lit, name_lit, id_lit, id_lit, desc_lit },
     );
     defer gpa.free(sql);
 

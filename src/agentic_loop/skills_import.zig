@@ -617,6 +617,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
     try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
+    try migration.Migration141ContractSkillNameDescription.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

@@ -40,7 +40,7 @@ const seed_rows = [_]SeedRow{
     .{ .table = "workspace_settings", .sql = "INSERT INTO workspace_settings (owner, workspace_id) VALUES ('', 'ws_fk')" },
     .{ .table = "workspace_secrets", .sql = "INSERT INTO workspace_secrets (id, workspace_id, name, value) VALUES ('sec_fk', 'ws_fk', 'TOKEN', 'v')" },
     .{ .table = "workspace_items", .sql = "INSERT INTO workspace_items (id, workspace_id, item_type) VALUES ('wi_fk', 'ws_fk', 'kanban')" },
-    .{ .table = "skills", .sql = "INSERT INTO skills (id, workspace_id, name) VALUES ('skill_fk', 'ws_fk', 'pdf')" },
+    .{ .table = "skills", .sql = "INSERT INTO skills (id, workspace_id, content) VALUES ('skill_fk', 'ws_fk', 'body')" },
     .{ .table = "skill_assets", .sql = "INSERT INTO skill_assets (id, skill_id, rel_path) VALUES ('asset_fk', 'skill_fk', 'scripts/convert.py')" },
     .{ .table = "skill_metadata", .sql = "INSERT INTO skill_metadata (id, skill_id, key, value) VALUES ('meta_fk', 'skill_fk', 'origin', 'ECC')" },
     .{ .table = "kanban_columns", .sql = "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('col_fk', 'wi_fk', 'todo', 0)" },

@@ -207,6 +207,13 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
+const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
+
+fn expectBodyIs(content: []const u8, body: []const u8) !void {
+    var parsed = try frontmatter.parse(testing.allocator, content);
+    defer parsed.deinit(testing.allocator);
+    try testing.expectEqualStrings(body, std.mem.trimEnd(u8, parsed.body, "\n"));
+}
 
 const TestCtx = struct {
     db: database.Db,
@@ -223,6 +230,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
     try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
+    try migration.Migration141ContractSkillNameDescription.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -242,7 +250,8 @@ fn storedContent(ctx: *TestCtx, name: []const u8) ![]const u8 {
     const alloc = testing.allocator;
     var q = try ctx.db.query(
         alloc,
-        "SELECT content FROM skills WHERE workspace_id = ? AND name = ?",
+        "SELECT sk.content FROM skills sk JOIN skill_metadata m ON m.skill_id = sk.id" ++
+            " WHERE sk.workspace_id = ? AND m.key = 'name' AND m.value = ?",
         &[_][]const u8{ "ws_1", name },
     );
     defer q.deinit();
@@ -264,12 +273,12 @@ test "useCase: creates a skill and returns the stored row" {
     defer skills_store.freeSkillRow(alloc, output.skill);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    // Trimmed, so the URL path segment and the UNIQUE key both spell the
-    // name the user typed without its padding.
+    // Trimmed, so the URL path segment and the workspace's one skill by
+    // that name both spell it without its padding.
     try testing.expectEqualStrings("pdf", output.skill.name);
     try testing.expectEqualStrings("ws_1", output.skill.workspace_id);
     try testing.expectEqualStrings("Work with PDFs", output.skill.description);
-    try testing.expectEqualStrings("body", output.skill.content);
+    try expectBodyIs(output.skill.content, "body");
     try testing.expect(output.skill.id.len > 0);
     try testing.expectEqual(@as(usize, 1), try countRows(&ctx));
 }
@@ -290,7 +299,7 @@ test "useCase: an empty description round-trips as empty, not as a missing field
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("", output.skill.description);
-    try testing.expectEqualStrings("body", output.skill.content);
+    try expectBodyIs(output.skill.content, "body");
 }
 
 test "useCase: an empty workspace_id is WorkspaceIdRequired, a 400" {
@@ -379,7 +388,7 @@ test "useCase: a duplicate name in one workspace is NameTaken, a 409" {
     // half-applied would be worse than no answer at all.
     const kept = try storedContent(&ctx, "pdf");
     defer alloc.free(kept);
-    try testing.expectEqualStrings("first body", kept);
+    try expectBodyIs(kept, "first body");
 
     // The conflict names the skill, so the UI can say which row to change.
     const message = try messageFor(error.NameTaken, alloc, "pdf");

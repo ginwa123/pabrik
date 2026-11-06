@@ -111,9 +111,8 @@ fn dbRun(temp_dir: []const u8, sql: []const u8) ![]u8 {
     return sqliteRun(db, sql);
 }
 
-/// Insert one `skills` row directly. Written the way
-/// `skills_store.upsertSkill` writes it, including the `COALESCE(NULLIF(?,
-/// ''), '')` guard (see the file header).
+/// Insert one `skills` row directly, plus the name and description rows
+/// `skills_store.upsertSkill` projects out of its body.
 fn seedSkill(temp_dir: []const u8, workspace_id: []const u8, name: []const u8, description: []const u8, content: []const u8) !void {
     const ws_lit = try sqlLit(workspace_id);
     defer gpa.free(ws_lit);
@@ -121,7 +120,13 @@ fn seedSkill(temp_dir: []const u8, workspace_id: []const u8, name: []const u8, d
     defer gpa.free(name_lit);
     const desc_lit = try sqlLit(description);
     defer gpa.free(desc_lit);
-    const content_lit = try sqlLit(content);
+
+    const fenced = if (std.mem.startsWith(u8, content, "---\n"))
+        try gpa.dupe(u8, content)
+    else
+        try std.fmt.allocPrint(gpa, "---\nname: {s}\ndescription: {s}\n---\n{s}", .{ name, description, content });
+    defer gpa.free(fenced);
+    const content_lit = try sqlLit(fenced);
     defer gpa.free(content_lit);
     const raw_id = try std.fmt.allocPrint(gpa, "sk_seed_{s}_{s}", .{ workspace_id, name });
     defer gpa.free(raw_id);
@@ -130,10 +135,11 @@ fn seedSkill(temp_dir: []const u8, workspace_id: []const u8, name: []const u8, d
 
     const sql = try std.fmt.allocPrint(
         gpa,
-        "INSERT INTO skills (id, workspace_id, name, description, content, created_at, updated_at) " ++
-            "VALUES ({s}, {s}, {s}, COALESCE(NULLIF({s}, ''), ''), " ++
-            "COALESCE(NULLIF({s}, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-        .{ id_lit, ws_lit, name_lit, desc_lit, content_lit },
+        "INSERT INTO skills (id, workspace_id, content, created_at, updated_at) " ++
+            "VALUES ({s}, {s}, COALESCE(NULLIF({s}, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP); " ++
+            "INSERT INTO skill_metadata (id, skill_id, key, value) VALUES " ++
+            "({s}_n, {s}, 'name', {s}), ({s}_d, {s}, 'description', {s})",
+        .{ id_lit, ws_lit, content_lit, id_lit, id_lit, name_lit, id_lit, id_lit, desc_lit },
     );
     defer gpa.free(sql);
 
@@ -149,7 +155,8 @@ fn skillIdSql(temp_dir: []const u8, workspace_id: []const u8, name: []const u8) 
     defer gpa.free(name_lit);
     const sql = try std.fmt.allocPrint(
         gpa,
-        "SELECT id FROM skills WHERE workspace_id = {s} AND name = {s}",
+        "SELECT sk.id FROM skills sk JOIN skill_metadata m ON m.skill_id = sk.id" ++
+            " WHERE sk.workspace_id = {s} AND m.key = 'name' AND m.value = {s}",
         .{ ws_lit, name_lit },
     );
     defer gpa.free(sql);

@@ -1,6 +1,6 @@
-//! Workspace-scoped skill storage (Migrations 101 + 119), and ONE rule:
+//! Workspace-scoped skill storage (Migration 139), and ONE rule:
 //! `workspace_id` is a parameter in every `WHERE`, so isolation is SQL-side.
-//! `skill_metadata` projects the fence in `content`; it is never authored.
+//! `content` is the whole skill; `skill_metadata` is its frontmatter projection.
 
 const std = @import("std");
 const test_db = @import("pabrikcore").test_db;
@@ -28,7 +28,8 @@ pub const MAX_ASSET_BYTES: usize = 2 << 20; // 2 MiB
 /// joins the name onto a materialisation dir, so `..` must not escape it.
 pub const MAX_NAME_BYTES: usize = 128;
 
-/// One row in `skills`. All string fields are allocator-owned.
+/// One row in `skills`. `name` and `description` are parsed out of `content`.
+/// All string fields are allocator-owned.
 pub const SkillRow = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -149,9 +150,15 @@ pub const ReplaceAssetsError = error{
 /// different shape. `COALESCE` flattens SQL NULL and guards a row written
 /// before a column existed, so the JS side never sees a null string.
 const SELECT_COLUMNS =
-    "SELECT id, workspace_id, name, COALESCE(CAST(description AS TEXT), ''), COALESCE(CAST(content AS TEXT), ''), " ++
-    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), COALESCE(is_can_auto_improve, 1) " ++
-    "FROM skills";
+    "SELECT sk.id, sk.workspace_id, COALESCE(CAST(sk.content AS TEXT), ''), " ++
+    "COALESCE(CAST(sk.created_at AS TEXT), ''), COALESCE(CAST(sk.updated_at AS TEXT), ''), COALESCE(sk.is_can_auto_improve, 1) " ++
+    "FROM skills sk";
+
+const NAME_JOIN = " JOIN skill_metadata m ON m.skill_id = sk.id AND m.key = 'name'";
+
+const SKILL_ID_BY_NAME =
+    "(SELECT sk.id FROM skills sk" ++ NAME_JOIN ++
+    " WHERE sk.workspace_id = ? AND m.value = ?)";
 
 const SELECT_METADATA_COLUMNS =
     "SELECT id, skill_id, key, COALESCE(CAST(value AS TEXT), ''), COALESCE(CAST(created_at AS TEXT), ''), " ++
@@ -164,15 +171,17 @@ const SELECT_ASSET_COLUMNS =
 /// Positional dupe, so a column reorder becomes a compile error in exactly
 /// one place.
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !SkillRow {
+    var parsed = try frontmatter.parse(allocator, values[2]);
+    defer parsed.deinit(allocator);
     return .{
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
-        .name = try allocator.dupe(u8, values[2]),
-        .description = try allocator.dupe(u8, values[3]),
-        .content = try allocator.dupe(u8, values[4]),
-        .created_at = try allocator.dupe(u8, values[5]),
-        .updated_at = try allocator.dupe(u8, values[6]),
-        .is_can_auto_improve = !std.mem.eql(u8, values[7], "0"),
+        .name = try allocator.dupe(u8, parsed.header.name),
+        .description = try allocator.dupe(u8, parsed.header.description),
+        .content = try allocator.dupe(u8, values[2]),
+        .created_at = try allocator.dupe(u8, values[3]),
+        .updated_at = try allocator.dupe(u8, values[4]),
+        .is_can_auto_improve = !std.mem.eql(u8, values[5], "0"),
     };
 }
 
@@ -220,7 +229,8 @@ pub fn listSkills(
 
     var q = db.query(
         allocator,
-        SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY name",
+        SELECT_COLUMNS ++ " LEFT JOIN skill_metadata m ON m.skill_id = sk.id AND m.key = 'name'" ++
+            " WHERE sk.workspace_id = ? ORDER BY m.value",
         &[_][]const u8{workspace_id},
     ) catch return error.QueryFailed;
     defer q.deinit();
@@ -250,7 +260,7 @@ pub fn getSkillByName(
 
     var q = db.query(
         allocator,
-        SELECT_COLUMNS ++ " WHERE workspace_id = ? AND name = ?",
+        SELECT_COLUMNS ++ NAME_JOIN ++ " WHERE sk.workspace_id = ? AND m.value = ?",
         &[_][]const u8{ workspace_id, name },
     ) catch return error.QueryFailed;
     defer q.deinit();
@@ -260,9 +270,9 @@ pub fn getSkillByName(
     return rowFromValues(allocator, r.values) catch return error.OutOfMemory;
 }
 
-/// Insert a skill, or replace the one already holding that name here.
-/// Returns the stored row so the caller learns the canonical id its assets
-/// hang off; `ON CONFLICT` leaves `id` alone, or they would orphan.
+/// Insert a skill, or replace the one already holding that name here. `name`
+/// and `description` are written into the body's fence — the only place they
+/// are stored — and the stored row comes back so the caller learns its id.
 pub fn upsertSkill(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -272,39 +282,42 @@ pub fn upsertSkill(
     if (args.name.len > MAX_NAME_BYTES) return error.NameTooLong;
     if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
 
-    const skill_id = try std.fmt.allocPrint(allocator, "sk_{d}", .{helpers.unixTimestampNanos()});
-    defer allocator.free(skill_id);
+    const content = try normalizeContent(allocator, args.content, args.name, args.description, false);
+    defer allocator.free(content);
 
     // No opinion means auto-improvable; only an explicit `false` locks it.
-    // The importer re-runs on every start-up, so the ON CONFLICT clause
-    // below leaves this column alone — a reset would drop the human's lock.
+    // A re-import keeps the stored flag — a reset would drop the human's lock.
     const is_can_auto_improve: []const u8 = if (args.is_can_auto_improve orelse true) "1" else "0";
 
-    // One transaction: the row and the metadata projected out of its body
-    // must land together, or a crash between them leaves metadata pointing at
-    // a body that no longer says it.
     var tx = db.begin() catch return error.WriteFailed;
     defer tx.commitOrRollback() catch {};
     errdefer tx.rollback() catch {};
 
-    // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column: `exec`
-    // binds a zero-length slice as SQL NULL, and an empty description is a
-    // legitimate state that has to round-trip as "" rather than fail.
-    tx.exec(allocator,
-        \\INSERT INTO skills (id, workspace_id, name, description, content, is_can_auto_improve, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        \\ON CONFLICT (workspace_id, name) DO UPDATE SET
-        \\    description = COALESCE(NULLIF(excluded.description, ''), ''),
-        \\    content = COALESCE(NULLIF(excluded.content, ''), ''),
-        \\    updated_at = CURRENT_TIMESTAMP
-    , &[_][]const u8{ skill_id, args.workspace_id, args.name, args.description, args.content, is_can_auto_improve }) catch
-        return error.WriteFailed;
+    const existing_id = try skillIdByName(allocator, &tx, args.workspace_id, args.name);
+    defer if (existing_id) |id| allocator.free(id);
 
-    // The stored id, not the freshly minted one: `ON CONFLICT` keeps the
-    // existing row's id so its assets and metadata stay attached to it.
-    const stored_id = try storedSkillId(allocator, &tx, args.workspace_id, args.name);
-    defer allocator.free(stored_id);
-    projectMetadata(allocator, &tx, stored_id, args.content) catch return error.WriteFailed;
+    var fresh_id: ?[]u8 = null;
+    defer if (fresh_id) |id| allocator.free(id);
+
+    const skill_id = existing_id orelse blk: {
+        const minted = try std.fmt.allocPrint(allocator, "sk_{d}", .{helpers.unixTimestampNanos()});
+        fresh_id = minted;
+        break :blk minted;
+    };
+
+    if (existing_id != null) {
+        tx.exec(allocator,
+            \\UPDATE skills SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        , &[_][]const u8{ content, skill_id }) catch return error.WriteFailed;
+    } else {
+        tx.exec(allocator,
+            \\INSERT INTO skills (id, workspace_id, content, is_can_auto_improve, created_at, updated_at)
+            \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        , &[_][]const u8{ skill_id, args.workspace_id, content, is_can_auto_improve }) catch
+            return error.WriteFailed;
+    }
+
+    projectMetadata(allocator, &tx, skill_id, content) catch return error.WriteFailed;
 
     tx.commit() catch return error.WriteFailed;
 
@@ -339,10 +352,16 @@ pub fn updateSkill(
     defer freeSkillRow(allocator, existing);
 
     const description = patch.description orelse existing.description;
-    const content = patch.content orelse existing.content;
+    const content = try normalizeContent(
+        allocator,
+        patch.content orelse existing.content,
+        existing.name,
+        description,
+        patch.description != null,
+    );
+    defer allocator.free(content);
     const is_can_auto_improve = patch.is_can_auto_improve orelse existing.is_can_auto_improve;
-    if (std.mem.eql(u8, description, existing.description) and
-        std.mem.eql(u8, content, existing.content) and
+    if (std.mem.eql(u8, content, existing.content) and
         is_can_auto_improve == existing.is_can_auto_improve) return error.NothingToChange;
 
     var tx = db.begin() catch return error.UpdateFailed;
@@ -351,9 +370,9 @@ pub fn updateSkill(
 
     tx.exec(allocator,
         \\UPDATE skills
-        \\SET description = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), is_can_auto_improve = ?, updated_at = CURRENT_TIMESTAMP
-        \\WHERE workspace_id = ? AND name = ?
-    , &[_][]const u8{ description, content, if (is_can_auto_improve) "1" else "0", workspace_id, name }) catch
+        \\SET content = ?, is_can_auto_improve = ?, updated_at = CURRENT_TIMESTAMP
+        \\WHERE id = ?
+    , &[_][]const u8{ content, if (is_can_auto_improve) "1" else "0", existing.id }) catch
         return error.UpdateFailed;
 
     // The body may have carried metadata in or out of it, so the projection
@@ -392,16 +411,16 @@ pub fn deleteSkill(
         var sql_buf: [192]u8 = undefined;
         const sql = std.fmt.bufPrint(
             &sql_buf,
-            "DELETE FROM {s} WHERE skill_id IN (SELECT id FROM skills WHERE workspace_id = ? AND name = ?)",
+            "DELETE FROM {s} WHERE skill_id = ?",
             .{child},
         ) catch return error.DeleteFailed;
-        tx.exec(allocator, sql, &[_][]const u8{ workspace_id, name }) catch return error.DeleteFailed;
+        tx.exec(allocator, sql, &[_][]const u8{row.id}) catch return error.DeleteFailed;
     }
 
     tx.exec(
         allocator,
-        "DELETE FROM skills WHERE workspace_id = ? AND name = ?",
-        &[_][]const u8{ workspace_id, name },
+        "DELETE FROM skills WHERE id = ?",
+        &[_][]const u8{row.id},
     ) catch return error.DeleteFailed;
 
     tx.commit() catch return error.DeleteFailed;
@@ -419,7 +438,8 @@ pub fn listMetadata(
     var q = db.query(
         allocator,
         SELECT_METADATA_COLUMNS ++
-            " WHERE skill_id = (SELECT id FROM skills WHERE workspace_id = ? AND name = ?)" ++
+            " WHERE skill_id = " ++ SKILL_ID_BY_NAME ++
+            " AND key NOT IN ('name', 'description')" ++
             " ORDER BY key",
         &[_][]const u8{ workspace_id, name },
     ) catch return error.QueryFailed;
@@ -435,23 +455,48 @@ pub fn listMetadata(
     return list.toOwnedSlice(allocator);
 }
 
-/// The id `(workspace_id, name)` resolves to, for a caller that has just
-/// written the row and must not guess.
-fn storedSkillId(
+/// The id `(workspace_id, name)` resolves to, or null when this workspace has
+/// no such skill.
+fn skillIdByName(
     allocator: std.mem.Allocator,
     tx: *database.Db.Transaction,
     workspace_id: []const u8,
     name: []const u8,
-) UpsertSkillError![]u8 {
+) UpsertSkillError!?[]u8 {
     var q = tx.query(
         allocator,
-        "SELECT id FROM skills WHERE workspace_id = ? AND name = ?",
+        "SELECT sk.id FROM skills sk" ++ NAME_JOIN ++ " WHERE sk.workspace_id = ? AND m.value = ?",
         &[_][]const u8{ workspace_id, name },
     ) catch return error.WriteFailed;
     defer q.deinit();
-    const r = (q.next() catch return error.WriteFailed) orelse return error.WriteFailed;
+    const r = (q.next() catch return error.WriteFailed) orelse return null;
     defer r.deinit(allocator);
     return allocator.dupe(u8, r.values[0]) catch return error.OutOfMemory;
+}
+
+/// The body with `name` and `description` in its fence, unchanged when it
+/// already says both. `description_authoritative` separates "no description
+/// given" (keep the body's) from "clear the description" (write "").
+fn normalizeContent(
+    allocator: std.mem.Allocator,
+    content: []const u8,
+    name: []const u8,
+    description: []const u8,
+    description_authoritative: bool,
+) error{OutOfMemory}![]u8 {
+    var parsed = try frontmatter.parse(allocator, content);
+    defer parsed.deinit(allocator);
+
+    const description_matches = std.mem.eql(u8, parsed.header.description, description) or
+        (!description_authoritative and description.len == 0);
+    if (parsed.has_fence and std.mem.eql(u8, parsed.header.name, name) and description_matches) {
+        return allocator.dupe(u8, content);
+    }
+
+    return frontmatter.render(allocator, .{
+        .name = name,
+        .description = if (description_authoritative or description.len > 0) description else parsed.header.description,
+    }, parsed.pairs, parsed.body);
 }
 
 /// Replace `skill_id`'s metadata with the frontmatter projection of
@@ -469,18 +514,33 @@ fn projectMetadata(
     var parsed = try frontmatter.parse(allocator, content);
     defer parsed.deinit(allocator);
 
-    for (parsed.pairs, 0..) |pair, i| {
-        const id = try std.fmt.allocPrint(allocator, "sm_{d}_{d}", .{ helpers.unixTimestampNanos(), i });
-        defer allocator.free(id);
-
-        tx.exec(allocator,
-            \\INSERT INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
-            \\VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            \\ON CONFLICT (id) DO UPDATE SET skill_id = excluded.skill_id, key = excluded.key,
-            \\  value = excluded.value, updated_at = excluded.updated_at
-        , &[_][]const u8{ id, skill_id, pair.key, pair.value }) catch
-            return error.WriteFailed;
+    var index: usize = 0;
+    try insertProjection(allocator, tx, skill_id, "name", parsed.header.name, &index);
+    try insertProjection(allocator, tx, skill_id, "description", parsed.header.description, &index);
+    for (parsed.pairs) |pair| {
+        try insertProjection(allocator, tx, skill_id, pair.key, pair.value, &index);
     }
+}
+
+fn insertProjection(
+    allocator: std.mem.Allocator,
+    tx: *database.Db.Transaction,
+    skill_id: []const u8,
+    key: []const u8,
+    value: []const u8,
+    index: *usize,
+) !void {
+    const id = try std.fmt.allocPrint(allocator, "sm_{d}_{d}", .{ helpers.unixTimestampNanos(), index.* });
+    defer allocator.free(id);
+    index.* += 1;
+
+    tx.exec(allocator,
+        \\INSERT INTO skill_metadata (id, skill_id, key, value, created_at, updated_at)
+        \\VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        \\ON CONFLICT (id) DO UPDATE SET skill_id = excluded.skill_id, key = excluded.key,
+        \\  value = excluded.value, updated_at = excluded.updated_at
+    , &[_][]const u8{ id, skill_id, key, value }) catch
+        return error.WriteFailed;
 }
 
 /// Every companion file of one skill, ordered by `rel_path` so the
@@ -496,7 +556,7 @@ pub fn listAssets(
     var q = db.query(
         allocator,
         SELECT_ASSET_COLUMNS ++
-            " WHERE skill_id = (SELECT id FROM skills WHERE workspace_id = ? AND name = ?)" ++
+            " WHERE skill_id = " ++ SKILL_ID_BY_NAME ++
             " ORDER BY rel_path",
         &[_][]const u8{ workspace_id, name },
     ) catch return error.QueryFailed;
@@ -615,8 +675,8 @@ pub fn freeSkillAssetRows(allocator: std.mem.Allocator, rows: []SkillAssetRow) v
 // ============================================================================
 
 // The migration's own tests pin the SCHEMA; these pin the BEHAVIOUR the
-// tools and handlers depend on, against the real Migration 101 tables — an
-// empty description, both isolation directions, re-import, patch, delete.
+// tools and handlers depend on, against the migrated tables — an empty
+// description, both isolation directions, re-import, patch, delete.
 
 const testing = std.testing;
 
@@ -625,7 +685,6 @@ const StoreTestCtx = struct {
     threaded: std.Io.Threaded,
 };
 
-/// Real Migration 101 tables on an in-memory database.
 fn setupStoreDb() !StoreTestCtx {
     const alloc = testing.allocator;
     var threaded = std.Io.Threaded.init(alloc, .{});
@@ -641,6 +700,7 @@ fn setupStoreDb() !StoreTestCtx {
     }
     try migration.Migration102CreateSkills.up(&db, alloc);
     try migration.Migration119CreateSkillMetadata.up(&db, alloc);
+    try migration.Migration141ContractSkillNameDescription.up(&db, alloc);
     try test_db.enableForeignKeys(alloc, &db);
     return .{ .db = db, .threaded = threaded };
 }
@@ -652,6 +712,14 @@ fn expectRowCount(ctx: *StoreTestCtx, sql: []const u8, expected: []const u8) !vo
     const row = (try q.next()) orelse return error.NoRows;
     defer row.deinit(alloc);
     try testing.expectEqualStrings(expected, row.values[0]);
+}
+
+fn expectStoredBody(content: []const u8, name: []const u8, body: []const u8) !void {
+    var parsed = try frontmatter.parse(testing.allocator, content);
+    defer parsed.deinit(testing.allocator);
+    try testing.expect(parsed.has_fence);
+    try testing.expectEqualStrings(name, parsed.header.name);
+    try testing.expectEqualStrings(body, std.mem.trimEnd(u8, parsed.body, "\n"));
 }
 
 test "skills_store round-trips a skill body, including an empty description" {
@@ -707,11 +775,11 @@ test "skills_store isolates one workspace from another in both directions" {
         .content = "B's copy",
     });
     defer freeSkillRow(alloc, b);
-    try testing.expectEqualStrings("B's copy", b.content);
+    try expectStoredBody(b.content, "pdf", "B's copy");
 
     const a = try getSkillByName(alloc, &ctx.db, "ws_a", "pdf");
     defer freeSkillRow(alloc, a);
-    try testing.expectEqualStrings("A's copy", a.content);
+    try expectStoredBody(a.content, "pdf", "A's copy");
 }
 
 test "skills_store delete on a foreign name deletes nothing" {
@@ -759,7 +827,7 @@ test "skills_store re-upsert updates in place and keeps the id" {
     defer freeSkillRow(alloc, second);
 
     try testing.expectEqualStrings(first.id, second.id);
-    try testing.expectEqualStrings("new body", second.content);
+    try expectStoredBody(second.content, "pdf", "new body");
     try expectRowCount(&ctx, "SELECT COUNT(*) FROM skills", "1");
 }
 
@@ -785,7 +853,7 @@ test "skills_store patch keeps the field it does not mention" {
     // Without the load-current-first step, `edit_skill`'s description-only
     // patch would blank the instruction set — which IS the whole skill.
     try testing.expectEqualStrings("new description", patched.description);
-    try testing.expectEqualStrings("the body that must survive", patched.content);
+    try expectStoredBody(patched.content, "pdf", "the body that must survive");
 }
 
 test "skills_store reports NothingToChange instead of bumping updated_at" {
@@ -1013,7 +1081,7 @@ test "skills_store re-upsert never resets a skill's auto-improve lock" {
     });
     defer freeSkillRow(alloc, reimported);
     try testing.expect(!reimported.is_can_auto_improve);
-    try testing.expectEqualStrings("new body", reimported.content);
+    try expectStoredBody(reimported.content, "pdf", "new body");
     try testing.expectEqualStrings("re-imported", reimported.description);
 }
 
@@ -1036,12 +1104,12 @@ test "skills_store updateSkill toggles the lock without touching the body" {
     defer freeSkillRow(alloc, locked);
     try testing.expect(!locked.is_can_auto_improve);
     try testing.expectEqualStrings("the description that must survive", locked.description);
-    try testing.expectEqualStrings("the body that must survive", locked.content);
+    try expectStoredBody(locked.content, "pdf", "the body that must survive");
 
     const unlocked = try updateSkill(alloc, &ctx.db, "ws_a", "pdf", .{ .is_can_auto_improve = true });
     defer freeSkillRow(alloc, unlocked);
     try testing.expect(unlocked.is_can_auto_improve);
-    try testing.expectEqualStrings("the body that must survive", unlocked.content);
+    try expectStoredBody(unlocked.content, "pdf", "the body that must survive");
 }
 
 test "skills_store treats a flag-only patch as a change, not as NothingToChange" {
@@ -1065,7 +1133,7 @@ test "skills_store treats a flag-only patch as a change, not as NothingToChange"
     defer freeSkillRow(alloc, locked);
     try testing.expect(!locked.is_can_auto_improve);
     try testing.expectEqualStrings("same", locked.description);
-    try testing.expectEqualStrings("same body", locked.content);
+    try expectStoredBody(locked.content, "pdf", "same body");
 }
 
 test "skills_store lists the lock state per row, not per workspace" {
@@ -1099,7 +1167,7 @@ test "skills_store lists the lock state per row, not per workspace" {
     try testing.expect(!rows[1].is_can_auto_improve);
 }
 
-test "a skill's frontmatter keys land in skill_metadata, minus the promoted three" {
+test "a skill's frontmatter keys land in skill_metadata, minus its identity" {
     const alloc = testing.allocator;
     var ctx = try setupStoreDb();
     defer ctx.threaded.deinit();
@@ -1124,9 +1192,6 @@ test "a skill's frontmatter keys land in skill_metadata, minus the promoted thre
     const rows = try listMetadata(alloc, &ctx.db, "ws_a", "pdf");
     defer freeSkillMetadataRows(alloc, rows);
 
-    // Key-ordered, and only the keys with no column: `name` and
-    // `description` are already on `skills`, and duplicating them here would
-    // give one fact two homes.
     try testing.expectEqual(@as(usize, 2), rows.len);
     try testing.expectEqualStrings("origin", rows[0].key);
     try testing.expectEqualStrings("ECC", rows[0].value);
@@ -1135,7 +1200,7 @@ test "a skill's frontmatter keys land in skill_metadata, minus the promoted thre
     try testing.expectEqualStrings(created.id, rows[0].skill_id);
 }
 
-test "a body with no frontmatter has no metadata rows" {
+test "a body with no fence is stored with one carrying its name" {
     const alloc = testing.allocator;
     var ctx = try setupStoreDb();
     defer ctx.threaded.deinit();
@@ -1148,9 +1213,29 @@ test "a body with no frontmatter has no metadata rows" {
     });
     defer freeSkillRow(alloc, created);
 
+    try expectStoredBody(created.content, "bare", "## When to Use\n\nNo fence at all.");
+
+    // The fence carries the identity, so it is not a chip in the detail pane.
     const rows = try listMetadata(alloc, &ctx.db, "ws_a", "bare");
     defer freeSkillMetadataRows(alloc, rows);
     try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "a body that declares another name is stored under the name the caller gave" {
+    const alloc = testing.allocator;
+    var ctx = try setupStoreDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try upsertSkill(alloc, &ctx.db, .{
+        .workspace_id = "ws_a",
+        .name = "pdf",
+        .content = "---\nname: other\n---\nbody\n",
+    });
+    defer freeSkillRow(alloc, created);
+
+    try expectStoredBody(created.content, "pdf", "body");
+    try testing.expectError(error.NotFound, getSkillByName(alloc, &ctx.db, "ws_a", "other"));
 }
 
 test "rewriting the body REPLACES its metadata instead of merging it" {

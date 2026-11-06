@@ -232,6 +232,13 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
+const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
+
+fn expectBodyIs(content: []const u8, body: []const u8) !void {
+    var parsed = try frontmatter.parse(testing.allocator, content);
+    defer parsed.deinit(testing.allocator);
+    try testing.expectEqualStrings(body, std.mem.trimEnd(u8, parsed.body, "\n"));
+}
 
 const TestCtx = struct {
     db: database.Db,
@@ -248,6 +255,7 @@ fn setupDb() !TestCtx {
 
     try migration.Migration102CreateSkills.up(&db, testing.allocator);
     try migration.Migration119CreateSkillMetadata.up(&db, testing.allocator);
+    try migration.Migration141ContractSkillNameDescription.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -268,7 +276,8 @@ fn storedContent(ctx: *TestCtx, workspace_id: []const u8, name: []const u8) ![]c
     const alloc = testing.allocator;
     var q = try ctx.db.query(
         alloc,
-        "SELECT content FROM skills WHERE workspace_id = ? AND name = ?",
+        "SELECT sk.content FROM skills sk JOIN skill_metadata m ON m.skill_id = sk.id" ++
+            " WHERE sk.workspace_id = ? AND m.key = 'name' AND m.value = ?",
         &[_][]const u8{ workspace_id, name },
     );
     defer q.deinit();
@@ -296,7 +305,7 @@ test "useCase: patches the description and keeps the body it does not mention" {
     // description-only patch would blank the instruction set — which IS
     // the whole skill.
     try testing.expectEqualStrings("new description", output.skill.description);
-    try testing.expectEqualStrings("the body that must survive", output.skill.content);
+    try expectBodyIs(output.skill.content, "the body that must survive");
 }
 
 test "useCase: patches the body and keeps the description it does not mention" {
@@ -315,7 +324,7 @@ test "useCase: patches the body and keeps the description it does not mention" {
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("the description that must survive", output.skill.description);
-    try testing.expectEqualStrings("new body", output.skill.content);
+    try expectBodyIs(output.skill.content, "new body");
 }
 
 test "useCase: an explicit empty string clears the field rather than keeping it" {
@@ -337,7 +346,7 @@ test "useCase: an explicit empty string clears the field rather than keeping it"
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("", output.skill.description);
-    try testing.expectEqualStrings("a body", output.skill.content);
+    try expectBodyIs(output.skill.content, "a body");
 }
 
 test "useCase: a body with neither field keeps the stored row, untouched" {
@@ -350,7 +359,9 @@ test "useCase: a body with neither field keeps the stored row, untouched" {
     // Backdate so a same-second CURRENT_TIMESTAMP write is still visible.
     try ctx.db.exec(
         alloc,
-        "UPDATE skills SET updated_at = '2000-01-01 00:00:00' WHERE workspace_id = 'ws_1' AND name = 'pdf'",
+        "UPDATE skills SET updated_at = '2000-01-01 00:00:00' WHERE id = " ++
+            "(SELECT sk.id FROM skills sk JOIN skill_metadata m ON m.skill_id = sk.id" ++
+            " WHERE sk.workspace_id = 'ws_1' AND m.key = 'name' AND m.value = 'pdf')",
         &.{},
     );
 
@@ -365,7 +376,7 @@ test "useCase: a body with neither field keeps the stored row, untouched" {
     // "Omitted means keep" is only honest if nothing at all moved: the
     // values stay AND updated_at stays, because no write happened.
     try testing.expectEqualStrings("a description", output.skill.description);
-    try testing.expectEqualStrings("a body", output.skill.content);
+    try expectBodyIs(output.skill.content, "a body");
     try testing.expectEqualStrings("2000-01-01 00:00:00", output.skill.updated_at);
 }
 
@@ -385,7 +396,7 @@ test "useCase: a matching name in the body is accepted and changes nothing" {
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
     try testing.expectEqualStrings("pdf", output.skill.name);
-    try testing.expectEqualStrings("new body", output.skill.content);
+    try expectBodyIs(output.skill.content, "new body");
 }
 
 test "useCase: a rename is refused, and the body is left as it was" {
@@ -409,7 +420,7 @@ test "useCase: a rename is refused, and the body is left as it was" {
 
     const kept = try storedContent(&ctx, "ws_1", "pdf");
     defer alloc.free(kept);
-    try testing.expectEqualStrings("the body that must survive", kept);
+    try expectBodyIs(kept, "the body that must survive");
 }
 
 test "useCase: an unchanged patch is NothingToChange, a 409" {
@@ -475,7 +486,7 @@ test "useCase: another workspace's skill name is NotFound — 404, never 403" {
 
     const kept = try storedContent(&ctx, "ws_1", "pdf");
     defer alloc.free(kept);
-    try testing.expectEqualStrings("the body that must survive", kept);
+    try expectBodyIs(kept, "the body that must survive");
 }
 
 test "useCase: an unknown skill name is NotFound" {
@@ -521,7 +532,7 @@ test "useCase: a flag-only patch toggles the lock and keeps the body" {
 
     try testing.expect(!locked.skill.is_can_auto_improve);
     try testing.expectEqualStrings("a description", locked.skill.description);
-    try testing.expectEqualStrings("the body that must survive", locked.skill.content);
+    try expectBodyIs(locked.skill.content, "the body that must survive");
 
     const unlocked = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
@@ -531,7 +542,7 @@ test "useCase: a flag-only patch toggles the lock and keeps the body" {
     defer skills_store.freeSkillRow(alloc, unlocked.skill);
     defer skills_store.freeSkillMetadataRows(alloc, unlocked.metadata);
     try testing.expect(unlocked.skill.is_can_auto_improve);
-    try testing.expectEqualStrings("the body that must survive", unlocked.skill.content);
+    try expectBodyIs(unlocked.skill.content, "the body that must survive");
 }
 
 test "useCase: the human editor still edits a LOCKED skill" {
@@ -560,6 +571,6 @@ test "useCase: the human editor still edits a LOCKED skill" {
     defer skills_store.freeSkillRow(alloc, output.skill);
     defer skills_store.freeSkillMetadataRows(alloc, output.metadata);
 
-    try testing.expectEqualStrings("human-edited body", output.skill.content);
+    try expectBodyIs(output.skill.content, "human-edited body");
     try testing.expect(!output.skill.is_can_auto_improve);
 }

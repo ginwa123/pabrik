@@ -867,7 +867,14 @@ test "an empty skill body is not evaluated as if it were a good one" {
     const io = ctx.threaded.io();
 
     try seedWorkspace(alloc, &ctx.db, "sess_empty_body", "ws_empty");
-    try seedSkillRow(alloc, &ctx.db, "ws_empty", "draft-skill", "");
+    try ctx.db.exec(alloc,
+        "INSERT INTO skills (id, workspace_id, content) VALUES ('sk_empty', 'ws_empty', '')",
+        &.{},
+    );
+    try ctx.db.exec(alloc,
+        "INSERT INTO skill_metadata (id, skill_id, key, value) VALUES ('sm_empty', 'sk_empty', 'name', 'draft-skill')",
+        &.{},
+    );
     try seedLoaded(alloc, &ctx.db, io, "sess_empty_body", "draft-skill");
 
     const out = try runEval(alloc, io, &ctx.db, null, .{
@@ -1114,14 +1121,12 @@ fn seedWorkspace(alloc: std.mem.Allocator, db: *database.Db, session_id: []const
 
 /// One row in `skills`, which is now the whole of a skill.
 fn seedSkillRow(alloc: std.mem.Allocator, db: *database.Db, ws_id: []const u8, name: []const u8, body: []const u8) !void {
-    const id = try std.fmt.allocPrint(alloc, "sk_test_{s}_{s}", .{ ws_id, name });
-    defer alloc.free(id);
-    try db.exec(alloc,
-        \\INSERT INTO skills (id, workspace_id, name, description, content, created_at, updated_at)
-        \\VALUES (?, ?, ?, 'seeded by a skill eval test', COALESCE(NULLIF(?, ''), ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        \\ON CONFLICT (id) DO UPDATE SET workspace_id = excluded.workspace_id, name = excluded.name,
-        \\  description = excluded.description, content = excluded.content, updated_at = excluded.updated_at
-    , &.{ id, ws_id, name, body });
+    const row = try skills_store.upsertSkill(alloc, db, .{
+        .workspace_id = ws_id,
+        .name = name,
+        .content = body,
+    });
+    skills_store.freeSkillRow(alloc, row);
 }
 
 test "a real skill is published as a fact and linked from the result" {
