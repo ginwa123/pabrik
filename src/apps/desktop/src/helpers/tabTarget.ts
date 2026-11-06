@@ -192,22 +192,23 @@ export function withTabParam(
   return out
 }
 
-/** Dedupe identity. `tab` and `sorts` are excluded: the first names a tab rather than a target, the
- * second is per-column kanban UI state that changes without the user going anywhere. */
-/** `?mode=diff` marks a code-editor target as that file's changes. */
 export function isDiffQuery(query: Record<string, unknown> | null | undefined): boolean {
-  return stripTabParam(query).mode === DIFF_MODE
+  return stripTabParam(query).mode === DIFF_MODE // `?mode=diff`: the same file's changes
 }
 
-/**    * A file's key: the path only. The editor URL carries no `cwd` on purpose, so a key with the cwd
- * would make an in-app open and a deep link two tabs for one file. */
-export function fileTabKey(file: string): string {
-  return `file:${file}`
+/** One file, one key: a relative path is resolved against the cwd, so both spellings agree. */
+export function fileTabKey(file: string, cwd = ''): string {
+  return `file:${absolutePath(file, cwd)}`
+}
+
+export function absolutePath(file: string, cwd: string): string {
+  if (!file || file.startsWith('/') || /^[A-Za-z]:[\\/]/.test(file) || !cwd) return file
+  return `${cwd.replace(/\/+$/, '')}/${file.replace(/^\.\//, '')}`
 }
 
 /** The same file's changes, as its own tab — one tab of each kind per file. */
-export function diffTabKey(file: string): string {
-  return `diff:${file}`
+export function diffTabKey(file: string, cwd = ''): string {
+  return `diff:${absolutePath(file, cwd)}`
 }
 
 /** Targets the app navigates to by PATH: `/app/{ws}/chat/{sid}` is a session with no `view`. */
@@ -234,7 +235,7 @@ export function ownerOfTarget(
   const view = q.view ?? ''
   if (view === 'chat') return q.session || pathTarget(path)?.owner || ''
   if (view === 'task') return q.task || q.session || ''
-  if (view === CODE_EDITOR_VIEW) return q.session || ''
+  if (view === CODE_EDITOR_VIEW) return q.session || pathTarget(path)?.owner || ''
   if (view === 'workspace') return parseItemIdWithChat(q.itemId ?? '').chatTaskId || ''
   // No `view` at all: a path-form destination (`/app/{ws}/chat/{sid}`) still names a session.
   if (!view) return pathTarget(path)?.owner ?? ''
@@ -248,9 +249,7 @@ export function hasTabIdentity(
   path: string,
   query: Record<string, unknown> | null | undefined,
 ): boolean {
-  // Only ARTIFACTS are named in the URL (`?tab=` says which file a session is showing). A session's
-  // own row is created by the surface that shows the session — see `tabsStore.ensureRow` — because
-  // rewriting a chat URL on arrival re-renders what is underneath it.
+  // Only ARTEFACTS are named in the URL; a session's own row belongs to its surface (ensureRow).
   const view = stripTabParam(query).view ?? ''
   if (view === CODE_EDITOR_VIEW) return true
   if (kanbanSettingsItemId(path)) return true
@@ -264,6 +263,7 @@ export function ownerOf(tab: Tab): string {
   return tab.owner ?? ownerOfTarget(tab.path, tab.query)
 }
 
+/** Dedupe identity: what the same navigation target always hashes to. */
 export function tabKeyOf(
   path: string,
   query: Record<string, unknown> | null | undefined,
@@ -273,7 +273,7 @@ export function tabKeyOf(
   if ((q.view ?? '') === CODE_EDITOR_VIEW) {
     const file = q.file ?? ''
     if (!file) return 'file:'
-    return isDiffQuery(q) ? diffTabKey(file) : fileTabKey(file)
+    return isDiffQuery(q) ? diffTabKey(file, q.cwd ?? '') : fileTabKey(file, q.cwd ?? '')
   }
   const kanbanSettings = kanbanSettingsItemId(path)
   if (kanbanSettings) return `ks:${kanbanSettings}`

@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   MAX_CLOSED,
   TABS_VERSION,
+  diffTabKey,
   fallbackTitle,
+  fileTabKey,
   groupPayload,
   hasTabIdentity,
   homeTab,
@@ -318,6 +320,24 @@ describe('parseTabList', () => {
     // the owner is what a v1 payload could not know: it comes from the target
     expect(list.tabs.map((t) => t.owner)).toEqual(['sa', 'sb'])
     expect(list.active).toBe('tab_a')
+  })
+})
+
+describe('one file, one key', () => {
+  it('resolves a relative path against the cwd, so both spellings agree', () => {
+    expect(fileTabKey('src/a.ts', '/repo')).toBe('file:/repo/src/a.ts')
+    expect(fileTabKey('/repo/src/a.ts', '/repo')).toBe('file:/repo/src/a.ts')
+    expect(fileTabKey('./src/a.ts', '/repo/')).toBe('file:/repo/src/a.ts')
+    expect(diffTabKey('src/a.ts', '/repo')).toBe('diff:/repo/src/a.ts')
+    // a tab with no cwd keeps the path it was given
+    expect(fileTabKey('src/a.ts')).toBe('file:src/a.ts')
+  })
+
+  it('gives a file opened in a path-form chat the session the path names', () => {
+    const query = { view: 'code-editor', file: 'src/a.ts', cwd: '/repo' }
+    // the path form carries no `session`: the URL the app really navigates chats to
+    expect(ownerOfTarget('/app/ws_1/chat/sa', query)).toBe('sa')
+    expect(tabKeyOf('/app/ws_1/chat/sa', query)).toBe(tabKeyOf('/app', { ...query, session: 'sa' }))
   })
 })
 
