@@ -1,5 +1,5 @@
 const std = @import("std");
-const llm_history = @import("../agentic_loop/llm_history.zig");
+const llm_history = @import("../modules/agent/loop/llm_history.zig");
 
 pub const WorkspaceResponse = struct { id: []const u8, name: []const u8, created_at: ?[]const u8 = null, updated_at: ?[]const u8 = null };
 

@@ -351,7 +351,7 @@ test "execute generic url without verify returns attach payload with null number
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;

@@ -3,10 +3,10 @@
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const agent = pabrikcore.agent;
 const web_search_mod = pabrikcore.web_search;
-const web_search_config = @import("../../../agentic_loop/web_search_config.zig");
+const web_search_config = @import("../loop/web_search_config.zig");
 const config_mod = pabrikcore.config;
 
 const ToolExecContext = tools.ToolExecContext;

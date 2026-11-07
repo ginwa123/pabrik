@@ -309,14 +309,14 @@ test "remove_file execute returns error XML on invalid path without touching FS"
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 
 /// Delete in whichever substrate owns the tree. Under `--saas` the guest does
 /// it — and the guest refuses to take the workspace root with it, which the

@@ -912,8 +912,8 @@ test "schema contract: no prompt tells the model a search tool does not exist" {
 // The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
-const documents_search = @import("../../../agentic_loop/documents_search.zig");
+const tools = @import("../loop/tools.zig");
+const documents_search = @import("../loop/documents_search.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
@@ -2229,7 +2229,7 @@ test "search_documents is seeded by default but delete_document is not" {
 // The exec wrapper is the only layer that knows a tool call SUCCEEDED: every failure path above
 // returned before it, so the emit lives here and not in the executor.
 
-const sse_event_mod = @import("../../../agentic_loop/sse.zig");
+const sse_event_mod = @import("../loop/sse.zig");
 const sse_bus_mod = exec_pabrikcore.event_bus;
 
 var sse_captured: ?sse_event_mod.SseEvent = null;

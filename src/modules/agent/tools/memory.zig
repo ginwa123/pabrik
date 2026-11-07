@@ -1607,9 +1607,9 @@ test "load_memory_tool: by-id ignores tags (only one row can match anyway)" {
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const exec_migration = @import("../../../migrations/migration.zig");
-const workspace_scope = @import("../../../agentic_loop/workspace_scope.zig");
+const workspace_scope = @import("../loop/workspace_scope.zig");
 const exec_sqlite = exec_pabrikcore.sqlite;
 const database = exec_pabrikcore.database;
 const exec_agent_memories = exec_pabrikcore.agent_memories;

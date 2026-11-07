@@ -542,7 +542,7 @@ test "isSafeRelativeFolder accepts repo-relative paths and the whole-repo empty 
     try std.testing.expect(isSafeRelativeFolder(""));
     try std.testing.expect(isSafeRelativeFolder("src"));
     try std.testing.expect(isSafeRelativeFolder("src/app"));
-    try std.testing.expect(isSafeRelativeFolder("src/agentic_loop/tools"));
+    try std.testing.expect(isSafeRelativeFolder("src/modules/agent/loop"));
     // A filename that merely CONTAINS dots is not an escape.
     try std.testing.expect(isSafeRelativeFolder("src/a..b/c"));
 }

@@ -14,7 +14,7 @@ const service_mod = @import("../service/mod.zig");
 
 const state_file = service_mod.state_file;
 const main_service = service_mod.main_service;
-const ai_mod = @import("../ai_workflow/tui/mod.zig");
+const ai_mod = @import("../modules/agent/loop/mod.zig");
 
 /// `pabrik service {start,stop,status,restart}`. For `service start` we only
 /// daemonize + write the state file; the full server handoff is a follow-up.

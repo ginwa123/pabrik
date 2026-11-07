@@ -6,7 +6,7 @@ const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const auth_common = @import("auth_common.zig");
-const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const workspace_vm = @import("../modules/agent/loop/workspace_vm.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
 pub const WorkspaceWithItemsResponse = struct {

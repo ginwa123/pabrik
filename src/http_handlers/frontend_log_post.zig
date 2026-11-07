@@ -326,7 +326,7 @@ const testing = std.testing;
 
 /// Open a fresh in-memory sqlite DB with the `logs` table loaded.
 /// Mirrors the `setupDb063` helper in `migration.zig` and the
-/// `routines/Scheduler.zig` pattern.
+/// `loop/Scheduler.zig` pattern.
 fn setupDbWithLogs() !struct {
     db: database.Db,
     threaded: std.Io.Threaded,

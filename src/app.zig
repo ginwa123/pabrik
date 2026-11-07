@@ -10,8 +10,8 @@ const event_bus = @import("modules/event_bus/src/event.zig");
 const tool_models = @import("modules/agent/tools/schemas.zig");
 const mcp_stdio = @import("modules/agent/mcp/mcp/mcp_stdio.zig");
 const mcp_http = @import("modules/agent/mcp/mcp/mcp_http.zig");
-const ai_mod = @import("ai_workflow/tui/mod.zig");
-const agentic_loop_mod = @import("agentic_loop/workflow.zig");
+const ai_mod = @import("modules/agent/loop/mod.zig");
+const agentic_loop_mod = @import("modules/agent/loop/workflow.zig");
 
 var global_ctx: ?*App = null;
 

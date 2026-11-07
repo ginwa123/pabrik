@@ -2161,7 +2161,7 @@ test "executeTextReplace - replacement succeeds when old_str is at byte 0" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -2171,7 +2171,7 @@ const args_repair = @import("tools_args_repair.zig");
 const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const testing = std.testing;
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 
 /// The read, the change and the write happen in one place: under `--saas`
 /// both ends are the guest, so the host never opens the file and never writes

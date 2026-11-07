@@ -6,7 +6,7 @@ const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
-const catalog = @import("../agentic_loop/model_catalog.zig");
+const catalog = @import("../modules/agent/loop/model_catalog.zig");
 
 const Allocator = std.mem.Allocator;
 

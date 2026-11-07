@@ -644,7 +644,7 @@ fn jsonError(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
