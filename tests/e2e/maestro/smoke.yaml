@@ -1,0 +1,5 @@
+# Maestro smoke flow (placeholder). Replace with real flows per feature.
+appId: com.pabrik.mobile
+---
+- launchApp
+- assertVisible: "Pabrik"

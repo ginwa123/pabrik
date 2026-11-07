@@ -2,6 +2,9 @@ import { stripTabParam, type TabQuery } from '../helpers/tabTarget'
 import { userScopedKey } from '../helpers/userScope'
 
 const ENABLED_KEY = 'pabrik-tabs-enabled'
+// The key is a NAMESPACE, not the payload version: the payload's own `v` is what parseTabList checks
+// (1 = one flat list, 2 = the same list with an owner per tab). Keeping the key stable is what lets a
+// v1 payload migrate in place instead of being orphaned.
 const LIST_PREFIX = 'pabrik-tabs:v1:'
 
 export function listKey(windowId: string): string {
@@ -34,9 +37,10 @@ export function removeStorage(key: string): void {
 
 export function readEnabled(): boolean {
   const raw = readStorage(ENABLED_KEY)
-  // Tab mode defaults to OFF — users found the strip confusing.
-  // Opt-in via Settings → General → "Browser-style tabs".
-  return raw === null ? false : raw === 'true'
+  // ON by default: the strip is a session's title bar now (it carries the session's name, the width
+  // control, the sidebar toggle and the close), so the default-off of the deleted window-wide strip
+  // no longer applies. Settings → General → "Browser-style tabs" stays as the escape hatch.
+  return raw === null ? true : raw === 'true'
 }
 
 export function tabQueryOf(query: Record<string, unknown>): TabQuery {

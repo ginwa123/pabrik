@@ -15,6 +15,7 @@ import CopyKanbanSpecDialog from './dialogs/CopyKanbanSpecDialog.vue'
 import * as api from '../api'
 import { useNavigationStore } from '../stores/navigation'
 import { useTabsStore } from '../stores/tabs'
+import { useProvideTabStripActions } from './appLayout/useTabStripActions'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { useSidebarStore } from '../stores/sidebar'
 import {
@@ -106,8 +107,8 @@ onUnmounted(() => unmountFpsOverlay())
 // error / requested line / cwd).
 const codeEditorSession = useCodeEditorSession({
   readFile: (cwd, path) => api.readFileContent(cwd, path),
-  syncUrl: ({ path, line }) => {
-    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line) })
+  syncUrl: ({ path, cwd, line, diff }) => {
+    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line, diff, cwd) })
   },
 })
 
@@ -141,6 +142,7 @@ const codeViewerState: CodeViewerState = {
   error: codeEditorSession.error,
   requestedLine: codeEditorSession.requestedLine,
   cwd: codeEditorSession.cwd,
+  diff: codeEditorSession.diff,
   close: closeCodeEditor,
 }
 provide<CodeViewerState>(CODE_VIEWER_STATE_KEY, codeViewerState)
@@ -259,6 +261,12 @@ const currentView = computed(() => {
   // `chatSurfaceActive`.
   if (codeEditorFile.value && !chatSurfaceActive.value) return 'code-editor'
   return resolvePathView(route.path, route.query.view as string | undefined)
+})
+
+useProvideTabStripActions({
+  tabsStore,
+  applyActiveTabToUrl: tabs.applyActiveTabToUrl,
+  openInCodeEditor, cwd: () => rightSidebarCwd.value,
 })
 
 useAppLayoutPumps({

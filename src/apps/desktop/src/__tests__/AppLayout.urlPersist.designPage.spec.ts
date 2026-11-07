@@ -348,7 +348,7 @@ describe('AppLayout — readable code-editor URLs (keep-append)', () => {
     vi.restoreAllMocks()
   })
 
-  it('openInCodeEditor appends a readable file param to the current route (no base64, no cwd)', async () => {
+  it('openInCodeEditor appends a readable file param and its cwd to the current route (no base64)', async () => {
     const replaceMock = vi.fn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useRouterMock.mockReturnValue({ replace: replaceMock, push: vi.fn() } as any)
@@ -371,12 +371,19 @@ describe('AppLayout — readable code-editor URLs (keep-append)', () => {
     await layout.openInCodeEditor({ filePath: 'src/foo.ts', cwd: '/tmp/design', line: 7 })
     expect(replaceMock).toHaveBeenCalledWith({
       path: `/app/${WS_ID}/projects/${DESIGN_ID}`,
-      query: { pageId: PAGE_ID_2, view: 'code-editor', file: 'src/foo.ts', line: '7' },
+      query: {
+        pageId: PAGE_ID_2,
+        view: 'code-editor',
+        file: 'src/foo.ts',
+        line: '7',
+        cwd: '/tmp/design',
+      },
     })
     const lastCall = replaceMock.mock.calls[replaceMock.mock.calls.length - 1]![0] as {
       query: Record<string, string>
     }
-    expect(lastCall.query.cwd).toBeUndefined()
+    // the resolved directory travels with the file: it is what keys one tab for one file
+    expect(lastCall.query.cwd).toBe('/tmp/design')
     wrapper.unmount()
   })
 

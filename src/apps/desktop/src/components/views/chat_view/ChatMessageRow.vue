@@ -89,6 +89,12 @@ defineProps<{
             : 'flex-1 w-full max-w-full'
         "
       >
+        <!-- A shared thread names its author. Set only when the thread has
+             more than one agent, so a one-agent chat is unchanged. -->
+        <div v-if="group.role === 'assistant' && group.author" class="msg-author">
+          <span class="msg-author-avatar">{{ group.author.slice(0, 1).toUpperCase() }}</span>
+          <span class="msg-author-name">{{ group.author }}</span>
+        </div>
         <div
           v-if="hasBubbleContent(group, groupIndex)"
           class="text-body leading-relaxed"

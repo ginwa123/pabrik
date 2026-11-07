@@ -191,6 +191,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       is_input: msg.is_input,
       is_output: msg.is_output,
       reasoning_content: msg.reasoning_content || undefined,
+      agent_name: msg.agent || undefined,
     }))
 
   const mergeMessagesById = (current: Message[], incoming: Message[]): Message[] => {

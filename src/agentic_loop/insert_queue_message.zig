@@ -20,6 +20,9 @@ pub const InsertQueueMessageInput = struct {
     /// The chat's file attachments, as the JSON payload the model path
     /// reads. Empty when the message carries no file.
     file_attachments: []const u8 = "",
+    /// The one agent this message is addressed to, in a group session. Empty
+    /// means whoever is running.
+    target_agent: []const u8 = "",
     event_bus: ?*event_bus_mod.EventBus,
     is_emit_sse: bool,
 };
@@ -42,7 +45,7 @@ pub fn insertQueueMessage(
     const id = try std.fmt.allocPrint(allocator, "{}", .{std.Io.Timestamp.now(std.Options.debug_io, .real).nanoseconds});
     defer allocator.free(id);
 
-    const sql = "INSERT INTO session_queue_messages (id, session_id, message, image_url, video_url, file_attachments) VALUES (?, ?, ?, ?, ?, ?)";
+    const sql = "INSERT INTO session_queue_messages (id, session_id, message, image_url, video_url, file_attachments, target_agent) VALUES (?, ?, ?, ?, ?, ?, ?)";
     const copy_image_url = try allocator.dupe(u8, image_url);
     defer allocator.free(copy_image_url);
     const copy_video_url = try allocator.dupe(u8, video_url);
@@ -50,7 +53,10 @@ pub fn insertQueueMessage(
     const copy_file_attachments = try allocator.dupe(u8, file_attachments);
     defer allocator.free(copy_file_attachments);
 
-    try db.exec(allocator, sql, &.{ id, session_id, message, copy_image_url, copy_video_url, copy_file_attachments });
+    const copy_target_agent = try allocator.dupe(u8, obj.target_agent);
+    defer allocator.free(copy_target_agent);
+
+    try db.exec(allocator, sql, &.{ id, session_id, message, copy_image_url, copy_video_url, copy_file_attachments, copy_target_agent });
 
     // Emit SSE event to notify connected clients
     if (is_emit_sse) {
@@ -106,7 +112,8 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    message TEXT NOT NULL,
         \\    image_url TEXT,
         \\    video_url TEXT,
-        \\    file_attachments TEXT
+        \\    file_attachments TEXT,
+        \\    target_agent TEXT
         \\)
     , &.{});
     return .{ .db = db, .threaded = threaded };

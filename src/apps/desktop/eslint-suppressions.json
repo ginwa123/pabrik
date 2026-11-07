@@ -1046,14 +1046,6 @@
       "count": 2
     }
   },
-  "src/stores/tabs.ts": {
-    "local/no-silent-fallback-catch": {
-      "count": 1
-    },
-    "local/no-try-catch": {
-      "count": 1
-    }
-  },
   "src/stores/tabsStorage.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1

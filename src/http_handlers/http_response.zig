@@ -202,6 +202,9 @@ pub const SessionMessage = struct {
     file_attachments: []const u8 = "",
     tool_call_id: []const u8 = "",
     tool_calls_json: []const u8 = "",
+    /// The agent that wrote this row — the only way a client can tell two
+    /// authors apart in a shared thread.
+    agent: []const u8 = "",
 };
 
 pub const SessionMessagesResponse = struct {
