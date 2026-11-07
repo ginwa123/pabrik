@@ -143,7 +143,7 @@ Key mismatches / notes:
 - [ ] F41 Workspace settings: skills + tests
 - [ ] F42 Workspace settings: memories + tests
 - [ ] F43 Workspace settings: profiles (LLM config) + tests
-- [ ] F44 Workspace settings: MCP servers + tests
+- [x] F44 Workspace settings MCP helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: McpHelper + McpHelperTest. Full UI deferred.)
 - [ ] F45 Workspace settings: tools + tests
 - [ ] F46 Workspace settings: skill evals + tests
 - [ ] F47 Workspace settings: runtime (retry backoff) + tests
