@@ -20,7 +20,7 @@ pub const Migration049AddDefensiveIndexes = struct {
             "ON workspace_items(position DESC, id ASC)",
             &[_][]const u8{});
 
-        // Defensive: covers resetStuckRunning (routines/Scheduler.zig:51)
+        // Defensive: covers resetStuckRunning (loop/Scheduler.zig:51)
         // which runs once at startup. The WHERE on last_status='running' has
         // no index today.
         try db.exec(allocator,

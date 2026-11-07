@@ -2960,18 +2960,18 @@ pub fn build(b: *std.Build) void {
     // (github.com/ginwa123/kabelweb), not here — it's an external URL
     // dependency, and a consumer build never runs a dependency's test blocks.
 
-    const ai_workflow_tui_test_mod = b.addTest(.{
+    const agent_loop_test_mod = b.addTest(.{
         .root_module = mod_tests_module,
     });
 
-    const run_ai_workflow_tui_tests = b.addRunArtifact(ai_workflow_tui_test_mod);
+    const run_agent_loop_tests = b.addRunArtifact(agent_loop_test_mod);
     // Windows: ensure vcpkg bin (libcurl.dll, sqlite3.dll, …) is on
     // PATH at test runtime — see `prependVcpkgBinToPath` doc comment.
-    prependVcpkgBinToPath(b, run_ai_workflow_tui_tests);
-    const test_ai_workflow_tui_step = b.step("test:ai_workflow:tui", "Run AI workflow TUI tests");
-    // The TUI test reuses `mod_tests_module` (which transitively imports
+    prependVcpkgBinToPath(b, run_agent_loop_tests);
+    const test_agent_loop_step = b.step("test:agent:loop", "Run the agent loop tests");
+    // The loop test reuses `mod_tests_module` (which transitively imports
     // the external `databases` package) — no fetch wiring needed.
-    test_ai_workflow_tui_step.dependOn(&run_ai_workflow_tui_tests.step);
+    test_agent_loop_step.dependOn(&run_agent_loop_tests.step);
 
     const linux_step = b.step("install:linux", "Build for Linux x86_64");
     const linux_target = b.resolveTargetQuery(.{

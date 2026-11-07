@@ -6,7 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const auth_common = @import("auth_common.zig");
-const store = @import("../agentic_loop/workspace_members_store.zig");
+const store = @import("../modules/agent/loop/workspace_members_store.zig");
 
 pub const Access = enum {
     /// Any member of the workspace.

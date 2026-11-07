@@ -1038,9 +1038,9 @@ test "web_search: every error envelope carries a named flag" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const agent = pabrikcore.agent;
-const web_search_config = @import("../../../agentic_loop/web_search_config.zig");
+const web_search_config = @import("../loop/web_search_config.zig");
 const exec_config_mod = pabrikcore.config;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;

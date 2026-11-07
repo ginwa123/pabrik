@@ -34,6 +34,8 @@ export interface ChatTranscriptViewDeps {
   scrollerContainerRef: ComputedRef<HTMLElement | null>
   virtualScrollerRef: Ref<VirtualScrollerExposed | null>
   sessionCwd: Ref<string>
+  /** The session's agent name, which labels a thread that has a single author. */
+  authorLabel: () => string
   effectiveCwd: ComputedRef<string>
   isLastGroup: (index: number) => boolean
   nav: ReturnType<typeof useNavigationStore>
@@ -49,6 +51,7 @@ export interface ChatTranscriptViewDeps {
  * `statesProps`/`rowProps` bags the template renders from. */
 export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
   const {
+    authorLabel,
     props,
     sessionId,
     messages,
@@ -207,6 +210,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     sessionId,
     isRemoteLoadPending,
     mode: () => chatView.mode,
+    authorLabel,
   })
 
   const statesProps = computed(() => ({

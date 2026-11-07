@@ -1022,13 +1022,13 @@ test "present_files: a workspace-VM path outside the working directory is reject
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const present_files_mod = pabrikcore.ai_mod.present_files;
 const exec_file_sandbox = pabrikcore.ai_mod.file_sandbox;
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 const runtime_mode = @import("../../../runtime_mode.zig");
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");

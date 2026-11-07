@@ -128,6 +128,9 @@ export function useChatSse(deps: ChatSseDeps) {
             is_input: event.is_input,
             is_output: event.is_output,
             reasoning_content: event.reasoning_content || undefined,
+            // Kept on the cached row too, so a cached mount labels the reply the
+            // same way the network shape does (`toChatMessages` reads `agent`).
+            agent: event.agent_name,
           }),
         ]),
         'messages.putLocal',
@@ -237,6 +240,7 @@ export function useChatSse(deps: ChatSseDeps) {
             existingById.file_attachments = event.file_attachments
             existingById.is_input = event.is_input
             existingById.is_output = event.is_output
+            existingById.agent_name = event.agent_name || undefined
             rememberLiveMessage(sid, event.id, role)
             persistSseFullRowLocally(sid, event, role, event.id, existingById.timestamp)
             streamingContent.value = ''
@@ -304,6 +308,10 @@ export function useChatSse(deps: ChatSseDeps) {
           is_input: event.is_input,
           is_output: event.is_output,
           reasoning_content: event.reasoning_content || undefined,
+          // The backend sends the author on every `llm_full` (SseEventLLMHistory
+          // .agent_name); without this the live reply renders anonymous and the
+          // badge only appears after the transcript reloads from REST.
+          agent_name: event.agent_name || undefined,
         })
         // Write-through: persist the SSE `full` row with its full wire shape
         // so cached mounts render it identically. Best-effort.

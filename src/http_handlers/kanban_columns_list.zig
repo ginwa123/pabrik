@@ -5,7 +5,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const kanban_model = @import("../agentic_loop/kanban_model.zig");
+const kanban_model = @import("../modules/agent/loop/kanban_model.zig");
 
 pub const KanbanColumnsListError = error{
     ItemIdRequired,

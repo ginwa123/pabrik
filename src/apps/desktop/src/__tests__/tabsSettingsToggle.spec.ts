@@ -55,7 +55,8 @@ describe('PabrikConfigEditor — Browser-style tabs toggle', () => {
     const wrapper = await mountSettings()
     const toggle = wrapper.find('[data-testid="toggle-browser-tabs"]')
     expect(wrapper.find('[data-testid="row-browser-tabs"]').exists()).toBe(true)
-    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    // On by default: the strip is the session's title bar.
+    expect((toggle.element as HTMLInputElement).checked).toBe(true)
   })
 
   it('persists the preference and never writes it to the server config', async () => {
@@ -64,16 +65,16 @@ describe('PabrikConfigEditor — Browser-style tabs toggle', () => {
     const mockSave = api.savePabrikConfig as unknown as ReturnType<typeof vi.fn>
     mockSave.mockReset()
 
-    // Default is OFF — opt in first so the change event fires both ways.
-    await wrapper.find('[data-testid="toggle-browser-tabs"]').setValue(true)
-
-    expect(tabs.enabled).toBe(true)
-    expect(localStorage.getItem('pabrik-tabs-enabled')).toBe('true')
-    expect(mockSave).not.toHaveBeenCalled()
-
+    // Default is ON — turn it off first so the change event fires both ways.
     await wrapper.find('[data-testid="toggle-browser-tabs"]').setValue(false)
+
     expect(tabs.enabled).toBe(false)
     expect(localStorage.getItem('pabrik-tabs-enabled')).toBe('false')
+    expect(mockSave).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="toggle-browser-tabs"]').setValue(true)
+    expect(tabs.enabled).toBe(true)
+    expect(localStorage.getItem('pabrik-tabs-enabled')).toBe('true')
   })
 
   it('survives a remount with the pref off and can be turned back on', async () => {

@@ -926,9 +926,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/zig-test"
           # A step's configure results can still go missing part-way through
           # (the runner owns that dir, and a stalled child can outlive them).
-          # That is infrastructure, not a test result: retry once with the tmp
-          # dir cleared, and ONLY for that exact message, so that a real test
-          # failure still fails here.
+          # The same lost child also shows up as "test runner failed to respond
+          # for 1m": on a loaded 4-core Windows runner a cached three-test
+          # helper binary can miss its handshake deadline while the two ~1 GB
+          # LLVM compiles hold the box, which says nothing about the code (CI
+          # run 42280595765: 5602/5602 tests passed, only the handshake timed
+          # out, and the same commit's previous run was green).
+          # Both messages are infrastructure, not a test result: retry once
+          # with the tmp dir cleared, and ONLY for those two, so that a real
+          # test failure still fails here on the first attempt.
           #
           # `set +e` is load-bearing: the runner invokes this script as
           # `bash -e`, which aborts on the failed pipeline below BEFORE the
@@ -948,8 +954,8 @@ jobs:
             zig build test $jobs_flag --summary all -Dno-webapp-rebuild 2>&1 \
               | tee "$RUNNER_TEMP/zig-test/summary.log"
             status=$?
-            if [[ "$status" -ne 0 ]] && grep -q "unable to read results of configure phase" "$RUNNER_TEMP/zig-test/summary.log"; then
-              echo "zig build test: a configure-phase result vanished (attempt $attempt); clearing .zig-cache/tmp and retrying"
+            if [[ "$status" -ne 0 ]] && grep -qE "unable to read results of configure phase|test runner failed to respond" "$RUNNER_TEMP/zig-test/summary.log"; then
+              echo "zig build test: the runner lost a child (attempt $attempt); clearing .zig-cache/tmp and retrying"
               # Evidence for the next log: a test binary that exists but never
               # wrote its handshake points at the child failing to start.
               ls -l .zig-cache/o/*/test* 2>/dev/null | head -n 5 || true

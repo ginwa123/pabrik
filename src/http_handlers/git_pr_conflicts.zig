@@ -6,7 +6,7 @@ const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const run_captured = @import("helpers").run_captured;
 const host_fixture = @import("helpers").host_fixture;
-const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
 // ── What this is for ──────────────────────────────────────────────────────

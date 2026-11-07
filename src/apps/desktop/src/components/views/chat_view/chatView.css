@@ -564,3 +564,31 @@
     display: none;
   }
 }
+
+/* A thread with more than one agent labels each reply; a one-agent chat
+   never shows this row. Sizes come from the type scale, not from the
+   template. */
+.msg-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.msg-author-avatar {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  color: var(--semantic-on-accent);
+  background: var(--color-violet);
+}
+
+.msg-author-name {
+  font-size: var(--text-dense);
+  font-weight: 600;
+  color: var(--semantic-text);
+}

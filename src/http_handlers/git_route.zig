@@ -7,7 +7,7 @@ const pabrik_core = @import("pabrikcore");
 const gserverz = pabrik_core.gserverz;
 const run_captured = @import("helpers").run_captured;
 const git_hardening = @import("helpers").git_hardening;
-const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 
 /// The program every arm runs. One name, so a stray literal cannot reintroduce
 /// a host spawn this module does not route.

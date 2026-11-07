@@ -7,8 +7,8 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const folders_store = @import("../agentic_loop/document_folders_store.zig");
-const document_events = @import("../agentic_loop/document_events.zig");
+const folders_store = @import("../modules/agent/loop/document_folders_store.zig");
+const document_events = @import("../modules/agent/loop/document_events.zig");
 
 pub const FolderDeleteInput = struct {
     workspace_id: []const u8,
@@ -113,12 +113,12 @@ test "useCase: deleting a folder reports the documents it kept" {
     const doomed = try folders_store.createFolder(alloc, &ctx.db, .{ .workspace_id = "ws_1", .name = "Doomed" });
     defer folders_store.freeFolderRow(alloc, doomed);
 
-    const row = try @import("../agentic_loop/documents_store.zig").createDocument(alloc, &ctx.db, .{
+    const row = try @import("../modules/agent/loop/documents_store.zig").createDocument(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .title = "Inside",
         .folder_id = doomed.id,
     });
-    defer @import("../agentic_loop/documents_store.zig").freeDocumentRow(alloc, row);
+    defer @import("../modules/agent/loop/documents_store.zig").freeDocumentRow(alloc, row);
 
     const output = try useCase(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
@@ -130,8 +130,8 @@ test "useCase: deleting a folder reports the documents it kept" {
     defer folders_store.freeFolderRows(alloc, folders);
     try testing.expectEqual(@as(usize, 0), folders.len);
 
-    const after = try @import("../agentic_loop/documents_store.zig").getDocument(alloc, &ctx.db, "ws_1", row.id);
-    defer @import("../agentic_loop/documents_store.zig").freeDocumentRow(alloc, after);
+    const after = try @import("../modules/agent/loop/documents_store.zig").getDocument(alloc, &ctx.db, "ws_1", row.id);
+    defer @import("../modules/agent/loop/documents_store.zig").freeDocumentRow(alloc, after);
     try testing.expectEqual(@as(?[]const u8, null), after.folder_id);
 }
 

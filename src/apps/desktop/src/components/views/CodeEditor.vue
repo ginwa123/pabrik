@@ -34,6 +34,8 @@ const props = defineProps<{
   diffText?: string
   /** Inline blame annotations. Self-fetched when absent. */
   blame?: LineBlame[]
+  /** Open on the changes instead of the file — the diff tab's own view. */
+  initialDiff?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -83,7 +85,8 @@ async function loadDiff(): Promise<void> {
       fetchedDiff.value = null
       return
     }
-    fetchedDiff.value = res.diffs.find((d) => d.path === relativeFilePath.value)?.diff_content ?? null
+    fetchedDiff.value =
+      res.diffs.find((d) => d.path === relativeFilePath.value)?.diff_content ?? null
   } catch (err) {
     console.error('Failed to load whole-file diff:', err)
     fetchedDiff.value = null
@@ -126,11 +129,13 @@ const blameTextFor = (lineNumber: number): string | null => {
 }
 
 // Code/Diff toggle + change navigator state.
-const showDiff = ref(false)
+const showDiff = ref(props.initialDiff === true)
 const navIndex = ref(0)
 const navTarget = ref<number | null>(null)
 const navLabel = computed(() =>
-  changeBlocks.value.length === 0 ? '0 / 0' : `${navIndex.value + 1} / ${changeBlocks.value.length}`,
+  changeBlocks.value.length === 0
+    ? '0 / 0'
+    : `${navIndex.value + 1} / ${changeBlocks.value.length}`,
 )
 
 const isTarget = (lineNumber: number) =>
@@ -213,7 +218,14 @@ onMounted(() => {
 let prevEditorLine = props.line
 let prevEditorContent = props.content
 let prevAnnoKey = ''
+let prevInitialDiff = props.initialDiff === true
 onUpdated(() => {
+  // The tab that names this file decides code vs changes: following a tab click must not be left to
+  // whatever the previous file was showing.
+  if ((props.initialDiff === true) !== prevInitialDiff) {
+    prevInitialDiff = props.initialDiff === true
+    showDiff.value = prevInitialDiff
+  }
   const key = annoKey()
   if (key !== prevAnnoKey) {
     prevAnnoKey = key
@@ -221,7 +233,8 @@ onUpdated(() => {
     fetchedBlame.value = null
     navIndex.value = 0
     navTarget.value = null
-    showDiff.value = false
+    // A new file starts in the mode its tab asks for, not in whatever the previous file was showing.
+    showDiff.value = props.initialDiff === true
     loadAnnotations()
   }
   if (props.line === prevEditorLine && props.content === prevEditorContent) return
@@ -463,12 +476,9 @@ const handleClose = () => {
                 :key="tokenIdx"
                 :class="`tok-${token.type}`"
                 >{{ token.text || '\u00a0' }}</span
-              ><span
-                v-if="blameTextFor(idx + 1)"
-                data-testid="line-blame"
-                class="blame-chip"
-                >{{ blameTextFor(idx + 1) }}</span
-              >
+              ><span v-if="blameTextFor(idx + 1)" data-testid="line-blame" class="blame-chip">{{
+                blameTextFor(idx + 1)
+              }}</span>
             </td>
           </tr>
         </tbody>

@@ -6,8 +6,8 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gate = @import("workspace_members_gate.zig");
-const credential_resolver = @import("../agentic_loop/credential_resolver.zig");
-const secrets_substitution = @import("../agentic_loop/secrets_substitution.zig");
+const credential_resolver = @import("../modules/agent/loop/credential_resolver.zig");
+const secrets_substitution = @import("../modules/agent/loop/secrets_substitution.zig");
 
 const placeholder_prefix = "{" ++ "{SECRETS:";
 
@@ -131,8 +131,8 @@ const testing = std.testing;
 const database = pabrikcore.database;
 const auth_core = @import("auth_core");
 const migration = @import("../migrations/migration.zig");
-const secrets_store = @import("../agentic_loop/secrets_store.zig");
-const workspace_settings_store = @import("../agentic_loop/workspace_settings_store.zig");
+const secrets_store = @import("../modules/agent/loop/secrets_store.zig");
+const workspace_settings_store = @import("../modules/agent/loop/workspace_settings_store.zig");
 
 const TestCtx = struct {
     db: database.Db,

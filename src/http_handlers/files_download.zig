@@ -10,7 +10,7 @@ const gserverz = pabrikcore.gserverz;
 const file_sandbox = @import("../modules/agent/tools/file_sandbox.zig");
 // Which filesystem a presented file's bytes come from.
 const presented_source = @import("../modules/agent/tools/presented_source.zig");
-const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 
 /// Cap mirrors `present_files.zig:MAX_FILE_BYTES` so every presented
 /// file is downloadable. Must stay in sync (see the sync test below).

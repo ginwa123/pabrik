@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   MAX_CLOSED,
+  TABS_VERSION,
   fallbackTitle,
+  groupPayload,
+  hasTabIdentity,
   homeTab,
   isBackgroundOpenEvent,
   kindOf,
   migrateLegacySettingsTab,
   newTabId,
+  ownerOfTarget,
   parseTabList,
   shouldTabify,
   stripTabParam,
@@ -15,6 +19,7 @@ import {
   tabKeyVariants,
   taskChatRendersInItemTab,
   withTabParam,
+  type ClosedTab,
   type Tab,
   type TabKind,
 } from '../helpers/tabTarget'
@@ -130,10 +135,18 @@ describe('tabKeyOf', () => {
 })
 
 describe('shouldTabify', () => {
-  it('refuses the full-surface overlays', () => {
+  it('refuses the two remaining full-surface overlays', () => {
     expect(shouldTabify('/app', { view: 'gitfile', file: 'aGk=' })).toBe(false)
     expect(shouldTabify('/app', { view: 'skill', skill: 'brainstorming' })).toBe(false)
-    expect(shouldTabify('/app', { view: 'code-editor', file: 'aGk=' })).toBe(false)
+  })
+
+  it('tabifies a file opened inside a session, and its diff', () => {
+    expect(shouldTabify('/app', { view: 'code-editor', file: 'src/a.ts', session: 'sa' })).toBe(
+      true,
+    )
+    expect(
+      shouldTabify('/app', { view: 'code-editor', file: 'src/a.ts', mode: 'diff', session: 'sa' }),
+    ).toBe(true)
   })
 
   it('refuses the delete-chat event flag', () => {
@@ -280,8 +293,9 @@ describe('parseTabList', () => {
     )
     const tab = list.tabs[0]
     expect(tab?.key).toBe('ws:ws_1:item_7:chat:task_9')
-    expect(tab?.kind).toBe('workspace')
-    expect(tab?.title).toBe('Workspace')
+    // a task chat is a session of its own, so the rebuilt kind is the chat's, not the board's
+    expect(tab?.kind).toBe('chat')
+    expect(tab?.title).toBe('Chat')
   })
 
   it('caps the reopen stack', () => {
@@ -295,11 +309,121 @@ describe('parseTabList', () => {
     expect(list.closed).toHaveLength(MAX_CLOSED)
   })
 
-  it('preserves a valid list unchanged', () => {
+  it('preserves a legacy list and stamps the owner its payload did not carry', () => {
     const tabs = [chatTab('tab_a', 'sa'), chatTab('tab_b', 'sb')]
     const list = parseTabList(stored(tabs, 'tab_a'))
-    expect(list.tabs).toEqual(tabs)
+    expect(list.tabs.map((t) => [t.id, t.key, t.kind, t.title])).toEqual(
+      tabs.map((t) => [t.id, t.key, t.kind, t.title]),
+    )
+    // the owner is what a v1 payload could not know: it comes from the target
+    expect(list.tabs.map((t) => t.owner)).toEqual(['sa', 'sb'])
     expect(list.active).toBe('tab_a')
+  })
+})
+
+describe('path-form targets', () => {
+  it('gives a /app/{ws}/chat/{sid} URL the session it names', () => {
+    expect(ownerOfTarget('/app/ws_1/chat/ses_9', {})).toBe('ses_9')
+    expect(tabKeyOf('/app/ws_1/chat/ses_9', {})).toBe('chat:ses_9')
+    expect(kindOf('/app/ws_1/chat/ses_9', {})).toBe('chat')
+    // the row is ChatView's to create; the URL names artefacts only, so the funnel leaves this alone
+    expect(hasTabIdentity('/app/ws_1/chat/ses_9', {})).toBe(false)
+  })
+
+  it('gives a project chat the task it names', () => {
+    expect(ownerOfTarget('/app/ws_1/projects/item_7/chat/task_9', {})).toBe('task_9')
+    expect(tabKeyOf('/app/ws_1/projects/item_7/chat/task_9', {})).toBe('chat:task_9')
+  })
+
+  it('gives a kanban task chat its own chat identity, not the board', () => {
+    const task = { view: 'workspace', workspaceId: 'ws_1', itemId: 'item_7/chat/task_9' }
+    expect(kindOf('/app', task, 'kanban')).toBe('chat')
+    expect(ownerOfTarget('/app', task)).toBe('task_9')
+    // a design item shows the same chat as a dialog INSIDE the item, so the item keeps one tab
+    expect(kindOf('/app', task, 'design')).toBe('workspace')
+  })
+
+  it('keys a project settings page', () => {
+    expect(tabKeyOf('/app/ws_1/projects/item_7/settings', {})).toBe('ks:item_7')
+  })
+
+  it('leaves a document page without an identity, so it never becomes a home tab', () => {
+    expect(ownerOfTarget('/app/ws_1/doc/doc_7', {})).toBe('')
+    expect(hasTabIdentity('/app/ws_1/doc/doc_7', {})).toBe(false)
+  })
+})
+
+describe('groupPayload / parseTabList (the per-owner payload)', () => {
+  const chatTab = (id: string, session: string): Tab => ({
+    id,
+    key: `chat:${session}`,
+    kind: 'chat',
+    title: `Title ${session}`,
+    path: '/app',
+    query: { view: 'chat', session },
+    createdAt: 1,
+    owner: session,
+    pinned: true,
+  })
+  const fileTab = (id: string, session: string, file: string): Tab => ({
+    id,
+    key: `file:${file}`,
+    kind: 'file',
+    title: file,
+    path: '/app',
+    query: { view: 'code-editor', file, cwd: '/repo', session },
+    createdAt: 2,
+    owner: session,
+  })
+
+  it('groups one list per owner and points every row at its own active tab', () => {
+    const tabs = [chatTab('a1', 'sa'), fileTab('a2', 'sa', 'a.ts'), chatTab('b1', 'sb')]
+    const payload = groupPayload(tabs, 'a2', [])
+    expect(Object.keys(payload.strips)).toEqual(['sa', 'sb'])
+    expect(payload.strips.sa?.map((t) => t.id)).toEqual(['a1', 'a2'])
+    expect(payload.strips.sb?.map((t) => t.id)).toEqual(['b1'])
+    expect(payload.active).toEqual({ sa: 'a2', sb: 'b1' })
+    expect(payload.v).toBe(TABS_VERSION)
+  })
+
+  it('keeps the closed stacks apart by owner too', () => {
+    const closed: ClosedTab[] = [
+      { ...fileTab('x', 'sa', 'x.ts'), closedAt: 3 },
+      { ...fileTab('y', 'sb', 'y.ts'), closedAt: 4 },
+    ]
+    const payload = groupPayload([chatTab('a1', 'sa')], 'a1', closed)
+    expect(payload.closed.sa?.map((t) => t.id)).toEqual(['x'])
+    expect(payload.closed.sb?.map((t) => t.id)).toEqual(['y'])
+  })
+
+  it('round-trips: a grouped payload parses back to the same flat list', () => {
+    const tabs = [chatTab('a1', 'sa'), fileTab('a2', 'sa', 'a.ts'), chatTab('b1', 'sb')]
+    const payload = groupPayload(tabs, 'a2', [])
+    const parsed = parseTabList(JSON.stringify(payload))
+    expect(parsed.tabs.map((t) => t.id)).toEqual(['a1', 'a2', 'b1'])
+    expect(parsed.tabs.map((t) => t.owner)).toEqual(['sa', 'sa', 'sb'])
+    expect(parsed.active).toBe('a2')
+  })
+
+  it('stamps the owner from the row a tab was filed under', () => {
+    const orphan = { ...fileTab('a2', 'sa', 'a.ts') }
+    delete (orphan as { owner?: string }).owner
+    const parsed = parseTabList(
+      JSON.stringify({ v: 2, strips: { sa: [orphan] }, active: { sa: 'a2' }, closed: {} }),
+    )
+    expect(parsed.tabs[0]?.owner).toBe('sa')
+  })
+
+  it('still parses the v1 flat payload', () => {
+    const legacy = JSON.stringify({
+      v: 1,
+      active: 'a1',
+      tabs: [{ ...chatTab('a1', 'sa') }],
+      closed: [],
+    })
+    const parsed = parseTabList(legacy)
+    expect(parsed.tabs.map((t) => t.id)).toEqual(['a1'])
+    expect(parsed.active).toBe('a1')
   })
 })
 

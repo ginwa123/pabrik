@@ -8,7 +8,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 const provisioning = @import("workspace_provisioning.zig");
-const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const workspace_vm = @import("../modules/agent/loop/workspace_vm.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
 pub const LoginBody = struct {

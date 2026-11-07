@@ -84,9 +84,9 @@ test "list_secrets_tool: the description teaches the placeholder and promises na
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
-const tools = @import("../../../agentic_loop/tools.zig");
-const secrets_store = @import("../../../agentic_loop/secrets_store.zig");
-const workspace_scope = @import("../../../agentic_loop/workspace_scope.zig");
+const tools = @import("../loop/tools.zig");
+const secrets_store = @import("../loop/secrets_store.zig");
+const workspace_scope = @import("../loop/workspace_scope.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;

@@ -46,12 +46,16 @@ export interface Message {
   is_input?: boolean
   is_output?: boolean
   reasoning_content?: string
+  /** The agent that wrote this row; empty in a single-agent thread. */
+  agent_name?: string
 }
 
 export interface MessageGroup {
   role: 'user' | 'assistant' | 'tool'
   messages: Message[]
   timestamp: Date
+  /** The agent credited with this reply; see `messageGroups`. */
+  author?: string
 }
 
 export interface ChatMessagePresentationDeps {
@@ -62,7 +66,13 @@ export interface ChatMessagePresentationDeps {
   sessionId: Ref<string>
   isRemoteLoadPending: Ref<boolean>
   mode: () => ChatViewMode
+  /** The session's own agent, which labels a thread that has a single author. */
+  authorLabel?: () => string
 }
+
+/** `llm_history.agent`'s column default when nothing named the speaker
+ * (`insertLLMHistories`): a placeholder, never an author worth a badge. */
+export const PLACEHOLDER_AGENT = 'Agent'
 
 /** Both prefixes are recognised: older rows carry the XML envelope, not the JSON one. */
 export const isCompactionMessage = (
@@ -147,7 +157,13 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     for (const msg of filteredMessages.value) {
       const lastGroup = groups[groups.length - 1]
 
-      if (lastGroup && lastGroup.role === msg.role) {
+      // Consecutive assistant rows are one block — unless a different agent
+      // wrote the next one, which is exactly what a group thread does.
+      const sameAuthor =
+        msg.role !== 'assistant' ||
+        (lastGroup?.messages[0]?.agent_name ?? '') === (msg.agent_name ?? '')
+
+      if (lastGroup && lastGroup.role === msg.role && sameAuthor) {
         lastGroup.messages.push(msg)
         if (msg.timestamp > lastGroup.timestamp) {
           lastGroup.timestamp = msg.timestamp
@@ -159,6 +175,25 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
           timestamp: msg.timestamp,
         })
       }
+    }
+
+    // Credit every reply to the agent that answered: the row's own `agent_name`
+    // first (a group thread), else the session's agent — never for a thread with
+    // two authors, and never for the `Agent` column default.
+    const authors = new Set<string>()
+    for (const g of groups) {
+      if (g.role !== 'assistant') continue
+      for (const m of g.messages) {
+        if (m.agent_name && m.agent_name !== PLACEHOLDER_AGENT) authors.add(m.agent_name)
+      }
+    }
+    const ownAuthor = (g: MessageGroup): string =>
+      g.messages.find((m) => m.agent_name && m.agent_name !== PLACEHOLDER_AGENT)?.agent_name ?? ''
+    const sessionAuthor = (deps.authorLabel?.() ?? '').trim()
+    for (const g of groups) {
+      if (g.role !== 'assistant') continue
+      const author = ownAuthor(g) || (authors.size > 1 ? '' : sessionAuthor)
+      if (author) g.author = author
     }
 
     // Drop groups with nothing renderable BEFORE the VirtualScroller ever sees them.

@@ -154,6 +154,7 @@ const migration_138 = @import("migration_138.zig");
 const migration_139 = @import("migration_139.zig");
 const migration_140 = @import("migration_140.zig");
 const migration_141 = @import("migration_141.zig");
+const migration_142 = @import("migration_142.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -297,6 +298,7 @@ pub const Migration138AddWorkspaceSecretDescription = migration_138.Migration138
 pub const Migration139AddRoutineCwd = migration_139.Migration139AddRoutineCwd;
 pub const Migration140AddDocumentFolders = migration_140.Migration140AddDocumentFolders;
 pub const Migration141ContractSkillNameDescription = migration_141.Migration141ContractSkillNameDescription;
+pub const Migration142AddSessionGroup = migration_142.Migration142AddSessionGroup;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -561,6 +563,8 @@ pub const allMigrations: []const Migration = &.{
     // Migration 140 — documents get folders, folders get folders.
     .{ .version = Migration140AddDocumentFolders.version, .name = Migration140AddDocumentFolders.name, .up = Migration140AddDocumentFolders.up },
     .{ .version = Migration141ContractSkillNameDescription.version, .name = Migration141ContractSkillNameDescription.name, .up = Migration141ContractSkillNameDescription.up },
+    // Migration 142 — a session can hold a roster of agents instead of one.
+    .{ .version = Migration142AddSessionGroup.version, .name = Migration142AddSessionGroup.name, .up = Migration142AddSessionGroup.up },
 };
 
 /// Register all migrations with a MigrationManager
@@ -5100,7 +5104,7 @@ test "updateSessionLastFinishReason: overwrites on every call" {
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
 /// Open a fresh in-memory sqlite DB. Mirrors the `setupDb` helper in
-/// `ai_workflow/tui/routines/Scheduler.zig` (the project's canonical
+/// `modules/agent/loop/Scheduler.zig` (the project's canonical
 /// Io.Threaded + :memory: pattern).
 fn setupDb064() !struct {
     db: Backend,
@@ -6875,7 +6879,7 @@ test "Migration072 kanban_column_id FK is ON DELETE CASCADE — deleting a colum
     defer ctx.threaded.deinit();
 
     // NB: PRAGMA foreign_keys is deliberately OFF in this project's
-    // Backend init (see src/ai_workflow/tui/kanban_model.zig:306 for
+    // Backend init (see src/modules/agent/loop/kanban_model.zig:306 for
     // the rationale — application code simulates CASCADE manually).
     if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
 
@@ -9094,7 +9098,7 @@ test "Migration101 SQL sentinel matches the Zig guard's UNKNOWN_MODEL" {
     // The trigger hardcodes 'unknown' because SQL cannot call into Zig. This
     // assertion is the ONLY thing keeping the two in step — if someone changes
     // either one alone, this test fails.
-    const guard = @import("../agentic_loop/llm_history_model_guard.zig");
+    const guard = @import("../modules/agent/loop/llm_history_model_guard.zig");
     try testing.expectEqualStrings(guard.UNKNOWN_MODEL, Migration101GuardLlmHistoryModel.sentinel);
 }
 

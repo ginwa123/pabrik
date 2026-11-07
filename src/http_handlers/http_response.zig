@@ -1,5 +1,5 @@
 const std = @import("std");
-const llm_history = @import("../agentic_loop/llm_history.zig");
+const llm_history = @import("../modules/agent/loop/llm_history.zig");
 
 pub const WorkspaceResponse = struct { id: []const u8, name: []const u8, created_at: ?[]const u8 = null, updated_at: ?[]const u8 = null };
 
@@ -202,6 +202,9 @@ pub const SessionMessage = struct {
     file_attachments: []const u8 = "",
     tool_call_id: []const u8 = "",
     tool_calls_json: []const u8 = "",
+    /// The agent that wrote this row — the only way a client can tell two
+    /// authors apart in a shared thread.
+    agent: []const u8 = "",
 };
 
 pub const SessionMessagesResponse = struct {

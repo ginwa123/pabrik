@@ -6,7 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const kanban_model = @import("../agentic_loop/kanban_model.zig");
+const kanban_model = @import("../modules/agent/loop/kanban_model.zig");
 const on_event_sent_kanban = pabrikcore.ai_mod.on_event_sent_kanban;
 
 /// Request body for column-update. All fields are optional. At least one must
