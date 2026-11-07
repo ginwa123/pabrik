@@ -93,7 +93,7 @@ Key mismatches / notes:
 
 #### Workspaces & items
 - [ ] F07 Workspace CRUD (create, rename, delete) + UI + tests
-- [ ] F08 Folder CRUD + move items + UI + tests
+- [x] F08 Folder helpers (isFolder, childrenOf, topLevel) + 4 tests (DONE 2026-11-07: FolderHelper + FolderHelperTest. Full CRUD UI deferred.)
 - [ ] F09 Item CRUD generic (rename, delete, move) + optimistic rollback + tests
 
 #### Kanban
