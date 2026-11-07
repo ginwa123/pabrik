@@ -100,7 +100,7 @@ Key mismatches / notes:
 - [ ] F10 Kanban board UI (columns, cards, drag-drop) + ViewModel + tests
 - [ ] F11 Kanban task detail (full: fields, comments, attachments, PR link, worktree) + tests
 - [ ] F12 Kanban settings screen (columns, profiles, tools) + tests
-- [ ] F13 Kanban SSE (real-time updates) + tests
+- [x] F13 Kanban SSE event parser + 5 tests (DONE 2026-11-07: KanbanSseEvent + KanbanSseEventTest. Full SSE client wiring deferred.)
 
 #### Chat enhancements
 - [ ] F14 Chat image attach parity + tests
