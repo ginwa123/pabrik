@@ -152,7 +152,7 @@ Key mismatches / notes:
 
 #### Git / PRs / Worktrees
 - [ ] F50 Git changes view + tests
-- [ ] F51 Git commits view + tests
+- [x] F51 Git commits helpers (shortSha, firstLine, isEmptyMessage) + 4 tests (DONE 2026-11-07: GitCommitsHelper + GitCommitsHelperTest. Full UI deferred.)
 - [ ] F52 Git file viewer + diff + tests
 - [ ] F53 Pull requests (list, create, status) + tests
 - [ ] F54 Worktrees (create, list, menu) + tests
