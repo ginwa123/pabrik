@@ -68,6 +68,8 @@ export interface ChatSessionRuntimeDeps {
   route: { query: { diff?: unknown } } | undefined
   scrollToBottom: ChatSseDeps['scrollToBottom']
   selectedAgent: Ref<string | null>
+  /** The agent replies are credited to; see `onSessionChanged`. */
+  sessionAuthor: Ref<string>
   sessionCwd: Ref<string>
   sessionId: Ref<string>
   sessionSkills: ChatSseDeps['sessionSkills']
@@ -140,6 +142,7 @@ export function useChatSessionRuntime(deps: ChatSessionRuntimeDeps) {
     route,
     scrollToBottom,
     selectedAgent,
+    sessionAuthor,
     sessionCwd,
     sessionId,
     sessionSkills,
@@ -569,15 +572,21 @@ export function useChatSessionRuntime(deps: ChatSessionRuntimeDeps) {
     resetOlderPrefetch('session-change')
     if (!newId) {
       selectedAgent.value = null
+      sessionAuthor.value = ''
       return
     }
     try {
       const session = await api.getSession(newId)
       const raw = session?.selectedAgent ?? null
       selectedAgent.value = typeof raw === 'string' ? raw : null
+      // A sub-agent session is named after the agent that runs it; every other
+      // session after the profile the composer chip shows.
+      const subAgent = session?.subAgentName ?? ''
+      sessionAuthor.value = subAgent.length > 0 ? subAgent : typeof raw === 'string' ? raw : ''
     } catch (err) {
       console.error('Failed to load session agent:', err)
       selectedAgent.value = null
+      sessionAuthor.value = ''
     }
   }
 

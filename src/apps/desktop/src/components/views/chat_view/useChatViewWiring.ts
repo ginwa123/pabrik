@@ -159,10 +159,16 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     checkGitStatus: () => checkGitStatus(),
   })
 
+  // The agent that answers here: the sub-agent's name, else the profile the
+  // chip shows. Filled by the session read below; the transcript spends it on a
+  // thread that has only one author.
+  const sessionAuthor = ref('')
+
   const transcript = useChatTranscriptView({
     props,
     sessionId,
     messages,
+    authorLabel: () => sessionAuthor.value,
     isPendingSession,
     isRemoteLoadPending,
     isLoading,
@@ -317,6 +323,7 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     route,
     scrollToBottom,
     selectedAgent,
+    sessionAuthor,
     sessionCwd,
     sessionId,
     sessionSkills,
