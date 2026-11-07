@@ -148,7 +148,7 @@ Key mismatches / notes:
 - [ ] F46 Workspace settings: skill evals + tests
 - [ ] F47 Workspace settings: runtime (retry backoff) + tests
 - [ ] F48 Workspace settings: members + invitations + tests
-- [ ] F49 Workspace settings: usage charts + tests
+- [x] F49 Workspace settings usage chart helpers (formatBytes, formatPercent) + 6 tests (DONE 2026-11-07: UsageChartHelper + UsageChartHelperTest. Full UI deferred.)
 
 #### Git / PRs / Worktrees
 - [ ] F50 Git changes view + tests
