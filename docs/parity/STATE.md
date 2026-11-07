@@ -1,6 +1,6 @@
 # Full Parity — State
 
-Status: IN_PROGRESS (run #1 audit, 2026-11-06)
+Status: IN_PROGRESS (run #2, F02 done, F01 blocked, 2026-11-06)
 Repo: pabrik (github.com/ginwa123/pabrik), main @ a1bb70364
 Vue app: `src/apps/desktop/` (Vue 3 + TS, Pinia, Vitest, Playwright E2E)
 Android app: `src/apps/android_mobile/` (Kotlin, Compose Material 3, Navigation-Compose, Room, no DI — manual construction in MainActivity/PabrikNavGraph, cookie auth via AuthTransport, JUnit4 + Robolectric + Compose UI test, androidTest functional harness)
@@ -82,12 +82,12 @@ Key mismatches / notes:
 
 ### Phase A — Shared foundation (do first)
 
-- [ ] F01 Add WorkManager dependency + sync trigger scaffolding (app start, foreground, reconnect) — skeleton only, no feature logic
-- [ ] F02 Offline outbox queue (Room entity + DAO + replay) — generic, reusable by all features
+- [~] F01 Add WorkManager dependency + sync trigger scaffolding (app start, foreground, reconnect) — skeleton only, no feature logic (BLOCKED: androidx.work:work-runtime not in local Gradle/Maven cache and no network; in-process triggers can be added without it but the dependency + background worker require network. Deferred. Recorded 2026-11-06.)
+- [x] F02 Offline outbox queue (Room entity + DAO + replay) — generic, reusable by all features (DONE 2026-11-06: OutboxEntry + OutboxDao + OutboxQueue + 14 tests, 1285 total, 0 failures)
 - [ ] F03 Sync engine core (LWW by updatedAt, idempotent writes, delete handling, UTC storage + local rendering) — generic
-- [ ] F04 Design system audit: ensure all Material3 components, theme tokens, dark mode parity with Vue CSS vars
+- [x] F04 Design system audit: ensure all Material3 components, theme tokens, dark mode parity with Vue CSS vars (DONE 2026-11-07: Android is dark-only (Kanagawa Dragon tokens in Color.kt/Theme.kt); Vue supports 10+ themes (dark+light) via theme/themes.ts + style.css. Gap: no light theme, no theme picker, no theme persistence. Recorded as decision; full theme parity deferred to a dedicated task.)
 - [ ] F05 Navigation: add routes for settings, workspace settings, kanban settings, documents, agent, design, routine detail, git, memory, secrets, members, skills, MCP, LLM config, tools, notifications
-- [ ] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton
+- [x] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton (DONE 2026-11-07: scripts/e2e.sh + tests/e2e/{maestro,playwright,fixtures} skeletons created. Maestro not installed on host; flows are placeholders.)
 
 ### Phase B — Features by dependency and user value
 
@@ -191,6 +191,7 @@ Key mismatches / notes:
 
 ## Decisions
 
+- F04: Android ships only the default dark theme (Kanagawa Dragon). Vue supports 10+ themes including light. Full theme parity (light mode + picker + persistence) is a large task; recorded as a gap. Android theme tokens in Color.kt match Vue's default dark swatch (#181616 bg, #1D1C19 card, #c5c9c5 fg, #8992a7 accent).
 - Repo is pabrik; all work in /home/ginwa/pabrik on branch parity/*, PRs labeled parity-auto.
 - Vue is source of truth for behavior, data model, UX. Android follows Android conventions (Material 3, back navigation).
 - Conflict policy: last-write-wins by updatedAt (per brief); server recomputes derived fields.
@@ -203,14 +204,21 @@ Key mismatches / notes:
 ## Last test results
 
 - Run #1 (audit): no code changed; no tests run.
+- Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
 
 ## Blockers
 
-- None yet.
+- F01 blocked: WorkManager dependency (androidx.work:work-runtime) not available in local Gradle/Maven cache and no network access; in-process sync triggers can be implemented without it but the dependency addition and background worker require network. Deferred until network is available.
 - Maestro availability on CI host unknown — verify in F06/F72.
 - Folder picker seam on Android unknown — verify when needed (routine T06).
 - AuthTransport has no DELETE verb — needed for item delete tasks; add `delete` member mirroring patch precedent.
 
 ## Files touched
 
-- docs/parity/STATE.md (created)
+- docs/parity/STATE.md (created, updated)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/cache/OutboxEntry.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/cache/OutboxDao.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/cache/PabrikCacheDatabase.kt (modified: +OutboxEntry entity, +outboxDao, version 2->3)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
+- src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
+- src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
