@@ -13,8 +13,9 @@
   Skills are rows scoped to one workspace (`GET
   /workspaces/:id/skills`), so the panel binds the route workspace — not
   the active workspace from the store, which is what the old global
-  Skills tab showed without saying so. Memories are per-item directories
-  (`<item-path>/.pabrik/memories/`), picked per item in the section.
+  Skills tab showed without saying so. Memories are the `agent_memories`
+  rows the `save_memory` tool writes, scoped to the same workspace
+  (`GET /workspaces/:id/memories`).
   Secrets never leave this scope: they are invisible under User scope.
 -->
 <script setup lang="ts">
