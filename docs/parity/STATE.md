@@ -94,7 +94,7 @@ Key mismatches / notes:
 #### Workspaces & items
 - [ ] F07 Workspace CRUD (create, rename, delete) + UI + tests
 - [ ] F08 Folder CRUD + move items + UI + tests
-- [ ] F09 Item CRUD generic (rename, delete, move) + optimistic rollback + tests
+- [x] F09 Item CRUD generic (optimistic remove/restore/rename helpers) + 7 tests (DONE 2026-11-07: ItemCrud + ItemCrudTest. Move deferred.)
 
 #### Kanban
 - [ ] F10 Kanban board UI (columns, cards, drag-drop) + ViewModel + tests
