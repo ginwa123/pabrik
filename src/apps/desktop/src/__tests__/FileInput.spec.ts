@@ -1,4 +1,4 @@
-/** Tests for FileInput — chat input's @-triggered file/folder autocomplete. */
+/** Tests for FileInput — the composer's `/files-` file autocomplete and its `@` agent list. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -18,9 +18,7 @@ const searchFilesMock = api.searchFiles as unknown as ReturnType<typeof vi.fn>
 /**  * Mock `api.searchFiles` with pre-ranked server rows (Task 2: the server owns ranking now — the old
  * N-sequential-fetch full-tree walk via raw `fetch` is deleted). Each test sets the rows its query
  * should return. */
-function mockSearchResults(
-  entries: Array<{ name: string; path: string; is_directory: boolean }>,
-) {
+function mockSearchResults(entries: Array<{ name: string; path: string; is_directory: boolean }>) {
   searchFilesMock.mockResolvedValue({
     entries: entries.map((e) => ({ ...e, is_symlink: false })),
   })
@@ -29,15 +27,12 @@ function mockSearchResults(
 /**  * Set the textarea's value and explicitly position the cursor at the end, then dispatch `input` so
  * the component's `autoResize` handler runs and updates `cursorPos`. jsdom does not always move
  * `selectionStart` to the end of a programmatically-set `.value`. */
-async function typeInTextarea(
-  textareaWrapper: ReturnType<VueWrapper['find']>,
-  value: string,
-) {
+async function typeInTextarea(textareaWrapper: ReturnType<VueWrapper['find']>, value: string) {
   const element = textareaWrapper.element as HTMLTextAreaElement
   await textareaWrapper.setValue(value)
   element.setSelectionRange(value.length, value.length)
   element.dispatchEvent(new Event('input', { bubbles: true }))
-  // Wait for BOTH debounces (150ms `@`-detect + 150ms server-search)
+  // Wait for BOTH debounces (100ms trigger-detect + 100ms server-search)
   // plus promise flushes.
   await new Promise((resolve) => setTimeout(resolve, 450))
   await flushPromises()
@@ -56,7 +51,7 @@ async function mountInput(propsOverride: Record<string, unknown> = {}) {
   return wrapper
 }
 
-describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
+describe('FileInput — /files- autocomplete', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     fetchMock.mockReset()
@@ -71,7 +66,7 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
     vi.restoreAllMocks()
   })
 
-  it('preserves @ when the user types a query and presses Enter to pick the first match', async () => {
+  it('replaces the /files- query with the picked path when Enter picks the first match', async () => {
     // Server owns ranking now: pre-ranked rows for query "d" — `/docs`
     // first (shortest path), `/docs/superpowers` second. The picker
     // renders them directly (no client-side walk or re-sort).
@@ -82,7 +77,7 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, '@d')
+    await typeInTextarea(textarea, '/files-d')
 
     // File picker should be open with at least one match.
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
@@ -93,29 +88,28 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    // BUG (pre-fix): /docs  — the @ was lost
-    // FIX:           @/docs — the @ is preserved
-    expect(finalValue).toBe('@/docs')
+    // The whole `/files-<query>` span becomes the canonical `/files-<path>`
+    // token; the marker survives so the message can be stripped on submit.
+    // The path is the row's own (cwd-relative) path — `/home/user` is the cwd.
+    expect(finalValue).toBe('/files-/docs')
   })
 
-  it('preserves @ when prefix text is present (e.g. "Hello @d")', async () => {
-    mockSearchResults([
-      { name: 'docs', path: '/home/user/docs', is_directory: true },
-    ])
+  it('keeps the /files- marker when prefix text is present (e.g. "Hello /files-d")', async () => {
+    mockSearchResults([{ name: 'docs', path: '/home/user/docs', is_directory: true }])
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, 'Hello @d')
+    await typeInTextarea(textarea, 'Hello /files-d')
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
 
     await textarea.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    expect(finalValue).toBe('Hello @/docs')
+    expect(finalValue).toBe('Hello /files-/docs')
   })
 
-  it('preserves @ when the user clicks a folder in the picker (just "@", no query)', async () => {
+  it('replaces a bare /files- with the clicked folder path (empty query)', async () => {
     // Empty query: server returns the cwd top-N pre-ranked.
     mockSearchResults([
       { name: 'bin', path: '/home/user/bin', is_directory: true },
@@ -124,20 +118,20 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, '@')
+    await typeInTextarea(textarea, '/files-')
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
 
     // Click the first folder button (bin).
     const buttons = wrapper.findAll('.file-picker-list button')
     expect(buttons.length).toBeGreaterThan(0)
-    await (buttons[0]!).trigger('click')
+    await buttons[0]!.trigger('click')
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    expect(finalValue).toBe('@/bin')
+    expect(finalValue).toBe('/files-/bin')
   })
 
-  it('preserves @ when the user types a partial path like "@/doc" then selects', async () => {
+  it('replaces a partial path like "/files-/doc" with the full picked path', async () => {
     mockSearchResults([
       { name: 'docs', path: '/home/user/docs', is_directory: true },
       { name: 'superpowers', path: '/home/user/docs/superpowers', is_directory: true },
@@ -145,16 +139,16 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, '@/doc')
+    await typeInTextarea(textarea, '/files-/doc')
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
 
     await textarea.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    // The "/doc" query is replaced by the full relative path; the @
-    // is preserved as a prefix marker.
-    expect(finalValue).toBe('@/docs')
+    // The "/doc" query is replaced by the full relative path; the
+    // `/files-` marker is preserved as a prefix.
+    expect(finalValue).toBe('/files-/docs')
   })
 
   it('does not modify the input when Enter is pressed without a selection (no matches)', async () => {
@@ -163,14 +157,86 @@ describe('FileInput — @ autocomplete on select keeps the @ symbol', () => {
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, '@zzz')
+    await typeInTextarea(textarea, '/files-zzz')
 
     // No matches, no "selected file" → Enter should be a no-op on the input.
     await textarea.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
     const finalValue = (textarea.element as HTMLTextAreaElement).value
-    expect(finalValue).toBe('@zzz')
+    expect(finalValue).toBe('/files-zzz')
+  })
+})
+
+/** `@` addresses an AGENT now — files moved to `/files-` so the two never compete. */
+describe('FileInput — @ lists agents', () => {
+  const AGENTS = [
+    { name: 'deepseek auto', model: 'deepseek-v3' },
+    { name: 'gpt-4o', model: 'gpt-4o' },
+  ]
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    fetchMock.mockReset()
+    global.fetch = fetchMock as unknown as typeof fetch
+    searchFilesMock.mockReset()
+    searchFilesMock.mockResolvedValue({ entries: [] })
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    vi.restoreAllMocks()
+  })
+
+  it('opens the agent list on "@" and lists the agents prop in order', async () => {
+    const wrapper = await mountInput({ agents: AGENTS })
+    await typeInTextarea(wrapper.find('textarea'), '@')
+
+    expect(wrapper.find('[data-testid="agent-picker-list"]').exists()).toBe(true)
+    const rows = wrapper.findAll('[data-agent-name]')
+    expect(rows.map((r) => r.attributes('data-agent-name'))).toEqual(['deepseek auto', 'gpt-4o'])
+    // The row text is the `@<name>` token the composer will insert.
+    expect(rows[0]!.text()).toContain('@deepseek auto')
+  })
+
+  it('inserts "@<name> " and emits select-agent when a row is clicked', async () => {
+    const wrapper = await mountInput({ agents: AGENTS })
+    const textarea = wrapper.find('textarea')
+    await typeInTextarea(textarea, '@')
+
+    await wrapper.find('[data-agent-name="deepseek auto"]').trigger('click')
+    await flushPromises()
+
+    // The trailing space is what ends the mention so the next word is prose.
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('@deepseek auto ')
+    expect(wrapper.emitted('select-agent')).toEqual([['deepseek auto']])
+    // Picking closes the list.
+    expect(wrapper.find('[data-testid="agent-picker-list"]').exists()).toBe(false)
+  })
+
+  it('filters the list by the typed query, spaces in names included', async () => {
+    const wrapper = await mountInput({ agents: AGENTS })
+    await typeInTextarea(wrapper.find('textarea'), '@deep')
+
+    const rows = wrapper.findAll('[data-agent-name]')
+    expect(rows.map((r) => r.attributes('data-agent-name'))).toEqual(['deepseek auto'])
+  })
+
+  it('does not open the file picker on "@" (files moved to /files-)', async () => {
+    const wrapper = await mountInput({ agents: AGENTS })
+    await typeInTextarea(wrapper.find('textarea'), '@')
+
+    expect(wrapper.find('[data-testid="agent-picker-list"]').exists()).toBe(true)
+    expect(wrapper.find('.file-picker-list').exists()).toBe(false)
+  })
+
+  it('renders the empty row when no agents are configured', async () => {
+    const wrapper = await mountInput({ agents: [] })
+    await typeInTextarea(wrapper.find('textarea'), '@')
+
+    expect(wrapper.find('[data-testid="agent-picker-list"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="agent-picker-empty"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-agent-name]')).toHaveLength(0)
   })
 })
 
@@ -203,9 +269,7 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
   } {
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) // PNG header
     const blob = new Blob([bytes], { type })
-    const file = withName
-      ? new File([blob], withName, { type })
-      : new File([blob], '', { type })
+    const file = withName ? new File([blob], withName, { type }) : new File([blob], '', { type })
     return {
       kind: 'file',
       type,
@@ -276,7 +340,10 @@ describe('FileInput — paste image (Ctrl+V) attaches to preview', () => {
     const pdfItem = {
       kind: 'file',
       type: 'application/pdf',
-      getAsFile: () => new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'doc.pdf', { type: 'application/pdf' }),
+      getAsFile: () =>
+        new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'doc.pdf', {
+          type: 'application/pdf',
+        }),
     }
     const ev = fakeClipboardEvent({ items: [pdfItem] })
     ta.dispatchEvent(ev)

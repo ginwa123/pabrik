@@ -20,6 +20,8 @@ import { readChatViewSource } from './helpers/chatViewSource'
 const __dir = dirname(fileURLToPath(import.meta.url))
 const chatViewSrc = readChatViewSource()
 const sliderSrc = readFileSync(resolve(__dir, '../components/chat/ChatScrollSlider.vue'), 'utf8')
+// The `@` agent list lives in the composer itself now (the chip's menu is gone).
+const fileInputSrc = readFileSync(resolve(__dir, '../components/file/FileInput.vue'), 'utf8')
 
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
@@ -321,21 +323,16 @@ describe('ChatView floating composer — source contract', () => {
     expect(sliderSrc).toContain('bottom: calc(var(--chat-composer-inset, 0px) + 8px);')
   })
 
-  it('bounds the agent picker menu by that inset and lets it scroll', () => {
-    // `bottom-full` pins the menu's BOTTOM to the composer chip, so an uncapped
-    // list grows off the TOP of the window and `overflow-hidden` leaves nothing
-    // to scroll. The cap is the space above the chip: viewport minus the dock.
-    const rule = chatViewSrc.match(/\.agent-picker-menu\s*\{[^}]*\}/)
-    expect(rule).not.toBeNull()
-    expect(rule![0]).toMatch(
-      /max-height:\s*min\(60vh,\s*calc\(100vh\s*-\s*var\(--chat-composer-inset, 0px\)\s*-\s*2rem\)\);/,
-    )
-    expect(rule![0]).toMatch(/overflow-y:\s*auto;/)
-    // The menu must not clip the overflow instead of scrolling it.
-    const menuIdx = chatViewSrc.indexOf('agent-picker-menu')
-    expect(menuIdx).toBeGreaterThan(-1)
-    const menuTag = chatViewSrc.slice(menuIdx, menuIdx + 200)
-    expect(menuTag).toContain('bottom-full')
-    expect(menuTag).not.toContain('overflow-hidden')
+  it('bounds the @ agent list so the popup cannot overflow the composer', () => {
+    // The chip's `.agent-picker-menu` is gone; `@` now opens a list INSIDE the
+    // composer card, so the cap is a fixed max height plus a scroll container —
+    // an uncapped list would push the textarea off the bottom of the dock.
+    const listIdx = fileInputSrc.indexOf('class="agent-picker-list')
+    expect(listIdx).toBeGreaterThan(-1)
+    const listTag = fileInputSrc.slice(listIdx, listIdx + 200)
+    expect(listTag).toContain('max-h-72')
+    expect(listTag).toContain('overflow-y-auto')
+    // It must scroll the overflow, never clip it.
+    expect(listTag).not.toContain('overflow-hidden')
   })
 })

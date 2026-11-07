@@ -1,4 +1,5 @@
-/** The New Chat agent picker must list the agents a run in THIS workspace will actually use. */
+/** The composer's agent list must offer the agents a run in THIS workspace will actually use. The
+ * list is `useChatComposerAgents`'s `availableAgents` (rendered by FileInput's `@` list). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, ref } from 'vue'
@@ -8,6 +9,7 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import * as api from '../api'
 import { Effect } from 'effect'
 import ChatView from '../components/views/ChatView.vue'
+import { useChatComposerAgents } from '../components/views/chat_view/useChatComposerAgents'
 import { useWorkspacesStore } from '../stores/workspaces'
 import { installSseBus, __resetSseBus, __setSseBusGlobalClient } from '../helpers/sseBus'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
@@ -76,6 +78,17 @@ function installApiMocks() {
   return wsSpy
 }
 
+/** The composable as ChatView wires it: the workspace resolver is the only scope input. */
+async function loadComposer(workspaceId: string) {
+  const composer = useChatComposerAgents({
+    sessionId: ref('sess_scope'),
+    workspaceId: () => workspaceId,
+    applyChatViewMode: () => {},
+  })
+  await composer.loadAgents()
+  return composer.availableAgents.value.map((p) => p.name)
+}
+
 async function mountChatView(sessionId: string, router?: Router): Promise<VueWrapper> {
   const wrapper = mount(ChatView, {
     props: { chatId: sessionId, chatName: 'Scope Chat' },
@@ -94,17 +107,6 @@ async function mountChatView(sessionId: string, router?: Router): Promise<VueWra
   await flushPromises()
   await nextTick()
   return wrapper
-}
-
-/** The picker as the user sees it: open it, then name the rows on screen. */
-async function openPickerRows(wrapper: VueWrapper): Promise<string[]> {
-  const chip = wrapper.find('[data-testid="agent-picker-button"]')
-  if (!chip.exists()) throw new Error('agent chip not found — picker cannot be opened')
-  await chip.trigger('click.stop')
-  await nextTick()
-  return wrapper
-    .findAll('[data-testid^="agent-picker-"]')
-    .map((el) => el.attributes('data-testid') ?? '')
 }
 
 let vueApp: ReturnType<typeof createApp> | null = null
@@ -127,41 +129,31 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('ChatView agent picker — workspace scope', () => {
+describe('composer agent list — workspace scope', () => {
   it('lists a profile that exists only in the workspace overlay, and asks the workspace scope for it', async () => {
-    const ws = useWorkspacesStore()
-    ws.workspaces = [
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { id: 'ws_with_kilo', name: 'has kilo', items: [], expanded: false } as any,
-    ]
-    ws.activeWorkspaceId = 'ws_with_kilo'
     const wsSpy = installApiMocks()
 
-    const wrapper = await mountChatView('sess_ws_scope')
-    const rows = await openPickerRows(wrapper)
+    const names = await loadComposer('ws_with_kilo')
 
     // The regression: `kilo` was in the workspace's Settings -> Profiles list
     // and in no picker row, because the list came from the user scope.
-    expect(rows).toContain('agent-picker-kilo')
+    expect(names).toContain('kilo')
     expect(wsSpy).toHaveBeenCalledWith('ws_with_kilo')
     expect(vi.mocked(api.getPabrikConfig)).not.toHaveBeenCalled()
-    wrapper.unmount()
   })
 
   it('falls back to the user-scope config when no workspace is in scope', async () => {
-    // Negative control for the test above: with nothing in scope the picker
+    // Negative control for the test above: with nothing in scope the list
     // really does read the user scope, so the absence of `kilo` there is the
     // scope's doing and not an empty list passing vacuously.
     const wsSpy = installApiMocks()
 
-    const wrapper = await mountChatView('sess_no_ws')
-    const rows = await openPickerRows(wrapper)
+    const names = await loadComposer('')
 
-    expect(rows).toContain('agent-picker-900ribu')
-    expect(rows).not.toContain('agent-picker-kilo')
+    expect(names).toContain('900ribu')
+    expect(names).not.toContain('kilo')
     expect(wsSpy).not.toHaveBeenCalled()
     expect(vi.mocked(api.getPabrikConfig)).toHaveBeenCalled()
-    wrapper.unmount()
   })
 
   it('the route workspace wins over a different active workspace in the store', async () => {

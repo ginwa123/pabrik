@@ -45,12 +45,17 @@ const props = defineProps<{
    * session id unassigned or first history fetch outstanding). Disables the textarea + send button
    * so the user can't submit against an unloaded session. */
   isInitializing?: boolean
+  /** The agents `@` can address. The parent owns the list (workspace config)
+   * and the selection (the session's agent). */
+  agents?: Array<{ name: string; model?: string }>
 }>()
 
 const emit = defineEmits<{
   submit: [message: string, files?: File[]]
   /** Emitted when the user clicks the Stop button. */
   'stop-session': []
+  /** The user picked an agent from the `@` list; the parent selects it. */
+  'select-agent': [name: string]
 }>()
 
 interface FileEntry {
@@ -68,6 +73,74 @@ const isLoadingFiles = ref(false)
 const selectedFileIndex = ref(0)
 const filePickerRef = ref<HTMLElement | null>(null)
 let fileDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// ── `@` agent picker ──────────────────────────────────────────────────── `@`
+// addresses an agent; files moved to `/files-` so the two never compete.
+const showAgentPicker = ref(false)
+const agentQuery = ref('')
+const selectedAgentIndex = ref(0)
+const agentPickerRef = ref<HTMLElement | null>(null)
+
+const agentList = computed(() => props.agents ?? [])
+
+const filteredAgents = computed(() => {
+  const q = agentQuery.value.trim().toLowerCase()
+  if (!q) return agentList.value
+  return agentList.value.filter((a) => a.name.toLowerCase().includes(q))
+})
+
+const closeAgentPicker = () => {
+  showAgentPicker.value = false
+  agentQuery.value = ''
+  selectedAgentIndex.value = 0
+}
+
+const detectAgentTrigger = () => {
+  const textBeforeCursor = inputText.value.slice(0, cursorPos.value)
+  // Agent names carry spaces ("deepseek auto"), so the query may too.
+  const match = textBeforeCursor.match(/@([\w .-]*)$/)
+  if (!match) {
+    closeAgentPicker()
+    return
+  }
+  const q = match[1] ?? ''
+  const wasOpen = showAgentPicker.value
+  const changed = q !== agentQuery.value
+  agentQuery.value = q
+  if (!wasOpen) {
+    showAgentPicker.value = true
+    selectedAgentIndex.value = 0
+    closeFilePicker()
+    closeSkillPicker()
+    closeToolPicker()
+  } else if (changed) {
+    selectedAgentIndex.value = 0
+  }
+}
+
+const selectAgentEntry = (agent: { name: string }) => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const textAfterCursor = text.slice(pos)
+  const match = textBeforeCursor.match(/@([\w .-]*)$/)
+  if (match && match.index !== undefined) {
+    // Keep the `@` and the picked name; the typed query is dropped.
+    inputText.value = textBeforeCursor.slice(0, match.index) + `@${agent.name} ` + textAfterCursor
+  }
+  emit('select-agent', agent.name)
+  closeAgentPicker()
+}
+
+const scrollAgentSelectedIntoView = () => {
+  setTimeout(() => {
+    const root = agentPickerRef.value
+    if (!root) return
+    const buttons = root.querySelectorAll('button')
+    const selectedBtn = buttons[selectedAgentIndex.value]
+    if (selectedBtn) selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
+  }, 50)
+}
 
 // File input ref for native file selection
 const nativeFileInput = ref<HTMLInputElement | null>(null)
@@ -170,7 +243,8 @@ const MAX_VIDEO_BYTES = 25 * 1024 * 1024
 const sendMessageWithFiles = async () => {
   if (!inputText.value.trim() && previewFiles.value.length === 0) return
 
-  const message = inputText.value
+  // `/files-<path>` is a composer token, not prose — the model gets the path.
+  const message = inputText.value.replace(/(^|\s)\/files-([\w./\\:-]+)/g, '$1$2')
   const files = previewFiles.value.map((p) => p.file)
 
   // Clear state before emit so parent can process
@@ -536,20 +610,24 @@ const filteredFiles = computed(() => {
 // Render cap: at most 50 rows in the DOM (v1 — no virtual list).
 const visibleFiles = computed(() => filteredFiles.value.slice(0, 50))
 
-const detectAtTrigger = () => {
+// `/files-<query>` is the file trigger (it used to be `@`, which now
+// addresses an agent). The query may carry a path: `/`, `\`, `:` and `-`.
+const FILES_TOKEN_RE = /(^|\s)\/files-([\w./\\:-]*)$/i
+
+const detectFilesTrigger = () => {
   const text = inputText.value
   const pos = cursorPos.value
-  // Find @ before cursor that starts a file query (includes / and \ for paths)
   const textBeforeCursor = text.slice(0, pos)
-  const atMatch = textBeforeCursor.match(/@([\w./\\:-]*)$/)
+  const atMatch = textBeforeCursor.match(FILES_TOKEN_RE)
   if (atMatch) {
-    const q = atMatch[1] ?? ''
+    const q = atMatch[2] ?? ''
     const wasOpen = showFilePicker.value
     const queryChanged = q !== fileQuery.value
     fileQuery.value = q
     if (!wasOpen) {
       showFilePicker.value = true
       selectedFileIndex.value = 0
+      closeAgentPicker()
       closeSkillPicker()
       scheduleFileSearch(true) // immediate on open
     } else if (queryChanged) {
@@ -571,7 +649,8 @@ const detectAtTrigger = () => {
 function scheduleDetectAtTrigger(): void {
   if (fileDebounceTimer) clearTimeout(fileDebounceTimer)
   fileDebounceTimer = setTimeout(() => {
-    detectAtTrigger()
+    detectAgentTrigger()
+    detectFilesTrigger()
     detectSlashTrigger()
     detectToolTrigger()
   }, PICKER_DEBOUNCE_MS)
@@ -877,22 +956,44 @@ const selectTool = (tool: api.AgentRegistryEntry) => {
 const selectFile = (file: FileEntry) => {
   const text = inputText.value
   const pos = cursorPos.value
-  // Replace @query at cursor position (includes /, \, :, - for paths).
-  // The @ trigger must be preserved — the picked path is inserted AFTER the @,
-  // not in place of it, so users see "@/folder" in the input rather than "/folder".
   const textBeforeCursor = text.slice(0, pos)
   const textAfterCursor = text.slice(pos)
-  const atMatch = textBeforeCursor.match(/@([\w./\\:-]*)$/)
-  if (atMatch && atMatch.index !== undefined) {
-    // Slice up to (but not including) the @ — keeps everything before the trigger untouched. Then
-    // prepend @ + picked path. The query part (atMatch[1]) is dropped because the picker already
-    // filtered down to exactly the entry the user picked.
-    inputText.value = textBeforeCursor.slice(0, atMatch.index) + '@' + file.path + textAfterCursor
+  const token = textBeforeCursor.match(FILES_TOKEN_RE)
+  if (token && token.index !== undefined) {
+    // Replace the whole `/files-<query>` span with the canonical token; the
+    // query is dropped because the picker already narrowed to this entry.
+    const markerPos = token.index + (token[1] ?? '').length
+    inputText.value = textBeforeCursor.slice(0, markerPos) + `/files-${file.path}` + textAfterCursor
   }
   closeFilePicker()
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
+  // The `@` agent list is the only surface `@` opens, so it goes first.
+  if (showAgentPicker.value) {
+    const agents = filteredAgents.value
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedAgentIndex.value = Math.min(selectedAgentIndex.value + 1, agents.length - 1)
+      scrollAgentSelectedIntoView()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedAgentIndex.value = Math.max(selectedAgentIndex.value - 1, 0)
+      scrollAgentSelectedIntoView()
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      const selected = agents[selectedAgentIndex.value]
+      if (selected) selectAgentEntry(selected)
+    } else if (e.key === 'Escape') {
+      e.stopPropagation()
+      closeAgentPicker()
+    }
+    return
+  }
+
   // The `/tool-` completion hint takes precedence — only one surface is
   // ever open, and this one has exactly one row, so arrows are no-ops.
   if (showToolCommand.value) {
@@ -1112,6 +1213,48 @@ const sendMessage = () => {
       <span class="text-dense" style="color: var(--semantic-text-dim)"
         >- Submit your code review comment</span
       >
+    </div>
+
+    <!-- `@` agent list — the composer addresses an agent by name. -->
+    <div
+      v-if="showAgentPicker"
+      ref="agentPickerRef"
+      class="agent-picker-list mb-2 p-2 rounded-lg shadow-lg max-h-72 overflow-y-auto"
+      style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+      tabindex="0"
+      data-testid="agent-picker-list"
+    >
+      <div
+        v-if="filteredAgents.length === 0"
+        class="p-2 text-body"
+        style="color: var(--semantic-text-dim)"
+        data-testid="agent-picker-empty"
+      >
+        No agents configured. Add one in Settings.
+      </div>
+      <div v-else>
+        <button
+          v-for="(agent, idx) in filteredAgents"
+          :key="agent.name"
+          type="button"
+          @click="selectAgentEntry(agent)"
+          class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors"
+          :class="idx === selectedAgentIndex ? 'file-item-selected' : ''"
+          :style="
+            idx === selectedAgentIndex
+              ? 'background-color: var(--color-violet); color: var(--color-bg);'
+              : 'color: var(--semantic-text);'
+          "
+          @mouseenter="selectedAgentIndex = idx"
+          :data-agent-name="agent.name"
+        >
+          <UiIcon name="brain" size-class="w-3.5 h-3.5" />
+          <span class="truncate font-mono text-dense">@{{ agent.name }}</span>
+          <span v-if="agent.model" class="ml-auto truncate text-dense" style="opacity: 0.75">{{
+            agent.model
+          }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- File picker dropdown -->
@@ -1435,7 +1578,7 @@ const sendMessage = () => {
       <textarea
         ref="chatTextareaRef"
         v-model="inputText"
-        placeholder="Type a message... (@ files, /skill- skills, /tool- tools)"
+        placeholder="Type a message... (@ agents, /files- files, /skill- skills, /tool- tools)"
         :disabled="isInitializing"
         data-testid="chat-message-textarea"
         class="flex-1 px-4 py-3 rounded-xl text-body outline-none transition-all duration-200 resize-none"
@@ -1595,6 +1738,15 @@ const sendMessage = () => {
 
 .file-picker-list {
   outline: none;
+}
+
+/* The `@` agent list is capped by the space above the composer
+   (`--chat-composer-inset` = the dock's published height) and scrolls: an
+   uncapped list ran off the top of the window, with no way to reach it. */
+.agent-picker-list {
+  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* The `/skill-` completion hint is a single-row dropdown, so it needs no

@@ -27,19 +27,30 @@ describe('ChatView composer toolbar (V1 single-card)', () => {
   })
 
   it('keeps every interactive hook (testids, dropdowns, titles)', () => {
-    for (const hook of [
-      'agent-picker-button',
-      'agent-picker-default',
-      'agent-picker-menu',
-      'agent-picker-active-badge',
-      'worktree-status-button',
-      'tokens-status',
-    ]) {
+    for (const hook of ['worktree-status-button', 'tokens-status']) {
       expect(toolbarSrc).toContain(`data-testid="${hook}"`)
     }
     expect(toolbarSrc).toContain('<WorktreeMenu')
-    expect(toolbarSrc).toContain('agentChipTooltip')
     expect(toolbarSrc).toContain('Compact conversation history')
+  })
+
+  it('drops the agent chip — the composer addresses agents through the @ list', () => {
+    // The chip (button + menu + default row + active badge) is gone from the
+    // toolbar; `@` in the textarea is the only agent surface now.
+    for (const gone of [
+      'agent-picker-button',
+      'agent-picker-menu',
+      'agent-picker-default',
+      'agent-picker-active-badge',
+    ]) {
+      expect(toolbarSrc).not.toContain(gone)
+    }
+    // The chip's testids are gone from the whole view, not just the toolbar.
+    expect(chatViewSrc).not.toContain('agent-picker-button')
+    expect(chatViewSrc).not.toContain('agent-picker-active-badge')
+    // The composer still wires the new surface: the list + the selection emit.
+    expect(chatViewSrc).toContain(':agents="availableAgents"')
+    expect(chatViewSrc).toContain('@select-agent="selectAgent"')
   })
 
   it('truncates the branch label and compacts the token readout', () => {
