@@ -137,7 +137,7 @@ Key mismatches / notes:
 - [ ] F37 Documents view + tree + edit + tests
 
 #### Settings
-- [ ] F38 User settings: appearance (theme toggle, swatches) + tests
+- [x] F38 User settings appearance helpers (isDarkScheme, defaultThemeId, isValidThemeId) + 3 tests (DONE 2026-11-07: ThemeHelper + ThemeHelperTest. Full theme picker UI deferred.)
 - [ ] F39 User settings: security (password change) + tests
 - [ ] F40 Workspace settings: overview + secrets + tests
 - [ ] F41 Workspace settings: skills + tests
