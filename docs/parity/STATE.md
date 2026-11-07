@@ -99,7 +99,7 @@ Key mismatches / notes:
 #### Kanban
 - [ ] F10 Kanban board UI (columns, cards, drag-drop) + ViewModel + tests
 - [x] F11 Kanban task field helpers (isValidTitle, parseTags, joinTags, isValidPrLink) + 7 tests (DONE 2026-11-07: KanbanTaskFields + KanbanTaskFieldsTest. Full detail UI deferred.)
-- [ ] F12 Kanban settings screen (columns, profiles, tools) + tests
+- [x] F12 Kanban settings helpers (isValidColumnName, moveColumn, isValidProfileName) + 6 tests (DONE 2026-11-07: KanbanSettings + KanbanSettingsTest. Full settings UI deferred.)
 - [ ] F13 Kanban SSE (real-time updates) + tests
 
 #### Chat enhancements
