@@ -107,8 +107,8 @@ onUnmounted(() => unmountFpsOverlay())
 // error / requested line / cwd).
 const codeEditorSession = useCodeEditorSession({
   readFile: (cwd, path) => api.readFileContent(cwd, path),
-  syncUrl: ({ path, line, diff }) => {
-    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line, diff) })
+  syncUrl: ({ path, cwd, line, diff }) => {
+    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line, diff, cwd) })
   },
 })
 

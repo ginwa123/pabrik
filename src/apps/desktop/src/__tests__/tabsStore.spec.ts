@@ -146,7 +146,7 @@ describe('tabs store', () => {
     expect(tabs.close(a.id)?.id).toBe(b.id)
     expect(tabs.activeTabId).toBe(b.id)
     expect(tabs.stripOf('sa')).toHaveLength(2)
-    expect(tabs.closedStack[0]?.key).toBe('file:src/a.ts')
+    expect(tabs.closedStack[0]?.key).toBe('file:/repo/src/a.ts')
   })
 
   it('closing the active tab activates the right neighbour', () => {
@@ -257,7 +257,7 @@ describe('tabs store', () => {
     tabs.close(a.id)
     expect(tabs.canReopenLastClosed).toBe(true)
     const reopened = tabs.reopenLastClosed()
-    expect(reopened?.key).toBe('file:src/a.ts')
+    expect(reopened?.key).toBe('file:/repo/src/a.ts')
     expect(tabs.activeTabId).toBe(reopened?.id)
     expect(tabs.closedStack).toHaveLength(0)
     expect(tabs.reopenLastClosed()).toBeNull()
@@ -408,14 +408,44 @@ describe('tabs store', () => {
       const file = tabs.open({ query: fileIn('sa', 'src/deep/a.ts') })
       const diff = tabs.open({ query: { ...fileIn('sa', 'src/deep/a.ts'), mode: 'diff' } })
 
-      expect(file.key).toBe('file:src/deep/a.ts')
-      expect(diff.key).toBe('diff:src/deep/a.ts')
+      expect(file.key).toBe('file:/repo/src/deep/a.ts')
+      expect(diff.key).toBe('diff:/repo/src/deep/a.ts')
       expect(file.kind).toBe('file')
       expect(diff.kind).toBe('diff')
       // the tab wears the file's own name, not its path
       expect(file.title).toBe('a.ts')
       expect(diff.title).toBe('a.ts')
       expect(tabs.stripOf('sa').map((t) => t.kind)).toEqual(['chat', 'file', 'diff'])
+    })
+
+    it('keeps a file tab in the session row when its cwd is another repo', () => {
+      const tabs = useTabsStore()
+      tabs.open({ query: chat('sa') })
+      // the session's cwd is /repo; this file lives in a different checkout
+      const outside = tabs.open({ query: fileIn('sa', 'src/a.ts', '/other-repo') })
+      expect(outside.owner).toBe('sa')
+      expect(outside.key).toBe('file:/other-repo/src/a.ts')
+      expect(tabs.stripOf('sa').map((t) => t.kind)).toEqual(['chat', 'file'])
+
+      // …and the same file, opened with a `..`-relative spelling from the session's cwd, is that tab
+      const again = tabs.open({ query: fileIn('sa', '../other-repo/src/a.ts', '/repo') })
+      expect(again.id).toBe(outside.id)
+      expect(tabs.stripOf('sa')).toHaveLength(2)
+      expect(tabs.stripOf('')).toHaveLength(1)
+    })
+
+    it('adopts a file tab keyed before its cwd was known, instead of opening a second one', () => {
+      const tabs = useTabsStore()
+      tabs.open({ query: chat('sa') })
+      // an open that resolved no directory keys the file by the spelling it was handed
+      const early = tabs.open({ query: { view: 'code-editor', file: 'src/a.ts', session: 'sa' } })
+      expect(early.key).toBe('file:src/a.ts')
+
+      // the same file, now with the directory that makes its path absolute
+      const resolved = tabs.open({ query: fileIn('sa', 'src/a.ts') })
+      expect(resolved.id).toBe(early.id)
+      expect(resolved.key).toBe('file:/repo/src/a.ts')
+      expect(tabs.stripOf('sa').map((t) => t.key)).toEqual(['chat:sa', 'file:/repo/src/a.ts'])
     })
 
     it('keeps the window row for destinations that belong to no session', () => {
@@ -458,7 +488,7 @@ describe('tabs store', () => {
       })
       expect(result.query.tab).not.toBe(aFile.id)
       expect(tabs.stripOf('sa').map((t) => t.id)).toContain(aFile.id)
-      expect(tabs.stripOf('sb').map((t) => t.key)).toEqual(['chat:sb', 'file:src/other.ts'])
+      expect(tabs.stripOf('sb').map((t) => t.key)).toEqual(['chat:sb', 'file:/repo/src/other.ts'])
     })
   })
 
@@ -507,7 +537,7 @@ describe('tabs store', () => {
         ...fileIn('sa', 'src/b.ts'),
         tab: stale.id,
       })
-      const created = tabs.stripOf('sa').find((t) => t.key === 'file:src/b.ts')
+      const created = tabs.stripOf('sa').find((t) => t.key === 'file:/repo/src/b.ts')
       expect(result.query.tab).not.toBe(stale.id)
       expect(result.query.tab).toBe(created?.id)
       expect(tabs.activeTabId).toBe(created?.id)

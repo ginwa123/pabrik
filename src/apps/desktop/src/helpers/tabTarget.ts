@@ -1,5 +1,6 @@
 /** Pure helpers for browser-style tabs. */
 import { parseAppPath } from './appUrl'
+import { fileKeyVariants, resolveTabPath } from './tabPath'
 import { parseItemIdWithChat } from './buildItemIdWithChat'
 
 export type TabQuery = Record<string, string>
@@ -199,15 +200,14 @@ export function isDiffQuery(query: Record<string, unknown> | null | undefined): 
   return stripTabParam(query).mode === DIFF_MODE
 }
 
-/**    * A file's key: the path only. The editor URL carries no `cwd` on purpose, so a key with the cwd
- * would make an in-app open and a deep link two tabs for one file. */
-export function fileTabKey(file: string): string {
-  return `file:${file}`
+/** A file's key: its path resolved against the opening cwd and normalised — one file, one key. */
+export function fileTabKey(file: string, cwd = ''): string {
+  return `file:${resolveTabPath(file, cwd)}`
 }
 
 /** The same file's changes, as its own tab — one tab of each kind per file. */
-export function diffTabKey(file: string): string {
-  return `diff:${file}`
+export function diffTabKey(file: string, cwd = ''): string {
+  return `diff:${resolveTabPath(file, cwd)}`
 }
 
 /** Targets the app navigates to by PATH: `/app/{ws}/chat/{sid}` is a session with no `view`. */
@@ -234,23 +234,19 @@ export function ownerOfTarget(
   const view = q.view ?? ''
   if (view === 'chat') return q.session || pathTarget(path)?.owner || ''
   if (view === 'task') return q.task || q.session || ''
-  if (view === CODE_EDITOR_VIEW) return q.session || ''
+  if (view === CODE_EDITOR_VIEW) return q.session || pathTarget(path)?.owner || ''
   if (view === 'workspace') return parseItemIdWithChat(q.itemId ?? '').chatTaskId || ''
   // No `view` at all: a path-form destination (`/app/{ws}/chat/{sid}`) still names a session.
   if (!view) return pathTarget(path)?.owner ?? ''
   return ''
 }
 
-/**    * Whether this target has an identity a tab can be named after. A session, a board, a settings page and
- * the chats list do; a document page (`/app/{ws}/docs/{id}`, no `view` of its own) does not, and
- * neither does anything else the engine would end up keying as `home`. */
+/** Whether this target has an identity a tab can be named after: an ARTEFACT (a file, its diff), not
+ * a session and not a document page. */
 export function hasTabIdentity(
   path: string,
   query: Record<string, unknown> | null | undefined,
 ): boolean {
-  // Only ARTIFACTS are named in the URL (`?tab=` says which file a session is showing). A session's
-  // own row is created by the surface that shows the session — see `tabsStore.ensureRow` — because
-  // rewriting a chat URL on arrival re-renders what is underneath it.
   const view = stripTabParam(query).view ?? ''
   if (view === CODE_EDITOR_VIEW) return true
   if (kanbanSettingsItemId(path)) return true
@@ -273,7 +269,7 @@ export function tabKeyOf(
   if ((q.view ?? '') === CODE_EDITOR_VIEW) {
     const file = q.file ?? ''
     if (!file) return 'file:'
-    return isDiffQuery(q) ? diffTabKey(file) : fileTabKey(file)
+    return isDiffQuery(q) ? diffTabKey(file, q.cwd ?? '') : fileTabKey(file, q.cwd ?? '')
   }
   const kanbanSettings = kanbanSettingsItemId(path)
   if (kanbanSettings) return `ks:${kanbanSettings}`
@@ -308,13 +304,17 @@ export function taskChatRendersInItemTab(itemType?: string | null): boolean {
   return typeof itemType === 'string' && DIALOG_ITEM_TYPES.includes(itemType)
 }
 
-/** The identities the same workspace URL can have: the canonical one for the known item type, plus
- * the reading it would have had if the type were the opposite. */
+/** The identities the same URL can have: the canonical one, plus the readings a tab created before
+ * its target was resolved still carries — the opposite item type, or a file's unresolved spelling. */
 export function tabKeyVariants(
   path: string,
   query: Record<string, unknown> | null | undefined,
   itemType?: string | null,
 ): string[] {
+  const plain = stripTabParam(query)
+  if ((plain.view ?? '') === CODE_EDITOR_VIEW) {
+    return fileKeyVariants(String(plain.file ?? ''), String(plain.cwd ?? ''), isDiffQuery(plain))
+  }
   const canonical = tabKeyOf(path, query, itemType)
   if (!taskChatRendersInItemTab(itemType)) return [canonical]
   const other = tabKeyOf(path, query, 'agent')
