@@ -54,7 +54,7 @@ export interface MessageGroup {
   role: 'user' | 'assistant' | 'tool'
   messages: Message[]
   timestamp: Date
-  /** Set only when the thread has more than one author. */
+  /** The agent credited with this reply; see `messageGroups`. */
   author?: string
 }
 
@@ -66,7 +66,13 @@ export interface ChatMessagePresentationDeps {
   sessionId: Ref<string>
   isRemoteLoadPending: Ref<boolean>
   mode: () => ChatViewMode
+  /** The session's own agent, which labels a thread that has a single author. */
+  authorLabel?: () => string
 }
+
+/** `llm_history.agent`'s column default when nothing named the speaker
+ * (`insertLLMHistories`): a placeholder, never an author worth a badge. */
+export const PLACEHOLDER_AGENT = 'Agent'
 
 /** Both prefixes are recognised: older rows carry the XML envelope, not the JSON one. */
 export const isCompactionMessage = (
@@ -171,21 +177,23 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
       }
     }
 
-    // A thread with two authors is a group session: label every reply, and
-    // leave a one-agent chat exactly as it was.
+    // Credit every reply to the agent that answered: the row's own `agent_name`
+    // first (a group thread), else the session's agent — never for a thread with
+    // two authors, and never for the `Agent` column default.
     const authors = new Set<string>()
     for (const g of groups) {
       if (g.role !== 'assistant') continue
       for (const m of g.messages) {
-        if (m.agent_name) authors.add(m.agent_name)
+        if (m.agent_name && m.agent_name !== PLACEHOLDER_AGENT) authors.add(m.agent_name)
       }
     }
-    if (authors.size > 1) {
-      for (const g of groups) {
-        if (g.role !== 'assistant') continue
-        const named = g.messages.find((m) => m.agent_name)
-        if (named?.agent_name) g.author = named.agent_name
-      }
+    const ownAuthor = (g: MessageGroup): string =>
+      g.messages.find((m) => m.agent_name && m.agent_name !== PLACEHOLDER_AGENT)?.agent_name ?? ''
+    const sessionAuthor = (deps.authorLabel?.() ?? '').trim()
+    for (const g of groups) {
+      if (g.role !== 'assistant') continue
+      const author = ownAuthor(g) || (authors.size > 1 ? '' : sessionAuthor)
+      if (author) g.author = author
     }
 
     // Drop groups with nothing renderable BEFORE the VirtualScroller ever sees them.
