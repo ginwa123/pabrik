@@ -91,6 +91,30 @@ pub const DocumentsArgs = struct {
     title: []const u8 = "",
 };
 
+/// The object-store verbs. One per `Storage` method, so an agent can exercise
+/// the whole interface with no server and no bucket.
+pub const StorageOp = enum {
+    put,
+    get,
+    stat,
+    delete,
+};
+
+pub const StorageArgs = struct {
+    op: StorageOp,
+    /// The object key. Relative, no traversal segments.
+    key: []const u8 = "",
+    /// The body for `put`, inline.
+    body: []const u8 = "",
+    /// The body for `put`, read from this file. Wins over `--body`.
+    body_file: ?[]const u8 = null,
+    /// Store root. Null falls back to `PABRIK_STORAGE_ROOT`, then `$HOME`.
+    root: ?[]const u8 = null,
+    /// Whether `--body` was passed at all. An empty body is a legitimate
+    /// document, so "absent" and "empty" must stay distinguishable.
+    body_given: bool = false,
+};
+
 /// Which flag was rejected. One variant per distinct user-facing message.
 pub const FailureKind = enum {
     unknown_subcommand,
@@ -103,6 +127,8 @@ pub const FailureKind = enum {
     group_unknown_op,
     group_requires_flag,
     usage_requires_flag,
+    storage_unknown_op,
+    storage_requires_flag,
 };
 
 pub const Failure = struct {
@@ -142,6 +168,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n>\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
+    "  pabrik headless storage <op> [flags]      Read or write the object store\n" ++
+    "      ops: put | get | stat | delete\n" ++
+    "      flags: --key <k> --body <text> --body-file <path> --root <dir>\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -164,6 +193,7 @@ pub const Outcome = union(enum) {
     documents: DocumentsArgs,
     group: GroupArgs,
     usage: UsageArgs,
+    storage: StorageArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -191,6 +221,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "documents")) return try parseDocuments(rest);
     if (std.mem.eql(u8, verb, "group")) return try parseGroup(rest);
     if (std.mem.eql(u8, verb, "usage")) return try parseUsage(rest);
+    if (std.mem.eql(u8, verb, "storage")) return try parseStorage(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
 }
@@ -336,6 +367,57 @@ fn parseUsage(argv: []const []const u8) ParseError!Outcome {
     return .{ .usage = got };
 }
 
+/// `storage` parses its own flag set for the same reason `documents` does: the
+/// shared table describes the server CLI, and these four flags exist only in
+/// this verb.
+fn parseStorage(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .storage_unknown_op });
+
+    const op: StorageOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "put")) break :blk .put;
+        if (std.mem.eql(u8, word, "get")) break :blk .get;
+        if (std.mem.eql(u8, word, "stat")) break :blk .stat;
+        if (std.mem.eql(u8, word, "delete")) break :blk .delete;
+        return fail(.{ .kind = .storage_unknown_op, .value = word });
+    };
+
+    var got = StorageArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--key")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.key = argv[i];
+        } else if (std.mem.eql(u8, flag, "--body")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.body = argv[i];
+            got.body_given = true;
+        } else if (std.mem.eql(u8, flag, "--body-file")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.body_file = argv[i];
+            got.body_given = true;
+        } else if (std.mem.eql(u8, flag, "--root")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.root = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    if (got.key.len == 0) return fail(.{ .kind = .storage_requires_flag, .value = "--key" });
+    if (op == .put and !got.body_given) {
+        return fail(.{ .kind = .storage_requires_flag, .value = "--body" });
+    }
+
+    return .{ .storage = got };
+}
+
 /// `group` parses its own flag set for the same reason `documents` does: the
 /// shared table describes the server CLI, and these five flags exist only in
 /// this verb.
@@ -436,6 +518,8 @@ pub fn reportFailure(f: Failure) void {
         .group_unknown_op => std.log.err("headless: unknown group op '{s}'", .{f.value}),
         .group_requires_flag => std.log.err("headless: group needs {s}", .{f.value}),
         .usage_requires_flag => std.log.err("headless: usage needs {s}", .{f.value}),
+        .storage_unknown_op => std.log.err("headless: unknown storage op '{s}'", .{f.value}),
+        .storage_requires_flag => std.log.err("headless: storage needs {s}", .{f.value}),
     }
 }
 
@@ -637,6 +721,62 @@ test "parse: group reads the hop budget" {
     const a = try parse(&.{ "group", "next", "--session", "s_1", "--budget", "3" });
     try testing.expectEqual(@as(u32, 3), a.group.budget);
     try expectFailure(&.{ "group", "next", "--session", "s_1", "--budget", "lots" }, .invalid_number);
+}
+
+test "parse: storage put reads the key and the inline body" {
+    const a = try parse(&.{ "storage", "put", "--key", "ws/ws_1/documents/doc_a/abc.md", "--body", "# Plan" });
+    try testing.expectEqual(StorageOp.put, a.storage.op);
+    try testing.expectEqualStrings("ws/ws_1/documents/doc_a/abc.md", a.storage.key);
+    try testing.expectEqualStrings("# Plan", a.storage.body);
+    try testing.expect(a.storage.body_given);
+}
+
+test "parse: storage put accepts an empty body, which is a legitimate document" {
+    const a = try parse(&.{ "storage", "put", "--key", "k.md", "--body", "" });
+    try testing.expectEqualStrings("", a.storage.body);
+    try testing.expect(a.storage.body_given);
+}
+
+test "parse: storage put refuses to run with no body at all" {
+    try expectFailure(&.{ "storage", "put", "--key", "k.md" }, .storage_requires_flag);
+}
+
+test "parse: storage put reads a body file and marks the body as given" {
+    const a = try parse(&.{ "storage", "put", "--key", "k.md", "--body-file", "/tmp/body.md" });
+    try testing.expectEqualStrings("/tmp/body.md", a.storage.body_file.?);
+    try testing.expect(a.storage.body_given);
+}
+
+test "parse: storage get, stat and delete need only a key" {
+    inline for (.{ "get", "stat", "delete" }) |op| {
+        const a = try parse(&.{ "storage", op, "--key", "k.md" });
+        try testing.expectEqualStrings("k.md", a.storage.key);
+        try testing.expect(!a.storage.body_given);
+    }
+}
+
+test "parse: storage reads the root override" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md", "--root", "/srv/objects" });
+    try testing.expectEqualStrings("/srv/objects", a.storage.root.?);
+}
+
+test "parse: storage defaults the root to null so the environment decides" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md" });
+    try testing.expect(a.storage.root == null);
+}
+
+test "parse: storage refuses a write with no key" {
+    try expectFailure(&.{ "storage", "put", "--body", "x" }, .storage_requires_flag);
+    try expectFailure(&.{ "storage", "get" }, .storage_requires_flag);
+}
+
+test "parse: storage refuses an unknown op by name" {
+    try expectFailure(&.{ "storage", "explode", "--key", "k.md" }, .storage_unknown_op);
+    try expectFailure(&.{"storage"}, .storage_unknown_op);
+}
+
+test "parse: storage refuses a flag it does not own" {
+    try expectFailure(&.{ "storage", "get", "--key", "k.md", "--workspace", "ws_1" }, .unknown_subcommand);
 }
 
 test "the help text lists every flag the table gives this scope" {
