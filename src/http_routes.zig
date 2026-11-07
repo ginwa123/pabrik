@@ -431,6 +431,13 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     // 404 for anybody else, and `Cache-Control: no-store` on the answer.
     try authed.get("/api/workspaces/:workspace_id/secrets/:secret_id/reveal", ai_mod.http_handlers.secretsRevealHandler);
 
+    // Workspace-scoped memories — the `agent_memories` rows the
+    // `save_memory` / `load_memory` tools write (Migration 070 / 095).
+    try authed.get("/api/workspaces/:workspace_id/memories", ai_mod.http_handlers.workspaceMemoriesListHandler);
+    try authed.post("/api/workspaces/:workspace_id/memories", ai_mod.http_handlers.workspaceMemoryCreateHandler);
+    try authed.get("/api/workspaces/:workspace_id/memories/:memory_id", ai_mod.http_handlers.workspaceMemoryGetHandler);
+    try authed.delete("/api/workspaces/:workspace_id/memories/:memory_id", ai_mod.http_handlers.workspaceMemoryDeleteHandler);
+
     // Per-workspace config overlay (Migration 105): the config sections that
     // moved out of the User-scope Pabrik page into Workspace settings.
     try authed.get("/api/workspaces/:workspace_id/config", ai_mod.http_handlers.workspaceConfigGetHandler);
