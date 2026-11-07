@@ -68,7 +68,6 @@ import com.pabrik.mobile.shell.RecentsDrawerContent
 import com.pabrik.mobile.shell.chatDrawerSelectedChatId
 import com.pabrik.mobile.storage.LastPositionStore
 import com.pabrik.mobile.ui.PabrikAccent
-import com.pabrik.mobile.ui.FeaturePlaceholderScreen
 import com.pabrik.mobile.ui.PabrikBackground
 import com.pabrik.mobile.ui.PabrikMuted
 import com.pabrik.mobile.ui.PabrikText
@@ -1095,13 +1094,6 @@ fun PabrikNavGraph(
             )
         }
 
-        // F05 scaffolding: placeholder routes for not-yet-implemented features.
-        composable(PabrikRoutes.SETTINGS) {
-            FeaturePlaceholderScreen(title = "Settings", onBack = goBack)
-        }
-        composable(PabrikRoutes.NOTIFICATIONS) {
-            FeaturePlaceholderScreen(title = "Notifications", onBack = goBack)
-        }
     }
 
     // AFTER the `NavHost`, not before it: a `Box` draws its later children
