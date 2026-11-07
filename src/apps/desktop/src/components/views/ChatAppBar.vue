@@ -41,12 +41,14 @@
                                          the title, before the buttons
                                          (AgentChatView's SessionSlider)
 
-  It also carries the transcript-width control (useChatContentWidth) next to
-  the sidebar toggle. No prop: the bar is shared, so all three modes and both
-  the hosted and the bare mount get the identical control.
+  It also carries two prop-free controls next to the sidebar toggle: the
+  transcript-width control (useChatContentWidth) and the grouped/raw view
+  toggle (useChatViewToggle). No props: the bar is shared, so all three modes
+  and both the hosted and the bare mount get the identical controls.
 -->
 <script setup lang="ts">
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
+import { useChatViewToggle } from '../../composables/useChatViewToggle'
 
 withDefaults(
   defineProps<{
@@ -64,6 +66,7 @@ const emit = defineEmits<{
 }>()
 
 const { label: widthLabel, nextLabel: widthNextLabel, cycleWidth } = useChatContentWidth()
+const { label: viewLabel, nextLabel: viewNextLabel, toggle: toggleView } = useChatViewToggle()
 </script>
 
 <template>
@@ -84,6 +87,19 @@ const { label: widthLabel, nextLabel: widthNextLabel, cycleWidth } = useChatCont
     </span>
 
     <slot name="extras" />
+
+    <button
+      type="button"
+      class="shrink-0 h-7 px-2 rounded flex items-center gap-1 text-micro hover:opacity-70 transition-opacity"
+      style="color: var(--semantic-text-dim)"
+      :title="`Showing ${viewLabel.toLowerCase()}. Click for ${viewNextLabel.toLowerCase()}.`"
+      :aria-label="`View: ${viewLabel}. Click for ${viewNextLabel}.`"
+      data-testid="chat-app-bar-view-toggle"
+      @click="toggleView"
+    >
+      <span aria-hidden="true">&#9636;</span>
+      <span data-testid="chat-app-bar-view-label">{{ viewLabel }}</span>
+    </button>
 
     <button
       type="button"

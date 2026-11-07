@@ -139,6 +139,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             .tool_call_id = msg.tool_call_id orelse "",
             .tool_calls_json = msg.tool_calls_json orelse "",
             .agent = msg.agent,
+            .is_feed_to_llm = msg.is_feed_to_llm,
         };
     }
 
@@ -214,6 +215,7 @@ fn setupDb() !TestCtx {
         \\    video_url TEXT,
         \\    tool_call_id TEXT,
         \\    tool_calls_json TEXT,
+        \\    is_feed_to_llm INTEGER DEFAULT 1,
         \\    agent TEXT
         \\)
     , &.{});
@@ -472,6 +474,7 @@ test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes sele
             .tool_call_id = msg.tool_call_id orelse "",
             .tool_calls_json = msg.tool_calls_json orelse "",
             .agent = msg.agent,
+            .is_feed_to_llm = msg.is_feed_to_llm,
         };
     }
     const wire = http_response.SessionMessagesResponse{
