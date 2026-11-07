@@ -92,7 +92,8 @@ Key mismatches / notes:
 ### Phase B — Features by dependency and user value
 
 #### Workspaces & items
-- [ ] F07 Workspace CRUD (create, rename, delete) + UI + tests
+- [x] F07 Workspace CRUD API (paths, bodies, parsers) + 9 tests (DONE 2026-11-07: WorkspaceApi + WorkspaceApiTest. UI deferred to F07b.)
+- [ ] F07b Workspace CRUD UI (create/rename/delete dialogs + drawer wiring) + tests
 - [ ] F08 Folder CRUD + move items + UI + tests
 - [ ] F09 Item CRUD generic (rename, delete, move) + optimistic rollback + tests
 
