@@ -7,6 +7,7 @@ pub const boot = @import("boot.zig");
 pub const run = @import("run.zig");
 pub const sessions = @import("sessions.zig");
 pub const documents = @import("documents.zig");
+pub const storage = @import("storage.zig");
 pub const usage = @import("usage.zig");
 pub const group = @import("group.zig");
 
@@ -25,6 +26,8 @@ pub const Command = union(enum) {
     usage: args.UsageArgs,
     /// Read or change a multi-agent session: its roster and who speaks next.
     group: args.GroupArgs,
+    /// Read or write the object store (document bodies).
+    storage: args.StorageArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -41,6 +44,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .documents => |a| .{ .documents = a },
         .usage => |a| .{ .usage = a },
         .group => |a| .{ .group = a },
+        .storage => |a| .{ .storage = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };
@@ -56,5 +60,8 @@ test "parseCommand: maps every Outcome variant onto a Command" {
     try std.testing.expect(docs == .documents);
     const usage_cmd = try parseCommand(&.{ "usage", "--workspace", "ws_1", "--range", "1d" });
     try std.testing.expectEqualStrings("1d", usage_cmd.usage.range);
+    const store_cmd = try parseCommand(&.{ "storage", "get", "--key", "k.md" });
+    try std.testing.expect(store_cmd == .storage);
+    try std.testing.expectEqualStrings("k.md", store_cmd.storage.key);
     try std.testing.expect(bad == .invalid);
 }
