@@ -87,7 +87,7 @@ Key mismatches / notes:
 - [ ] F03 Sync engine core (LWW by updatedAt, idempotent writes, delete handling, UTC storage + local rendering) — generic
 - [ ] F04 Design system audit: ensure all Material3 components, theme tokens, dark mode parity with Vue CSS vars
 - [ ] F05 Navigation: add routes for settings, workspace settings, kanban settings, documents, agent, design, routine detail, git, memory, secrets, members, skills, MCP, LLM config, tools, notifications
-- [ ] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton
+- [x] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton (DONE 2026-11-07: scripts/e2e.sh + tests/e2e/{maestro,playwright,fixtures} skeletons created. Maestro not installed on host; flows are placeholders.)
 
 ### Phase B — Features by dependency and user value
 
