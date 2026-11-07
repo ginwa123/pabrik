@@ -382,560 +382,383 @@ pub fn getGlobal() ?*Logger {
     return null;
 }
 
-// ===== Tests merged from logger_test.zig (2026-09-29 flatten) =====
-test "Logger init and deinit" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{});
-    defer logger_inst.deinit();
+const CountingAllocator = struct {
+    parent: std.mem.Allocator,
+    live_bytes: usize = 0,
 
-    try std.testing.expectEqual(LogLevel.info, logger_inst.getMinLevel());
+    fn allocator(self: *CountingAllocator) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &.{
+            .alloc = alloc,
+            .resize = resize,
+            .remap = remap,
+            .free = free,
+        } };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        const out = self.parent.rawAlloc(len, alignment, ret_addr) orelse return null;
+        self.live_bytes += len;
+        return out;
+    }
+
+    fn resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        if (!self.parent.rawResize(memory, alignment, new_len, ret_addr)) return false;
+        self.live_bytes = self.live_bytes - memory.len + new_len;
+        return true;
+    }
+
+    fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        const out = self.parent.rawRemap(memory, alignment, new_len, ret_addr) orelse return null;
+        self.live_bytes = self.live_bytes - memory.len + new_len;
+        return out;
+    }
+
+    fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        self.parent.rawFree(memory, alignment, ret_addr);
+        self.live_bytes -= memory.len;
+    }
+};
+
+fn tmpLogPath(allocator: std.mem.Allocator, tmp: *std.testing.TmpDir, name: []const u8) ![]u8 {
+    return std.fmt.allocPrint(allocator, ".zig-cache/tmp/{s}/{s}", .{ tmp.sub_path, name });
 }
 
-test "Logger with custom config" {
+fn readLog(io: std.Io, path: []const u8, buf: []u8) ![]const u8 {
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer file.close(io);
+    const n = try std.Io.File.readStreaming(file, io, &.{buf});
+    return buf[0..n];
+}
+
+fn expectNoFile(io: std.Io, path: []const u8) !void {
+    const opened = std.Io.Dir.cwd().openFile(io, path, .{});
+    if (opened) |file| {
+        file.close(io);
+        return error.TestUnexpectedResult;
+    } else |err| {
+        try std.testing.expectEqual(error.FileNotFound, err);
+    }
+}
+
+test "a message below the minimum level never reaches the file" {
     const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "filtered.log");
+    defer allocator.free(path);
+
     var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .debug,
+        .min_level = .warn,
+        .log_file_path = path,
+        .output_mode = .file,
         .include_timestamp = false,
         .include_request_id = false,
     });
     defer logger_inst.deinit();
 
-    try std.testing.expectEqual(LogLevel.debug, logger_inst.getMinLevel());
+    try logger_inst.log(.debug, "dropped");
+    try logger_inst.log(.info, "dropped too");
+
+    try expectNoFile(std.testing.io, path);
 }
 
-test "Logger setMinLevel" {
+test "a message at the minimum level reaches the file" {
     const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{ .min_level = .info });
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "kept.log");
+    defer allocator.free(path);
+
+    var logger_inst = Logger.init(allocator, std.testing.io, .{
+        .min_level = .warn,
+        .log_file_path = path,
+        .output_mode = .file,
+        .include_timestamp = false,
+        .include_request_id = false,
+    });
     defer logger_inst.deinit();
 
-    try std.testing.expectEqual(LogLevel.info, logger_inst.getMinLevel());
+    try logger_inst.log(.warn, "kept");
 
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("[WARN] kept\n", try readLog(std.testing.io, path, &buf));
+}
+
+test "setMinLevel changes which messages reach the file" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "level.log");
+    defer allocator.free(path);
+
+    var logger_inst = Logger.init(allocator, std.testing.io, .{
+        .min_level = .err,
+        .log_file_path = path,
+        .output_mode = .file,
+        .include_timestamp = false,
+        .include_request_id = false,
+    });
+    defer logger_inst.deinit();
+
+    try logger_inst.log(.info, "before");
     logger_inst.setMinLevel(.debug);
-    try std.testing.expectEqual(LogLevel.debug, logger_inst.getMinLevel());
+    try logger_inst.log(.info, "after");
+
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("[INFO] after\n", try readLog(std.testing.io, path, &buf));
 }
 
-test "Logger request ID management" {
+test "the request id is written with each line while it is set" {
     const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{});
-    defer logger_inst.deinit();
-
-    // Initially no request ID
-    try std.testing.expectEqual(@as(?[]const u8, null), logger_inst.getRequestIdString());
-
-    // Set a request ID
-    const id = generateRequestId();
-    logger_inst.setRequestId(id);
-
-    const id_str = logger_inst.getRequestIdString();
-    try std.testing.expect(id_str != null);
-    try std.testing.expect(std.mem.startsWith(u8, id_str.?, "REQ-"));
-
-    // Clear request ID
-    logger_inst.clearRequestId();
-    try std.testing.expectEqual(@as(?[]const u8, null), logger_inst.getRequestIdString());
-}
-
-test "Logger generateAndSetRequestId" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{});
-    defer logger_inst.deinit();
-
-    const id = logger_inst.generateAndSetRequestId();
-    const id_str = id.toString();
-
-    try std.testing.expect(std.mem.startsWith(u8, id_str, "REQ-"));
-    try std.testing.expectEqual(id_str.len, 24);
-}
-
-test "Logger with JSON formatter" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.initJson(allocator, std.testing.io, .{ .min_level = .info });
-    defer logger_inst.deinit();
-
-    try logger_inst.log(.info, "Test JSON message");
-}
-
-test "Logger with color formatter" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.initColor(allocator, std.testing.io, .{ .min_level = .info });
-    defer logger_inst.deinit();
-
-    try logger_inst.log(.info, "Test color message");
-    try logger_inst.log(.err, "Test error message");
-}
-
-test "Logger formatted messages" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{ .min_level = .debug });
-    defer logger_inst.deinit();
-
-    // All formatted log methods return void (not error union)
-    logger_inst.debugFmt("User {s} logged in", .{"alice"});
-    logger_inst.infoFmt("Processing {d} items", .{42});
-    logger_inst.warnFmt("Low memory: {d}MB remaining", .{128});
-    logger_inst.errFmt("Failed to connect to {s}:{d}", .{ "localhost", 8080 });
-}
-
-test "Logger logWithContext" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{ .min_level = .info });
-    defer logger_inst.deinit();
-
-    try logger_inst.logWithContext(.info, "User action", "user_id=123&action=login");
-}
-
-test "LogLevel ordering" {
-    // Verify log levels are ordered correctly for filtering
-    try std.testing.expect(@intFromEnum(LogLevel.trace) < @intFromEnum(LogLevel.debug));
-    try std.testing.expect(@intFromEnum(LogLevel.debug) < @intFromEnum(LogLevel.info));
-    try std.testing.expect(@intFromEnum(LogLevel.info) < @intFromEnum(LogLevel.warn));
-    try std.testing.expect(@intFromEnum(LogLevel.warn) < @intFromEnum(LogLevel.err));
-}
-
-// New tests for file output, rotation, and location features
-
-test "Logger file output creates file and writes logs" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_output.log";
-
-    // Clean up any existing file
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "request_id.log");
+    defer allocator.free(path);
 
     var logger_inst = Logger.init(allocator, std.testing.io, .{
         .min_level = .info,
-        .log_file_path = test_log_path,
+        .log_file_path = path,
         .output_mode = .file,
         .include_timestamp = false,
-        .include_request_id = false,
-    });
-    defer {
-        logger_inst.deinit();
-        std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-    }
-
-    // Log a message
-    try logger_inst.log(.info, "Test file output message");
-
-    // Verify file was created by opening it successfully
-    const file = try std.Io.Dir.cwd().openFile(std.testing.io, test_log_path, .{});
-    file.close(std.testing.io);
-}
-
-test "Logger file rotation at size limit" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_rotation.log";
-
-    // Clean up any existing file
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .info,
-        .log_file_path = test_log_path,
-        .output_mode = .file,
-        .max_file_size_bytes = 100, // Small limit for testing
-        .enable_auto_rotation = true,
-        .include_timestamp = false,
-        .include_request_id = false,
-    });
-    defer {
-        logger_inst.deinit();
-        std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-    }
-
-    // Write multiple messages to exceed size limit
-    try logger_inst.log(.info, "First message that is long enough to trigger rotation soon");
-    try logger_inst.log(.info, "Second message that should cause rotation");
-    try logger_inst.log(.info, "Third message after rotation");
-
-    // File should exist after rotation
-    const file = try std.Io.Dir.cwd().openFile(std.testing.io, test_log_path, .{});
-    file.close(std.testing.io);
-}
-
-test "Logger both output mode writes to stdout and file" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_both.log";
-
-    // Clean up any existing file
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .info,
-        .log_file_path = test_log_path,
-        .output_mode = .both,
-        .include_timestamp = false,
-        .include_request_id = false,
-    });
-    defer {
-        logger_inst.deinit();
-        std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-    }
-
-    // Log a message (goes to both stdout and file)
-    try logger_inst.log(.info, "Test both output mode");
-
-    // Verify file was created by opening it
-    const file = try std.Io.Dir.cwd().openFile(std.testing.io, test_log_path, .{});
-    file.close(std.testing.io);
-}
-
-test "Logger directory creation for log file" {
-    const allocator = std.testing.allocator;
-    const test_dir = "./test_logger_nested_dir";
-    const test_log_path = test_dir ++ "/nested/log.txt";
-
-    // Clean up any existing directory
-    std.Io.Dir.cwd().deleteTree(std.testing.io, test_dir) catch {};
-
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .info,
-        .log_file_path = test_log_path,
-        .output_mode = .file,
-        .include_timestamp = false,
-        .include_request_id = false,
-    });
-    defer {
-        logger_inst.deinit();
-        std.Io.Dir.cwd().deleteTree(std.testing.io, test_dir) catch {};
-    }
-
-    // Log a message - this should create the nested directories
-    try logger_inst.log(.info, "Test directory creation");
-
-    // Verify file was created by opening it
-    const file = try std.Io.Dir.cwd().openFile(std.testing.io, test_log_path, .{});
-    file.close(std.testing.io);
-}
-
-test "Logger backward compatibility - default config works" {
-    const allocator = std.testing.allocator;
-
-    // Test that old-style config without new fields still works
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .debug,
-        .include_timestamp = true,
         .include_request_id = true,
     });
     defer logger_inst.deinit();
 
-    try std.testing.expectEqual(LogLevel.debug, logger_inst.getMinLevel());
-    try logger_inst.log(.info, "Backward compatibility test");
-}
-
-// Helper: read entire log file into a buffer. Returns number of bytes read.
-fn readEntireFile(io: std.Io, path: []const u8, buf: []u8) !usize {
-    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
-    defer file.close(io);
-    return try std.Io.File.readStreaming(file, io, &.{buf});
-}
-
-test "Logger file rotation keeps recent messages and writes cleanly" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_rotation_content.log";
-
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .info,
-        .log_file_path = test_log_path,
-        .output_mode = .file,
-        .max_file_size_bytes = 50, // Small limit; forces multiple rotations
-        .enable_auto_rotation = true,
-        .include_timestamp = false,
-        .include_request_id = false,
-    });
-    defer {
-        logger_inst.deinit();
-        std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-    }
-
-    // Each "[INFO] XXX\n" line is 11 bytes. Write 10 to trigger ~3 rotations.
-    try logger_inst.log(.info, "AAA");
-    try logger_inst.log(.info, "BBB");
-    try logger_inst.log(.info, "CCC");
-    try logger_inst.log(.info, "DDD");
-    try logger_inst.log(.info, "EEE");
-    try logger_inst.log(.info, "FFF");
-    try logger_inst.log(.info, "GGG");
-    try logger_inst.log(.info, "HHH");
-    try logger_inst.log(.info, "III");
-    try logger_inst.log(.info, "JJJ");
-
-    var buf: [4096]u8 = undefined;
-    const n = try readEntireFile(std.testing.io, test_log_path, &buf);
-    const content = buf[0..n];
-
-    // File must contain ONLY valid "[INFO] XXX\n" lines — no binary garbage.
-    var i: usize = 0;
-    var msg_count: usize = 0;
-    while (i < n) {
-        const prefix = "[INFO] ";
-        if (i + prefix.len + 3 + 1 > n) {
-            std.debug.print("FAIL: truncated line at offset {d}\n", .{i});
-            return error.FileCorrupted;
-        }
-        if (!std.mem.eql(u8, content[i..i + prefix.len], prefix)) {
-            std.debug.print("FAIL: garbage at offset {d} (byte=0x{x:0>2})\n", .{ i, content[i] });
-            return error.FileCorrupted;
-        }
-        i += prefix.len + 3; // skip "[INFO] " and the 3-char message body
-        if (content[i] != '\n') {
-            std.debug.print("FAIL: missing newline at offset {d} (byte=0x{x:0>2})\n", .{ i, content[i] });
-            return error.FileCorrupted;
-        }
-        i += 1;
-        msg_count += 1;
-    }
-
-    try std.testing.expect(msg_count > 0);
-    try std.testing.expect(msg_count <= 10);
-
-    // The most recent message ("JJJ") must always survive — never rotated away
-    // while the process is still running.
-    if (std.mem.indexOf(u8, content, "JJJ") == null) {
-        std.debug.print("FAIL: most-recent message 'JJJ' missing after rotation\n", .{});
-        return error.LastMessageMissing;
-    }
-}
-
-test "Logger appends to existing file across process restarts" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_append_restart.log";
-
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-
-    // First "process" (Logger instance) — writes FIRST_RUN_MESSAGE, then closes.
-    {
-        var lgr1 = Logger.init(allocator, std.testing.io, .{
-            .min_level = .info,
-            .log_file_path = test_log_path,
-            .output_mode = .file,
-            .include_timestamp = false,
-            .include_request_id = false,
-        });
-        try lgr1.log(.info, "FIRST_RUN_MESSAGE");
-        lgr1.deinit();
-    }
-
-    // Second "process" — opens the same file (position is 0 after open) and
-    // writes SECOND_RUN_MESSAGE. With the bug, this overwrites the first
-    // message. With the fix, it appends.
-    {
-        var lgr2 = Logger.init(allocator, std.testing.io, .{
-            .min_level = .info,
-            .log_file_path = test_log_path,
-            .output_mode = .file,
-            .include_timestamp = false,
-            .include_request_id = false,
-        });
-        defer lgr2.deinit();
-        try lgr2.log(.info, "SECOND_RUN_MESSAGE");
-    }
-
-    var buf: [4096]u8 = undefined;
-    const n = try readEntireFile(std.testing.io, test_log_path, &buf);
-    const content = buf[0..n];
-
-    // Both messages must be present (the original "FIRST_RUN_MESSAGE" must NOT
-    // have been overwritten by the second process's write at position 0).
-    if (std.mem.indexOf(u8, content, "FIRST_RUN_MESSAGE") == null) {
-        std.debug.print("FAIL: FIRST_RUN_MESSAGE was overwritten by second process (n={d})\n{s}\n", .{ n, content });
-        return error.AppendBug;
-    }
-    if (std.mem.indexOf(u8, content, "SECOND_RUN_MESSAGE") == null) {
-        std.debug.print("FAIL: SECOND_RUN_MESSAGE missing from file (n={d})\n{s}\n", .{ n, content });
-        return error.SecondMessageMissing;
-    }
-
-    // File size must equal the sum of the two formatted lines (no overwrites,
-    // no padding, no missing data).
-    const expected_size = "[INFO] FIRST_RUN_MESSAGE\n".len + "[INFO] SECOND_RUN_MESSAGE\n".len;
-    try std.testing.expectEqual(expected_size, n);
-
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
-}
-
-// ===== Tests merged from memory_leak_test.zig (2026-09-29 flatten) =====
-test "Logger init and deinit - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{});
-    defer logger_inst.deinit();
-
-    try std.testing.expectEqual(LogLevel.info, logger_inst.getMinLevel());
-}
-
-test "Logger custom config - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
-        .min_level = .debug,
-        .include_timestamp = false,
-        .include_request_id = false,
-    });
-    defer logger_inst.deinit();
-
-    try std.testing.expectEqual(LogLevel.debug, logger_inst.getMinLevel());
-}
-
-test "Logger setMinLevel - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{ .min_level = .info });
-    defer logger_inst.deinit();
-
-    try std.testing.expectEqual(LogLevel.info, logger_inst.getMinLevel());
-
-    logger_inst.setMinLevel(.debug);
-    try std.testing.expectEqual(LogLevel.debug, logger_inst.getMinLevel());
-}
-
-test "Logger basic logging - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{ .min_level = .debug });
-    defer logger_inst.deinit();
-
-    try logger_inst.log(.debug, "Debug message");
-    try logger_inst.log(.info, "Info message");
-    try logger_inst.log(.warn, "Warning message");
-    try logger_inst.log(.err, "Error message");
-}
-
-test "Logger with request ID - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{});
-    defer logger_inst.deinit();
-
     const id = logger_inst.generateAndSetRequestId();
-    const id_str = id.toString();
-    try std.testing.expect(std.mem.startsWith(u8, id_str, "REQ-"));
+    try logger_inst.log(.info, "with id");
+    logger_inst.clearRequestId();
+    try logger_inst.log(.info, "without id");
 
-    try logger_inst.log(.info, "With request ID");
-    try std.testing.expect(logger_inst.getRequestIdString() != null);
+    const expected = try std.fmt.allocPrint(allocator, "[INFO] [{s}] with id\n[INFO] without id\n", .{id.toString()});
+    defer allocator.free(expected);
+
+    var buf: [512]u8 = undefined;
+    try std.testing.expectEqualStrings(expected, try readLog(std.testing.io, path, &buf));
 }
 
-test "Logger log with context - no memory leak" {
+test "logWithContext appends the context to the line" {
     const allocator = std.testing.allocator;
-    var logger_inst = Logger.init(allocator, std.testing.io, .{});
-    defer logger_inst.deinit();
-
-    try logger_inst.logWithContext(.info, "User action", "user_id=123&action=login");
-}
-
-test "Logger JSON formatter - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.initJson(allocator, std.testing.io, .{ .min_level = .info });
-    defer logger_inst.deinit();
-
-    try logger_inst.log(.info, "JSON test message");
-}
-
-test "Logger color formatter - no memory leak" {
-    const allocator = std.testing.allocator;
-    var logger_inst = Logger.initColor(allocator, std.testing.io, .{ .min_level = .info });
-    defer logger_inst.deinit();
-
-    try logger_inst.log(.info, "Color test message");
-    try logger_inst.log(.err, "Color error message");
-}
-
-test "Logger file output - no memory leak" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_output.log";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "context.log");
+    defer allocator.free(path);
 
     var logger_inst = Logger.init(allocator, std.testing.io, .{
         .min_level = .info,
-        .log_file_path = test_log_path,
+        .log_file_path = path,
         .output_mode = .file,
         .include_timestamp = false,
         .include_request_id = false,
     });
     defer logger_inst.deinit();
 
-    try logger_inst.log(.info, "Test file output message");
+    try logger_inst.logWithContext(.info, "User action", "user_id=123");
+
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("[INFO] User action (user_id=123)\n", try readLog(std.testing.io, path, &buf));
 }
 
-test "Logger file rotation - no memory leak" {
+test "logFmt formats its arguments into the line" {
     const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_rotation.log";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "fmt.log");
+    defer allocator.free(path);
 
     var logger_inst = Logger.init(allocator, std.testing.io, .{
         .min_level = .info,
-        .log_file_path = test_log_path,
+        .log_file_path = path,
         .output_mode = .file,
-        .max_file_size_bytes = 100,
+        .include_timestamp = false,
+        .include_request_id = false,
+    });
+    defer logger_inst.deinit();
+
+    try logger_inst.logFmt(.info, "processed {d} items for {s}", .{ 42, "alice" });
+
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("[INFO] processed 42 items for alice\n", try readLog(std.testing.io, path, &buf));
+}
+
+test "file output creates the missing parent directories" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "nested/deeper/app.log");
+    defer allocator.free(path);
+
+    var logger_inst = Logger.init(allocator, std.testing.io, .{
+        .min_level = .info,
+        .log_file_path = path,
+        .output_mode = .file,
+        .include_timestamp = false,
+        .include_request_id = false,
+    });
+    defer logger_inst.deinit();
+
+    try logger_inst.log(.info, "nested");
+
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("[INFO] nested\n", try readLog(std.testing.io, path, &buf));
+}
+
+test "a second logger appends to the file instead of overwriting it" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "append.log");
+    defer allocator.free(path);
+
+    {
+        var first = Logger.init(allocator, std.testing.io, .{
+            .min_level = .info,
+            .log_file_path = path,
+            .output_mode = .file,
+            .include_timestamp = false,
+            .include_request_id = false,
+        });
+        defer first.deinit();
+        try first.log(.info, "FIRST_RUN_MESSAGE");
+    }
+
+    {
+        var second = Logger.init(allocator, std.testing.io, .{
+            .min_level = .info,
+            .log_file_path = path,
+            .output_mode = .file,
+            .include_timestamp = false,
+            .include_request_id = false,
+        });
+        defer second.deinit();
+        try second.log(.info, "SECOND_RUN_MESSAGE");
+    }
+
+    var buf: [512]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "[INFO] FIRST_RUN_MESSAGE\n[INFO] SECOND_RUN_MESSAGE\n",
+        try readLog(std.testing.io, path, &buf),
+    );
+}
+
+test "rotation keeps the newest messages and never writes a partial line" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "rotation.log");
+    defer allocator.free(path);
+
+    var logger_inst = Logger.init(allocator, std.testing.io, .{
+        .min_level = .info,
+        .log_file_path = path,
+        .output_mode = .file,
+        .max_file_size_bytes = 50,
         .enable_auto_rotation = true,
         .include_timestamp = false,
         .include_request_id = false,
     });
     defer logger_inst.deinit();
 
-    try logger_inst.log(.info, "First message that is long enough to trigger rotation soon");
-    try logger_inst.log(.info, "Second message that should cause rotation");
-    try logger_inst.log(.info, "Third message after rotation");
+    for ([_][]const u8{ "AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH", "III", "JJJ" }) |message| {
+        try logger_inst.log(.info, message);
+    }
+
+    var buf: [4096]u8 = undefined;
+    try std.testing.expectEqualStrings(
+        "[INFO] FFF\n[INFO] GGG\n[INFO] HHH\n[INFO] III\n[INFO] JJJ\n",
+        try readLog(std.testing.io, path, &buf),
+    );
 }
 
-test "Logger both output mode - no memory leak" {
+test "the json formatter writes one parseable object per line" {
     const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_both.log";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "json.log");
+    defer allocator.free(path);
 
-    var logger_inst = Logger.init(allocator, std.testing.io, .{
+    var logger_inst = Logger.initJson(allocator, std.testing.io, .{
         .min_level = .info,
-        .log_file_path = test_log_path,
-        .output_mode = .both,
-        .include_timestamp = false,
-        .include_request_id = false,
+        .log_file_path = path,
+        .output_mode = .file,
     });
     defer logger_inst.deinit();
 
-    try logger_inst.log(.info, "Test both output mode");
+    try logger_inst.log(.warn, "structured");
+
+    var buf: [512]u8 = undefined;
+    const content = try readLog(std.testing.io, path, &buf);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, std.mem.trimEnd(u8, content, "\n"), .{});
+    defer parsed.deinit();
+
+    try std.testing.expectEqualStrings("WARN", parsed.value.object.get("level").?.string);
+    try std.testing.expectEqualStrings("structured", parsed.value.object.get("message").?.string);
 }
 
-test "Logger directory creation - no memory leak" {
+test "the color formatter marks an error line with the red ansi code" {
     const allocator = std.testing.allocator;
-    const test_dir = "./test_logger_nested_dir";
-    const test_log_path = test_dir ++ "/nested/log.txt";
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "color.log");
+    defer allocator.free(path);
+
+    var logger_inst = Logger.initColor(allocator, std.testing.io, .{
+        .min_level = .info,
+        .log_file_path = path,
+        .output_mode = .file,
+        .include_timestamp = false,
+    });
+    defer logger_inst.deinit();
+
+    try logger_inst.log(.err, "boom");
+
+    var buf: [512]u8 = undefined;
+    const content = try readLog(std.testing.io, path, &buf);
+    try std.testing.expect(std.mem.indexOf(u8, content, AnsiColors.red) != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "ERROR") != null);
+    try std.testing.expect(std.mem.indexOf(u8, content, "boom") != null);
+}
+
+test "repeated logging does not grow live heap bytes" {
+    var counting = CountingAllocator{ .parent = std.testing.allocator };
+    const allocator = counting.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const path = try tmpLogPath(allocator, &tmp, "heap.log");
+    defer allocator.free(path);
 
     var logger_inst = Logger.init(allocator, std.testing.io, .{
         .min_level = .info,
-        .log_file_path = test_log_path,
+        .log_file_path = path,
         .output_mode = .file,
         .include_timestamp = false,
         .include_request_id = false,
     });
     defer logger_inst.deinit();
 
-    try logger_inst.log(.info, "Test directory creation");
+    try logger_inst.log(.info, "warm up");
+    const baseline = counting.live_bytes;
+
+    for (0..16) |_| {
+        try logger_inst.log(.info, "steady state");
+    }
+
+    try std.testing.expectEqual(baseline, counting.live_bytes);
 }
 
-test "Logger appends across restarts - no memory leak" {
-    const allocator = std.testing.allocator;
-    const test_log_path = "./test_logger_append_leak.log";
+test "getGlobal is null until initGlobal and the same logger afterwards" {
+    try std.testing.expectEqual(@as(?*Logger, null), getGlobal());
 
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
+    initGlobal(std.testing.allocator, std.testing.io, .{ .min_level = .debug });
+    defer deinitGlobal(std.testing.io);
 
-    // First process
-    {
-        var lgr1 = Logger.init(allocator, std.testing.io, .{
-            .min_level = .info,
-            .log_file_path = test_log_path,
-            .output_mode = .file,
-            .include_timestamp = false,
-            .include_request_id = false,
-        });
-        try lgr1.log(.info, "first batch");
-        lgr1.deinit();
-    }
+    const global = getGlobal() orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(LogLevel.debug, global.getMinLevel());
 
-    // Second process — appends to the same file
-    {
-        var lgr2 = Logger.init(allocator, std.testing.io, .{
-            .min_level = .info,
-            .log_file_path = test_log_path,
-            .output_mode = .file,
-            .include_timestamp = false,
-            .include_request_id = false,
-        });
-        defer lgr2.deinit();
-        try lgr2.log(.info, "second batch");
-    }
-
-    std.Io.Dir.cwd().deleteFile(std.testing.io, test_log_path) catch {};
+    deinitGlobal(std.testing.io);
+    try std.testing.expectEqual(@as(?*Logger, null), getGlobal());
 }
