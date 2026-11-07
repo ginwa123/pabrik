@@ -103,8 +103,8 @@ Key mismatches / notes:
 - [ ] F13 Kanban SSE (real-time updates) + tests
 
 #### Chat enhancements
-- [ ] F14 Chat image attach parity + tests
-- [ ] F15 Chat tool cards parity (all tool types) + tests
+- [x] F14 Chat image attach parity + tests (DONE: Android has ChatAttachments + ChatViewModelAttachmentTest; already complete.)
+- [x] F15 Chat tool cards parity (all tool types) + tests (DONE: Android has ToolCards + ToolCardFrameTest/ToolCardModelTest/etc.; already complete.)
 
 #### Routine (see routines-parity/STATE.md T03-T17)
 - [ ] F16 Routine T03: detail screen (Routine tab) + ViewModel + tests
