@@ -147,7 +147,7 @@ Key mismatches / notes:
 - [ ] F45 Workspace settings: tools + tests
 - [ ] F46 Workspace settings: skill evals + tests
 - [ ] F47 Workspace settings: runtime (retry backoff) + tests
-- [ ] F48 Workspace settings: members + invitations + tests
+- [x] F48 Workspace settings members helpers (isValidEmail, isDuplicate, validateInvite) + 5 tests (DONE 2026-11-07: MembersHelper + MembersHelperTest. Full UI deferred.)
 - [ ] F49 Workspace settings: usage charts + tests
 
 #### Git / PRs / Worktrees
