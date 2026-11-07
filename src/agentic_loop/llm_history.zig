@@ -666,6 +666,8 @@ pub const SessionMessage = struct {
     file_attachments_meta: ?[]const u8 = null,
     tool_call_id: ?[]const u8 = null,
     tool_calls_json: ?[]const u8 = null,
+    /// The agent that wrote this row. Empty when the row never carried one.
+    agent: []const u8 = "",
 
     pub fn deinit(self: *const SessionMessage, allocator: std.mem.Allocator) void {
         allocator.free(self.id);
@@ -677,6 +679,7 @@ pub const SessionMessage = struct {
         allocator.free(self.tool_name);
         allocator.free(self.finish_reason);
         allocator.free(self.reasoning_content);
+        allocator.free(self.agent);
         if (self.reasoning_id) |rid| allocator.free(rid);
         if (self.reasoning_encrypted_content) |rec| allocator.free(rec);
         if (self.diffview_before) |dv| allocator.free(dv);
@@ -787,7 +790,8 @@ pub fn getSessionMessagesSorted(
             \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
             \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
             \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), ''),
-            \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), '')
+            \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), ''),
+            \\       COALESCE(CAST(h.agent AS TEXT), '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s}{s} LIMIT ?
         , .{ cursor_cmp, order_part });
@@ -809,7 +813,8 @@ pub fn getSessionMessagesSorted(
             \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
             \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
             \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), ''),
-            \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), '')
+            \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), ''),
+            \\       COALESCE(CAST(h.agent AS TEXT), '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s} LIMIT ?
         , .{order_part});
@@ -842,7 +847,8 @@ pub fn getSessionMessagesSorted(
                 \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(CAST(h.tool_name AS TEXT), ''),
                 \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
                 \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
-                \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), '')
+                \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''),
+                \\       COALESCE(CAST(h.agent AS TEXT), '')
                 \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
                 \\WHERE h.session_id = ?{s}{s} LIMIT ?
             , .{ cursor_cmp, order_part });
@@ -864,7 +870,8 @@ pub fn getSessionMessagesSorted(
                 \\       COALESCE(h.is_input, 0), COALESCE(h.is_output, 0), COALESCE(CAST(h.tool_name AS TEXT), ''),
                 \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
                 \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
-                \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), '')
+                \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''),
+                \\       COALESCE(CAST(h.agent AS TEXT), '')
                 \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
                 \\WHERE h.session_id = ?{s} LIMIT ?
             , .{order_part});
@@ -986,6 +993,7 @@ pub fn getSessionMessagesSorted(
             } else null,
             .file_attachments_meta = if (row.values.len > 25 and row.values[25].len > 0) try allocator.dupe(u8, row.values[25]) else null,
             .tool_call_id = if (row.values[18].len > 0) try allocator.dupe(u8, row.values[18]) else null,
+            .agent = try allocator.dupe(u8, row.values[row.values.len - 1]),
             .tool_calls_json = if (row.values[19].len > 0) try allocator.dupe(u8, row.values[19]) else null,
         };
         try messages.append(allocator, msg);
@@ -2315,11 +2323,11 @@ pub fn searchMessagesFts(
             \\        h.tool_name AS tool_name,
             \\        COALESCE(NULLIF(h.created_iso, ''), CAST(h.created_at_nano AS TEXT), '') AS created_at,
             \\        -ts_rank(
-            ++ comptime dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
+        ++ comptime dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
             \\, q.tsq) AS fts_rank
             \\    FROM llm_history h, to_tsquery('simple'::regconfig, ?) AS q(tsq)
             \\    WHERE
-            ++ " " ++ dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
+        ++ " " ++ dialect.tsVectorText("COALESCE(CAST(h.response_content AS TEXT), '')") ++
             \\ @@ q.tsq
         );
     } else {
@@ -6998,7 +7006,7 @@ fn getSessionListSetupDb() !struct {
         \\    finish_reason TEXT,
         \\    usage_json TEXT,
         \\    created_at_nano 
-        ++ pabrikcore.dialect.epoch_default ++
+    ++ pabrikcore.dialect.epoch_default ++
         \\,
         \\    agent TEXT DEFAULT 'Agent'
         \\)
@@ -8611,7 +8619,7 @@ fn llmHistorySearchMessagesFtsSetupDb() !TestCtx {
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
         \\  created_at_nano 
-        ++ pabrikcore.dialect.epoch_default ++
+    ++ pabrikcore.dialect.epoch_default ++
         \\,
         \\  -- Mirrors Migration 059 in production: a regular TEXT column.
         \\  -- No INSERT trigger — production populates it from application
@@ -9067,7 +9075,7 @@ fn llmHistoryCompactedMessagesSetupDb() !struct {
         \\  is_feed_to_llm INTEGER DEFAULT 1,
         \\  agent TEXT,
         \\  created_at_nano 
-        ++ pabrikcore.dialect.epoch_default ++
+    ++ pabrikcore.dialect.epoch_default ++
         \\,
         \\  -- Mirrors Migration 059 in production: a regular TEXT column
         \\  -- populated by INSERT/UPDATE triggers. We CAN'T use a STORED
@@ -9364,7 +9372,7 @@ test "saveMessage: writes a correct-year (2026-ish) created_iso from current tim
         \\    temperature REAL,
         \\    is_thinking INTEGER,
         \\    created_at_nano 
-        ++ pabrikcore.dialect.epoch_type ++
+    ++ pabrikcore.dialect.epoch_type ++
         \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
@@ -9449,7 +9457,7 @@ test "saveMessage: created_at column is stored as Unix microseconds (length <= 1
         \\    temperature REAL,
         \\    is_thinking INTEGER,
         \\    created_at_nano 
-        ++ pabrikcore.dialect.epoch_type ++
+    ++ pabrikcore.dialect.epoch_type ++
         \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,
@@ -10116,7 +10124,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         \\    temperature REAL,
         \\    is_thinking INTEGER,
         \\    created_at_nano 
-        ++ pabrikcore.dialect.epoch_type ++
+    ++ pabrikcore.dialect.epoch_type ++
         \\,
         \\    created_iso TEXT,
         \\    parent_session_id TEXT,

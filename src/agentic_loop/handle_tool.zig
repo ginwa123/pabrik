@@ -747,6 +747,9 @@ pub fn handle_tool(
     // does. The tool-result envelope stays the same either way.
     allowed_tools: []const u8,
     is_sub_agent: bool,
+    /// Who is speaking this turn. A group session changes speaker between
+    /// turns, and the newest row still names the previous one.
+    agent_override: []const u8,
 ) !ToolBatchOutcome {
     var outcome: ToolBatchOutcome = .{};
 
@@ -776,7 +779,7 @@ pub fn handle_tool(
         }
 
         const current_agent_state = try get_current_agent_by_session_id(allocator, db, session_id);
-        const current_agent_for_save = current_agent_state.agent;
+        const current_agent_for_save = if (agent_override.len > 0) agent_override else current_agent_state.agent;
 
         _ = try llm_history.saveMessage(allocator, io, db, .{
             .session_id = session_id,

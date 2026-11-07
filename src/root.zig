@@ -283,6 +283,8 @@ pub const http_response = @import("http_handlers/http_response.zig");
 pub const spawn_sub_agent = @import("modules/agent/tools/spawn_sub_agent.zig");
 pub const ask_user_message = @import("agentic_loop/ask_user_message.zig");
 pub const main_agent_only = @import("agentic_loop/main_agent_only.zig");
+pub const group_router = @import("agentic_loop/group_router.zig");
+pub const session_group = @import("agentic_loop/session_group.zig");
 pub const http_handlers = @import("http_handlers/mod.zig");
 // kabelweb — external web-framework library (pure-Zig HTTP server +
 // libcurl-backed HTTP client, pinned by URL in build.zig.zon). `gserverz`
