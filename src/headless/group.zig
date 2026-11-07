@@ -9,6 +9,7 @@ const args = @import("args.zig");
 
 const database = pabrikcore.database;
 const session_group = pabrikcore.session_group;
+const http_handlers = pabrikcore.http_handlers;
 
 pub fn run(
     allocator: std.mem.Allocator,
@@ -25,72 +26,39 @@ pub fn runWithDb(
 ) ![]u8 {
     switch (a.op) {
         .create => {
-            const session_id = try session_group.createGroupSession(allocator, db, "Agents group", a.agent);
+            const session_id = try session_group.createGroupSession(allocator, db, "Agents group", "");
             defer allocator.free(session_id);
-            try session_group.addMember(
-                allocator,
-                db,
-                session_id,
-                a.agent,
-                session_group.Role.fromText(a.role),
-                0,
-            );
-            try session_group.setLead(allocator, db, session_id, a.agent);
-            return roster(allocator, db, session_id);
+            return roster(allocator, db, .join, session_id, a.agent, a.role);
         },
-        .join => {
-            try session_group.addMember(
-                allocator,
-                db,
-                a.session_id,
-                a.agent,
-                session_group.Role.fromText(a.role),
-                a.position,
-            );
-            try session_group.setLeadIfUnset(allocator, db, a.session_id, a.agent, a.role);
-            return roster(allocator, db, a.session_id);
-        },
-        .leave => {
-            try session_group.removeMember(allocator, db, a.session_id, a.agent);
-            return roster(allocator, db, a.session_id);
-        },
-        .lead => {
-            try session_group.setLead(allocator, db, a.session_id, a.agent);
-            return roster(allocator, db, a.session_id);
-        },
-        .members => return roster(allocator, db, a.session_id),
+        .join => return roster(allocator, db, .join, a.session_id, a.agent, a.role),
+        .leave => return roster(allocator, db, .leave, a.session_id, a.agent, ""),
+        .lead => return roster(allocator, db, .lead, a.session_id, a.agent, ""),
+        .members => return roster(allocator, db, .members, a.session_id, "", ""),
         .next => return next(allocator, db, a),
     }
 }
 
-fn roster(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ![]u8 {
-    const members = try session_group.listMembers(allocator, db, session_id);
-    defer session_group.freeMembers(allocator, members);
+/// The roster the HTTP endpoints answer with. Every op but `next` runs the
+/// same useCase the matching `/api/llm/session/:id/group...` handler runs, so
+/// the CLI and the app cannot drift.
+fn roster(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    op: args.GroupOp,
+    session_id: []const u8,
+    agent: []const u8,
+    role: []const u8,
+) ![]u8 {
+    const outcome = switch (op) {
+        .join => http_handlers.sessionGroupAddMemberUseCase(allocator, db, session_id, agent, role),
+        .leave => http_handlers.sessionGroupRemoveMemberUseCase(allocator, db, session_id, agent),
+        .lead => http_handlers.sessionGroupSetLeadUseCase(allocator, db, session_id, agent),
+        else => http_handlers.sessionGroupRosterUseCase(allocator, db, session_id),
+    };
 
-    const lead = try session_group.groupLead(allocator, db, session_id);
-    defer if (lead) |l| allocator.free(l);
-
-    var buf: std.ArrayList(u8) = .empty;
-    errdefer buf.deinit(allocator);
-
-    try buf.appendSlice(allocator, "{\"session_id\":");
-    try appendJsonString(allocator, &buf, session_id);
-    try buf.appendSlice(allocator, ",\"group\":");
-    try buf.appendSlice(allocator, if (lead != null) "true" else "false");
-    try buf.appendSlice(allocator, ",\"lead\":");
-    try appendJsonString(allocator, &buf, lead orelse "");
-    try buf.appendSlice(allocator, ",\"members\":[");
-
-    for (members, 0..) |m, i| {
-        if (i > 0) try buf.appendSlice(allocator, ",");
-        try buf.appendSlice(allocator, "{\"name\":");
-        try appendJsonString(allocator, &buf, m.name);
-        try buf.appendSlice(allocator, ",\"role\":");
-        try appendJsonString(allocator, &buf, m.role.toText());
-        try buf.appendSlice(allocator, "}");
-    }
-    try buf.appendSlice(allocator, "]}");
-    return buf.toOwnedSlice(allocator);
+    const resolved = outcome catch |err| return err;
+    defer http_handlers.sessionGroupFreeRoster(allocator, resolved);
+    return http_handlers.sessionGroupEncodeRoster(allocator, resolved);
 }
 
 fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8 {
