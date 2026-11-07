@@ -1,8 +1,8 @@
-//! Process-startup wiring for the TUI module.
+//! Process-startup wiring for the agent loop.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const Scheduler = @import("routines/Scheduler.zig");
+const Scheduler = @import("Scheduler.zig");
 
 /// Submit the routine scheduler as a concurrent task on the Io
 /// runtime. The task runs forever; on the same Io group as

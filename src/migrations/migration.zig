@@ -5104,7 +5104,7 @@ test "updateSessionLastFinishReason: overwrites on every call" {
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
 /// Open a fresh in-memory sqlite DB. Mirrors the `setupDb` helper in
-/// `modules/agent/loop/routines/Scheduler.zig` (the project's canonical
+/// `modules/agent/loop/Scheduler.zig` (the project's canonical
 /// Io.Threaded + :memory: pattern).
 fn setupDb064() !struct {
     db: Backend,

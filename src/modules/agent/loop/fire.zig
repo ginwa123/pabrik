@@ -5,7 +5,7 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const ai_workflow = pabrikcore.ai_mod.ai_workflow;
 
-const model = @import("model.zig");
+const model = @import("routine_model.zig");
 const cron = @import("cron.zig");
 
 pub const FireError = error{

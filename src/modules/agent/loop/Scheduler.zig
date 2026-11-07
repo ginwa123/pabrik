@@ -6,7 +6,7 @@ const database = pabrikcore.database;
 const dialect = pabrikcore.dialect;
 const logger_mod = pabrikcore.loggermod;
 
-const model = @import("model.zig");
+const model = @import("routine_model.zig");
 const cron = @import("cron.zig");
 const fire = @import("fire.zig");
 

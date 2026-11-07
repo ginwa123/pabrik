@@ -6,8 +6,8 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
-const cron = @import("../modules/agent/loop/routines/cron.zig");
-const fire = @import("../modules/agent/loop/routines/fire.zig");
+const cron = @import("../modules/agent/loop/cron.zig");
+const fire = @import("../modules/agent/loop/fire.zig");
 
 /// Request body for the routine-item create endpoint. `name` + `path`
 /// required; the rest optional.

@@ -21,7 +21,12 @@ pub const delete_worker = @import("delete_worker.zig");
 pub const background_process = @import("background_process.zig");
 pub const background_process_events = @import("background_process_events.zig");
 pub const guest_jobs = @import("guest_jobs.zig");
-pub const routines = @import("routines/mod.zig");
+pub const routines = struct {
+    pub const model = @import("routine_model.zig");
+    pub const cron = @import("cron.zig");
+    pub const fire = @import("fire.zig");
+    pub const Scheduler = @import("Scheduler.zig");
+};
 pub const startup = @import("startup.zig");
 pub const kanban_model = @import("kanban_model.zig");
 pub const kanban_deps = @import("kanban_deps.zig");

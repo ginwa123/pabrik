@@ -5,8 +5,8 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const fire = @import("../modules/agent/loop/routines/fire.zig");
-const model = @import("../modules/agent/loop/routines/model.zig");
+const fire = @import("../modules/agent/loop/fire.zig");
+const model = @import("../modules/agent/loop/routine_model.zig");
 
 /// Manual fire endpoint.
 pub fn workspaceRoutinesRunHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {
