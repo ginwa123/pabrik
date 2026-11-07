@@ -5,7 +5,7 @@ const gserverz = pabrik_core.gserverz;
 const pr_provider = pabrik_core.pr_provider;
 const pr_cli = pabrik_core.pr_cli;
 const run_captured = @import("helpers").run_captured;
-const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
 /// The guest git budget, matching the host spawns this module replaced.

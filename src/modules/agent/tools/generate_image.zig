@@ -1044,7 +1044,7 @@ test "toJSONError produces status error with message" {
 // The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;

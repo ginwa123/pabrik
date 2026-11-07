@@ -145,15 +145,15 @@ test "process_tool schema: the description states the two facts the model will g
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const process_tool_mod = pabrikcore.process_tool;
-const background_process = @import("../../../agentic_loop/background_process.zig");
-const guest_jobs = @import("../../../agentic_loop/guest_jobs.zig");
+const background_process = @import("../loop/background_process.zig");
+const guest_jobs = @import("../loop/guest_jobs.zig");
 const shell_tool = pabrikcore.shell_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");

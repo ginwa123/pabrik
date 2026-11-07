@@ -4,10 +4,10 @@ const ToolProperty = schemas.ToolProperty;
 const ToolParameters = schemas.ToolParameters;
 const AgentToolFunction = schemas.AgentToolFunction;
 const AgentTool = schemas.AgentTool;
-const inherited_context_helper = @import("../../../agentic_loop/inherited_context.zig");
+const inherited_context_helper = @import("../loop/inherited_context.zig");
 // The main-agent-only tool list is shared with `tool_eligibility.zig`'s strip
 // so the parse-time validation here and the strip can never disagree.
-const main_agent_only = @import("../../../agentic_loop/main_agent_only.zig");
+const main_agent_only = @import("../loop/main_agent_only.zig");
 
 pub const SubAgentInput = struct {
     instruction: []const u8,
@@ -577,11 +577,11 @@ test "spawn_sub_agent system prompt carries tools-required and worktree rules" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const exec_tools = @import("../../../agentic_loop/tools.zig");
-const batch = @import("../../../agentic_loop/sub_agent_batch.zig");
+const exec_tools = @import("../loop/tools.zig");
+const batch = @import("../loop/sub_agent_batch.zig");
 const logger_mod = pabrikcore.loggermod;
-const ai_workflow = @import("../../../agentic_loop/workflow.zig");
-const subagent_progress = @import("../../../agentic_loop/subagent_progress.zig");
+const ai_workflow = @import("../loop/workflow.zig");
+const subagent_progress = @import("../loop/subagent_progress.zig");
 const sanitize = @import("helpers").sanitize_control_chars;
 const ToolExecContext = exec_tools.ToolExecContext;
 const ToolExecResult = exec_tools.ToolExecResult;

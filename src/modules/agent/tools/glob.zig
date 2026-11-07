@@ -2144,7 +2144,7 @@ test "glob: respect_ignore_files = false also un-respects .ignore / .rgignore" {
 // The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
@@ -2152,7 +2152,7 @@ const glob_tool_mod = exec_pabrikcore.glob_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 
 /// The guest as the walk's directory source: listings and `.gitignore` reads
 /// both come from the agent, so the host opens nothing inside the tenant tree.

@@ -52,11 +52,11 @@ pub const AskUserRule = prompts.AskUserRule;
 // ---------------------------------------------------------------------------
 // Thin delegating re-exports for the two pure helpers that `prompts_test.zig`
 // exercises directly.
-pub const loadGlobalKnowledge = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").loadGlobalKnowledge;
-pub const loadLocalKnowledge = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig").loadLocalKnowledge;
+pub const loadGlobalKnowledge = @import("loop/prompts_build_messages_for_agent_prompt.zig").loadGlobalKnowledge;
+pub const loadLocalKnowledge = @import("loop/prompts_build_messages_for_agent_prompt.zig").loadLocalKnowledge;
 
 // ===== Tests merged from prompts_test.zig (2026-09-29 flatten) =====
-const prompts_mod = @import("../../agentic_loop/prompts_build_messages_for_agent_prompt.zig");
+const prompts_mod = @import("loop/prompts_build_messages_for_agent_prompt.zig");
 const AgentTool = tool_models.AgentTool;
 const AgentToolFunction = tool_models.AgentToolFunction;
 const ToolParameters = tool_models.ToolParameters;
@@ -214,7 +214,7 @@ test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memo
         try std.Io.File.writeStreamingAll(f, io,
             \\# Project Build Rule
             \\
-            \\Always run `zig build test:ai_workflow:tui` before declaring a
+            \\Always run `zig build test:agent:loop` before declaring a
             \\task done in this repo. Fixes without tests regress.
             \\
         );
@@ -233,7 +233,7 @@ test "build_agent_prompt injects Local Knowledge section from <cwd>/.pabrik/memo
     // H1-derived title appears
     try std.testing.expect(contains(prompt, "Project Build Rule"));
     // Full content appears (not truncated)
-    try std.testing.expect(contains(prompt, "Always run `zig build test:ai_workflow:tui`"));
+    try std.testing.expect(contains(prompt, "Always run `zig build test:agent:loop`"));
     try std.testing.expect(contains(prompt, "Fixes without tests regress"));
     // Preamble tells the model where the files came from
     try std.testing.expect(contains(prompt, "auto-loaded from `<cwd>/.pabrik/memories/`"));
@@ -869,7 +869,7 @@ test "loadLocalKnowledge loads a single memory file with H1 title" {
         try std.Io.File.writeStreamingAll(f, io,
             \\# Project Build Rule
             \\
-            \\Always run `zig build test:ai_workflow:tui` before declaring
+            \\Always run `zig build test:agent:loop` before declaring
             \\a task done in this repo. Fixes without tests regress.
             \\
         );
@@ -881,7 +881,7 @@ test "loadLocalKnowledge loads a single memory file with H1 title" {
     // Heading uses the H1 title in backticks, paired with the filename.
     try std.testing.expect(contains(result, "### Project Build Rule (`project-build-rule.md`)"));
     // Full file content is included (not truncated).
-    try std.testing.expect(contains(result, "Always run `zig build test:ai_workflow:tui` before declaring"));
+    try std.testing.expect(contains(result, "Always run `zig build test:agent:loop` before declaring"));
     try std.testing.expect(contains(result, "a task done in this repo. Fixes without tests regress"));
     // Trailing blank line separator between entries.
     try std.testing.expect(contains(result, "regress.\n\n"));
@@ -1387,7 +1387,7 @@ test "ResponseFormatting routes content to a surface and colours it by role" {
 
 // -------------------------------------------------------------------------
 // Regression: build_agent_prompt was moved from src/modules/agent/prompts.zig
-// into src/agentic_loop/prompts_build_messages_for_agent_prompt.zig on
+// into src/modules/agent/loop/prompts_build_messages_for_agent_prompt.zig on
 
 // -------------------------------------------------------------------------
 // ProgressiveToolRule + SkillsToolRule + MemoryToolRule +

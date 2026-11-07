@@ -7,8 +7,8 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const gate = @import("workspace_members_gate.zig");
-const store = @import("../agentic_loop/workspace_invitations_store.zig");
-const members = @import("../agentic_loop/workspace_members_store.zig");
+const store = @import("../modules/agent/loop/workspace_invitations_store.zig");
+const members = @import("../modules/agent/loop/workspace_members_store.zig");
 
 const InviteBody = struct {
     email: []const u8 = "",

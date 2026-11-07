@@ -17,7 +17,7 @@ description: []u8 = &.{},
 instruction: []u8 = &.{},
 /// Standard 5-field cron expression (e.g. `"0 9 * * *"` for daily
 /// 09:00). Empty string = manual-run only (no auto-fire).
-/// Validated by `routines/cron.zig`.
+/// Validated by `loop/cron.zig`.
 schedule: []u8 = &.{},
 cwd: []u8 = &.{},
 enabled: bool = true,

@@ -4271,7 +4271,7 @@ test "search: tool schema documents the new params and drops the stale claims" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -4279,7 +4279,7 @@ const search_tool_mod = pabrikcore.search_tool;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 const path_validate = @import("helpers").path_validate;
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 const vmd_policy = @import("../../../vmd/policy.zig");
 const vmd_rpc = @import("../../../vmd/rpc.zig");
 

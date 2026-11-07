@@ -8,7 +8,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const gate = @import("workspace_members_gate.zig");
-const store = @import("../agentic_loop/workspace_members_store.zig");
+const store = @import("../modules/agent/loop/workspace_members_store.zig");
 
 /// Exactly the gate's set: reading cannot fail in a way the gate does not
 /// already describe.

@@ -8,7 +8,7 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
-const design_model = @import("../agentic_loop/design_model.zig");
+const design_model = @import("../modules/agent/loop/design_model.zig");
 const http_response = @import("http_response.zig");
 
 const ResizeBody = struct {

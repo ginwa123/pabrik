@@ -10,9 +10,9 @@ const llm_history = pabrikcore.llm_history;
 const agent = pabrikcore.agent;
 const tool_models = pabrikcore.tool_models;
 
-const buildMessages = @import("../agentic_loop/prompts_build_messages_for_agent_prompt.zig").buildMessages;
+const buildMessages = @import("../modules/agent/loop/prompts_build_messages_for_agent_prompt.zig").buildMessages;
 
-const agentic_loop = @import("../agentic_loop/workflow.zig");
+const agentic_loop = @import("../modules/agent/loop/workflow.zig");
 const Backend = pabrikcore.database.Db;
 
 /// JSON response struct. `size_bytes` is the byte length of the rendered

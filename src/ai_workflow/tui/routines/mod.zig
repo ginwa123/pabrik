@@ -1,7 +1,0 @@
-//! `routines` module re-exports. Used by `src/ai_workflow/tui/mod.zig`
-//! and (in tests) imported directly via `@import("routines/...")`.
-
-pub const model = @import("model.zig");
-pub const cron = @import("cron.zig");
-pub const fire = @import("fire.zig");
-pub const Scheduler = @import("Scheduler.zig");

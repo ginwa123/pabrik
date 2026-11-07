@@ -1451,7 +1451,7 @@ test "writeFile: create_with_dir succeeds for a file in the drive root on Window
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -1459,7 +1459,7 @@ const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
 const exec_path_validate = @import("helpers").path_validate;
 const exec_testing = std.testing;
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 
 /// The file's bytes land wherever the workspace lives. Under `--saas` that is
 /// the guest, which creates and extends the file itself; in every other mode

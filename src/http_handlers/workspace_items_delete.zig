@@ -1,7 +1,7 @@
 const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
-const design_io = @import("../agentic_loop/design_io.zig");
+const design_io = @import("../modules/agent/loop/design_io.zig");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
 

@@ -15,7 +15,7 @@ const sanitize = helpers.sanitize_control_chars;
 // Import the storage layer directly (the `pabrikcore.session_plan`
 // alias is wired up in src/root.zig by Task 4; for the pure-fn layer
 // we just need the module itself).
-const session_plan = @import("../../../agentic_loop/session_plan.zig");
+const session_plan = @import("../loop/session_plan.zig");
 
 /// Re-export the storage-layer cap so callers/tests don't have to
 /// reach into the storage module. Same value (256 KiB).
@@ -727,11 +727,11 @@ test "update_plan: a call with neither content nor old_text writes nothing" {
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const exec_migration = @import("../../../migrations/migration.zig");
 const exec_sqlite = exec_pabrikcore.sqlite;
 const database = exec_pabrikcore.database;
-const exec_session_plan = @import("../../../agentic_loop/session_plan.zig");
+const exec_session_plan = @import("../loop/session_plan.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;

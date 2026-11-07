@@ -14,9 +14,9 @@ pub const LLMModels = @import("LLMModels.zig");
 const helpers = @import("helpers");
 const custom_http_client = @import("kabelweb").client;
 const args_repair = @import("tools/tools_args_repair.zig");
-const file_attachments = @import("../../agentic_loop/file_attachments.zig");
+const file_attachments = @import("loop/file_attachments.zig");
 const logger_mod = @import("../logger/Logger.zig");
-const opencode_mod = @import("../../agentic_loop/opencode.zig");
+const opencode_mod = @import("loop/opencode.zig");
 
 /// Log level for agent logging
 const LogLevel = enum { err, warn, info, debug };

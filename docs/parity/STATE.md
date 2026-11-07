@@ -142,7 +142,7 @@ Key mismatches / notes:
 - [x] F40 Workspace settings secrets helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: SecretsHelper + SecretsHelperTest. Full UI deferred.)
 - [ ] F41 Workspace settings: skills + tests
 - [ ] F42 Workspace settings: memories + tests
-- [ ] F43 Workspace settings: profiles (LLM config) + tests
+- [x] F43 Workspace settings profiles helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: ProfilesHelper + ProfilesHelperTest. Full UI deferred.)
 - [ ] F44 Workspace settings: MCP servers + tests
 - [ ] F45 Workspace settings: tools + tests
 - [ ] F46 Workspace settings: skill evals + tests

@@ -206,7 +206,7 @@ pub fn parseChannels(allocator: std.mem.Allocator, raw: []const u8) ChannelParse
         } else if (std.mem.eql(u8, token, "documents")) {
             // Document mutations (`document_created` / `document_updated` /
             // `document_deleted` on the central "documents" key — see
-            // agentic_loop/document_events.zig).
+            // modules/agent/loop/document_events.zig).
             try routing_keys.append(allocator, try allocator.dupe(u8, "documents"));
         } else {
             return error.UnknownChannel;

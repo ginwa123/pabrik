@@ -6,7 +6,7 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const skills_store = @import("../agentic_loop/skills_store.zig");
+const skills_store = @import("../modules/agent/loop/skills_store.zig");
 
 pub const SkillDetailError = error{
     IdsRequired,

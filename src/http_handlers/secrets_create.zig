@@ -7,9 +7,9 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const secrets_store = @import("../agentic_loop/secrets_store.zig");
+const secrets_store = @import("../modules/agent/loop/secrets_store.zig");
 const gate = @import("workspace_members_gate.zig");
-const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
+const secrets_at_rest = @import("../modules/agent/loop/secrets_at_rest.zig");
 
 /// Request body. Every field defaults to "" so an empty body parses and is
 /// then refused by validation rather than answering "Invalid JSON body".

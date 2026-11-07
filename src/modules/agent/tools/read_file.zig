@@ -431,7 +431,7 @@ fn readThrough(ctx: ToolExecContext, path_abs: []const u8, opts: ReadFileOptions
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -441,7 +441,7 @@ const exec_readFile = pabrikcore.read_file.readFile;
 const exec_toJSONSuccess = pabrikcore.read_file.toJSONSuccess;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 const exec_path_validate = @import("helpers").path_validate;
 pub fn execReadFile(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     _ = ctx.db;

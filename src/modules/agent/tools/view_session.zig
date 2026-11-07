@@ -8,7 +8,7 @@ const database = pabrikcore.database;
 const workspace_scope = pabrikcore.workspace_scope;
 const helpers = @import("helpers");
 const sanitize = helpers.sanitize_control_chars;
-const is_worker_running = @import("../../../agentic_loop/is_worker_running.zig");
+const is_worker_running = @import("../loop/is_worker_running.zig");
 
 /// Input for view_session. Omitting `session_id` reports the CALLER's own
 /// session — the common "where am I working?" question.
@@ -803,7 +803,7 @@ test "view_session: the schema and prompt teach own-session default and the deni
 // Exec adapter — the tool definition and its executor live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;

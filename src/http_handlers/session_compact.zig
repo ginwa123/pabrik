@@ -6,9 +6,9 @@ const config = pabrikcore.config;
 const tool_models = pabrikcore.tool_models;
 const http_response = pabrikcore.http_response;
 const workflow = pabrikcore.ai_mod.ai_workflow;
-const compact_target = @import("../agentic_loop/session_compact_target.zig");
-const compact_mod = @import("../agentic_loop/workflow_compact_message.zig");
-const skill_evals_config = @import("../agentic_loop/skill_evals_config.zig");
+const compact_target = @import("../modules/agent/loop/session_compact_target.zig");
+const compact_mod = @import("../modules/agent/loop/workflow_compact_message.zig");
+const skill_evals_config = @import("../modules/agent/loop/skill_evals_config.zig");
 
 /// Compact a session on demand: the same `maybeCompactMessagesNew` the agentic
 /// loop calls, against the same target the loop would use.

@@ -110,17 +110,17 @@ pub const document_tool = @import("modules/agent/tools/document.zig");
 pub const loggermod = @import("modules/logger/Logger.zig");
 pub const mcp_stdio = @import("modules/agent/mcp/mcp/mcp_stdio.zig");
 pub const mcp_scope = @import("modules/agent/mcp/mcp/mcp_scope.zig");
-pub const mcp_session_scope = @import("agentic_loop/mcp_session_scope.zig");
+pub const mcp_session_scope = @import("modules/agent/loop/mcp_session_scope.zig");
 pub const mcp_http = @import("modules/agent/mcp/mcp/mcp_http.zig");
 pub const mcp_types = @import("modules/agent/mcp/mcp/mcp_types.zig");
 
 pub const skill_mod = @import("modules/agent/tools/skills.zig");
-pub const skill_evals_db = @import("agentic_loop/skill_evals_db.zig");
-pub const skill_eval_events = @import("agentic_loop/skill_eval_events.zig");
-pub const git_file_stage_events = @import("agentic_loop/git_file_stage_events.zig");
-pub const git_pr_state_events = @import("agentic_loop/git_pr_state_events.zig");
-pub const document_events = @import("agentic_loop/document_events.zig");
-pub const skill_evals_drift = @import("agentic_loop/skill_evals_drift.zig");
+pub const skill_evals_db = @import("modules/agent/loop/skill_evals_db.zig");
+pub const skill_eval_events = @import("modules/agent/loop/skill_eval_events.zig");
+pub const git_file_stage_events = @import("modules/agent/loop/git_file_stage_events.zig");
+pub const git_pr_state_events = @import("modules/agent/loop/git_pr_state_events.zig");
+pub const document_events = @import("modules/agent/loop/document_events.zig");
+pub const skill_evals_drift = @import("modules/agent/loop/skill_evals_drift.zig");
 pub const add_skill = skill_tools;
 pub const edit_skill = skill_tools;
 pub const set_skill_metadata = skill_tools;
@@ -153,14 +153,14 @@ pub const user_config_store = @import("modules/config/UserConfigStore.zig");
 /// Per-session/per-owner LLM-config resolution for opt-in `--auth` mode. THE
 /// ONE module that decides whether a user-scoped read sees the user's
 /// `users.config_json` or the process-global `config.json`.
-pub const session_llm_config = @import("agentic_loop/session_llm_config.zig");
+pub const session_llm_config = @import("modules/agent/loop/session_llm_config.zig");
 /// models.dev's model catalog: the ONE owner of "what do we know about this
 /// model?" — context window, output cap, reasoning shape, price.
-pub const model_catalog = @import("agentic_loop/model_catalog.zig");
+pub const model_catalog = @import("modules/agent/loop/model_catalog.zig");
 /// The durable half of the catalog (Migration 106). One store, no file cache.
 pub const model_catalog_store = @import("models/model_catalog_store.zig");
 /// The network half: fetch models.dev, save the snapshot, swap the index.
-pub const model_catalog_refresh = @import("agentic_loop/model_catalog_refresh.zig");
+pub const model_catalog_refresh = @import("modules/agent/loop/model_catalog_refresh.zig");
 // Plan 2026-09-10-web-launch-toggle: random loopback port picker for browser
 // mode (`--port 0` resolution).
 pub const web_port = @import("modules/config/web_port.zig");
@@ -176,7 +176,7 @@ pub const get_plan = @import("modules/agent/tools/get_plan.zig");
 pub const list_agents = @import("modules/agent/tools/list_agents.zig");
 pub const used_tools = @import("modules/agent/tools/used_tools.zig");
 // Progressive tool search: search_tool / view_tool / use_tool. The catalog
-// and the result renderers live in src/agentic_loop/progressive_catalog.zig
+// and the result renderers live in src/modules/agent/loop/progressive_catalog.zig
 // (this module is pure tool data).
 pub const progressive_tools = @import("modules/agent/tools/progressive_tools.zig");
 
@@ -206,54 +206,54 @@ pub const http_routes = @import("http_routes.zig");
 // `pub const helpers = ...` was removed: `helpers` is now its own Zig module
 // (see `b.createModule` in build.zig) wired in via `mod.addImport("helpers",
 // helpers_mod)`.
-pub const kerjabot_get_session = @import("agentic_loop/llm_history.zig");
-pub const kerjabot_create_session = @import("agentic_loop/llm_history.zig");
-pub const kerjabot_get_list_session = @import("agentic_loop/llm_history.zig");
-pub const tui_check_session_exists = @import("agentic_loop/llm_history.zig");
-pub const session_helpers = @import("agentic_loop/llm_history.zig");
-pub const session_db = @import("agentic_loop/llm_history.zig");
-pub const llm_history = @import("agentic_loop/llm_history.zig");
-pub const llm_history_model_guard = @import("agentic_loop/llm_history_model_guard.zig");
-pub const workspace_scope = @import("agentic_loop/workspace_scope.zig");
+pub const kerjabot_get_session = @import("modules/agent/loop/llm_history.zig");
+pub const kerjabot_create_session = @import("modules/agent/loop/llm_history.zig");
+pub const kerjabot_get_list_session = @import("modules/agent/loop/llm_history.zig");
+pub const tui_check_session_exists = @import("modules/agent/loop/llm_history.zig");
+pub const session_helpers = @import("modules/agent/loop/llm_history.zig");
+pub const session_db = @import("modules/agent/loop/llm_history.zig");
+pub const llm_history = @import("modules/agent/loop/llm_history.zig");
+pub const llm_history_model_guard = @import("modules/agent/loop/llm_history_model_guard.zig");
+pub const workspace_scope = @import("modules/agent/loop/workspace_scope.zig");
 /// The `--saas` execution substrate for shell commands, and the manager client
 /// it speaks to. The wire protocol and its policy live under `src/vmd/` and are
 /// std-only, so the daemon, the server and the tests share one definition.
-pub const vm_runtime = @import("agentic_loop/vm_runtime.zig");
+pub const vm_runtime = @import("modules/agent/loop/vm_runtime.zig");
 pub const vmd_policy = @import("vmd/policy.zig");
 pub const vmd_rpc = @import("vmd/rpc.zig");
 pub const vmd_client = @import("vmd/vmd_client.zig");
 pub const vmd_lifecycle = @import("vmd/lifecycle.zig");
-pub const agent_memories = @import("agentic_loop/agent_memories.zig");
+pub const agent_memories = @import("modules/agent/loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
-pub const documents_store = @import("agentic_loop/documents_store.zig");
-pub const document_folders_store = @import("agentic_loop/document_folders_store.zig");
+pub const documents_store = @import("modules/agent/loop/documents_store.zig");
+pub const document_folders_store = @import("modules/agent/loop/document_folders_store.zig");
 /// Workspace-scoped skill storage (Migration 101 + 119).
-pub const skills_store = @import("agentic_loop/skills_store.zig");
+pub const skills_store = @import("modules/agent/loop/skills_store.zig");
 /// THE parser/renderer for a SKILL.md `---` frontmatter block. Shared by
 /// the importer, `add_skill`/`edit_skill`, the migration-119 backfill and
 /// the store's projection into `skill_metadata`.
-pub const skill_frontmatter = @import("agentic_loop/skill_frontmatter.zig");
+pub const skill_frontmatter = @import("modules/agent/loop/skill_frontmatter.zig");
 /// Workspace-scoped secret storage (Migration 103).
-pub const secrets_store = @import("agentic_loop/secrets_store.zig");
+pub const secrets_store = @import("modules/agent/loop/secrets_store.zig");
 /// At-rest sealing of secret values: the envelope, the process key slot and the
 /// boot pass that re-seals rows written before this feature existed.
-pub const secrets_at_rest = @import("agentic_loop/secrets_at_rest.zig");
+pub const secrets_at_rest = @import("modules/agent/loop/secrets_at_rest.zig");
 /// Membership of workspaces (Migration 100): who is in, with which role.
-pub const workspace_members_store = @import("agentic_loop/workspace_members_store.zig");
+pub const workspace_members_store = @import("modules/agent/loop/workspace_members_store.zig");
 /// Pending membership asks (Migration 123): an invitation is answered, not applied.
-pub const workspace_invitations_store = @import("agentic_loop/workspace_invitations_store.zig");
+pub const workspace_invitations_store = @import("modules/agent/loop/workspace_invitations_store.zig");
 // Per-workspace config overlay: the sparse JSON merge rule and the
 // store behind `workspace_settings` (Migration 105). These two are what
 // make Profiles / MCP Servers / Tools / Skill Evals per-workspace.
-pub const workspace_settings_store = @import("agentic_loop/workspace_settings_store.zig");
-pub const workspace_config = @import("agentic_loop/workspace_config.zig");
+pub const workspace_settings_store = @import("modules/agent/loop/workspace_settings_store.zig");
+pub const workspace_config = @import("modules/agent/loop/workspace_config.zig");
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
 // Storage layer for the per-session markdown task plan (savePlan / getPlan / getPlanOpt).
-pub const session_plan = @import("agentic_loop/session_plan.zig");
+pub const session_plan = @import("modules/agent/loop/session_plan.zig");
 // Pending-question state + answer round-trip (Migration 087's
 // session_pending_question). Re-exported so the HTTP handler can reach it
-// without importing an agentic_loop file directly.
-pub const ask_user_pending = @import("agentic_loop/ask_user_pending.zig");
+// without importing an agent-loop file directly.
+pub const ask_user_pending = @import("modules/agent/loop/ask_user_pending.zig");
 // Re-export so the exe module (main.zig) can access
 // cleanup_stale_worker.handle for the cron registration WITHOUT directly
 // @import'ing the file (which would put it in two modules and trigger Zig's
@@ -277,21 +277,21 @@ pub const boot_db_reclaim = @import("boot/db_reclaim.zig");
 // before any server boot.
 pub const boot_db_cli = @import("boot/db_cli.zig");
 pub const test_db = @import("testing/test_db.zig");
-pub const workspace_items = @import("agentic_loop/llm_history.zig");
-pub const workspace_item_tasks = @import("agentic_loop/llm_history.zig");
+pub const workspace_items = @import("modules/agent/loop/llm_history.zig");
+pub const workspace_item_tasks = @import("modules/agent/loop/llm_history.zig");
 pub const http_response = @import("http_handlers/http_response.zig");
 pub const spawn_sub_agent = @import("modules/agent/tools/spawn_sub_agent.zig");
-pub const ask_user_message = @import("agentic_loop/ask_user_message.zig");
-pub const main_agent_only = @import("agentic_loop/main_agent_only.zig");
-pub const group_router = @import("agentic_loop/group_router.zig");
-pub const session_group = @import("agentic_loop/session_group.zig");
+pub const ask_user_message = @import("modules/agent/loop/ask_user_message.zig");
+pub const main_agent_only = @import("modules/agent/loop/main_agent_only.zig");
+pub const group_router = @import("modules/agent/loop/group_router.zig");
+pub const session_group = @import("modules/agent/loop/session_group.zig");
 pub const http_handlers = @import("http_handlers/mod.zig");
 // kabelweb — external web-framework library (pure-Zig HTTP server +
 // libcurl-backed HTTP client, pinned by URL in build.zig.zon). `gserverz`
 // stays as the server alias so the ~40 handlers keep compiling untouched.
 pub const kabelweb = @import("kabelweb");
 pub const gserverz = kabelweb.server;
-pub const ai_mod = @import("ai_workflow/tui/mod.zig");
+pub const ai_mod = @import("modules/agent/loop/mod.zig");
 pub const event_bus = @import("modules/event_bus/src/event.zig");
 pub const static_files = @import("modules/static_files.zig");
 pub const metrics_mod = @import("modules/metrics/metrics.zig");
@@ -311,11 +311,11 @@ pub const boot_headless_dispatch = @import("boot/headless_dispatch.zig");
 pub const headless = @import("headless/mod.zig");
 pub const http_static_serve = @import("http_static/static_serve.zig");
 pub const startup = @import("startup.zig");
-pub const agentic_loop_mod = @import("agentic_loop/workflow.zig");
+pub const agentic_loop_mod = @import("modules/agent/loop/workflow.zig");
 // The per-session run lease: one workflow loop per session (Migration 118).
-pub const session_lock = @import("agentic_loop/session_lock.zig");
+pub const session_lock = @import("modules/agent/loop/session_lock.zig");
 // Boot durability: restart the turns a previous process left mid-flight.
-pub const resume_workers_on_boot = @import("agentic_loop/resume_workers_on_boot.zig");
+pub const resume_workers_on_boot = @import("modules/agent/loop/resume_workers_on_boot.zig");
 
 pub const notifications_mod = @import("modules/notification/notifications.zig");
 pub const migrations_mod = @import("migrations/mod.zig");

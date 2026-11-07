@@ -22,7 +22,7 @@ const helpers = @import("helpers");
 const sanitizeControlChars = helpers.sanitize_control_chars;
 const tags_validation = @import("../../../http_handlers/tags_validation.zig");
 const image_urls_validation = @import("../../../http_handlers/image_urls_validation.zig");
-const model_guard = @import("../../../agentic_loop/llm_history_model_guard.zig");
+const model_guard = @import("../loop/llm_history_model_guard.zig");
 
 /// Input structure for `create_kanban_task` tool. Required fields:
 /// `workspace_id`, `item_id`, `name`, `description`.
@@ -627,7 +627,7 @@ pub fn executeKanbanTaskToJSON(
                             task_id,
                             // Never empty: an empty bind lands as SQL NULL and
                             // fails `model TEXT NOT NULL`, dropping the seed row.
-                            // See agentic_loop/llm_history_model_guard.zig.
+                            // See modules/agent/loop/llm_history_model_guard.zig.
                             model_guard.resolve(input.resolved_model),
                             msg,
                             task_id,
@@ -1529,7 +1529,7 @@ test "executeKanbanTaskToJSON rejects invalid image_urls" {
 // The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;

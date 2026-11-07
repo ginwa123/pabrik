@@ -12,7 +12,7 @@ const database = pabrik.database;
 const git_hardening = @import("helpers").git_hardening;
 const run_captured = @import("helpers").run_captured;
 const loggermod = @import("../../logger/Logger.zig");
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 const runtime_mode = @import("../../../runtime_mode.zig");
 
 /// The guest git budget: `worktree add` is sub-second on the host, and the
@@ -2199,7 +2199,7 @@ test "resolveRepoRoot ignores a relative session cwd instead of guessing" {
 // The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
