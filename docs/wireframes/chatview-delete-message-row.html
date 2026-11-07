@@ -17,7 +17,7 @@
     --border: #282727;
     --fg: #c5c9c5;
     --fg-muted: #a6a69c;
-    --fg-dim: #8d8d84;
+    --fg-dim: #9d9d93;
     --blue: #8ba4b0;
     --green: #87a987;
     --yellow: #c4b28a;
@@ -90,14 +90,78 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── transcript mock ──────────────────────────────────────────── */
+  /* ── chat surface ─────────────────────────────────────────────── */
 
   .mock-wrap { position: relative; }
 
-  [data-ui] .transcript {
+  [data-ui] .chat {
     background: var(--bg-panel);
     border-radius: 12px;
-    padding: 16px 0 18px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  [data-ui] .appbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 12px;
+    background: var(--bg-panel-2);
+    flex: none;
+  }
+
+  [data-ui] .appbar .t {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  [data-ui] .appbar .k { font-size: 11px; color: var(--fg-dim); flex: none; }
+
+  [data-ui] .viewtoggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 9px;
+    border-radius: 6px;
+    border: 0;
+    background: var(--bg-strip);
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    flex: none;
+  }
+
+  [data-ui] .viewtoggle:hover { color: var(--fg); }
+  [data-ui] .viewtoggle svg { width: 12px; height: 12px; }
+
+  [data-ui] .appbar .icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-dim);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    flex: none;
+  }
+
+  /* ── grouped transcript ───────────────────────────────────────── */
+
+  [data-ui] .transcript {
+    padding: 14px 0 16px;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -204,6 +268,96 @@
     padding: 0;
   }
 
+  /* ── raw table ────────────────────────────────────────────────── */
+
+  [data-ui] .rawtable { padding: 6px 0 10px; display: flex; flex-direction: column; }
+
+  [data-ui] .rhead,
+  [data-ui] .rrow {
+    display: grid;
+    grid-template-columns: 78px 116px minmax(0, 1fr) 84px 58px 26px;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+  }
+
+  [data-ui] .rhead {
+    height: 26px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+
+  [data-ui] .rrow {
+    min-height: 30px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    font-size: 12.5px;
+    color: var(--fg-muted);
+  }
+
+  [data-ui] .rrow:hover { background: var(--bg-active); }
+  [data-ui] .rrow.open { background: var(--bg-active); }
+  [data-ui] .rrow.dropped .rc { opacity: 0.4; }
+
+  [data-ui] .chip {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    width: fit-content;
+  }
+
+  [data-ui] .chip.user { background: var(--bg-user); color: var(--blue); }
+  [data-ui] .chip.assistant { background: var(--bg-strip); color: var(--fg); }
+  [data-ui] .chip.tool { background: var(--bg-panel-2); color: var(--yellow); }
+
+  [data-ui] .rtool {
+    font-size: 12px;
+    color: var(--fg-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-ui] .rc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+
+  [data-ui] .rc.empty { color: var(--fg-dim); }
+
+  [data-ui] .rfeed { font-size: 11px; color: var(--green); }
+  [data-ui] .rfeed.off { color: var(--fg-dim); }
+
+  [data-ui] .rfeed.restore {
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  [data-ui] .rid {
+    font-size: 11px;
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  [data-ui] .rrow .trow-more { margin-top: 0; opacity: 0.35; }
+  [data-ui] .rrow:hover .trow-more,
+  [data-ui] .rrow.open .trow-more { opacity: 1; background: var(--bg-active); color: var(--fg); }
+
   /* ── context menu ─────────────────────────────────────────────── */
 
   [data-ui] .menu {
@@ -271,7 +425,7 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    margin: 3px 18px 7px;
+    margin: 3px 16px 7px;
     padding: 10px 12px;
     border-radius: 9px;
     background: var(--bg-danger);
@@ -309,7 +463,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 10px 18px 0;
+    margin: 10px 16px 0;
     padding: 9px 12px;
     border-radius: 8px;
     background: var(--bg-strip);
@@ -329,15 +483,6 @@
     cursor: pointer;
     padding: 0;
     margin-left: auto;
-  }
-
-  [data-ui] .empty-note {
-    margin: 26px auto;
-    text-align: center;
-    font-size: 13px;
-    color: var(--fg-dim);
-    max-width: 40ch;
-    line-height: 1.6;
   }
 
   /* ── doc blocks ───────────────────────────────────────────────── */
@@ -373,8 +518,16 @@
   @media (max-width: 900px) {
     .wrap { padding: 40px 20px 90px; }
     h1 { font-size: 27px; }
-    [data-ui] .menu { position: static; width: auto; margin: 8px 18px 10px; }
+    [data-ui] .menu { position: static; width: auto; margin: 8px 16px 10px; }
     [data-ui] .bubble { max-width: 100%; }
+    [data-ui] .rhead,
+    [data-ui] .rrow { grid-template-columns: 70px minmax(0, 1fr) 26px; }
+    [data-ui] .rhead .h-tool,
+    [data-ui] .rhead .h-feed,
+    [data-ui] .rhead .h-id,
+    [data-ui] .rtool,
+    [data-ui] .rfeed,
+    [data-ui] .rid { display: none; }
   }
 </style>
 </head>
@@ -383,74 +536,148 @@
 
   <header>
     <h1>Delete one message row</h1>
-    <p class="sub">One row of <code>llm_history</code>, not the conversation. The chat, its session and every other message stay exactly where they are.</p>
-    <p class="stamp">Every message on this page is a real row from session <code>task_1794055749259_2</code>, read out of <code>~/.config/pabrik/agent.db</code> on 7 November 2026. Wireframe only: nothing here is implemented.</p>
+    <p class="sub">One row of <code>llm_history</code>, not the conversation. And a toggle that shows every row raw, because the grouped transcript does not draw them all.</p>
+    <p class="stamp">Every row on this page is real, from session <code>task_1794055749259_2</code>, read out of <code>~/.config/pabrik/agent.db</code> on 7 November 2026. Wireframe only: nothing here is implemented.</p>
   </header>
 
   <section>
     <div class="stage-bar">
-      <h2>The row, and its menu</h2>
+      <h2>Two views of the same rows</h2>
       <div class="switch" role="tablist" aria-label="Affordance variant">
         <button type="button" id="sw-today" role="tab" aria-selected="false">Today</button>
         <button type="button" id="sw-proposed" role="tab" aria-selected="true" class="on">Proposed</button>
       </div>
     </div>
 
-    <p>Every message row gets one action button at its trailing edge. It sits at 35% opacity so it is visible without being a target you hit by accident, and it comes to full strength on hover or keyboard focus. The switch is the only difference between what ships today and what this proposes.</p>
+    <p>The grouped transcript is for reading. It draws a bubble per group, and a group can hold several rows, so it cannot show you which row is which. The toggle in the app bar swaps it for the raw table: one line per <code>llm_history</code> row, in <code>created_at_nano</code> order, with the role, the tool, the content, whether the row is still fed to the model, and the tail of its id.</p>
+
+    <p>This session is the argument for the toggle. It has <b>7 rows</b> and the grouped view draws <b>5</b> of them: three assistant rows carry only <code>tool_calls_json</code> and an empty <code>response_content</code>, so the grouped view renders nothing for them. You cannot delete a row you cannot see.</p>
 
     <div class="mock-wrap" data-ui>
-      <div class="transcript" id="transcript">
-        <div class="trow user" data-id="1794055749296559845" data-role="user" data-deps="0" data-depkind="" data-label="Task : Chatview , has features to delete row conversation llm_history">
-          <div class="trow-inner">
-            <div class="bubble user">Task : Chatview , has features to delete row conversation llm_history</div>
-          </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+      <div class="chat">
+        <div class="appbar">
+          <span class="t">Chatview , has features to delete row co…</span>
+          <span class="k" id="rowcount">7 rows</span>
+          <button type="button" class="viewtoggle" id="view-toggle" title="Showing every llm_history row. Click for the grouped transcript.">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span id="view-label">Rows</span>
+          </button>
+          <button type="button" class="icon" aria-label="Toggle changes sidebar">&#9707;</button>
         </div>
 
-        <div class="trow" data-id="1794055752049541855" data-role="assistant" data-deps="1" data-depkind="results" data-label="I'll start by checking the kanban board and moving this task to the correct column.">
-          <div class="trow-inner">
-            <div class="para">I'll start by checking the kanban board and moving this task to the correct column.</div>
+        <div class="transcript" id="transcript" style="display: none">
+          <div class="trow user" data-id="1794055749296559845" data-role="user" data-deps="0" data-depkind="" data-label="Task : Chatview , has features to delete row conversation llm_history">
+            <div class="trow-inner">
+              <div class="bubble user">Task : Chatview , has features to delete row conversation llm_history</div>
+            </div>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
           </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+
+          <div class="trow" data-id="1794055752049541855" data-role="assistant" data-deps="1" data-depkind="results" data-label="I'll start by checking the kanban board and moving this task to the correct column.">
+            <div class="trow-inner">
+              <div class="para">I'll start by checking the kanban board and moving this task to the correct column.</div>
+            </div>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
+
+          <div class="trow" data-id="1794055752052755470" data-role="tool" data-deps="1" data-depkind="call" data-label="kanban_list result">
+            <div class="trow-inner">
+              <div class="toolcard"><span class="tn">kanban_list</span><span class="ts">8 columns, 304 tasks</span><span class="ok">ok</span></div>
+            </div>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
+
+          <div class="trow" data-id="1794055757371545181" data-role="tool" data-deps="1" data-depkind="call" data-label="kanban_move_task result">
+            <div class="trow-inner">
+              <div class="toolcard"><span class="tn">kanban_move_task</span><span class="ts">moved to in progress</span><span class="ok">ok</span></div>
+            </div>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
+
+          <div class="trow" data-id="1794055759142744498" data-role="tool" data-deps="1" data-depkind="call" data-label="search_skills result">
+            <div class="trow-inner">
+              <div class="toolcard"><span class="tn">search_skills</span><span class="ts">design|wireframe|frontend</span><span class="ok">ok</span></div>
+            </div>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
         </div>
 
-        <div class="trow" data-id="1794055752052755470" data-role="tool" data-deps="1" data-depkind="call" data-label="kanban_list result">
-          <div class="trow-inner">
-            <div class="toolcard"><span class="tn">kanban_list</span><span class="ts">8 columns, 304 tasks</span><span class="ok">ok</span></div>
+        <div class="rawtable" id="rawtable">
+          <div class="rhead">
+            <span>Role</span>
+            <span class="h-tool">Tool</span>
+            <span>Content</span>
+            <span class="h-feed">Context</span>
+            <span class="h-id">Id</span>
+            <span></span>
           </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-        </div>
 
-        <div class="trow" data-id="1794055757369047843" data-role="assistant" data-deps="1" data-depkind="results" data-label="kanban_move_task call">
-          <div class="trow-inner">
-            <div class="para" style="color: var(--fg-dim)">Called kanban_move_task</div>
+          <div class="rrow" data-id="1794055749296559845" data-role="user" data-deps="0" data-depkind="" data-label="Task : Chatview , has features to delete row conversation llm_history">
+            <span class="chip user">user</span>
+            <span class="rtool">none</span>
+            <span class="rc">Task : Chatview , has features to delete row conversation llm_history</span>
+            <span class="rfeed">in</span>
+            <span class="rid">559845</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
           </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-        </div>
 
-        <div class="trow" data-id="1794055757371545181" data-role="tool" data-deps="1" data-depkind="call" data-label="kanban_move_task result">
-          <div class="trow-inner">
-            <div class="toolcard"><span class="tn">kanban_move_task</span><span class="ts">moved to in progress</span><span class="ok">ok</span></div>
+          <div class="rrow" data-id="1794055752049541855" data-role="assistant" data-deps="1" data-depkind="results" data-label="I'll start by checking the kanban board and moving this task to the correct column.">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">I'll start by checking the kanban board and moving this task to the correct column.</span>
+            <span class="rfeed">in</span>
+            <span class="rid">541855</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
           </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-        </div>
 
-        <div class="trow" data-id="1794055759139951451" data-role="assistant" data-deps="1" data-depkind="results" data-label="search_skills call">
-          <div class="trow-inner">
-            <div class="para" style="color: var(--fg-dim)">Called search_skills</div>
+          <div class="rrow" data-id="1794055752052755470" data-role="tool" data-deps="1" data-depkind="call" data-label="kanban_list result">
+            <span class="chip tool">tool</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">{"tool":"kanban_list","parameters":{"workspace_id":"ws_1785055733544_28e79c9db8950100",…},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">755470</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
           </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-        </div>
 
-        <div class="trow" data-id="1794055759142744498" data-role="tool" data-deps="1" data-depkind="call" data-label="search_skills result">
-          <div class="trow-inner">
-            <div class="toolcard"><span class="tn">search_skills</span><span class="ts">design|wireframe|frontend</span><span class="ok">ok</span></div>
+          <div class="rrow" data-id="1794055757369047843" data-role="assistant" data-deps="1" data-depkind="results" data-label="assistant · kanban_move_task · no text">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">kanban_move_task</span>
+            <span class="rc empty">no text, tool call only</span>
+            <span class="rfeed">in</span>
+            <span class="rid">047843</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
           </div>
-          <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+
+          <div class="rrow" data-id="1794055757371545181" data-role="tool" data-deps="1" data-depkind="call" data-label="kanban_move_task result">
+            <span class="chip tool">tool</span>
+            <span class="rtool">kanban_move_task</span>
+            <span class="rc">{"tool":"kanban_move_task","parameters":{"workspace_id":"ws_1785055733544_28e79c9db8950100",…},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">545181</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
+
+          <div class="rrow" data-id="1794055759139951451" data-role="assistant" data-deps="1" data-depkind="results" data-label="assistant · search_skills · no text">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">search_skills</span>
+            <span class="rc empty">no text, tool call only</span>
+            <span class="rfeed">in</span>
+            <span class="rid">951451</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
+
+          <div class="rrow" data-id="1794055759142744498" data-role="tool" data-deps="1" data-depkind="call" data-label="search_skills result">
+            <span class="chip tool">tool</span>
+            <span class="rtool">search_skills</span>
+            <span class="rc">{"tool":"search_skills","parameters":{"query":"design|wireframe|frontend"},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">744498</span>
+            <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+          </div>
         </div>
       </div>
 
-      <div class="menu" id="menu" role="menu" aria-label="Message actions" style="right: 18px; top: 74px">
+      <div class="menu" id="menu" role="menu" aria-label="Message actions" style="right: 16px; top: 96px">
         <div class="menu-title" id="menu-title">I'll start by checking the kanban board…</div>
         <button type="button" class="mi" role="menuitem">
           <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path stroke-linecap="round" d="M5 15V5a2 2 0 012-2h8"/></svg></span>
@@ -468,35 +695,57 @@
       </div>
     </div>
 
-    <div class="readout" id="readout">mode=proposed · rows=7 · row actions=7 · menu=open · confirm=closed · dropped=0 · deleted=0</div>
+    <div class="readout" id="readout">view=raw · grouped items=5 · raw rows=7 · menu=open · confirm=closed · dropped=0 · deleted=0</div>
   </section>
 
   <section>
     <h2>The confirm, inline</h2>
-    <p>Not a modal. A modal covers the transcript, and the one thing you need to see before confirming is the row you picked. So the row dims and the question appears directly beneath it, in the flow, with the row still on screen above it.</p>
+    <p>Not a modal. A modal covers the transcript, and the row you are about to delete is the one thing you need to see. The line dims and the question appears directly beneath it, in the flow.</p>
     <p>The bar also names what breaks. An assistant row carries <code>tool_calls_json</code>, an array of call ids; each tool row below it carries the matching <code>tool_call_id</code>. Delete one side and the other is orphaned, so the bar says which.</p>
 
     <div class="mock-wrap" data-ui>
-      <div class="transcript">
-        <div class="trow user">
-          <div class="trow-inner">
-            <div class="bubble user">Task : Chatview , has features to delete row conversation llm_history</div>
+      <div class="chat">
+        <div class="appbar">
+          <span class="t">Chatview , has features to delete row co…</span>
+          <span class="k">7 rows</span>
+          <button type="button" class="viewtoggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span>Rows</span>
+          </button>
+        </div>
+        <div class="rawtable">
+          <div class="rhead">
+            <span>Role</span><span class="h-tool">Tool</span><span>Content</span><span class="h-feed">Context</span><span class="h-id">Id</span><span></span>
           </div>
-        </div>
-        <div class="trow" style="opacity: 0.5">
-          <div class="trow-inner">
-            <div class="para">I'll start by checking the kanban board and moving this task to the correct column.</div>
+          <div class="rrow">
+            <span class="chip user">user</span>
+            <span class="rtool">none</span>
+            <span class="rc">Task : Chatview , has features to delete row conversation llm_history</span>
+            <span class="rfeed">in</span>
+            <span class="rid">559845</span>
+            <span></span>
           </div>
-        </div>
-        <div class="confirm">
-          <span class="confirm-q">Delete this message?</span>
-          <span class="confirm-warn">1 tool result below loses its call. The row is removed from llm_history and cannot be recovered after the strip closes.</span>
-          <button type="button" class="btn ghost">Cancel</button>
-          <button type="button" class="btn danger">Delete</button>
-        </div>
-        <div class="trow">
-          <div class="trow-inner">
-            <div class="toolcard"><span class="tn">kanban_list</span><span class="ts">8 columns, 304 tasks</span><span class="ok">ok</span></div>
+          <div class="rrow" style="opacity: 0.5">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">I'll start by checking the kanban board and moving this task to the correct column.</span>
+            <span class="rfeed">in</span>
+            <span class="rid">541855</span>
+            <span></span>
+          </div>
+          <div class="confirm">
+            <span class="confirm-q">Delete this row?</span>
+            <span class="confirm-warn">1 tool result below loses its call. The row is removed from llm_history and cannot be recovered after the strip closes.</span>
+            <button type="button" class="btn ghost">Cancel</button>
+            <button type="button" class="btn danger">Delete</button>
+          </div>
+          <div class="rrow">
+            <span class="chip tool">tool</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">{"tool":"kanban_list","parameters":{"workspace_id":"ws_1785055733544_28e79c9db8950100",…},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">755470</span>
+            <span></span>
           </div>
         </div>
       </div>
@@ -505,23 +754,58 @@
 
   <section>
     <h2>After the delete</h2>
-    <p>The row collapses out and the transcript reflows. A strip at the bottom names what went and offers Undo, which is honest here in a way it is not for a whole chat: one row is a few kilobytes, so the client can hold it and re-insert it with the same id. The <code>llm_history_ai</code> trigger puts the search entry back.</p>
+    <p>The line leaves the table and the count in the app bar drops. A strip at the bottom names what went and offers Undo, which is honest here in a way it is not for a whole chat: one row is a few kilobytes, so the client can hold it and re-insert it with the same id. The <code>llm_history_ai</code> trigger puts the search entry back.</p>
 
     <div class="mock-wrap" data-ui>
-      <div class="transcript">
-        <div class="trow user">
-          <div class="trow-inner">
-            <div class="bubble user">Task : Chatview , has features to delete row conversation llm_history</div>
-          </div>
+      <div class="chat">
+        <div class="appbar">
+          <span class="t">Chatview , has features to delete row co…</span>
+          <span class="k">6 rows</span>
+          <button type="button" class="viewtoggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span>Rows</span>
+          </button>
         </div>
-        <div class="trow">
-          <div class="trow-inner">
-            <div class="toolcard"><span class="tn">kanban_list</span><span class="ts">8 columns, 304 tasks</span><span class="ok">ok</span></div>
+        <div class="rawtable">
+          <div class="rhead">
+            <span>Role</span><span class="h-tool">Tool</span><span>Content</span><span class="h-feed">Context</span><span class="h-id">Id</span><span></span>
           </div>
-        </div>
-        <div class="strip">
-          <span>Message deleted · <b>I'll start by checking the kanban board…</b></span>
-          <button type="button" class="undo">Undo</button>
+          <div class="rrow">
+            <span class="chip user">user</span>
+            <span class="rtool">none</span>
+            <span class="rc">Task : Chatview , has features to delete row conversation llm_history</span>
+            <span class="rfeed">in</span>
+            <span class="rid">559845</span>
+            <span></span>
+          </div>
+          <div class="rrow">
+            <span class="chip tool">tool</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">{"tool":"kanban_list","parameters":{"workspace_id":"ws_1785055733544_28e79c9db8950100",…},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">755470</span>
+            <span></span>
+          </div>
+          <div class="rrow">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">use_skill</span>
+            <span class="rc empty">no text, tool call only</span>
+            <span class="rfeed">in</span>
+            <span class="rid">126988</span>
+            <span></span>
+          </div>
+          <div class="rrow">
+            <span class="chip tool">tool</span>
+            <span class="rtool">use_skill</span>
+            <span class="rc">{"tool":"use_skill","parameters":{"name":"design-taste-frontend"},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">560117</span>
+            <span></span>
+          </div>
+          <div class="strip">
+            <span>Row deleted · <b>assistant · kanban_list · 541855</b></span>
+            <button type="button" class="undo">Undo</button>
+          </div>
         </div>
       </div>
     </div>
@@ -529,27 +813,61 @@
 
   <section>
     <h2>Drop from context instead</h2>
-    <p>Most of the time the goal is not to destroy the row, it is to stop the model from reading it again. That already has a column: <code>is_feed_to_llm</code>, added by Migration 5, and <code>getLLMHistories</code> already filters on it. Setting it to 0 takes the row out of the model's context while <code>getSessionMessagesSorted</code>, which does not filter, keeps it on screen. Reversible, no data lost, and the row says so.</p>
+    <p>Most of the time the goal is not to destroy the row, it is to stop the model reading it again. That already has a column: <code>is_feed_to_llm</code>, added by Migration 5, and <code>getLLMHistories</code> already filters on it. Setting it to 0 takes the row out of the model's context while <code>getSessionMessagesSorted</code>, which does not filter, keeps it in the table. Reversible, no data lost, and the row says so in the Context column.</p>
 
     <div class="mock-wrap" data-ui>
-      <div class="transcript">
-        <div class="trow user">
-          <div class="trow-inner">
-            <div class="bubble user">Task : Chatview , has features to delete row conversation llm_history</div>
-          </div>
+      <div class="chat">
+        <div class="appbar">
+          <span class="t">Chatview , has features to delete row co…</span>
+          <span class="k">7 rows</span>
+          <button type="button" class="viewtoggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span>Rows</span>
+          </button>
         </div>
-        <div class="trow dropped">
-          <div class="trow-inner">
-            <div class="para">I'll start by checking the kanban board and moving this task to the correct column.</div>
-            <div class="dropmark">
-              <span>Not sent to the model</span>
-              <button type="button" class="restore">Restore</button>
-            </div>
+        <div class="rawtable">
+          <div class="rhead">
+            <span>Role</span><span class="h-tool">Tool</span><span>Content</span><span class="h-feed">Context</span><span class="h-id">Id</span><span></span>
           </div>
-        </div>
-        <div class="trow">
-          <div class="trow-inner">
-            <div class="toolcard"><span class="tn">kanban_list</span><span class="ts">8 columns, 304 tasks</span><span class="ok">ok</span></div>
+          <div class="rrow">
+            <span class="chip user">user</span>
+            <span class="rtool">none</span>
+            <span class="rc">Task : Chatview , has features to delete row conversation llm_history</span>
+            <span class="rfeed">in</span>
+            <span class="rid">559845</span>
+            <span></span>
+          </div>
+          <div class="rrow dropped">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">I'll start by checking the kanban board and moving this task to the correct column.</span>
+            <button type="button" class="rfeed off restore" title="Put this row back in the model's context">dropped</button>
+            <span class="rid">541855</span>
+            <span></span>
+          </div>
+          <div class="rrow">
+            <span class="chip tool">tool</span>
+            <span class="rtool">kanban_list</span>
+            <span class="rc">{"tool":"kanban_list","parameters":{"workspace_id":"ws_1785055733544_28e79c9db8950100",…},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">755470</span>
+            <span></span>
+          </div>
+          <div class="rrow">
+            <span class="chip assistant">assistant</span>
+            <span class="rtool">use_skill</span>
+            <span class="rc empty">no text, tool call only</span>
+            <span class="rfeed">in</span>
+            <span class="rid">126988</span>
+            <span></span>
+          </div>
+          <div class="rrow">
+            <span class="chip tool">tool</span>
+            <span class="rtool">use_skill</span>
+            <span class="rc">{"tool":"use_skill","parameters":{"name":"design-taste-frontend"},"success":true}</span>
+            <span class="rfeed">in</span>
+            <span class="rid">560117</span>
+            <span></span>
           </div>
         </div>
       </div>
@@ -558,25 +876,35 @@
 
   <section>
     <h2>A group is not a row</h2>
-    <p>The transcript renders groups, not rows: <code>ChatMessageRow.vue</code> draws one <code>MessageGroup</code> per scroller item, and a group holds <code>group.messages</code>, which can be several <code>llm_history</code> rows. Consecutive user messages land in one bubble. So the action button belongs to the message item, not to the bubble, or three identical rows would share one delete.</p>
-    <p>These three are real: a routine fired three times in a row in session <code>item_1793535810996950572</code>, and all three carry the same text.</p>
+    <p>The grouped view draws one <code>MessageGroup</code> per scroller item, and a group holds <code>group.messages</code>, which can be several <code>llm_history</code> rows. Consecutive user messages land in one bubble. So the action button belongs to the message item, not to the bubble, or three identical rows would share one delete.</p>
+    <p>These three are real: a routine fired three times in a row in session <code>item_1793535810996950572</code>, and all three carry the same text. In the raw view they are three separate lines with three separate ids, which is the whole reason the toggle exists.</p>
 
     <div class="mock-wrap" data-ui>
-      <div class="transcript">
-        <div class="trow user">
-          <div class="trow-inner">
-            <div class="bubble user">
-              <div class="msgitem">
-                <div class="mt">This is an automated workspace-routine fire. Schedule: (manual). Collect security Issues and write to SECURIT_ISSUES.md</div>
-                <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-              </div>
-              <div class="msgitem">
-                <div class="mt">This is an automated workspace-routine fire. Schedule: (manual). Collect security Issues and write to SECURIT_ISSUES.md</div>
-                <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-              </div>
-              <div class="msgitem">
-                <div class="mt">This is an automated workspace-routine fire. Schedule: (manual). Collect security Issues and write to SECURIT_ISSUES.md</div>
-                <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+      <div class="chat">
+        <div class="appbar">
+          <span class="t">Collecting security Issuess</span>
+          <span class="k">3 rows</span>
+          <button type="button" class="viewtoggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            <span>Grouped</span>
+          </button>
+        </div>
+        <div class="transcript">
+          <div class="trow user">
+            <div class="trow-inner">
+              <div class="bubble user">
+                <div class="msgitem">
+                  <div class="mt">This is an automated workspace-routine fire. Schedule: (manual). Collect security Issues and write to SECURIT_ISSUES.md</div>
+                  <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+                </div>
+                <div class="msgitem">
+                  <div class="mt">This is an automated workspace-routine fire. Schedule: (manual). Collect security Issues and write to SECURIT_ISSUES.md</div>
+                  <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+                </div>
+                <div class="msgitem">
+                  <div class="mt">This is an automated workspace-routine fire. Schedule: (manual). Collect security Issues and write to SECURIT_ISSUES.md</div>
+                  <button type="button" class="trow-more" aria-label="Message actions"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+                </div>
               </div>
             </div>
           </div>
@@ -588,7 +916,9 @@
   <section>
     <h2>What it takes to be real</h2>
 
-    <p>Three routes, no new table, no migration. The delete returns the whole row so the client can put it back; the restore takes that row and re-inserts it with the same id.</p>
+    <p>The view mode is not a new mechanism. <code>ChatViewMode</code> is already a two-value union, <code>'dev' | 'compact'</code>, persisted in <code>config.json</code> as <code>chat_view</code> and read back by <code>chatViewModeFrom</code>. <code>'raw'</code> is a third value on the same union, so it travels with the profile like the other two.</p>
+
+    <p>Three routes for the delete, no new table, no migration. The delete returns the whole row so the client can put it back; the restore takes that row and re-inserts it with the same id.</p>
 
     <pre>DELETE /api/llm/message/:message_id
 200  { "deleted": { "row": { "id": "1794055752049541855", "session_id": "task_1794055749259_2",
@@ -628,23 +958,25 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
 
     <ol class="decisions">
       <li><b>No per-message delete exists anywhere.</b> <code>DELETE FROM llm_history</code> appears only in migration tests (<code>migration.zig:3966</code>, <code>migration_128.zig:179</code>). There is no route, no handler and no API function. The only message-level writes are <code>updateToolResultById</code> and <code>setToolResultImageUrl</code>, both internal to the loop.</li>
+      <li><b>The grouped view does not draw every row.</b> Three of the first nine rows in this session are assistant rows with an empty <code>response_content</code> and only <code>tool_calls_json</code>. <code>messageGroups</code> filters empty groups, so they render nothing at all. That is the case for the toggle: you cannot delete a row the transcript never drew.</li>
+      <li><b>The Context column needs a column that is not on the wire.</b> <code>getSessionMessagesSorted</code> does not select <code>is_feed_to_llm</code>, and <code>SessionMessage</code> has no field for it. Both need adding before the raw view can show whether a row is still fed to the model.</li>
       <li><b>The "drop from context" half already works.</b> <code>is_feed_to_llm</code> was added by Migration 5 (<code>migration_5.zig:15</code>) and <code>getLLMHistories</code> already filters on it at <code>get_llm_histories.zig:63</code>. <code>markHistoryNotForLLMRun.zig:12</code> sets it to 0 for a whole session. Per-row is the same UPDATE with a narrower WHERE.</li>
-      <li><b>The transcript does not filter on it.</b> <code>getSessionMessagesSorted</code> returns every row for the session, so a dropped row stays on screen. That is what makes the dimmed-with-marker state possible without a second read path.</li>
       <li><b>A group is not a row.</b> <code>ChatMessageRow.vue</code> draws one <code>MessageGroup</code> per scroller item and a group holds <code>group.messages</code>, which can be several <code>llm_history</code> rows. The action button has to hang off the message item, or three identical rows share one delete.</li>
       <li><b>Tool calls pair across rows.</b> An assistant row's <code>tool_calls_json</code> holds call ids; each tool row's <code>tool_call_id</code> matches one. In this session every assistant row has exactly one call and one result, so deleting either side orphans the other.</li>
     </ol>
 
     <h3 style="margin-top: 40px">Files</h3>
     <div class="files">
-      <div><span>src/http_routes.zig</span><span>three routes beside the existing session routes: <code>DELETE /api/llm/message/:message_id</code>, <code>POST /api/llm/message/restore</code>, <code>PATCH /api/llm/message/:message_id</code></span></div>
-      <div><span>src/http_handlers/message_delete.zig</span><span>the handler: 404 on an unknown id, 409 while <code>is_loading = 1</code>, the full row in the response</span></div>
-      <div><span>src/http_handlers/message_restore.zig</span><span>the 36-column insert, idempotent on an id that already exists</span></div>
-      <div><span>src/agentic_loop/llm_history.zig</span><span><code>deleteMessageById</code>, <code>restoreMessage</code>, <code>setMessageFeedToLlm</code></span></div>
-      <div><span>src/apps/desktop/src/api/chatHistory.ts</span><span><code>deleteMessage</code>, <code>restoreMessage</code>, <code>setMessageFeed</code></span></div>
+      <div><span>src/apps/desktop/src/stores/chatView.ts</span><span><code>'raw'</code> on the <code>ChatViewMode</code> union, and <code>chatViewModeFrom</code> mapping it back from <code>config.json</code></span></div>
+      <div><span>src/apps/desktop/src/components/views/ChatAppBar.vue</span><span>the view toggle, beside the existing transcript-width toggle</span></div>
+      <div><span>src/apps/desktop/src/components/views/chat_view/RawHistoryTable.vue</span><span>the table: role, tool, content, context, id, and the row action</span></div>
+      <div><span>src/apps/desktop/src/components/views/ChatView.vue</span><span>swap the VirtualScroller for the table when the mode is raw; the strip and the held row</span></div>
       <div><span>src/apps/desktop/src/components/views/chat_view/ChatMessageRow.vue</span><span>the action button on each message item, and the inline confirm bar</span></div>
-      <div><span>src/apps/desktop/src/components/views/chat_view/MessageActionsMenu.vue</span><span>the three-item menu, positioned from the button's rect</span></div>
-      <div><span>src/apps/desktop/src/components/views/ChatView.vue</span><span>the strip, the held row, and the undo call</span></div>
-      <div><span>tests/functional_ui/chat_message_delete_ui_test.py</span><span>the row leaves the DOM, the DB has one fewer row, undo puts it back byte-identical, drop-from-context leaves the row and flips the column</span></div>
+      <div><span>src/agentic_loop/llm_history.zig</span><span><code>is_feed_to_llm</code> in the <code>getSessionMessagesSorted</code> SELECT and in <code>SessionMessage</code>; <code>deleteMessageById</code>, <code>restoreMessage</code>, <code>setMessageFeedToLlm</code></span></div>
+      <div><span>src/http_routes.zig</span><span>three routes beside the existing session routes</span></div>
+      <div><span>src/http_handlers/message_delete.zig, message_restore.zig</span><span>404 on an unknown id, 409 while <code>is_loading = 1</code>, the full row in the response; the 36-column insert</span></div>
+      <div><span>src/apps/desktop/src/api/chatHistory.ts</span><span><code>deleteMessage</code>, <code>restoreMessage</code>, <code>setMessageFeed</code></span></div>
+      <div><span>tests/functional_ui/chat_message_delete_ui_test.py</span><span>the row leaves both views, the DB has one fewer row, undo puts it back byte-identical, drop-from-context leaves the row and flips the column</span></div>
     </div>
   </section>
 
@@ -652,6 +984,10 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
     <h2>Not on this page, and why</h2>
 
     <div class="gaps">
+      <div class="gap">
+        <h3>Raw as the default</h3>
+        <p>The grouped view stays the default. Raw is for operating on rows, not for reading a conversation: a table of 18,001 rows is not a chat. The toggle remembers its value per profile, so anyone who wants raw keeps it.</p>
+      </div>
       <div class="gap">
         <h3>Delete from here down</h3>
         <p>A range delete has to decide what happens to a tool call whose result is inside the range and whose call is outside it. That is a rule nobody will read, applied to a destructive action. One row at a time, and the pairing warning on each.</p>
@@ -672,10 +1008,6 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
         <h3>Deleting a row that is still streaming</h3>
         <p>While <code>is_loading = 1</code> the writer owns the row and will overwrite it. The button is disabled with that reason rather than racing the loop.</p>
       </div>
-      <div class="gap">
-        <h3>Deleting the whole conversation</h3>
-        <p>A different action on a different object. It is not in this menu, and it should not be: the row menu is where you fix one message, not where you throw the chat away.</p>
-      </div>
     </div>
   </section>
 
@@ -685,46 +1017,52 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
       <div><b>lint.mjs</b>: 0 FAIL, 0 WARN.</div>
       <div><b>inspect.mjs</b>: 1 FAIL, 2 WARN across 1440, 768 and 390. All three are listed here with their reason instead of being switched off.</div>
       <div><b>still-page</b>: 0 moving elements. This is a wireframe of an app screen, and the screen it mocks has no scroll-entrance motion. Animating a spec document to please the meter would fake the very thing the motion layer is meant to prove.</div>
-      <div><b>no-real-pictures, no-footage</b>: a chat transcript carries no photography and no clip. The picture floor is met by the interface fragments marked <code>data-ui</code>: 5 fragments, 4 of them large enough to count, which the inspector accepts for software.</div>
-      <div><b>agent-browser</b>: no page errors. Both sides of the switch measured in one eval: today gives 0 row action buttons and no menu, proposed gives 7 and an open menu, and the pair survives a today, proposed, today, proposed round trip. Picking a row moves the menu to it and retitles it. Delete opens the bar, closes the menu and dims the row to 0.5; the warning changes with the row (a tool row says the call above loses its result, an assistant row says 1 tool result below loses its call). Cancel restores opacity 1 and leaves 7 rows. Delete removes the row and the strip names it; Undo puts it back at its original position. Two deletes then two undos walk 7 to 5 to 6 to 7. Drop from context dims the row to 0.4 and adds the marker; Restore removes both.</div>
+      <div><b>no-real-pictures, no-footage</b>: a chat transcript carries no photography and no clip. The picture floor is met by the interface fragments marked <code>data-ui</code>: 5 fragments, all 5 large enough to count, which the inspector accepts for software.</div>
+      <div><b>agent-browser</b>: no page errors. The toggle measured in one eval over a four-click round trip: raw shows 7 rows and the grouped view shows 5, and the pair survives raw, grouped, raw, grouped, raw. Deleting a row that exists in both views drops both counts together (grouped 5 to 4, raw 7 to 6, the app bar to 6 rows). Deleting a row that exists only in the raw view drops the raw count alone (6 to 5) and leaves the grouped view at 4, which is the whole point of the toggle. Two undos walk raw 5 to 6 to 7 and grouped 4 to 5, and the strip goes. Drop from context turns the Context cell into a button reading dropped and adds the marker in the grouped view; Restore reverses both.</div>
       <div><b>Layout</b>: no horizontal overflow at 1440, 768 or 390.</div>
-      <div><b>Data</b>: every message, tool name and count read back from <code>agent.db</code> read-only. Nothing on this page is invented.</div>
+      <div><b>Data</b>: every row, tool name and id read back from <code>agent.db</code> read-only. Nothing on this page is invented.</div>
     </div>
   </section>
 
-  <p class="provenance">Wireframe, not an implementation. The transcript, the bubble and the tool card are the app's current components at their real sizes; the action button, the menu, the inline confirm, the strip and the drop marker are new. Rows read from <code>~/.config/pabrik/agent.db</code> on 7 November 2026.</p>
+  <p class="provenance">Wireframe, not an implementation. The app bar, the bubble and the tool card are the app's current components at their real sizes; the view toggle, the raw table, the action button, the menu, the inline confirm, the strip and the drop marker are new. Rows read from <code>~/.config/pabrik/agent.db</code> on 7 November 2026.</p>
 
 </div>
 
 <!--
   JS-off must still render the default state, so the markup above is baked
-  with mode=proposed, the menu open on the second row, and no confirm bar.
-  The script re-asserts that state at load; it does not create it. Every node
-  the script touches carries a real id or a data-id.
+  with view=raw, the menu open on the second row, and no confirm bar. The
+  script re-asserts that state at load; it does not create it. Every node the
+  script touches carries a real id or a data-id.
 -->
 <script>
 (function () {
-  var state = { mode: 'proposed', openId: '1794055752049541855', confirmId: null, deleted: [] };
+  var state = { view: 'raw', openId: '1794055752049541855', confirmId: null, deleted: [] };
 
   var transcript = document.getElementById('transcript');
+  var rawtable = document.getElementById('rawtable');
   var menu = document.getElementById('menu');
   var menuTitle = document.getElementById('menu-title');
   var miDelete = document.getElementById('mi-delete');
   var miDrop = document.getElementById('mi-drop');
   var readout = document.getElementById('readout');
+  var rowcount = document.getElementById('rowcount');
+  var viewToggle = document.getElementById('view-toggle');
+  var viewLabel = document.getElementById('view-label');
   var swToday = document.getElementById('sw-today');
   var swProposed = document.getElementById('sw-proposed');
 
-  function rows() {
-    return Array.prototype.slice.call(transcript.querySelectorAll('.trow'));
+  function containers() { return [transcript, rawtable]; }
+
+  function rowIn(container, id) {
+    return container.querySelector('[data-id="' + id + '"]');
+  }
+
+  function activeContainer() {
+    return state.view === 'raw' ? rawtable : transcript;
   }
 
   function rowById(id) {
-    return transcript.querySelector('.trow[data-id="' + id + '"]');
-  }
-
-  function moreButtons() {
-    return Array.prototype.slice.call(transcript.querySelectorAll('.trow-more'));
+    return rowIn(activeContainer(), id);
   }
 
   function positionMenu(row) {
@@ -751,17 +1089,14 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
     return 'The call above loses its result.' + tail;
   }
 
-  function closeMenu() {
-    state.openId = null;
-    render();
-  }
-
   function closeConfirm() {
     var bar = document.getElementById('confirm');
     if (bar) bar.parentNode.removeChild(bar);
     if (state.confirmId) {
-      var r = rowById(state.confirmId);
-      if (r) r.style.opacity = '';
+      containers().forEach(function (c) {
+        var r = rowIn(c, state.confirmId);
+        if (r) r.style.opacity = '';
+      });
     }
     state.confirmId = null;
     render();
@@ -772,7 +1107,10 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
     var row = rowById(id);
     if (!row) return;
     state.confirmId = id;
-    row.style.opacity = '0.5';
+    containers().forEach(function (c) {
+      var r = rowIn(c, id);
+      if (r) r.style.opacity = '0.5';
+    });
 
     var bar = document.createElement('div');
     bar.className = 'confirm';
@@ -780,7 +1118,7 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
 
     var q = document.createElement('span');
     q.className = 'confirm-q';
-    q.textContent = 'Delete this message?';
+    q.textContent = 'Delete this row?';
 
     var w = document.createElement('span');
     w.className = 'confirm-warn';
@@ -812,11 +1150,12 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
   function showStrip(label) {
     var old = document.getElementById('strip');
     if (old) old.parentNode.removeChild(old);
+    var host = activeContainer();
     var strip = document.createElement('div');
     strip.className = 'strip';
     strip.id = 'strip';
     var s = document.createElement('span');
-    s.appendChild(document.createTextNode('Message deleted \u00b7 '));
+    s.appendChild(document.createTextNode('Row deleted \u00b7 '));
     var b = document.createElement('b');
     b.textContent = label.length > 46 ? label.slice(0, 46) + '\u2026' : label;
     s.appendChild(b);
@@ -827,15 +1166,19 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
     undo.addEventListener('click', undoLast);
     strip.appendChild(s);
     strip.appendChild(undo);
-    transcript.appendChild(strip);
+    host.appendChild(strip);
   }
 
   function doDelete(id) {
-    var row = rowById(id);
-    if (!row) return;
-    var label = row.getAttribute('data-label') || '';
-    state.deleted.push({ row: row, next: row.nextSibling });
-    row.parentNode.removeChild(row);
+    var entries = [];
+    containers().forEach(function (c) {
+      var el = rowIn(c, id);
+      if (el) entries.push({ el: el, next: el.nextSibling, parent: c });
+    });
+    if (entries.length === 0) return;
+    var label = entries[0].el.getAttribute('data-label') || '';
+    entries.forEach(function (e) { e.parent.removeChild(e.el); });
+    state.deleted.push({ id: id, entries: entries, label: label });
     state.openId = null;
     closeConfirm();
     showStrip(label);
@@ -845,58 +1188,97 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
   function undoLast() {
     var last = state.deleted.pop();
     if (!last) return;
-    if (last.next && last.next.parentNode === transcript) {
-      transcript.insertBefore(last.row, last.next);
-    } else {
-      transcript.appendChild(last.row);
-    }
     var strip = document.getElementById('strip');
+    last.entries.forEach(function (e) {
+      if (e.next && e.next.parentNode === e.parent) {
+        e.parent.insertBefore(e.el, e.next);
+      } else if (strip && strip.parentNode === e.parent) {
+        e.parent.insertBefore(e.el, strip);
+      } else {
+        e.parent.appendChild(e.el);
+      }
+    });
     if (strip) strip.parentNode.removeChild(strip);
     if (state.deleted.length > 0) {
-      var prev = state.deleted[state.deleted.length - 1];
-      showStrip(prev.row.getAttribute('data-label') || '');
+      showStrip(state.deleted[state.deleted.length - 1].label);
     }
     render();
   }
 
-  function dropFromContext(id) {
-    var row = rowById(id);
-    if (!row) return;
-    row.classList.add('dropped');
-    if (!row.querySelector('.dropmark')) {
-      var inner = row.querySelector('.trow-inner');
-      var mark = document.createElement('div');
-      mark.className = 'dropmark';
-      var t = document.createElement('span');
-      t.textContent = 'Not sent to the model';
-      var r = document.createElement('button');
-      r.type = 'button';
-      r.className = 'restore';
-      r.textContent = 'Restore';
-      r.addEventListener('click', function () { restoreRow(id); });
-      mark.appendChild(t);
-      mark.appendChild(r);
-      inner.appendChild(mark);
+  function setFeedCell(el, dropped) {
+    var cell = el.querySelector('.rfeed');
+    if (!cell) return;
+    var next;
+    if (dropped) {
+      next = document.createElement('button');
+      next.type = 'button';
+      next.className = 'rfeed off restore';
+      next.textContent = 'dropped';
+      next.title = "Put this row back in the model's context";
+      next.addEventListener('click', function () { restoreRow(el.getAttribute('data-id')); });
+    } else {
+      next = document.createElement('span');
+      next.className = 'rfeed';
+      next.textContent = 'in';
     }
+    cell.parentNode.replaceChild(next, cell);
+  }
+
+  function dropFromContext(id) {
+    containers().forEach(function (c) {
+      var el = rowIn(c, id);
+      if (!el) return;
+      el.classList.add('dropped');
+      if (c === rawtable) {
+        setFeedCell(el, true);
+      } else if (!el.querySelector('.dropmark')) {
+        var inner = el.querySelector('.trow-inner');
+        var mark = document.createElement('div');
+        mark.className = 'dropmark';
+        var t = document.createElement('span');
+        t.textContent = 'Not sent to the model';
+        var r = document.createElement('button');
+        r.type = 'button';
+        r.className = 'restore';
+        r.textContent = 'Restore';
+        r.addEventListener('click', function () { restoreRow(id); });
+        mark.appendChild(t);
+        mark.appendChild(r);
+        inner.appendChild(mark);
+      }
+    });
     state.openId = null;
     render();
   }
 
   function restoreRow(id) {
-    var row = rowById(id);
-    if (!row) return;
-    row.classList.remove('dropped');
-    var mark = row.querySelector('.dropmark');
-    if (mark) mark.parentNode.removeChild(mark);
+    containers().forEach(function (c) {
+      var el = rowIn(c, id);
+      if (!el) return;
+      el.classList.remove('dropped');
+      if (c === rawtable) {
+        setFeedCell(el, false);
+      } else {
+        var mark = el.querySelector('.dropmark');
+        if (mark) mark.parentNode.removeChild(mark);
+      }
+    });
     render();
   }
 
   function render() {
-    var proposed = state.mode === 'proposed';
-    moreButtons().forEach(function (b) { b.style.display = proposed ? '' : 'none'; });
+    var proposed = state.mode !== 'today';
+    var raw = state.view === 'raw';
+
+    transcript.style.display = raw ? 'none' : '';
+    rawtable.style.display = raw ? '' : 'none';
+    viewLabel.textContent = raw ? 'Rows' : 'Grouped';
+    viewToggle.title = raw
+      ? 'Showing every llm_history row. Click for the grouped transcript.'
+      : 'Showing the grouped transcript. Click for every llm_history row.';
 
     var row = state.openId ? rowById(state.openId) : null;
-    if (proposed && row) {
+    if (row) {
       menu.style.display = '';
       menuTitle.textContent = row.getAttribute('data-label') || '';
       positionMenu(row);
@@ -904,24 +1286,30 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
       menu.style.display = 'none';
     }
 
-    rows().forEach(function (r) {
-      r.classList.toggle('open', proposed && r.getAttribute('data-id') === state.openId);
+    containers().forEach(function (c) {
+      Array.prototype.forEach.call(c.querySelectorAll('[data-id]'), function (r) {
+        r.classList.toggle('open', r.getAttribute('data-id') === state.openId);
+      });
     });
 
+    var grouped = transcript.querySelectorAll('.trow').length;
+    var rawRows = rawtable.querySelectorAll('.rrow').length;
+    rowcount.textContent = rawRows + ' rows';
+
     readout.textContent =
-      'mode=' + state.mode +
-      ' \u00b7 rows=' + rows().length +
-      ' \u00b7 row actions=' + (proposed ? moreButtons().length : 0) +
-      ' \u00b7 menu=' + ((proposed && row) ? 'open' : 'closed') +
+      'view=' + state.view +
+      ' \u00b7 grouped items=' + grouped +
+      ' \u00b7 raw rows=' + rawRows +
+      ' \u00b7 menu=' + (row ? 'open' : 'closed') +
       ' \u00b7 confirm=' + (state.confirmId ? 'open' : 'closed') +
-      ' \u00b7 dropped=' + transcript.querySelectorAll('.trow.dropped').length +
+      ' \u00b7 dropped=' + rawtable.querySelectorAll('.rrow.dropped').length +
       ' \u00b7 deleted=' + state.deleted.length;
   }
 
-  Array.prototype.forEach.call(transcript.querySelectorAll('.trow-more'), function (btn) {
+  Array.prototype.forEach.call(document.querySelectorAll('.trow-more'), function (btn) {
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
-      var row = btn.closest('.trow');
+      var row = btn.closest('[data-id]');
       if (!row) return;
       var id = row.getAttribute('data-id');
       state.openId = (state.openId === id) ? null : id;
@@ -937,14 +1325,20 @@ UPDATE llm_history SET is_feed_to_llm = 0 WHERE id = ?1;</pre>
     if (state.openId) dropFromContext(state.openId);
   });
 
+  viewToggle.addEventListener('click', function () {
+    state.view = state.view === 'raw' ? 'grouped' : 'raw';
+    state.openId = null;
+    closeConfirm();
+    render();
+  });
+
   document.addEventListener('click', function (e) {
     if (e.target.closest('#menu') || e.target.closest('.trow-more')) return;
-    if (state.openId) closeMenu();
+    if (state.openId) { state.openId = null; render(); }
   });
 
   swToday.addEventListener('click', function () {
     state.mode = 'today';
-    state.openId = null;
     swToday.classList.add('on');
     swProposed.classList.remove('on');
     swToday.setAttribute('aria-selected', 'true');
