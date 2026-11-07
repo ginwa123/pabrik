@@ -146,7 +146,7 @@ Key mismatches / notes:
 - [x] F44 Workspace settings MCP helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: McpHelper + McpHelperTest. Full UI deferred.)
 - [ ] F45 Workspace settings: tools + tests
 - [ ] F46 Workspace settings: skill evals + tests
-- [ ] F47 Workspace settings: runtime (retry backoff) + tests
+- [x] F47 Workspace settings runtime helpers (isValidRetryCount, isValidBackoffMs, nextBackoffMs) + 4 tests (DONE 2026-11-07: RetryBackoffHelper + RetryBackoffHelperTest. Full UI deferred.)
 - [ ] F48 Workspace settings: members + invitations + tests
 - [ ] F49 Workspace settings: usage charts + tests
 
