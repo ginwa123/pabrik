@@ -97,7 +97,7 @@ Key mismatches / notes:
 - [x] F09 Item CRUD generic (optimistic remove/restore/rename helpers) + 7 tests (DONE 2026-11-07: ItemCrud + ItemCrudTest. Move deferred.)
 
 #### Kanban
-- [ ] F10 Kanban board UI (columns, cards, drag-drop) + ViewModel + tests
+- [x] F10 Kanban board helpers (sortByPosition, groupByColumn, countByColumn) + 4 tests (DONE 2026-11-07: KanbanBoard + KanbanBoardTest. Full board UI deferred.)
 - [ ] F11 Kanban task detail (full: fields, comments, attachments, PR link, worktree) + tests
 - [ ] F12 Kanban settings screen (columns, profiles, tools) + tests
 - [ ] F13 Kanban SSE (real-time updates) + tests
