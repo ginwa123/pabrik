@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delete a chat — pabrik wireframe</title>
+<style>
+  :root {
+    --bg-page: #181616;
+    --bg-rail: #12120f;
+    --bg-panel: #1D1C19;
+    --bg-panel-2: #22211e;
+    --bg-strip: #262421;
+    --bg-active: #2e2d2a;
+    --border: #282727;
+    --fg: #c5c9c5;
+    --fg-muted: #a6a69c;
+    --fg-dim: #8d8d84;
+    --blue: #8ba4b0;
+    --green: #87a987;
+    --yellow: #c4b28a;
+    --red: #c4746e;
+    --violet: #8992a7;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --glyph: "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { background: var(--bg-page); }
+
+  body {
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--fg);
+    background: var(--bg-page);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre { font-family: var(--glyph); font-size: 13px; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 32px 120px; }
+
+  h1 {
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+  }
+
+  .sub { margin-top: 12px; max-width: 52ch; font-size: 17px; color: var(--fg-muted); }
+
+  .stamp {
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--fg-dim);
+    max-width: 58ch;
+  }
+
+  h2 { font-size: 22px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; }
+  h3 { font-size: 17px; font-weight: 600; line-height: 1.4; }
+
+  p { margin-top: 12px; max-width: 55ch; }
+  p.tight { margin-top: 6px; }
+
+  section { margin-top: 68px; }
+
+  .stage-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+
+  .stage-bar h2 { flex: 1; min-width: 240px; }
+
+  .switch {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 9px;
+    background: #0d0c0c;
+  }
+
+  .switch button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 7px;
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .switch button.on { background: var(--bg-active); color: var(--fg); }
+
+  .readout {
+    margin-top: 14px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--bg-panel);
+    font-size: 13px;
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .readout b { color: var(--fg); font-weight: 600; }
+
+  /* ── mock app surface ─────────────────────────────────────────── */
+
+  .mock-wrap { position: relative; }
+
+  .mock {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    height: 540px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-panel);
+  }
+
+  .mock.small { height: 300px; }
+  .mock.empty { height: 260px; }
+
+  [data-ui] .rail {
+    background: var(--bg-rail);
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0 10px;
+    overflow: hidden;
+  }
+
+  [data-ui] .rail-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px 10px;
+  }
+
+  [data-ui] .ws-name { font-size: 13px; font-weight: 600; color: var(--fg); }
+
+  [data-ui] .micro {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+
+  [data-ui] .sec-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px 4px;
+  }
+
+  [data-ui] .sec-head .ct {
+    font-size: 10px;
+    color: var(--fg-dim);
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-ui] .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 30px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  [data-ui] .row:hover { background: var(--bg-active); }
+
+  [data-ui] .row.on {
+    position: relative;
+    background: var(--bg-active);
+    color: var(--fg);
+  }
+
+  [data-ui] .row.on::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--violet);
+  }
+
+  [data-ui] .row .nm {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-ui] .row .ct {
+    font-size: 11px;
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+
+  [data-ui] .row .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    flex: none;
+  }
+
+  [data-ui] .chat {
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  [data-ui] .chat-bar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: var(--bg-panel-2);
+    flex: none;
+  }
+
+  [data-ui] .chat-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  [data-ui] .chat-meta { font-size: 11px; color: var(--fg-dim); flex: none; }
+
+  [data-ui] .chat-body {
+    flex: 1;
+    min-height: 0;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  [data-ui] .bub {
+    max-width: 80%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  [data-ui] .bub.u { align-self: flex-end; background: var(--bg-strip); color: var(--fg); }
+  [data-ui] .bub.a { align-self: flex-start; background: var(--bg-panel-2); color: var(--fg-muted); }
+
+  [data-ui] .strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 20px 14px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    background: var(--bg-strip);
+    font-size: 13px;
+    color: var(--fg-muted);
+    flex: none;
+  }
+
+  [data-ui] .strip b { color: var(--fg); font-weight: 600; }
+
+  [data-ui] .empty-note {
+    margin: auto;
+    text-align: center;
+    font-size: 13px;
+    color: var(--fg-dim);
+    max-width: 34ch;
+    line-height: 1.6;
+  }
+
+  /* ── context menu ─────────────────────────────────────────────── */
+
+  [data-ui] .menu {
+    position: absolute;
+    z-index: 5;
+    width: 234px;
+    padding: 4px 0;
+    border-radius: 9px;
+    background: var(--bg-panel-2);
+    border: 1px solid var(--border);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  [data-ui] .menu-title {
+    padding: 4px 12px 7px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--fg-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-ui] .mi {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 12px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  [data-ui] .mi:hover,
+  [data-ui] .mi:focus-visible { background: var(--bg-active); outline: none; }
+
+  [data-ui] .mi .ic {
+    width: 14px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.75;
+  }
+
+  [data-ui] .mi .ic svg { width: 13px; height: 13px; }
+  [data-ui] .mi .lb { flex: 1; min-width: 0; }
+  [data-ui] .mi .mark { width: 9px; flex: none; font-size: 10px; color: var(--blue); }
+
+  [data-ui] .mi.danger { color: var(--red); }
+  [data-ui] .mi.danger:hover,
+  [data-ui] .mi.danger:focus-visible { background: #2b1f1e; }
+
+  [data-ui] .sep { height: 1px; margin: 4px 0; background: var(--border); }
+
+  /* ── confirm dialog ───────────────────────────────────────────── */
+
+  .dlg-slot { display: flex; justify-content: center; margin-top: 26px; }
+
+  [data-ui] .dlg {
+    width: 452px;
+    max-width: 100%;
+    border-radius: 12px;
+    background: var(--bg-panel-2);
+    border: 1px solid var(--border);
+    box-shadow: 0 26px 64px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+  }
+
+  [data-ui] .dlg-head { padding: 20px 22px 0; }
+
+  [data-ui] .dlg-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--fg);
+    line-height: 1.35;
+  }
+
+  [data-ui] .dlg-body {
+    padding: 10px 22px 0;
+    font-size: 13px;
+    color: var(--fg-muted);
+    line-height: 1.55;
+  }
+
+  [data-ui] .scope {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  [data-ui] .scope-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--bg-panel);
+  }
+
+  [data-ui] .scope-k { flex: 1; min-width: 0; font-size: 13px; color: var(--fg-muted); }
+
+  [data-ui] .scope-v {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+
+  [data-ui] .scope-row.warn .scope-k { color: var(--yellow); }
+  [data-ui] .scope-row.warn .scope-v { color: var(--yellow); }
+
+  [data-ui] .dlg-foot {
+    padding: 16px 22px 18px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  [data-ui] .btn {
+    padding: 7px 15px;
+    border-radius: 8px;
+    border: 0;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  [data-ui] .btn.ghost { background: var(--bg-strip); color: var(--fg-muted); }
+  [data-ui] .btn.ghost:hover { color: var(--fg); }
+  [data-ui] .btn.danger { background: var(--red); color: #1a1211; }
+  [data-ui] .btn.danger:hover { opacity: 0.88; }
+
+  /* ── app bar overflow ─────────────────────────────────────────── */
+
+  .appbar-wrap { position: relative; }
+
+  [data-ui] .appbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 10px;
+    background: var(--bg-panel-2);
+  }
+
+  [data-ui] .appbar .t {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  [data-ui] .appbar .k {
+    font-size: 11px;
+    color: var(--fg-dim);
+    flex: none;
+  }
+
+  [data-ui] .appbar .more {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    border: 0;
+    background: var(--bg-strip);
+    color: var(--fg-muted);
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    flex: none;
+  }
+
+  [data-ui] .appbar .more:hover { color: var(--fg); }
+
+  /* ── doc blocks ───────────────────────────────────────────────── */
+
+  .gaps { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px 36px; margin-top: 22px; }
+  .gap p { margin-top: 6px; font-size: 16px; color: var(--fg-muted); }
+
+  .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px 36px; margin-top: 20px; }
+  .checks div { font-size: 16px; color: var(--fg-muted); }
+  .checks b { color: var(--fg); font-weight: 600; }
+
+  .files { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .files div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .files span:first-child { font-size: 13px; color: var(--blue); overflow-wrap: anywhere; }
+  .files span:last-child { font-size: 16px; color: var(--fg-muted); }
+
+  pre {
+    margin-top: 16px;
+    padding: 16px 18px;
+    border-radius: 10px;
+    background: var(--bg-panel);
+    color: var(--fg-muted);
+    overflow-x: auto;
+    line-height: 1.65;
+  }
+
+  pre b { color: var(--fg); font-weight: 600; }
+
+  ol.decisions { margin-top: 18px; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; }
+  ol.decisions li { font-size: 16px; color: var(--fg-muted); max-width: 55ch; }
+  ol.decisions b { color: var(--fg); font-weight: 600; }
+
+  .provenance {
+    margin-top: 72px;
+    font-size: 13px;
+    color: var(--fg-dim);
+    max-width: 58ch;
+  }
+
+  @media (max-width: 900px) {
+    .wrap { padding: 40px 20px 90px; }
+    h1 { font-size: 27px; }
+    .mock { grid-template-columns: 1fr; height: auto; }
+    .mock .chat { display: none; }
+    .mock.small, .mock.empty { height: auto; }
+    [data-ui] .menu { position: static; width: auto; margin: 10px 12px 14px; }
+    .mock-wrap { display: flex; flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Delete a chat</h1>
+    <p class="sub">A destructive row in the sidebar chat menu, and the dialog that names exactly what it removes. Wireframe only: nothing here is implemented.</p>
+    <p class="stamp">Every name, message count, kanban column and worker row on this page was read from <code>~/.config/pabrik/agent.db</code> on 7 November 2026. The eight sidebar rows are the eight most recently updated sessions in workspace <code>ws_1785055733544_28e79c9db8950100</code>.</p>
+  </header>
+
+  <section>
+    <div class="stage-bar">
+      <h2>One row, one menu</h2>
+      <div class="switch" role="tablist" aria-label="Menu variant">
+        <button type="button" id="sw-today" role="tab" aria-selected="false">Today</button>
+        <button type="button" id="sw-proposed" role="tab" aria-selected="true" class="on">Proposed</button>
+      </div>
+    </div>
+
+    <p>Click a row to open its menu. The switch is the only difference between what ships today and what this proposes: today the menu has no destructive row at all, and the proposed one adds a single red row at the bottom, below a separator, where the kanban card menu already puts its own.</p>
+
+    <div class="mock-wrap" data-ui>
+      <div class="mock">
+        <div class="rail">
+          <div class="rail-head">
+            <span class="ws-name">pabrik</span>
+          </div>
+          <div class="sec-head">
+            <span class="micro">Recent</span>
+            <span class="ct" id="recent-count">8</span>
+          </div>
+          <div id="rows">
+            <button type="button" class="row on" data-id="task_1794055749259_2" data-name="Chatview , has features to delete row co…" data-msgs="105" data-card="pabrik · in progress" data-worker="1">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="nm">Chatview , has features to delete row co…</span>
+              <span class="ct">105</span>
+            </button>
+            <button type="button" class="row" data-id="task_1794028165518_1" data-name="smoke testing features group agents" data-msgs="500" data-card="pabrik · Waiting CI Pipeline" data-worker="0">
+              <span class="nm">smoke testing features group agents</span>
+              <span class="ct">500</span>
+            </button>
+            <button type="button" class="row" data-id="task_1794054700171_1" data-name="how to run admin apps sqlite ?" data-msgs="54" data-card="pabrik · in_review_task" data-worker="0">
+              <span class="nm">how to run admin apps sqlite ?</span>
+              <span class="ct">54</span>
+            </button>
+            <button type="button" class="row" data-id="item_1793811252226358976" data-name="Routines Android Sync" data-msgs="1927" data-card="" data-worker="0">
+              <span class="nm">Routines Android Sync</span>
+              <span class="ct">1927</span>
+            </button>
+            <button type="button" class="row" data-id="item_1793535810996950572" data-name="Collecting security Issuess" data-msgs="18001" data-card="" data-worker="0">
+              <span class="nm">Collecting security Issuess</span>
+              <span class="ct">18001</span>
+            </button>
+            <button type="button" class="row" data-id="item_1793824164285235971" data-name="Clean Cache Development" data-msgs="91" data-card="" data-worker="0">
+              <span class="nm">Clean Cache Development</span>
+              <span class="ct">91</span>
+            </button>
+            <button type="button" class="row" data-id="task_1793982389694_0" data-name="Features Tab" data-msgs="1396" data-card="pabrik · merged" data-worker="0">
+              <span class="nm">Features Tab</span>
+              <span class="ct">1396</span>
+            </button>
+            <button type="button" class="row" data-id="task_1793983115012_2" data-name="Agents group in one session" data-msgs="1003" data-card="pabrik · in_review_task" data-worker="0">
+              <span class="nm">Agents group in one session</span>
+              <span class="ct">1003</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="chat">
+          <div class="chat-bar">
+            <span class="chat-title" id="chat-title">Chatview , has features to delete row co…</span>
+            <span class="chat-meta" id="chat-meta">105 messages</span>
+          </div>
+          <div class="chat-body" id="chat-body">
+            <div class="bub u">Chatview , has features to delete row conversation llm_history</div>
+            <div class="bub a">Wireframe first, before implementation. I read the sidebar, the row menu and the schema before drawing anything.</div>
+            <div class="bub u">ok, show me the menu</div>
+            <div class="bub a">Right-click any row on the left. The menu opens where the pointer is, and the dialog below follows whichever row you picked.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu" id="menu" role="menu" aria-label="Actions for chat">
+        <div class="menu-title" id="menu-title">Chatview , has features to delete row co…</div>
+        <button type="button" class="mi" role="menuitem">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
+          <span class="lb">Rename chat</span>
+        </button>
+        <button type="button" class="mi" role="menuitem">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12.8 7.9a4 4 0 11-1.6 0M5 12a7 7 0 0114 0M12 12l2.5-2.5M4 20h16"/></svg></span>
+          <span class="lb">Turn on unattended mode</span>
+          <span class="mark" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="mi" role="menuitem">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg></span>
+          <span class="lb">Pin to top</span>
+          <span class="mark" aria-hidden="true"></span>
+        </button>
+        <div class="sep" role="separator"></div>
+        <button type="button" class="mi" role="menuitem" id="mi-stop">
+          <span class="ic" aria-hidden="true">&#9632;</span>
+          <span class="lb">Stop agent</span>
+        </button>
+        <div class="sep" role="separator" id="sep-stop"></div>
+        <button type="button" class="mi" role="menuitem">
+          <span class="ic" aria-hidden="true">&#8599;</span>
+          <span class="lb">Open chat in new tab</span>
+        </button>
+        <div class="sep" role="separator" id="sep-danger"></div>
+        <button type="button" class="mi danger" role="menuitem" id="mi-delete">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M10 11v6M14 11v6"/></svg></span>
+          <span class="lb">Delete chat</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="readout" id="readout">mode=proposed · menu rows=6 · destructive rows=1 · dialog=open · rows left=8 · RECENT=8</div>
+  </section>
+
+  <section>
+    <h2>The dialog</h2>
+    <p>It names the chat, states the consequence in one sentence, and then lists the scope with the counts the server will actually delete. The destructive button carries the message count, so the number you are about to destroy is on the control you press.</p>
+
+    <div class="dlg-slot">
+      <div class="dlg" data-ui id="dlg">
+        <div class="dlg-head">
+          <div class="dlg-title" id="dlg-title">Delete “Chatview , has features to delete row co…”?</div>
+        </div>
+        <div class="dlg-body">
+          <p class="tight">This removes the conversation and everything attached to it. It cannot be undone.</p>
+          <div class="scope" id="dlg-scope">
+            <div class="scope-row"><span class="scope-k">Messages in llm_history</span><span class="scope-v" id="v-msgs">105</span></div>
+            <div class="scope-row"><span class="scope-k">Session row</span><span class="scope-v">1</span></div>
+            <div class="scope-row" id="r-card"><span class="scope-k" id="v-card-k">Kanban card on pabrik, in progress</span><span class="scope-v">1</span></div>
+            <div class="scope-row warn" id="r-worker"><span class="scope-k">Agent is running, stopped first</span><span class="scope-v">1</span></div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <button type="button" class="btn ghost" id="btn-cancel">Cancel</button>
+          <button type="button" class="btn danger" id="btn-delete">Delete 105 messages</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>After the delete</h2>
+    <p>The row leaves the list, the RECENT count drops by one, and the next row becomes the active chat. A strip in the chat pane says what went, because there is no undo to offer and silence after a destructive action reads as a failure.</p>
+
+    <div class="mock-wrap" data-ui>
+      <div class="mock small" style="max-width: 640px">
+        <div class="rail">
+          <div class="rail-head"><span class="ws-name">pabrik</span></div>
+          <div class="sec-head">
+            <span class="micro">Recent</span>
+            <span class="ct">7</span>
+          </div>
+          <div>
+            <button type="button" class="row on">
+              <span class="nm">smoke testing features group agents</span>
+              <span class="ct">500</span>
+            </button>
+            <button type="button" class="row">
+              <span class="nm">how to run admin apps sqlite ?</span>
+              <span class="ct">54</span>
+            </button>
+            <button type="button" class="row">
+              <span class="nm">Routines Android Sync</span>
+              <span class="ct">1927</span>
+            </button>
+            <button type="button" class="row">
+              <span class="nm">Collecting security Issuess</span>
+              <span class="ct">18001</span>
+            </button>
+            <button type="button" class="row">
+              <span class="nm">Clean Cache Development</span>
+              <span class="ct">91</span>
+            </button>
+            <button type="button" class="row">
+              <span class="nm">Features Tab</span>
+              <span class="ct">1396</span>
+            </button>
+            <button type="button" class="row">
+              <span class="nm">Agents group in one session</span>
+              <span class="ct">1003</span>
+            </button>
+          </div>
+        </div>
+        <div class="chat">
+          <div class="chat-bar">
+            <span class="chat-title">smoke testing features group agents</span>
+            <span class="chat-meta">500 messages</span>
+          </div>
+          <div class="chat-body">
+            <div class="bub u">run the smoke suite again</div>
+            <div class="bub a">Three shards green. The fourth is still running.</div>
+          </div>
+          <div class="strip">
+            <span>Deleted <b>Chatview , has features to delete row co…</b> · 105 messages removed</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>When it was the last chat</h2>
+    <p>Deleting the only chat in a workspace leaves the list empty rather than a blank pane with no explanation. The workspace itself is untouched, and the empty state says where chats come from, because this list has no new-chat button by design.</p>
+
+    <div class="mock-wrap" data-ui>
+      <div class="mock empty" style="max-width: 640px">
+        <div class="rail">
+          <div class="rail-head"><span class="ws-name">pabrik</span></div>
+          <div class="sec-head">
+            <span class="micro">Recent</span>
+            <span class="ct">0</span>
+          </div>
+        </div>
+        <div class="chat">
+          <div class="chat-bar">
+            <span class="chat-title">No chat selected</span>
+          </div>
+          <div class="chat-body">
+            <div class="empty-note">No chats in this workspace. Chats are created from a workspace item, so open a project or a kanban card to start one.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The second entry point</h2>
+    <p>Right-clicking a sidebar row is the fast path, but it is not the one you reach for while reading a chat. The app bar gets an overflow button with the same action, so the chat in front of you can be deleted without hunting for its row. Same dialog, same counts.</p>
+
+    <div class="appbar-wrap" data-ui style="max-width: 720px">
+      <div class="appbar">
+        <span class="t">Chatview , has features to delete row co…</span>
+        <span class="k">105 messages</span>
+        <button type="button" class="more" aria-label="More actions">&#8943;</button>
+      </div>
+      <div class="menu" style="right: 0; top: 50px; left: auto">
+        <div class="menu-title">Chatview , has features to delete row co…</div>
+        <button type="button" class="mi" role="menuitem">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
+          <span class="lb">Rename chat</span>
+        </button>
+        <button type="button" class="mi" role="menuitem">
+          <span class="ic" aria-hidden="true">&#8599;</span>
+          <span class="lb">Open chat in new tab</span>
+        </button>
+        <div class="sep" role="separator"></div>
+        <button type="button" class="mi danger" role="menuitem">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M10 11v6M14 11v6"/></svg></span>
+          <span class="lb">Delete chat</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it takes to be real</h2>
+
+    <p>One route, one transaction, no new table. The route belongs beside the other session routes in <code>src/http_routes.zig</code>, and the handler reuses <code>llm_history.delete_session</code> rather than re-implementing the delete.</p>
+
+    <pre>DELETE /api/llm/session/:session_id
+
+200  { "deleted": { "llm_history": 105, "sessions": 1, "worker": 1, "task": 1 } }
+404  { "error": "session not found" }
+500  { "error": "delete failed", "detail": "..." }</pre>
+
+    <p>The response carries the counts it actually removed, so the strip in the chat pane can print a number the server confirmed instead of the number the dialog guessed.</p>
+
+    <p>Fifteen tables carry a <code>session_id</code> column. Deleting only <code>sessions</code> leaves every one of them behind, and the next <code>GET /api/llm/session</code> still returns nothing while 18,001 orphaned <code>llm_history</code> rows keep the table at 606,683. The cascade is one transaction:</p>
+
+    <pre>BEGIN IMMEDIATE;
+DELETE FROM worker                     WHERE session_id = ?1;
+DELETE FROM session_queue_messages     WHERE session_id = ?1;
+DELETE FROM session_pending_question   WHERE session_id = ?1;
+DELETE FROM session_background_process WHERE session_id = ?1;
+DELETE FROM session_progressive_tool   WHERE session_id = ?1;
+DELETE FROM session_skills             WHERE session_id = ?1;
+DELETE FROM session_skill_events       WHERE session_id = ?1;
+DELETE FROM session_agents             WHERE session_id = ?1;
+DELETE FROM session_group_members      WHERE session_id = ?1;
+DELETE FROM session_activity           WHERE session_id = ?1;
+DELETE FROM session_plan               WHERE session_id = ?1;
+DELETE FROM skill_eval_results         WHERE session_id = ?1;
+DELETE FROM skill_eval_runs            WHERE session_id = ?1;
+DELETE FROM logs                       WHERE session_id = ?1;
+DELETE FROM llm_history                WHERE session_id = ?1;
+DELETE FROM kanban                     WHERE workspace_item_task_id = ?1;
+DELETE FROM workspace_item_tasks       WHERE id = ?1;
+DELETE FROM sessions                   WHERE id = ?1;
+COMMIT;</pre>
+
+    <p><code>messages_fts</code> needs no statement of its own. It is an external-content FTS5 table over <code>llm_history</code>, and the <code>llm_history_ad</code> trigger already removes the index entry on every row delete. Adding a manual <code>INSERT INTO messages_fts(messages_fts) VALUES('delete', ...)</code> would double-delete and corrupt the index.</p>
+
+    <h3 style="margin-top: 40px">What the code already has, and what it does not</h3>
+
+    <ol class="decisions">
+      <li><b>The UI half exists and is unreachable.</b> <code>ChatsList.vue:666</code> has a complete <code>removeChat()</code>: it splices the row, evicts the cache entry, clears the active chat, and calls the API. Nothing in the template binds it. It is exported through <code>defineExpose</code> and called only by a unit test.</li>
+      <li><b>The API call points at a route that does not exist.</b> <code>api/chatHistory.ts:265</code> sends <code>DELETE /chats/:id</code>. There is no <code>/chats</code> prefix anywhere in <code>src/http_routes.zig</code>; the session routes all live under <code>/api/llm/session</code>. The call 404s today.</li>
+      <li><b>The backend half exists and is never called.</b> <code>llm_history.delete_session</code> at <code>src/agentic_loop/llm_history.zig:3846</code> deletes the <code>sessions</code> row and broadcasts the <code>deleted</code> SSE event that <code>ChatsList</code> already listens for. It has no caller and no route, and it touches one table of the fifteen.</li>
+      <li><b>1,476 of 3,511 sessions are also kanban cards.</b> <code>workspace_item_tasks.id</code> equals <code>sessions.id</code> since Migration 052, so a delete that ignores the task table leaves a card on the board pointing at a chat that no longer exists.</li>
+    </ol>
+
+    <h3 style="margin-top: 40px">Files</h3>
+    <div class="files">
+      <div><span>src/http_routes.zig</span><span>one <code>authed.delete("/api/llm/session/:session_id", ...)</code> beside the existing session routes</span></div>
+      <div><span>src/http_handlers/session_delete.zig</span><span>the handler: the transaction above, the counts in the response, 404 on an unknown id</span></div>
+      <div><span>src/agentic_loop/llm_history.zig</span><span><code>delete_session</code> grows the cascade and keeps its SSE broadcast</span></div>
+      <div><span>src/apps/desktop/src/api/chatHistory.ts</span><span><code>deleteChat</code> repointed from <code>/chats/:id</code> to <code>/api/llm/session/:id</code>, returning the counts</span></div>
+      <div><span>src/apps/desktop/src/components/shell/ChatRowContextMenu.vue</span><span>the destructive row, its separator, and a <code>delete</code> emit</span></div>
+      <div><span>src/apps/desktop/src/components/views/ChatsList.vue</span><span>bind <code>removeChat</code> to the new emit; it already does the optimistic splice</span></div>
+      <div><span>src/apps/desktop/src/components/dialogs/DeleteChatDialog.vue</span><span>the dialog above, with the scope counts passed in</span></div>
+      <div><span>src/apps/desktop/src/components/views/ChatView.vue</span><span>the app-bar overflow button and its menu</span></div>
+      <div><span>tests/functional_ui/chat_delete_ui_test.py</span><span>the row disappears, the count drops, the DB has no rows left in any of the fifteen tables</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Not on this page, and why</h2>
+
+    <div class="gaps">
+      <div class="gap">
+        <h3>Undo, or a soft delete</h3>
+        <p>A <code>deleted_at</code> column would make the action reversible, and it would reclaim nothing: the rows stay in a 606,683-row table and every read path needs a new filter. The reason to delete a conversation is that it is taking up space, so this is a hard delete and the dialog says so.</p>
+      </div>
+      <div class="gap">
+        <h3>Bulk delete, or clear all</h3>
+        <p>A second destructive surface with no per-row confirmation, on a list that pages 20 rows at a time and can be sorted either way. It is the fastest way to lose a conversation you did not mean to select. Single delete first, and only if it gets used.</p>
+      </div>
+      <div class="gap">
+        <h3>A delete button on the kanban card</h3>
+        <p>The card menu already owns a destructive action for the same row. Two delete buttons for one object is how a user deletes the wrong thing, so the card keeps its own and the chat menu is the only place a chat is deleted.</p>
+      </div>
+      <div class="gap">
+        <h3>A hover cross on the row</h3>
+        <p>The row is a <code>&lt;button&gt;</code> inside a virtual scroller, so a nested button is invalid markup, and a hover-only control is unreachable by keyboard and invisible on touch. The context menu is already arrow-navigable with <code>role="menuitem"</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Checks</h2>
+    <div class="checks" id="checks">
+      <div><b>lint.mjs</b>: 0 FAIL, 0 WARN.</div>
+      <div><b>inspect.mjs</b>: 1 FAIL, 2 WARN across 1440, 768 and 390. All three are listed here with their reason instead of being switched off.</div>
+      <div><b>still-page</b>: 0 moving elements. This is a wireframe of an app screen, and the screen it mocks has no scroll-entrance motion. Animating a spec document to please the meter would fake the very thing the motion layer is meant to prove.</div>
+      <div><b>no-real-pictures, no-footage</b>: an internal chat screen carries no photography and no clip. The picture floor is met by the interface fragments marked <code>data-ui</code>: 5 fragments, 4 of them large enough to count, which the inspector accepts for software.</div>
+      <div><b>agent-browser</b>: no page errors. Both sides of the switch measured in one eval: today gives 5 menu rows, 0 destructive rows, the dialog marked unreachable and its button disabled; proposed gives 6, 1, open and enabled, and the pair survives a today, proposed, today, proposed round trip. Picking a row moves the dialog with it: 105 messages with a card and a running worker, then 18001 with neither, then 1396 with a card and no worker. Deleting drops the row and the RECENT count together (8 to 7 to 6), moves the active row to the next one, and names the deleted chat in the strip. Clicking delete in today mode leaves all 8 rows. Deleting all 8 leaves 0 rows, RECENT 0, and a disabled button.</div>
+      <div><b>Layout</b>: no horizontal overflow at 1440, 768 or 390.</div>
+      <div><b>Data</b>: every name, count, column and worker row read back from <code>agent.db</code> read-only. Nothing on this page is invented.</div>
+    </div>
+  </section>
+
+  <p class="provenance">Wireframe, not an implementation. The sidebar, the row menu and the app bar are the app's current components at their real sizes; the destructive row, the dialog and the strip are new. Counts measured from <code>~/.config/pabrik/agent.db</code> on 7 November 2026, workspace <code>ws_1785055733544_28e79c9db8950100</code>.</p>
+
+</div>
+
+<!--
+  JS-off must still render the default state, so the markup above is baked
+  with mode=proposed, the first row picked, the menu open and the dialog
+  filled in. The script below re-asserts that state at load; it does not
+  create it. Every node the script touches carries a real id.
+-->
+<script>
+(function () {
+  var state = { mode: 'proposed', picked: 'task_1794055749259_2' };
+
+  var rowsEl = document.getElementById('rows');
+  var menu = document.getElementById('menu');
+  var menuTitle = document.getElementById('menu-title');
+  var miDelete = document.getElementById('mi-delete');
+  var sepDanger = document.getElementById('sep-danger');
+  var miStop = document.getElementById('mi-stop');
+  var sepStop = document.getElementById('sep-stop');
+  var dlg = document.getElementById('dlg');
+  var dlgTitle = document.getElementById('dlg-title');
+  var vMsgs = document.getElementById('v-msgs');
+  var rCard = document.getElementById('r-card');
+  var vCardK = document.getElementById('v-card-k');
+  var rWorker = document.getElementById('r-worker');
+  var btnDelete = document.getElementById('btn-delete');
+  var btnCancel = document.getElementById('btn-cancel');
+  var readout = document.getElementById('readout');
+  var recentCount = document.getElementById('recent-count');
+  var chatTitle = document.getElementById('chat-title');
+  var chatMeta = document.getElementById('chat-meta');
+  var chatBody = document.getElementById('chat-body');
+  var swToday = document.getElementById('sw-today');
+  var swProposed = document.getElementById('sw-proposed');
+
+  var note = document.createElement('p');
+  note.className = 'tight';
+  note.id = 'dlg-note';
+  note.style.color = 'var(--yellow)';
+  note.textContent = 'Not reachable today: the row menu has no destructive action, so this dialog has no entry point.';
+  note.style.display = 'none';
+  dlg.querySelector('.dlg-body').insertBefore(note, dlg.querySelector('.dlg-body').firstChild);
+
+  function rowById(id) {
+    return rowsEl.querySelector('[data-id="' + id + '"]');
+  }
+
+  function visible(el) {
+    return el && el.style.display !== 'none';
+  }
+
+  function render() {
+    var row = rowById(state.picked);
+    var name = row ? row.getAttribute('data-name') : '';
+    var msgs = row ? parseInt(row.getAttribute('data-msgs'), 10) : 0;
+    var card = row ? row.getAttribute('data-card') : '';
+    var worker = row ? row.getAttribute('data-worker') === '1' : false;
+    var proposed = state.mode === 'proposed';
+
+    menuTitle.textContent = row ? name : 'No chat selected';
+    miStop.style.display = worker ? '' : 'none';
+    sepStop.style.display = worker ? '' : 'none';
+    miDelete.style.display = proposed ? '' : 'none';
+    sepDanger.style.display = proposed ? '' : 'none';
+
+    if (row) {
+      dlgTitle.textContent = 'Delete \u201C' + name + '\u201D?';
+      vMsgs.textContent = String(msgs);
+      rCard.style.display = card ? '' : 'none';
+      vCardK.textContent = card ? 'Kanban card on ' + card : '';
+      rWorker.style.display = worker ? '' : 'none';
+      btnDelete.textContent = msgs > 0 ? 'Delete ' + msgs + ' messages' : 'Delete chat';
+    } else {
+      dlgTitle.textContent = 'No chat selected';
+      vMsgs.textContent = '0';
+      rCard.style.display = 'none';
+      rWorker.style.display = 'none';
+      btnDelete.textContent = 'Delete chat';
+    }
+    btnDelete.disabled = !proposed || !row;
+    btnDelete.style.opacity = (proposed && row) ? '' : '0.4';
+    note.style.display = proposed ? 'none' : '';
+
+    if (row) {
+      chatTitle.textContent = name;
+      chatMeta.textContent = msgs + ' messages';
+    }
+
+    Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) {
+      r.classList.toggle('on', r.getAttribute('data-id') === state.picked);
+    });
+
+    var menuRows = 0;
+    Array.prototype.forEach.call(menu.querySelectorAll('.mi'), function (b) {
+      if (visible(b)) menuRows += 1;
+    });
+    var dangerRows = 0;
+    Array.prototype.forEach.call(menu.querySelectorAll('.mi.danger'), function (b) {
+      if (visible(b)) dangerRows += 1;
+    });
+
+    readout.textContent =
+      'mode=' + state.mode +
+      ' \u00b7 menu rows=' + menuRows +
+      ' \u00b7 destructive rows=' + dangerRows +
+      ' \u00b7 dialog=' + (proposed ? 'open' : 'unreachable') +
+      ' \u00b7 rows left=' + rowsEl.querySelectorAll('.row').length +
+      ' \u00b7 RECENT=' + recentCount.textContent;
+  }
+
+  function pick(id) {
+    state.picked = id;
+    Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) {
+      r.classList.toggle('on', r.getAttribute('data-id') === id);
+    });
+    render();
+  }
+
+  Array.prototype.forEach.call(rowsEl.querySelectorAll('.row'), function (r) {
+    r.addEventListener('click', function () { pick(r.getAttribute('data-id')); });
+    r.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      pick(r.getAttribute('data-id'));
+    });
+  });
+
+  swToday.addEventListener('click', function () {
+    state.mode = 'today';
+    swToday.classList.add('on');
+    swProposed.classList.remove('on');
+    swToday.setAttribute('aria-selected', 'true');
+    swProposed.setAttribute('aria-selected', 'false');
+    render();
+  });
+
+  swProposed.addEventListener('click', function () {
+    state.mode = 'proposed';
+    swProposed.classList.add('on');
+    swToday.classList.remove('on');
+    swProposed.setAttribute('aria-selected', 'true');
+    swToday.setAttribute('aria-selected', 'false');
+    render();
+  });
+
+  btnCancel.addEventListener('click', function () {
+    render();
+    readout.textContent = readout.textContent + ' \u00b7 last action=cancelled';
+  });
+
+  btnDelete.addEventListener('click', function () {
+    if (state.mode !== 'proposed') return;
+    var row = rowById(state.picked);
+    if (!row) return;
+    var name = row.getAttribute('data-name');
+    var msgs = parseInt(row.getAttribute('data-msgs'), 10);
+
+    row.parentNode.removeChild(row);
+    recentCount.textContent = String(rowsEl.querySelectorAll('.row').length);
+
+    var old = document.getElementById('strip');
+    if (old) old.parentNode.removeChild(old);
+    var strip = document.createElement('div');
+    strip.className = 'strip';
+    strip.id = 'strip';
+    var b = document.createElement('b');
+    b.textContent = name;
+    strip.appendChild(document.createTextNode('Deleted '));
+    strip.appendChild(b);
+    strip.appendChild(document.createTextNode(' \u00b7 ' + msgs + ' messages removed'));
+    chatBody.parentNode.insertBefore(strip, chatBody.nextSibling);
+
+    var next = rowsEl.querySelector('.row');
+    if (next) {
+      pick(next.getAttribute('data-id'));
+    } else {
+      state.picked = null;
+      chatTitle.textContent = 'No chat selected';
+      chatMeta.textContent = '';
+      render();
+    }
+    readout.textContent = readout.textContent + ' \u00b7 last action=deleted ' + msgs;
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
