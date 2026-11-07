@@ -94,7 +94,12 @@ def test_html_only_message_renders_sandboxed_iframe(
     assert ".markdown-content" not in item_html, (
         "html-only message should render via iframe, not markdown"
     )
-    assert "<button" not in item_html, (
+    # Ask the DOM whether the payload's button exists as an ELEMENT. A tag-name
+    # or text scan cannot answer that: the srcdoc attribute legitimately carries
+    # the escaped payload, and the assistant item carries a per-row action
+    # <button> of its own, so both `"<button"` and `"probe-btn"` appear either
+    # way. A real element query is immune to both.
+    assert page.locator(".assistant-item button#probe-btn").count() == 0, (
         "raw html payload leaked into the DOM outside the iframe srcdoc"
     )
 
