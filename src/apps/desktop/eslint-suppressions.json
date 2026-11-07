@@ -228,7 +228,7 @@
   },
   "src/components/file/FolderExplorer.vue": {
     "local/no-try-catch": {
-      "count": 2
+      "count": 1
     }
   },
   "src/components/git/GitChanges.vue": {
