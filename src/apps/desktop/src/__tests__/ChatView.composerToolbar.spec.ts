@@ -27,18 +27,10 @@ describe('ChatView composer toolbar (V1 single-card)', () => {
   })
 
   it('keeps every interactive hook (testids, dropdowns, titles)', () => {
-    for (const hook of [
-      'agent-picker-button',
-      'agent-picker-default',
-      'agent-picker-menu',
-      'agent-picker-active-badge',
-      'worktree-status-button',
-      'tokens-status',
-    ]) {
+    for (const hook of ['worktree-status-button', 'tokens-status']) {
       expect(toolbarSrc).toContain(`data-testid="${hook}"`)
     }
     expect(toolbarSrc).toContain('<WorktreeMenu')
-    expect(toolbarSrc).toContain('agentChipTooltip')
     expect(toolbarSrc).toContain('Compact conversation history')
   })
 

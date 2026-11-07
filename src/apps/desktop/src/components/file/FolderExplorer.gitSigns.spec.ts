@@ -3,6 +3,7 @@
  * join between the two (absolute explorer paths vs repo-relative git paths). */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import FolderExplorer from './FolderExplorer.vue'
 
 const { listFolderMock, getGitChangesMock } = vi.hoisted(() => ({
@@ -46,14 +47,14 @@ describe('FolderExplorer git signs', () => {
   })
 
   it('fetches git changes for the cwd on mount', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     expect(getGitChangesMock).toHaveBeenCalledWith('/repo')
     wrapper.unmount()
   })
 
   it('renders an M badge on the modified file and none on the clean file', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     const rows = wrapper.findAll('[data-testid="explorer-row"]')
     const appRow = rows.find((r) => r.text().includes('app.ts'))
@@ -64,14 +65,14 @@ describe('FolderExplorer git signs', () => {
   })
 
   it('shows the branch name in the header', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     expect(wrapper.find('[data-testid="git-branch"]').text()).toContain('main')
     wrapper.unmount()
   })
 
   it('rolls changed descendants into a folder count badge', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     const rows = wrapper.findAll('[data-testid="explorer-row"]')
     const srcRow = rows.find((r) => r.text().includes('src'))
@@ -81,7 +82,7 @@ describe('FolderExplorer git signs', () => {
   })
 
   it('filters rows by name as the user types', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     await wrapper.find('[data-testid="explorer-filter"]').setValue('app')
     const rows = wrapper.findAll('[data-testid="explorer-row"]')
@@ -93,7 +94,7 @@ describe('FolderExplorer git signs', () => {
   })
 
   it('summarizes change counts in the footer', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     const footer = wrapper.find('[data-testid="explorer-footer"]').text()
     expect(footer).toContain('1 modified')
@@ -103,7 +104,7 @@ describe('FolderExplorer git signs', () => {
   })
 
   it('still emits file-click when a file row is clicked', async () => {
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     const rows = wrapper.findAll('[data-testid="explorer-row"]')
     await rows.find((r) => r.text().includes('app.ts'))!.trigger('click')
@@ -113,7 +114,7 @@ describe('FolderExplorer git signs', () => {
 
   it('re-polls git changes every 30s and stops on unmount', async () => {
     vi.useFakeTimers()
-    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' } })
+    const wrapper = mount(FolderExplorer, { props: { cwd: '/repo' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     expect(getGitChangesMock).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(30000)

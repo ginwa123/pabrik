@@ -1,301 +1,110 @@
-/** Tests for ChatView's agent chip + picker — the cascade display. */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
-import { createApp, nextTick, ref } from 'vue'
-import { mount, flushPromises, type VueWrapper, type DOMWrapper } from '@vue/test-utils'
+/** Tests for the composer's agent cascade — `useChatComposerAgents` owns it now that the chip is
+ * gone. The `@` list in FileInput renders `availableAgents`; the cascade itself is data. */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 
 import * as api from '../api'
-import { Effect } from 'effect'
-import ChatView from '../components/views/ChatView.vue'
-import {
-  installSseBus,
-  __resetSseBus,
-  __setSseBusGlobalClient,
-  __dispatchSseBus,
-} from '../helpers/sseBus'
-import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
-import { makeLocalStorageStub } from './helpers'
+import { useChatComposerAgents } from '../components/views/chat_view/useChatComposerAgents'
 
-// jsdom 29 dropped Element.prototype.scrollTo; polyfill for VirtualScroller.
-if (
-  typeof (globalThis as { HTMLElement?: { prototype: { scrollTo?: unknown } } }).HTMLElement
-    ?.prototype.scrollTo === 'undefined'
+const TWO_PROFILES = {
+  profiles: {
+    '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
+    '900ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
+  },
+  active_profile: '300 ribu',
+}
+
+/** Mount the composable the way ChatView does: a session id ref, a workspace resolver and the
+ * chat-view-mode sink. `loadAgents()` is the one async step. */
+async function loadComposer(
+  config: Record<string, unknown>,
+  opts: { workspaceId?: string; sessionId?: string } = {},
 ) {
-  ;(
-    globalThis as unknown as { HTMLElement: { prototype: { scrollTo: () => void } } }
-  ).HTMLElement.prototype.scrollTo = function () {
-    // no-op
-  }
-}
-
-function makeStubClient(initial: SseState): SseClient {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stub: any = {
-    close: vi.fn(),
-    reconnect: vi.fn(),
-    getState: () => stub._state,
-    onStateChange: (_cb: (s: SseState, _info: SseStateInfo) => void) => {
-      return () => {}
-    },
-  }
-  stub._state = initial
-  return stub as SseClient
-}
-
-// ─── mocks ──────────────────────────────────────────────────────────────── Per-test overrides via
-// setup() so each test can change getPabrikConfig / getSession responses without re-mounting the
-// global vi.mock() harness.
-function installChatViewMocks(opts: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  config?: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session?: any
-}) {
-  const history = {
-    messages: [],
-    has_more: false,
-    next_cursor: null,
-    cwd: '/tmp',
-    git_worktree_cwd: '',
-    max_total_tokens: 0,
-    max_capacity_total_tokens: 0,
-  }
-  // ChatView's mount loads through `fetchChatHistoryEffect`; `getChatHistory` alone never reaches
-  // it, so the mount stalled on the 404 the global fetch stub answers with.
-  vi.spyOn(api, 'fetchChatHistoryEffect').mockReturnValue(Effect.succeed(history))
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
-  vi.spyOn(api, 'getSession').mockResolvedValue(
-    opts.session ?? {
-      session_id: 'placeholder',
-      session_name: '',
-
-      selectedAgent: null,
-      cwd: '',
-      git_worktree_cwd: '',
-    },
-  )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.spyOn(api, 'getGitStatus').mockResolvedValue({ is_git_repo: false } as any)
-  vi.spyOn(api, 'getPabrikConfig').mockResolvedValue(opts.config ?? { profiles: {} })
-}
-
-// ─── mount helper ──────────────────────────────────────────────────────── Mounts ChatView with
-// the provided sessionId. Returns the wrapper plus resolved refs once the component is mounted and
-// the initial async data (getPabrikConfig + getSession) has resolved.
-async function mountChatViewWithSession(sessionId: string) {
-  const processingState = ref<Record<string, boolean>>({})
-
-  const wrapper = mount(ChatView, {
-    props: { chatId: sessionId, chatName: 'Test Chat' },
-    attachTo: document.body,
-    global: {
-      provide: { processingState },
-    },
+  const applyChatViewMode = vi.fn()
+  vi.spyOn(api, 'getPabrikConfig').mockResolvedValue(config as never)
+  vi.spyOn(api, 'getWorkspaceConfig').mockResolvedValue(config as never)
+  const composer = useChatComposerAgents({
+    sessionId: ref(opts.sessionId ?? 'sess_cascade'),
+    workspaceId: () => opts.workspaceId ?? '',
+    applyChatViewMode,
   })
-  // Wait for the onMounted loadAgents + watch on sessionId to settle.
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 0))
-    await nextTick()
-    const streaming = (wrapper.vm as unknown as { isStreaming?: boolean }).isStreaming
-    if (streaming) break
-  }
-  await flushPromises()
-  await nextTick()
-  return wrapper
+  await composer.loadAgents()
+  return { composer, applyChatViewMode }
 }
-
-// ─── shared SseBus wiring (parity with chatViewWorktree.spec.ts) ────────
-let vueApp: ReturnType<typeof createApp> | null = null
-let sseBusGlobalClient: SseClient | null = null
-
-beforeEach(() => {
-  setActivePinia(createPinia())
-  vueApp = createApp({})
-  installSseBus(vueApp)
-  sseBusGlobalClient = makeStubClient('open')
-  __setSseBusGlobalClient(sseBusGlobalClient)
-  // jsdom 29 dropped localStorage from its default globals. Several stores (navigation.ts,
-  // designSse.ts, kanbanSse.ts) call localStorage.getItem() on init — without this stub every test
-  // crashes with "Cannot read properties of undefined (reading 'getItem')".
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: makeLocalStorageStub(),
-    writable: true,
-    configurable: true,
-  })
-})
 
 afterEach(() => {
-  __resetSseBus()
-  vueApp = null
-  sseBusGlobalClient = null
   vi.restoreAllMocks()
 })
 
-// ─── Helper: read chip text + tooltip ─────────────────────────────────────
-function readChip(wrapper: VueWrapper): {
-  text: string
-  title: string
-} {
-  // The picker trigger carries `data-testid="agent-picker-button"` (added
-  // with the V1 composer toolbar — previously located via the 🤖 emoji,
-  // which the toolbar restyle removed).
-  const found = wrapper.find('[data-testid="agent-picker-button"]')
-  if (!found.exists()) throw new Error('agent chip button not found')
-  const chipBtn = found as unknown as DOMWrapper<HTMLButtonElement>
-  return {
-    text: chipBtn.text().trim(),
-    title: chipBtn.attributes('title') ?? '',
-  }
-}
+describe('composer agent cascade — effectiveAgent', () => {
+  it('resolves to the active profile when the session has no selection (active = default)', async () => {
+    const { composer, applyChatViewMode } = await loadComposer(TWO_PROFILES)
 
-// ─── Tests ────────────────────────────────────────────────────────────────
-describe('ChatView agent chip — cascade display', () => {
-  it('shows the active profile when no chat session has been opened yet (active = default)', async () => {
-    installChatViewMocks({
-      config: {
-        profiles: {
-          '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-          '900ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-        },
-        active_profile: '300 ribu',
-      },
-      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
-    })
-
-    const wrapper = await mountChatViewWithSession('sess_no_session')
-
-    const { text, title } = readChip(wrapper)
-    expect(text).toContain('300 ribu')
-    expect(text).not.toContain('Default')
-    expect(title).toMatch(/active agent/i)
+    expect(composer.selectedAgent.value).toBeNull()
+    expect(composer.activeAgent.value).toBe('300 ribu')
+    expect(composer.effectiveAgent.value).toBe('300 ribu')
+    // The tooltip the chip used to show is still the cascade's own words.
+    expect(composer.agentChipTooltip.value).toMatch(/active agent/i)
+    expect(composer.agentChipTooltip.value).not.toMatch(/default/i)
+    // The config this chat fetched is the one that decides the view mode.
+    expect(applyChatViewMode).toHaveBeenCalledWith(TWO_PROFILES)
   })
 
-  it('shows the active profile when session has empty selected_profile_model (cascade falls through)', async () => {
-    installChatViewMocks({
-      config: {
-        profiles: {
-          '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-          '900ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-        },
-        active_profile: '300 ribu',
-      },
-      session: { selectedAgent: '', cwd: '', git_worktree_cwd: '' },
-    })
+  it('falls through to the active profile when the session selection is empty', async () => {
+    const { composer } = await loadComposer(TWO_PROFILES)
+    composer.selectedAgent.value = ''
 
-    const wrapper = await mountChatViewWithSession('sess_empty_selected')
-
-    const { text, title } = readChip(wrapper)
-    expect(text).toContain('300 ribu')
-    expect(title).toMatch(/active agent/i)
+    expect(composer.effectiveAgent.value).toBe('300 ribu')
+    expect(composer.agentChipTooltip.value).toMatch(/active agent/i)
   })
 
-  it('shows the per-session selected_profile_model when it is set (overrides active)', async () => {
-    installChatViewMocks({
-      config: {
-        profiles: {
-          '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-          '900ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-        },
-        active_profile: '300 ribu',
-      },
-      session: { selectedAgent: '900ribu', cwd: '', git_worktree_cwd: '' },
-    })
+  it('prefers the per-session selection over the active profile', async () => {
+    const { composer } = await loadComposer(TWO_PROFILES)
+    composer.selectedAgent.value = '900ribu'
 
-    const wrapper = await mountChatViewWithSession('sess_900ribu')
-
-    const { text, title } = readChip(wrapper)
-    expect(text).toContain('900ribu')
-    expect(title).toMatch(/agent.*900ribu/i)
+    expect(composer.effectiveAgent.value).toBe('900ribu')
+    expect(composer.agentChipTooltip.value).toMatch(/agent.*900ribu/i)
   })
 
-  it('shows "Default" only when neither selected_profile_model nor active_profile is set', async () => {
-    installChatViewMocks({
-      config: {
-        profiles: {
-          '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-        },
-        active_profile: null,
-      },
-      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
-    })
+  it('resolves to no agent only when neither the session nor the active profile is set', async () => {
+    const { composer } = await loadComposer({ ...TWO_PROFILES, active_profile: null })
 
-    const wrapper = await mountChatViewWithSession('sess_default')
-
-    const { text, title } = readChip(wrapper)
-    expect(text).toContain('Default')
-    expect(title).toMatch(/top-level/i)
+    expect(composer.effectiveAgent.value).toBeNull()
+    expect(composer.agentChipTooltip.value).toMatch(/top-level/i)
   })
 
-  it('shows "Default" when no profiles are configured at all', async () => {
-    installChatViewMocks({
-      config: { profiles: {}, active_profile: null },
-      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
-    })
+  it('resolves to no agent when no profiles are configured at all', async () => {
+    const { composer } = await loadComposer({ profiles: {}, active_profile: null })
 
-    const wrapper = await mountChatViewWithSession('sess_empty_profiles')
-
-    const { text } = readChip(wrapper)
-    expect(text).toContain('Default')
+    expect(composer.availableAgents.value).toEqual([])
+    expect(composer.effectiveAgent.value).toBeNull()
   })
 
-  it('renders (active) badge next to the active profile in the picker', async () => {
-    installChatViewMocks({
-      config: {
-        profiles: {
-          '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-          '900ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-        },
-        active_profile: '300 ribu',
-      },
-      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
-    })
+  it('marks the active profile as the active one, and only that one', async () => {
+    const { composer } = await loadComposer(TWO_PROFILES)
 
-    const wrapper = await mountChatViewWithSession('sess_active_badge')
-
-    // Open the picker
-    const chip = wrapper.find('[data-testid="agent-picker-button"]')
-    if (!chip.exists()) throw new Error('chip not found')
-    await chip.trigger('click.stop')
-    await nextTick()
-
-    const html = wrapper.html()
-    // The (active) badge should appear next to the active profile row
-    expect(html).toMatch(/300 ribu.*active|active.*300 ribu/s)
-    // And not next to the non-active profile
-    expect(html).not.toMatch(/900ribu.*active/s)
+    const names = composer.availableAgents.value.map((p) => p.name)
+    expect(names).toEqual(['300 ribu', '900ribu'])
+    // The `(active)` badge was `activeAgent` — exactly one profile can carry it.
+    expect(composer.activeAgent.value).toBe('300 ribu')
+    expect(names.filter((n) => n === composer.activeAgent.value)).toEqual(['300 ribu'])
   })
 
-  it('puts ✓ on the effective profile row (selected > active > none)', async () => {
-    installChatViewMocks({
-      config: {
-        profiles: {
-          '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-          '900ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
-        },
-        active_profile: '300 ribu',
-      },
-      session: { selectedAgent: null, cwd: '', git_worktree_cwd: '' },
-    })
+  it('moves the effective marker with the selection (selected > active > none)', async () => {
+    const update = vi.spyOn(api, 'updateSession').mockResolvedValue(undefined as never)
+    const { composer } = await loadComposer(TWO_PROFILES)
 
-    const wrapper = await mountChatViewWithSession('sess_checkmark')
+    // No selection → the active profile is the effective one.
+    expect(composer.effectiveAgent.value).toBe('300 ribu')
 
-    const chip = wrapper.find('[data-testid="agent-picker-button"]')
-    if (!chip.exists()) throw new Error('chip not found')
-    await chip.trigger('click.stop')
-    await nextTick()
+    // Picking a row is a session update, and it wins the cascade.
+    await composer.selectAgent('900ribu')
+    expect(update).toHaveBeenCalledWith('sess_cascade', { selectedAgent: '900ribu' })
+    expect(composer.effectiveAgent.value).toBe('900ribu')
 
-    // With selectedAgent=null + activeAgent="300 ribu", ✓ should be on the 300 ribu row (not on
-    // "Default (top-level)" — the effective selection IS the active profile). Scope by testid so we
-    // don't match the chip's own "300 ribu" text (which has no ✓).
-    const picker300 = wrapper.find('[data-testid="agent-picker-300 ribu"]')
-    const picker900 = wrapper.find('[data-testid="agent-picker-900ribu"]')
-    expect(picker300.exists()).toBe(true)
-    expect(picker900.exists()).toBe(true)
-    expect(picker300.text()).toContain('✓')
-    expect(picker900.text()).not.toContain('✓')
+    // Clearing the selection falls back to the active profile.
+    await composer.selectAgent(null)
+    expect(update).toHaveBeenLastCalledWith('sess_cascade', { selectedAgent: null })
+    expect(composer.effectiveAgent.value).toBe('300 ribu')
   })
 })
-
-// ─── suppress unused-import warning for symbols referenced by other specs ─
-void __dispatchSseBus

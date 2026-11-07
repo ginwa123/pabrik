@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { createPinia } from 'pinia'
 import { defineComponent, h, provide } from 'vue'
 import ChatRightSidebar from '../chat_right_sidebar/ChatRightSidebar.vue'
 import { OPEN_IN_CODE_EDITOR_KEY, type OpenInCodeEditorFn } from '@/composables/useCodeEditor'
@@ -76,7 +77,7 @@ describe('ChatRightSidebar explorer tab', () => {
     await router.isReady()
     const wrapper = mount(ChatRightSidebar, {
       props: { cwd: '/repo', open: true, width: 300 },
-      global: { plugins: [router] },
+      global: { plugins: [router, createPinia()] },
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="chat-right-sidebar-tab-explorer"]').exists()).toBe(true)
@@ -93,7 +94,7 @@ describe('ChatRightSidebar explorer tab', () => {
     await router.isReady()
     const wrapper = mount(ChatRightSidebar, {
       props: { cwd: '/repo', open: true, width: 300 },
-      global: { plugins: [router] },
+      global: { plugins: [router, createPinia()] },
     })
     await flushPromises()
     await wrapper.find('[data-testid="chat-right-sidebar-tab-changes"]').trigger('click')
@@ -111,7 +112,7 @@ describe('ChatRightSidebar explorer tab', () => {
     window.history.replaceState({}, '', '/?sidebar=terminal')
     const wrapper = mount(ChatRightSidebar, {
       props: { cwd: '/repo', open: true, width: 300 },
-      global: { plugins: [router] },
+      global: { plugins: [router, createPinia()] },
     })
     await flushPromises()
     expect(
@@ -135,7 +136,7 @@ describe('ChatRightSidebar explorer tab', () => {
       },
     })
     const wrapper = mount(Host, {
-      global: { plugins: [router] },
+      global: { plugins: [router, createPinia()] },
     })
     await flushPromises()
     // FolderExplorer lists a.txt from the mocked listFolder.

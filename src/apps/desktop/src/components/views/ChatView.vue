@@ -188,11 +188,8 @@ const { setChatColumnEl, setComposerDockEl } = useChatComposerInset()
 const { setupCodeBlockCopyButtons } = useChatCodeCopy({ virtualScrollerRef, copyCodeContent })
 
 const {
-  activeAgent,
   activePillGroupIndex,
-  agentChipTooltip,
   agentError,
-  agentPickerRef,
   availableAgents,
   chatPrProvider,
   chatPrUrl,
@@ -202,7 +199,6 @@ const {
   collapsedCount,
   collapsedPaths,
   diffMode,
-  effectiveAgent,
   effectiveCwd,
   gitStatus,
   gitWorktreeCwd,
@@ -218,7 +214,6 @@ const {
   isLoading,
   isPendingSession,
   isSendingAttachments,
-  isUpdatingAgent,
   jumpToUserGroup,
   loadChatHistory,
   maxCapacityTotalTokens,
@@ -246,12 +241,10 @@ const {
   scrollToBottom,
   scrollerIsScrollable,
   selectAgent,
-  selectedAgent,
   sessionCwd,
   sessionSkills,
   setAllCollapsed,
   setDiffMode,
-  showAgentPicker,
   showCenterStage,
   showCodeViewer,
   showCreatePrDialog,
@@ -598,8 +591,10 @@ const compactSession = async () => {
             :isLoading="isLoading || isSendingAttachments"
             :isInitializing="isInitializing"
             :isLLMProcessing="isLLMProcessing"
+            :agents="availableAgents"
             @submit="handleFileInputSubmit"
             @files-selected="handleFileInputSubmit"
+            @select-agent="selectAgent"
             @stop-session="handleStopSession"
             :draft-key="sessionId ? `chat:${sessionId}` : undefined"
           >
@@ -642,76 +637,6 @@ const compactSession = async () => {
                     <span>{{ isCompacting ? 'Compacting...' : 'Compact' }}</span>
                   </button>
 
-                  <!-- Model/Agent selector -->
-                  <div ref="agentPickerRef" class="relative">
-                    <button
-                      @click.stop="showAgentPicker = !showAgentPicker"
-                      :disabled="isUpdatingAgent || isInitializing || !sessionId"
-                      class="composer-tool-btn"
-                      data-testid="agent-picker-button"
-                      :title="agentChipTooltip"
-                    >
-                      <span>{{ effectiveAgent ?? 'Default' }}</span>
-                      <span class="text-micro">▾</span>
-                    </button>
-                    <div
-                      v-if="showAgentPicker"
-                      class="agent-picker-menu absolute bottom-full mb-2 left-0 min-w-[240px] rounded-lg shadow-lg z-20"
-                      data-testid="agent-picker-menu"
-                      style="
-                        background-color: var(--semantic-card-bg);
-                        border: 1px solid var(--color-border);
-                      "
-                    >
-                      <button
-                        @click="selectAgent(null)"
-                        class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
-                        style="color: var(--semantic-text)"
-                        data-testid="agent-picker-default"
-                      >
-                        <span>Default (top-level config)</span>
-                        <span v-if="!selectedAgent && !activeAgent">✓</span>
-                      </button>
-                      <button
-                        v-for="p in availableAgents"
-                        :key="p.name"
-                        @click="selectAgent(p.name)"
-                        class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
-                        style="
-                          color: var(--semantic-text);
-                          border-top: 1px solid var(--color-border);
-                        "
-                        :data-testid="`agent-picker-${p.name}`"
-                      >
-                        <div class="flex items-center justify-between">
-                          <span class="font-medium">
-                            {{ p.name }}
-                            <span
-                              v-if="activeAgent === p.name"
-                              class="text-micro ml-1 px-1 py-0.5 rounded"
-                              :style="{
-                                backgroundColor: 'var(--color-violet)',
-                                color: 'var(--semantic-on-accent)',
-                              }"
-                              data-testid="agent-picker-active-badge"
-                              >(active)</span
-                            >
-                          </span>
-                          <span v-if="effectiveAgent === p.name">✓</span>
-                        </div>
-                        <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
-                          {{ p.model }} · {{ p.base_url }}
-                        </div>
-                      </button>
-                      <div
-                        v-if="availableAgents.length === 0"
-                        class="px-3 py-2 text-dense"
-                        style="color: var(--semantic-text-muted)"
-                      >
-                        No agents configured. Add one in Settings.
-                      </div>
-                    </div>
-                  </div>
                 </div>
                 <span class="composer-toolbar-divider" aria-hidden="true" />
                 <!-- Middle zone: token status (display-only, muted) -->
