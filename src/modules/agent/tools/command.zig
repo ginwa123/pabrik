@@ -492,7 +492,7 @@ test "cmd_available probe does not crash" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const exec_builtin = @import("builtin");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
@@ -501,12 +501,12 @@ const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
 const tool_models = pabrikcore.tool_models;
 const command_tool_mod = pabrikcore.command_tool;
-const background_process = @import("../../../agentic_loop/background_process.zig");
-const background_process_events = @import("../../../agentic_loop/background_process_events.zig");
-const background_watcher = @import("../../../agentic_loop/background_watcher.zig");
+const background_process = @import("../loop/background_process.zig");
+const background_process_events = @import("../loop/background_process_events.zig");
+const background_watcher = @import("../loop/background_watcher.zig");
 const wrapToolOutput = tools.wrapToolOutput;
 const bash_args = @import("exec_bash_args.zig");
-const vm_runtime = @import("../../../agentic_loop/vm_runtime.zig");
+const vm_runtime = @import("../loop/vm_runtime.zig");
 const error_explain = @import("tools_error_explain.zig");
 /// What `runWithContext` hands back: the LLM-facing payload, plus the
 /// loop-control request parsed out of the same arguments.

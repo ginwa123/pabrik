@@ -9,8 +9,8 @@ const auth_common = @import("auth_common.zig");
 const pabrik_config_get = @import("pabrik_config_get.zig");
 const pabrik_config_put = @import("pabrik_config_put.zig");
 const profile_delete = @import("pabrik_config_profile_delete.zig");
-const workspace_config = @import("../agentic_loop/workspace_config.zig");
-const store = @import("../agentic_loop/workspace_settings_store.zig");
+const workspace_config = @import("../modules/agent/loop/workspace_config.zig");
+const store = @import("../modules/agent/loop/workspace_settings_store.zig");
 
 pub const WorkspaceConfigError = error{
     WorkspaceIdRequired,

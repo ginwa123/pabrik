@@ -525,7 +525,7 @@ test "list_directory_tool description documents the cwd + path contract" {
 // The tool definition above and its executor below live in ONE file.
 
 const pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;
@@ -543,7 +543,7 @@ const ListDirectoryInput = struct {
     cwd: []const u8 = "",
 };
 
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 
 /// The listing, from whichever substrate owns the directory. Under `--saas`
 /// the guest lists it AND answers the ignore question — the host runs no git

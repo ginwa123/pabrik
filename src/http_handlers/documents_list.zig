@@ -6,8 +6,8 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const documents_store = @import("../agentic_loop/documents_store.zig");
-const folders_store = @import("../agentic_loop/document_folders_store.zig");
+const documents_store = @import("../modules/agent/loop/documents_store.zig");
+const folders_store = @import("../modules/agent/loop/document_folders_store.zig");
 
 pub const DocumentsListError = error{
     WorkspaceIdRequired,

@@ -499,9 +499,9 @@ pub fn notifyTestHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, r
 // not a member of `pabrikcore`.
 const custom_http_client = @import("kabelweb").client;
 const helpers = @import("helpers");
-const claude_code = @import("../agentic_loop/claude_code.zig");
-const opencode = @import("../agentic_loop/opencode.zig");
-const secrets_substitution = @import("../agentic_loop/secrets_substitution.zig");
+const claude_code = @import("../modules/agent/loop/claude_code.zig");
+const opencode = @import("../modules/agent/loop/opencode.zig");
+const secrets_substitution = @import("../modules/agent/loop/secrets_substitution.zig");
 const probe_credentials = @import("probe_credentials.zig");
 
 /// Per-call deadline for the probe (libcurl has OS-level timeout support).

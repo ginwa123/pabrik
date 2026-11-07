@@ -7,7 +7,7 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const design_model = @import("../agentic_loop/design_model.zig");
+const design_model = @import("../modules/agent/loop/design_model.zig");
 
 /// Request body shape.
 const ReorderElementsBody = struct {

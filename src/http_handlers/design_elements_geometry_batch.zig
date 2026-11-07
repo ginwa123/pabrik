@@ -8,7 +8,7 @@ const test_db = pabrikcore.test_db;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const gserverz = pabrikcore.gserverz;
-const design_model = @import("../agentic_loop/design_model.zig");
+const design_model = @import("../modules/agent/loop/design_model.zig");
 
 /// HTTP request body for batch-geometry-update. Each `updates[i]` is a
 /// partial geometry patch — only the listed fields are SET in the SQL UPDATE;

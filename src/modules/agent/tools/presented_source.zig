@@ -3,7 +3,7 @@
 //! both ask this seam, so the card's size and its bytes cannot come from two places.
 
 const std = @import("std");
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 const file_sandbox = @import("file_sandbox.zig");
 
 const testing = std.testing;

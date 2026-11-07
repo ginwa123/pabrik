@@ -12,7 +12,7 @@ const agent_db = @import("../models/agent.db.zig");
 const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 const SystemFolder = pabrikcore.system_folder.SystemFolder;
 const vmd_policy = @import("../vmd/policy.zig");
-const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const workspace_vm = @import("../modules/agent/loop/workspace_vm.zig");
 
 /// The display name of an auto-created default project. Cosmetic only —
 /// both clients follow the `is_default` flag, never the name, so a user is

@@ -8,7 +8,7 @@ const pabrikcore = mod.pabrikcore;
 const gserverz = pabrikcore.gserverz;
 const http_response = mod.http_response;
 const auth_common = @import("auth_common.zig");
-const workspace_vm = @import("../agentic_loop/workspace_vm.zig");
+const workspace_vm = @import("../modules/agent/loop/workspace_vm.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 
 /// SQLite error info surfaced from the use-case to the handler.

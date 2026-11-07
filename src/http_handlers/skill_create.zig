@@ -6,7 +6,7 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const skills_store = @import("../agentic_loop/skills_store.zig");
+const skills_store = @import("../modules/agent/loop/skills_store.zig");
 
 /// Request body. Both fields default to "" so an empty body parses and is
 /// then refused by validation rather than answering "Invalid JSON body" —
@@ -207,7 +207,7 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
-const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
+const frontmatter = @import("../modules/agent/loop/skill_frontmatter.zig");
 
 fn expectBodyIs(content: []const u8, body: []const u8) !void {
     var parsed = try frontmatter.parse(testing.allocator, content);

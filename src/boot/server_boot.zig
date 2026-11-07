@@ -15,9 +15,9 @@ const shutdown = @import("shutdown.zig");
 const db_config = @import("db_config.zig");
 const db_target = @import("db_target.zig");
 const static_serve = @import("../http_static/static_serve.zig");
-const model_catalog_refresh = @import("../agentic_loop/model_catalog_refresh.zig");
-const secrets_at_rest = @import("../agentic_loop/secrets_at_rest.zig");
-const workspace_settings_store = @import("../agentic_loop/workspace_settings_store.zig");
+const model_catalog_refresh = @import("../modules/agent/loop/model_catalog_refresh.zig");
+const secrets_at_rest = @import("../modules/agent/loop/secrets_at_rest.zig");
+const workspace_settings_store = @import("../modules/agent/loop/workspace_settings_store.zig");
 const secrets_key = @import("secrets_key.zig");
 
 /// Ignore SIGPIPE process-wide (non-Windows). A peer vanishing mid-write

@@ -94,7 +94,7 @@ pub fn executeListAgents(
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const migration = @import("../../../migrations/migration.zig");
 const sqlite = exec_pabrikcore.sqlite;
 const database = exec_pabrikcore.database;

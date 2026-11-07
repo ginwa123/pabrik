@@ -1,17 +1,17 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
-const session_llm_config = @import("../agentic_loop/session_llm_config.zig");
+const session_llm_config = @import("../modules/agent/loop/session_llm_config.zig");
 const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
 const gserverz = pabrikcore.gserverz;
 const auth_common = @import("auth_common.zig");
 const ai_workflow = pabrikcore.ai_mod;
 const sqlite_db_mod = pabrikcore.sqlite;
-const slash_skill_expand = @import("../agentic_loop/slash_skill_expand.zig");
-const workspace_scope = @import("../agentic_loop/workspace_scope.zig");
+const slash_skill_expand = @import("../modules/agent/loop/slash_skill_expand.zig");
+const workspace_scope = @import("../modules/agent/loop/workspace_scope.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const vmd_policy = @import("../vmd/policy.zig");
-const file_attachments = @import("../agentic_loop/file_attachments.zig");
+const file_attachments = @import("../modules/agent/loop/file_attachments.zig");
 
 /// Create a sandbox directory in data/apps and return the path
 fn createSandbox(allocator: std.mem.Allocator, io: std.Io, environment: ?*const std.process.Environ.Map, session_id: []const u8) ![]u8 {

@@ -1,7 +1,7 @@
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 
 const helpers = @import("helpers");
 const agent_db = @import("../../../models/agent.db.zig");
@@ -56,7 +56,7 @@ const update_plan_mod = pabrikcore.update_plan;
 const get_plan_mod = pabrikcore.get_plan;
 const list_agents_mod = pabrikcore.list_agents;
 const used_tools_mod = pabrikcore.used_tools;
-const run_skill_eval_mod = @import("../../../agentic_loop/run_skill_eval.zig");
+const run_skill_eval_mod = @import("../loop/run_skill_eval.zig");
 // 2026-08-28 — add_mcp_server agent tool (Step 5 of
 // 2026-08-28-add-mcp-server-agent-tool.md).
 const add_mcp_server_mod = pabrikcore.add_mcp_server;
@@ -76,7 +76,7 @@ const command_tool_mod = pabrikcore.command_tool;
 const process_tool_mod = pabrikcore.process_tool;
 // Progressive tool search: search_tool / view_tool / use_tool. Pure tool data
 // lives in `pabrikcore.progressive_tools`; the catalog + renderers live in
-// `src/agentic_loop/progressive_catalog.zig`.
+// `src/modules/agent/loop/progressive_catalog.zig`.
 const progressive_tools_mod = pabrikcore.progressive_tools;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;

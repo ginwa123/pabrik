@@ -8,7 +8,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const auth_common = @import("auth_common.zig");
 const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
-const build_msg_prompt = @import("../agentic_loop/prompts_build_messages_for_agent_prompt.zig");
+const build_msg_prompt = @import("../modules/agent/loop/prompts_build_messages_for_agent_prompt.zig");
 const tool_models = pabrikcore.tool_models;
 
 /// `kind` of a compiled-in tool.

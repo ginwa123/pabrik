@@ -32,7 +32,7 @@ from __future__ import annotations
 # checklist, which reads the same registry) but never seeded. Registered
 # and handed-out are two different decisions; see the static contract test
 # `search_documents is seeded by default but delete_document is NOT` in
-# `src/agentic_loop/tools_exec_document.zig`.
+# `src/modules/agent/loop/tools_exec_document.zig`.
 DEFAULT_AGENT_TOOLS: list[str] = [
     "add_document",
     "add_skill",

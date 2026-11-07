@@ -6,7 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const pabrikcore = @import("pabrikcore");
 const git_hardening = @import("helpers").git_hardening;
-const workspace_fs = @import("../../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../agent/loop/workspace_fs.zig");
 const runtime_mode = @import("../../runtime_mode.zig");
 
 /// Error set for system folder operations

@@ -104,10 +104,10 @@ test "executeUsedTools: preserves input order" {
 const exec_testing = std.testing;
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
-const exec_tools = @import("../../../agentic_loop/tools.zig");
+const exec_tools = @import("../loop/tools.zig");
 const tools_equipped = @import("tools_equipped.zig");
-const tool_eligibility = @import("../../../agentic_loop/tool_eligibility.zig");
-const llm_history = @import("../../../agentic_loop/llm_history.zig");
+const tool_eligibility = @import("../loop/tool_eligibility.zig");
+const llm_history = @import("../loop/llm_history.zig");
 const migration = @import("../../../migrations/migration.zig");
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;

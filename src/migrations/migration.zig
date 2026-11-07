@@ -5104,7 +5104,7 @@ test "updateSessionLastFinishReason: overwrites on every call" {
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
 /// Open a fresh in-memory sqlite DB. Mirrors the `setupDb` helper in
-/// `ai_workflow/tui/routines/Scheduler.zig` (the project's canonical
+/// `modules/agent/loop/routines/Scheduler.zig` (the project's canonical
 /// Io.Threaded + :memory: pattern).
 fn setupDb064() !struct {
     db: Backend,
@@ -6879,7 +6879,7 @@ test "Migration072 kanban_column_id FK is ON DELETE CASCADE — deleting a colum
     defer ctx.threaded.deinit();
 
     // NB: PRAGMA foreign_keys is deliberately OFF in this project's
-    // Backend init (see src/ai_workflow/tui/kanban_model.zig:306 for
+    // Backend init (see src/modules/agent/loop/kanban_model.zig:306 for
     // the rationale — application code simulates CASCADE manually).
     if (dialect.enable_foreign_keys.len > 0) try ctx.db.exec(alloc, dialect.enable_foreign_keys, &.{});
 
@@ -9098,7 +9098,7 @@ test "Migration101 SQL sentinel matches the Zig guard's UNKNOWN_MODEL" {
     // The trigger hardcodes 'unknown' because SQL cannot call into Zig. This
     // assertion is the ONLY thing keeping the two in step — if someone changes
     // either one alone, this test fails.
-    const guard = @import("../agentic_loop/llm_history_model_guard.zig");
+    const guard = @import("../modules/agent/loop/llm_history_model_guard.zig");
     try testing.expectEqualStrings(guard.UNKNOWN_MODEL, Migration101GuardLlmHistoryModel.sentinel);
 }
 
