@@ -151,6 +151,19 @@ describe('FileInput — /files- autocomplete', () => {
     expect(finalValue).toBe('/files-/docs')
   })
 
+  it('sends the plain path, not the /files- marker', async () => {
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+    await typeInTextarea(textarea, '/files-/docs')
+    // The token opens the picker; Escape closes it so Enter sends instead.
+    await textarea.trigger('keydown', { key: 'Escape' })
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    // The marker is composer syntax; the model receives the path it names.
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toBe('/docs')
+  })
+
   it('does not modify the input when Enter is pressed without a selection (no matches)', async () => {
     // Empty server result — no matches.
     mockSearchResults([])
