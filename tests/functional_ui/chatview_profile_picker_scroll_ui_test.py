@@ -36,10 +36,10 @@ import sys
 from chatview_boot import bind_session_workspace, create_workspace, open_chatview, seed_db_path
 from db_seed import DbSeed
 
-#: Rows are two lines (~46px: name + model), so 22 agents is ~1000px of list —
+#: A row is one line (~28px: `@name` + model), so 40 agents is ~1100px of list —
 #: comfortably taller than the 800px test viewport, which is the whole point (a
 #: list that fits cannot regress into "unreachable").
-PROFILE_COUNT = 22
+PROFILE_COUNT = 40
 
 #: Sub-pixel layout + round-trip: a row flush with the viewport edge is fine.
 SLACK_PX = 2
