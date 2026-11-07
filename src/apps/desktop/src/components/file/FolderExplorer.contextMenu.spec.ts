@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
+import { createPinia } from 'pinia'
 import FolderExplorer from './FolderExplorer.vue'
 
 const { listFolderMock, getGitChangesMock } = vi.hoisted(() => ({
@@ -43,7 +44,7 @@ const testRouter = createRouter({
 async function mountExplorer(): Promise<VueWrapper> {
   const wrapper = mount(FolderExplorer, {
     props: { cwd: '/repo' },
-    global: { plugins: [testRouter] },
+    global: { plugins: [testRouter, createPinia()] },
   })
   await flushPromises()
   return wrapper

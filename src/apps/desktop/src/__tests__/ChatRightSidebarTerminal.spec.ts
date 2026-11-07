@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest'
 
 import ChatRightSidebar from '../components/views/chat_right_sidebar/ChatRightSidebar.vue'
 import TerminalTab from '../components/views/chat_right_sidebar/TerminalTab.vue'
+import { createPinia } from 'pinia'
 import { makeLocalStorageStub } from './helpers'
 
 // ─── xterm fakes (jsdom has no layout/canvas for the real renderer) ─────────
@@ -181,6 +182,7 @@ const waitForCreates = async (n: number) => {
 const mountSidebar = () =>
   mount(ChatRightSidebar, {
     props: { cwd: '/tmp/toolbox', open: true, width: 280 },
+    global: { plugins: [createPinia()] },
   })
 
 const firstTerm = () => {
