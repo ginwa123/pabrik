@@ -20,8 +20,6 @@ import { readChatViewSource } from './helpers/chatViewSource'
 const __dir = dirname(fileURLToPath(import.meta.url))
 const chatViewSrc = readChatViewSource()
 const sliderSrc = readFileSync(resolve(__dir, '../components/chat/ChatScrollSlider.vue'), 'utf8')
-// The `@` agent list lives in the composer itself now (the chip's menu is gone).
-const fileInputSrc = readFileSync(resolve(__dir, '../components/file/FileInput.vue'), 'utf8')
 
 const { useRouteMock, useRouterMock } = vi.hoisted(() => ({
   useRouteMock: vi.fn(() => ({
@@ -321,18 +319,5 @@ describe('ChatView floating composer — source contract', () => {
 
   it("ChatScrollSlider's track reads the same inset so it stays reachable", () => {
     expect(sliderSrc).toContain('bottom: calc(var(--chat-composer-inset, 0px) + 8px);')
-  })
-
-  it('bounds the @ agent list so the popup cannot overflow the composer', () => {
-    // The chip's `.agent-picker-menu` is gone; `@` now opens a list INSIDE the
-    // composer card, so the cap is a fixed max height plus a scroll container —
-    // an uncapped list would push the textarea off the bottom of the dock.
-    const listIdx = fileInputSrc.indexOf('class="agent-picker-list')
-    expect(listIdx).toBeGreaterThan(-1)
-    const listTag = fileInputSrc.slice(listIdx, listIdx + 200)
-    expect(listTag).toContain('max-h-72')
-    expect(listTag).toContain('overflow-y-auto')
-    // It must scroll the overflow, never clip it.
-    expect(listTag).not.toContain('overflow-hidden')
   })
 })

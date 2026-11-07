@@ -125,7 +125,6 @@ const selectAgentEntry = (agent: { name: string }) => {
   const textAfterCursor = text.slice(pos)
   const match = textBeforeCursor.match(/@([\w .-]*)$/)
   if (match && match.index !== undefined) {
-    // Keep the `@` and the picked name; the typed query is dropped.
     inputText.value = textBeforeCursor.slice(0, match.index) + `@${agent.name} ` + textAfterCursor
   }
   emit('select-agent', agent.name)
@@ -960,8 +959,7 @@ const selectFile = (file: FileEntry) => {
   const textAfterCursor = text.slice(pos)
   const token = textBeforeCursor.match(FILES_TOKEN_RE)
   if (token && token.index !== undefined) {
-    // Replace the whole `/files-<query>` span with the canonical token; the
-    // query is dropped because the picker already narrowed to this entry.
+    // The picker already narrowed to this entry, so the query is dropped.
     const markerPos = token.index + (token[1] ?? '').length
     inputText.value = textBeforeCursor.slice(0, markerPos) + `/files-${file.path}` + textAfterCursor
   }
