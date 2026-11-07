@@ -10,7 +10,7 @@ const http_response = @import("http_response.zig");
 const preview_origin = @import("preview_origin.zig");
 const files_download = @import("files_download.zig");
 const auth_common = @import("auth_common.zig");
-const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 const proxy_rpc = @import("../vmd/proxy_rpc.zig");
 
 /// The guest path when the caller does not name one.

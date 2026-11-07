@@ -6,7 +6,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const design_model = @import("../agentic_loop/design_model.zig");
+const design_model = @import("../modules/agent/loop/design_model.zig");
 
 /// HTTP request body for page-update. `width` + `height` are
 /// required; `name` is optional (null = leave unchanged; "" =

@@ -11,7 +11,7 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 /// The sentinel the backend substitutes when no model can be resolved. Mirrors
-/// `agentic_loop/llm_history_model_guard.zig::UNKNOWN_MODEL` and the literal in
+/// `modules/agent/loop/llm_history_model_guard.zig::UNKNOWN_MODEL` and the literal in
 /// Migration 101's trigger. A real model id is never this string.
 const UNKNOWN_MODEL = "unknown";
 

@@ -6,7 +6,7 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const design_model = @import("../agentic_loop/design_model.zig");
+const design_model = @import("../modules/agent/loop/design_model.zig");
 
 /// HTTP request body for the group-elements endpoint. `child_ids` must
 /// contain at least 2 element ids (a single-element group is not meaningful).

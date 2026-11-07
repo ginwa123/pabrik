@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUpdated, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { listFolder, getGitChanges, type FolderEntry } from '../../api'
+import { useExplorerExpansionStore } from '../../stores/explorerExpansion'
 import { useContextMenu } from '../../composables/useContextMenu'
 import { openInNewTab } from '../../helpers/openInNewTab'
 import { isBackgroundOpenEvent } from '../../helpers/tabTarget'
@@ -39,6 +40,8 @@ const nestedEntriesCache = ref<Record<string, FolderEntry[]>>({})
 const rootEntries = ref<FolderEntry[]>([])
 const isLoading = ref(false)
 const loadError = ref<string | null>(null)
+
+const expansion = useExplorerExpansionStore()
 
 // Git state (branch header, per-row badges, folder counts, footer)
 const gitMap = ref<Map<string, GitBadge>>(new Map())
@@ -110,8 +113,31 @@ const refreshAll = () => {
   void loadGit()
 }
 
-// Reload the root on cwd change (prev-value guard on update — same
-// clear+load the watcher did; the mount call covers the initial load).
+const loadChildren = (pathKey: string, cwd: string): Promise<void> =>
+  listFolder(pathKey).then(
+    (data) => {
+      nestedEntriesCache.value = {
+        ...nestedEntriesCache.value,
+        [pathKey]: data.entries || [],
+      }
+    },
+    () => {
+      expansion.collapse(cwd, pathKey)
+    },
+  )
+
+let restoreToken = 0
+const restoreExpanded = async (cwd: string): Promise<void> => {
+  const token = ++restoreToken
+  const paths = [...expansion.expandedFor(cwd)].sort(
+    (a, b) => a.split('/').length - b.split('/').length,
+  )
+  for (const path of paths) {
+    if (token !== restoreToken) return
+    await loadChildren(path, cwd)
+  }
+}
+
 function syncExplorerCwd(newCwd: string | undefined) {
   nestedEntriesCache.value = {}
   rootEntries.value = []
@@ -120,6 +146,7 @@ function syncExplorerCwd(newCwd: string | undefined) {
     loadRoot()
     loadGit()
     startGitPoll()
+    void restoreExpanded(newCwd)
   } else {
     stopGitPoll()
     loadGit()
@@ -140,31 +167,21 @@ onUnmounted(() => {
   stopGitPoll()
 })
 
-// Toggle folder expansion
 const toggleFolder = async (entry: FolderEntry) => {
   if (!entry.is_directory) return
 
+  const cwd = props.cwd ?? ''
   const pathKey = entry.path
 
-  if (nestedEntriesCache.value[pathKey]) {
-    // Already fetched, just toggle visibility
+  if (!expansion.toggle(cwd, pathKey)) {
     delete nestedEntriesCache.value[pathKey]
-  } else {
-    // Fetch nested contents
-    try {
-      const data = await listFolder(pathKey)
-      nestedEntriesCache.value = {
-        ...nestedEntriesCache.value,
-        [pathKey]: data.entries || [],
-      }
-    } catch {
-      // Ignore errors
-    }
+    return
   }
+
+  await loadChildren(pathKey, cwd)
 }
 
-// Check if folder is expanded
-const isExpanded = (path: string) => !!nestedEntriesCache.value[path]
+const isExpanded = (path: string) => expansion.isExpanded(props.cwd ?? '', path)
 
 // Flatten tree for display, joining each row onto the git status map.
 // Absolute explorer paths resolve against the cwd (the repo root the

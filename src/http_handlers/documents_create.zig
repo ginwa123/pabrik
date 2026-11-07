@@ -6,8 +6,8 @@ const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
-const documents_store = @import("../agentic_loop/documents_store.zig");
-const document_events = @import("../agentic_loop/document_events.zig");
+const documents_store = @import("../modules/agent/loop/documents_store.zig");
+const document_events = @import("../modules/agent/loop/document_events.zig");
 
 /// Request body.
 const CreateDocumentBody = struct {

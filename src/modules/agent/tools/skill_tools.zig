@@ -2141,8 +2141,8 @@ test "an unlocked skill still edits, and the edit keeps it unlocked" {
 // The tool definition above and its executor below live in ONE file.
 
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
-const skills_search = @import("../../../agentic_loop/skills_search.zig");
+const tools = @import("../loop/tools.zig");
+const skills_search = @import("../loop/skills_search.zig");
 const exec_testing = std.testing;
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;

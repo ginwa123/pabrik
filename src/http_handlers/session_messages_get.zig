@@ -2,13 +2,13 @@ const std = @import("std");
 const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
-const session_llm_config = @import("../agentic_loop/session_llm_config.zig");
+const session_llm_config = @import("../modules/agent/loop/session_llm_config.zig");
 const gserverz = pabrikcore.gserverz;
 const helpers = @import("helpers");
 const ai_mod = pabrikcore.ai_mod;
 const config = pabrikcore.config;
 const llm_history = ai_mod.llm_history;
-const chat_parsing = @import("../agentic_loop/parsing.zig");
+const chat_parsing = @import("../modules/agent/loop/parsing.zig");
 
 /// Get messages for a session
 pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpRequest, res: gserverz.HttpResponse) !gserverz.HttpResponse {

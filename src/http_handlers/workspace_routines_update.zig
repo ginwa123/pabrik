@@ -8,8 +8,8 @@ const test_db = pabrikcore.test_db;
 const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const helpers = @import("helpers");
-const cron = @import("../ai_workflow/tui/routines/cron.zig");
-const fire = @import("../ai_workflow/tui/routines/fire.zig");
+const cron = @import("../modules/agent/loop/cron.zig");
+const fire = @import("../modules/agent/loop/fire.zig");
 const get_mod = @import("workspace_routines_get.zig");
 
 /// PATCH body — every field optional. `null` = field absent (keep

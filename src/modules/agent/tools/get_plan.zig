@@ -11,7 +11,7 @@ const sqlite = pabrikcore.sqlite;
 // Import the storage layer directly (the `pabrikcore.session_plan`
 // alias is wired up in src/root.zig by Task 4; for the pure-fn layer
 // we just need the module itself). Same pattern as update_plan.zig.
-const session_plan = @import("../../../agentic_loop/session_plan.zig");
+const session_plan = @import("../loop/session_plan.zig");
 
 /// Input for `get_plan`. Empty struct — no params, session_id is implicit.
 pub const GetPlanInput = struct {};
@@ -253,7 +253,7 @@ test "get_plan_tool JSON schema: name='get_plan', no required params, no propert
 
 const exec_testing = std.testing;
 const exec_pabrikcore = @import("pabrikcore");
-const tools = @import("../../../agentic_loop/tools.zig");
+const tools = @import("../loop/tools.zig");
 const exec_migration = @import("../../../migrations/migration.zig");
 const exec_sqlite = exec_pabrikcore.sqlite;
 const database = exec_pabrikcore.database;

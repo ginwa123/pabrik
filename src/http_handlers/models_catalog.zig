@@ -8,7 +8,7 @@ const catalog = pabrikcore.model_catalog;
 const store = pabrikcore.model_catalog_store;
 const refresh_mod = pabrikcore.model_catalog_refresh;
 const llm_models = pabrikcore.llm_models;
-const opencode = @import("../agentic_loop/opencode.zig");
+const opencode = @import("../modules/agent/loop/opencode.zig");
 const helpers = @import("helpers");
 
 /// The picker's page size when the caller does not say. Small on purpose: the

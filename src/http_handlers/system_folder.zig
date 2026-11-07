@@ -5,7 +5,7 @@ const gserverz = pabrikcore.gserverz;
 const SystemFolder = pabrikcore.system_folder.SystemFolder;
 const SystemFolderError = pabrikcore.system_folder.SystemFolderError;
 const FolderEntry = pabrikcore.system_folder.FolderEntry;
-const workspace_fs = @import("../agentic_loop/workspace_fs.zig");
+const workspace_fs = @import("../modules/agent/loop/workspace_fs.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const vmd_policy = @import("../vmd/policy.zig");
 

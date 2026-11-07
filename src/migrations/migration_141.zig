@@ -1,7 +1,7 @@
 const std = @import("std");
 const test_db = @import("../testing/test_db.zig");
 const common = @import("common.zig");
-const frontmatter = @import("../agentic_loop/skill_frontmatter.zig");
+const frontmatter = @import("../modules/agent/loop/skill_frontmatter.zig");
 
 const Backend = common.Backend;
 const dropColumnIfExists = common.dropColumnIfExists;

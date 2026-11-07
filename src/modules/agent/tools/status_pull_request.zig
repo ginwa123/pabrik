@@ -775,8 +775,8 @@ test "execute run path surfaces an auth-failure stderr instead of not-found" {
 
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
-const tools = @import("../../../agentic_loop/tools.zig");
-const workspace_fs = @import("../../../agentic_loop/workspace_fs.zig");
+const tools = @import("../loop/tools.zig");
+const workspace_fs = @import("../loop/workspace_fs.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = pabrikcore.agent;

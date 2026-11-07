@@ -519,15 +519,6 @@
   color: var(--semantic-text-dim);
 }
 
-/* The agent list is capped by the space above the composer
-   (`--chat-composer-inset` = the dock's published height) and scrolls: an
-   uncapped list ran off the top of the window, with no way to reach it. */
-.agent-picker-menu {
-  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
 .composer-toolbar-divider {
   width: 1px;
   height: 16px;
