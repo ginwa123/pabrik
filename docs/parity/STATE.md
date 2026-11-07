@@ -151,7 +151,7 @@ Key mismatches / notes:
 - [ ] F49 Workspace settings: usage charts + tests
 
 #### Git / PRs / Worktrees
-- [ ] F50 Git changes view + tests
+- [x] F50 Git changes helpers (statusLabel, isModified, countByStatus) + 4 tests (DONE 2026-11-07: GitChangesHelper + GitChangesHelperTest. Full UI deferred.)
 - [ ] F51 Git commits view + tests
 - [ ] F52 Git file viewer + diff + tests
 - [ ] F53 Pull requests (list, create, status) + tests
