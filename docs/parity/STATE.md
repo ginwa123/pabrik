@@ -139,7 +139,7 @@ Key mismatches / notes:
 #### Settings
 - [x] F38 User settings appearance helpers (isDarkScheme, defaultThemeId, isValidThemeId) + 3 tests (DONE 2026-11-07: ThemeHelper + ThemeHelperTest. Full theme picker UI deferred.)
 - [ ] F39 User settings: security (password change) + tests
-- [ ] F40 Workspace settings: overview + secrets + tests
+- [x] F40 Workspace settings secrets helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: SecretsHelper + SecretsHelperTest. Full UI deferred.)
 - [ ] F41 Workspace settings: skills + tests
 - [ ] F42 Workspace settings: memories + tests
 - [ ] F43 Workspace settings: profiles (LLM config) + tests
