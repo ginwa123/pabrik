@@ -37,10 +37,9 @@ function groupsFor(messages: Message[], authorLabel?: () => string): MessageGrou
     mode: () => 'comfortable' as any,
     authorLabel,
   })
-  // The component's first render is an empty transcript, and that first pass is
-  // what resolves the `messageGroups` ↔ `groupToolNames` cycle. Mirror it here
-  // instead of reading a half-evaluated computed.
-  messageGroups.value
+  // The component's first render is an empty transcript, and that pass is what
+  // resolves the `messageGroups` ↔ `groupToolNames` cycle. Mirror it here.
+  void messageGroups.value
   messagesRef.value = messages
   return messageGroups.value
 }
