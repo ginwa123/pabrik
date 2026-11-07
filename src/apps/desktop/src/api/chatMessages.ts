@@ -90,3 +90,74 @@ export async function sendChatMessage(
     return { status: 'offline' }
   }
 }
+
+/** One `llm_history` row with every column as text — the shape the delete returns and the restore
+ * takes back. A narrower type would drop `usage_json`, `temperature` and the token counters. */
+export interface MessageRow {
+  id: string
+  session_id: string
+  model: string
+  response_content: string
+  tool_calls_json: string
+  finish_reason: string
+  usage_json: string
+  created_at_nano: string
+  role: string
+  reasoning_content: string
+  is_feed_to_llm: string
+  agent: string
+  loop_index: string
+  temperature: string
+  is_thinking: string
+  parent_session_id: string
+  parent_id: string
+  prompt_tokens: string
+  completion_tokens: string
+  total_tokens: string
+  is_input: string
+  is_output: string
+  tool_name: string
+  diffview_before: string
+  diffview_after: string
+  image_url: string
+  tool_call_id: string
+  created_iso: string
+  is_loading: string
+  cache_creation_input_tokens: string
+  cache_read_input_tokens: string
+  reasoning_id: string
+  reasoning_encrypted_content: string
+  video_url: string
+  file_attachments: string
+  file_attachments_meta: string
+}
+
+/** Delete ONE `llm_history` row. The response carries the whole row so the caller can undo. */
+export async function deleteMessage(
+  messageId: string,
+): Promise<{ deleted: { row: MessageRow } }> {
+  return await apiFetch<{ deleted: { row: MessageRow } }>(
+    `/llm/message/${encodeURIComponent(messageId)}`,
+    { method: 'DELETE', silent: true },
+  )
+}
+
+/** Put a deleted row back, with the same id. */
+export async function restoreMessage(row: MessageRow): Promise<{ restored: { id: string } }> {
+  return await apiFetch<{ restored: { id: string } }>('/llm/message/restore', {
+    method: 'POST',
+    body: { row },
+    silent: true,
+  })
+}
+
+/** Drop one row from the model's context, or put it back. The row itself survives. */
+export async function setMessageFeed(
+  messageId: string,
+  isFeedToLlm: boolean,
+): Promise<{ id: string; is_feed_to_llm: boolean }> {
+  return await apiFetch<{ id: string; is_feed_to_llm: boolean }>(
+    `/llm/message/${encodeURIComponent(messageId)}`,
+    { method: 'PATCH', body: { is_feed_to_llm: isFeedToLlm ? 1 : 0 }, silent: true },
+  )
+}

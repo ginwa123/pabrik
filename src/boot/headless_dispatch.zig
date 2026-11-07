@@ -75,6 +75,7 @@ pub fn dispatchHeadless(
         .messages => |a| try listMessages(allocator, io, environment, a, log_file, db_request),
         .documents => |a| try runDocuments(allocator, io, environment, a, log_file, db_request),
         .usage => |a| try runUsage(allocator, io, environment, a, log_file, db_request),
+        .message => |a| try runMessage(allocator, io, environment, a, log_file, db_request),
         .group => |a| try runGroup(allocator, io, environment, a, log_file, db_request),
     }
     return true;
@@ -228,6 +229,7 @@ fn listMessages(
         try writeJsonString(w, m.finish_reason);
         try w.writeAll(",\"created_at\":");
         try writeJsonString(w, m.created_at);
+        try w.print(",\"is_feed_to_llm\":{s}", .{if (m.is_feed_to_llm) "true" else "false"});
         try w.writeByte('}');
     }
     try w.writeAll("]}\n");
@@ -288,6 +290,39 @@ fn runUsage(
             error.InvalidRange => std.log.err("headless: usage range must be {s}", .{headless.usage.range_hint}),
             else => std.log.err("headless: usage failed: {s}", .{@errorName(err)}),
         }
+        std.process.exit(1);
+    };
+    defer allocator.free(json);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.Io.File.stdout().writer(io, &buf);
+    try w.interface.writeAll(json);
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+
+    backend.finish(0);
+}
+
+/// Boot the backend, run one single-message op, print its JSON, tear down.
+fn runMessage(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.MessageArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    // Declared HERE, not returned by value: `App.db` / `.event_bus`
+    // point into this struct, so it must live in the caller's frame.
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const json = headless.messages_admin.run(allocator, io, &backend, a) catch |err| {
+        // stdout is the machine channel: a failure never prints a half object.
+        std.log.err("headless: message {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
         std.process.exit(1);
     };
     defer allocator.free(json);

@@ -48,6 +48,8 @@ export interface Message {
   reasoning_content?: string
   /** The agent that wrote this row; empty in a single-agent thread. */
   agent_name?: string
+  /** `llm_history.is_feed_to_llm`. False once the row is dropped from the model's context. */
+  is_feed_to_llm?: boolean
 }
 
 export interface MessageGroup {

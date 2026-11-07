@@ -91,6 +91,24 @@ pub const DocumentsArgs = struct {
     title: []const u8 = "",
 };
 
+/// The single-message admin verbs. One op per write the HTTP API exposes, so
+/// an agent can delete, restore or drop a row with no server and no port.
+pub const MessageOp = enum {
+    delete,
+    restore,
+    feed,
+};
+
+pub const MessageArgs = struct {
+    op: MessageOp,
+    /// The row being deleted or flipped. Empty for `restore`.
+    message_id: []const u8 = "",
+    /// `restore` reads the row JSON from this file — the object `delete` printed.
+    row_file: []const u8 = "",
+    /// `feed` target. Null means `--feed` was missing.
+    feed: ?bool = null,
+};
+
 /// Which flag was rejected. One variant per distinct user-facing message.
 pub const FailureKind = enum {
     unknown_subcommand,
@@ -103,6 +121,8 @@ pub const FailureKind = enum {
     group_unknown_op,
     group_requires_flag,
     usage_requires_flag,
+    message_unknown_op,
+    message_requires_flag,
 };
 
 pub const Failure = struct {
@@ -140,6 +160,8 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next\n" ++
     "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n>\n" ++
+    "  pabrik headless message <op> [flags]      Delete, restore or drop ONE llm_history row\n" ++
+    "      ops: delete <id> | restore --row-file <path> | feed <id> --feed 0|1\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
     "  pabrik headless help                      Show this help\n" ++
@@ -164,6 +186,7 @@ pub const Outcome = union(enum) {
     documents: DocumentsArgs,
     group: GroupArgs,
     usage: UsageArgs,
+    message: MessageArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -191,6 +214,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "documents")) return try parseDocuments(rest);
     if (std.mem.eql(u8, verb, "group")) return try parseGroup(rest);
     if (std.mem.eql(u8, verb, "usage")) return try parseUsage(rest);
+    if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
 }
@@ -336,6 +360,60 @@ fn parseUsage(argv: []const []const u8) ParseError!Outcome {
     return .{ .usage = got };
 }
 
+/// `message` parses its own flag set for the same reason `documents` does.
+fn parseMessage(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .message_unknown_op });
+
+    const op: MessageOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "delete")) break :blk .delete;
+        if (std.mem.eql(u8, word, "restore")) break :blk .restore;
+        if (std.mem.eql(u8, word, "feed")) break :blk .feed;
+        return fail(.{ .kind = .message_unknown_op, .value = word });
+    };
+
+    var got = MessageArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const word = argv[i];
+        if (std.mem.eql(u8, word, "--row-file")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = word });
+            got.row_file = argv[i];
+        } else if (std.mem.eql(u8, word, "--feed")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = word });
+            const v = argv[i];
+            if (std.mem.eql(u8, v, "1") or std.mem.eql(u8, v, "true")) {
+                got.feed = true;
+            } else if (std.mem.eql(u8, v, "0") or std.mem.eql(u8, v, "false")) {
+                got.feed = false;
+            } else {
+                return fail(.{ .kind = .invalid_number, .value = v });
+            }
+        } else if (word.len > 0 and word[0] == '-') {
+            return fail(.{ .kind = .unknown_subcommand, .value = word });
+        } else if (got.message_id.len == 0) {
+            got.message_id = word;
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = word });
+        }
+        i += 1;
+    }
+
+    switch (op) {
+        .delete, .feed => {
+            if (got.message_id.len == 0) return fail(.{ .kind = .message_requires_flag, .value = "message_id" });
+        },
+        .restore => {
+            if (got.row_file.len == 0) return fail(.{ .kind = .message_requires_flag, .value = "--row-file" });
+        },
+    }
+    if (op == .feed and got.feed == null) return fail(.{ .kind = .message_requires_flag, .value = "--feed" });
+
+    return .{ .message = got };
+}
+
 /// `group` parses its own flag set for the same reason `documents` does: the
 /// shared table describes the server CLI, and these five flags exist only in
 /// this verb.
@@ -436,6 +514,8 @@ pub fn reportFailure(f: Failure) void {
         .group_unknown_op => std.log.err("headless: unknown group op '{s}'", .{f.value}),
         .group_requires_flag => std.log.err("headless: group needs {s}", .{f.value}),
         .usage_requires_flag => std.log.err("headless: usage needs {s}", .{f.value}),
+        .message_unknown_op => std.log.err("headless: unknown message op '{s}'", .{f.value}),
+        .message_requires_flag => std.log.err("headless: message needs {s}", .{f.value}),
     }
 }
 
@@ -455,6 +535,48 @@ fn expectFailure(argv: []const []const u8, kind: FailureKind) !void {
         .invalid => |f| try testing.expectEqual(kind, f.kind),
         else => return error.ExpectedFailure,
     }
+}
+
+test "parse message: delete takes a bare id" {
+    const a = switch (try parse(&.{ "message", "delete", "m_1" })) {
+        .message => |m| m,
+        else => return error.UnexpectedOutcome,
+    };
+    try testing.expectEqual(MessageOp.delete, a.op);
+    try testing.expectEqualStrings("m_1", a.message_id);
+}
+
+test "parse message: restore takes --row-file" {
+    const a = switch (try parse(&.{ "message", "restore", "--row-file", "/tmp/row.json" })) {
+        .message => |m| m,
+        else => return error.UnexpectedOutcome,
+    };
+    try testing.expectEqual(MessageOp.restore, a.op);
+    try testing.expectEqualStrings("/tmp/row.json", a.row_file);
+}
+
+test "parse message: feed takes 0 and 1, and rejects anything else" {
+    const off = switch (try parse(&.{ "message", "feed", "m_1", "--feed", "0" })) {
+        .message => |m| m,
+        else => return error.UnexpectedOutcome,
+    };
+    try testing.expectEqual(false, off.feed.?);
+
+    const on = switch (try parse(&.{ "message", "feed", "m_1", "--feed", "1" })) {
+        .message => |m| m,
+        else => return error.UnexpectedOutcome,
+    };
+    try testing.expectEqual(true, on.feed.?);
+
+    try expectFailure(&.{ "message", "feed", "m_1", "--feed", "7" }, .invalid_number);
+}
+
+test "parse message: each op names the flag it is missing" {
+    try expectFailure(&.{"message"}, .message_unknown_op);
+    try expectFailure(&.{ "message", "nope" }, .message_unknown_op);
+    try expectFailure(&.{ "message", "delete" }, .message_requires_flag);
+    try expectFailure(&.{ "message", "restore" }, .message_requires_flag);
+    try expectFailure(&.{ "message", "feed", "m_1" }, .message_requires_flag);
 }
 
 test "parse: bare invocation prints help" {

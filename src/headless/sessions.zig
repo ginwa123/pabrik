@@ -24,6 +24,7 @@ pub const MessageRow = struct {
     tool_name: []const u8,
     finish_reason: []const u8,
     created_at: []const u8,
+    is_feed_to_llm: bool,
 };
 
 pub const SessionsResult = struct {
@@ -111,6 +112,7 @@ pub fn listMessages(
             .tool_name = m.tool_name,
             .finish_reason = m.finish_reason,
             .created_at = m.timestamp,
+            .is_feed_to_llm = m.is_feed_to_llm,
         };
     }
     allocator.free(res.messages);
