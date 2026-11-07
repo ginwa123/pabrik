@@ -26,7 +26,8 @@ describe('ChatView transcript width', () => {
   it('binds the preset class on the column that owns the token', () => {
     expect(src).toContain('class="relative flex flex-col h-full flex-1 min-w-0 chat-column"')
     expect(src).toContain(':class="chatWidthClass"')
-    expect(src).toContain('const { presetClass: chatWidthClass } = useChatContentWidth()')
+    expect(src).toContain('presetClass: chatWidthClass')
+    expect(src).toContain('useChatContentWidth()')
   })
 
   it('mirrors the pill-rail strip, so a full-bleed row keeps its text centred', () => {

@@ -207,6 +207,7 @@ const reconcileRoute = async () => {
         queryCwd,
         fallbackCwd: rightSidebarCwd.value,
         lineParam: query.line as string | undefined,
+        modeParam: query.mode,
       })
     }
   } else {

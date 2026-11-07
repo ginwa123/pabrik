@@ -138,6 +138,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             .file_attachments = msg.file_attachments_meta orelse "",
             .tool_call_id = msg.tool_call_id orelse "",
             .tool_calls_json = msg.tool_calls_json orelse "",
+            .agent = msg.agent,
         };
     }
 
@@ -198,7 +199,7 @@ fn setupDb() !TestCtx {
         \\    role TEXT,
         \\    response_content TEXT,
         \\    created_at_nano 
-        ++ pabrikcore.dialect.epoch_default ++
+    ++ pabrikcore.dialect.epoch_default ++
         \\,
         \\    is_input INTEGER DEFAULT 0,
         \\    is_output INTEGER DEFAULT 0,
@@ -212,7 +213,8 @@ fn setupDb() !TestCtx {
         \\    image_url TEXT,
         \\    video_url TEXT,
         \\    tool_call_id TEXT,
-        \\    tool_calls_json TEXT
+        \\    tool_calls_json TEXT,
+        \\    agent TEXT
         \\)
     , &.{});
 
@@ -469,6 +471,7 @@ test "getSessionMessagesSorted: SessionMessagesResponse wire shape includes sele
             .video_url = "",
             .tool_call_id = msg.tool_call_id orelse "",
             .tool_calls_json = msg.tool_calls_json orelse "",
+            .agent = msg.agent,
         };
     }
     const wire = http_response.SessionMessagesResponse{

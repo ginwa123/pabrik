@@ -62,6 +62,7 @@ const sse_on_event_send_session_mod = @import("sse_on_event_send_session.zig");
 const sse_send_event_worker_mod = @import("sse_send_event_worker.zig");
 const update_session_name_mod = @import("update_session_name.zig");
 const update_worker_mod = @import("update_worker.zig");
+const session_group_mod = @import("session_group.zig");
 
 // Re-exports (formerly from mod.zig).
 pub const updateWorker = update_worker_mod.updateWorker;
@@ -1023,10 +1024,45 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (ov.temperature) |t| agent_temperature = t;
             sub_agent_session_name = ov.resolved_name;
         }
+        // A group session takes its speaker from the roster instead: the
+        // newest row names who is addressed, and a thread that has said
+        // everything it can say closes instead of picking another speaker.
+        var group_speaker_buf: [160]u8 = undefined;
+        var group_speaker: []const u8 = "";
+        if (!copy_is_sub_agent) {
+            if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
+                var resolved = speaker;
+                defer resolved.deinit(allocator);
+                switch (resolved.decision) {
+                    .speak => |name| {
+                        if (name.len <= group_speaker_buf.len) {
+                            @memcpy(group_speaker_buf[0..name.len], name);
+                            group_speaker = group_speaker_buf[0..name.len];
+                        } else {
+                            logger.warnFmt("GROUP: member name is too long to route session_id={s} len={d}", .{ copy_session_id, name.len });
+                        }
+                    },
+                    .close => |reason| {
+                        logger.infoFmt("GROUP: turn closed session_id={s} reason={s} hops={d}", .{ copy_session_id, @tagName(reason), resolved.hops });
+                        break;
+                    },
+                }
+            }
+        }
+        // The speaker runs with its own configuration, not the session's:
+        // model, and the persona that tells it whether it leads or works.
+        var group_system_prompt: []const u8 = "";
+        if (group_speaker.len > 0) {
+            eff = effectiveAgentForSubAgent(config.resolveEffectiveAgent(group_speaker), params.sub_agent_overrides);
+            if (config.getAgent(group_speaker)) |member| group_system_prompt = member.system_prompt;
+        }
+
         // For sub-agent flow: replace `current_agent` (the session's last
         // `agent_name` from llm_history) with the resolved sub-agent name.
         const effective_agent_name: []const u8 = if (sub_agent_session_name.len > 0)
             sub_agent_session_name
+        else if (group_speaker.len > 0)
+            group_speaker
         else
             current_agent;
 
@@ -1231,7 +1267,8 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             },
         );
 
-        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, sub_agent_system_prompt);
+        const active_agent_prompt: []const u8 = if (sub_agent_system_prompt.len > 0) sub_agent_system_prompt else group_system_prompt;
+        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, active_agent_prompt);
 
         try messagesLists.appendSlice(allocator, initialMessages);
 
@@ -1485,6 +1522,33 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     continue;
                 }
 
+                // A group hands the turn on with no queued message: the row
+                // just written names who it addresses. The hop budget, read by
+                // the router, is what stops the room talking to itself.
+                if (!copy_is_sub_agent and asked == null) {
+                    if (try session_group_mod.nextSpeaker(allocator, db, copy_session_id, session_group_mod.default_hop_budget)) |speaker| {
+                        var resolved = speaker;
+                        defer resolved.deinit(allocator);
+                        switch (resolved.decision) {
+                            .speak => |name| {
+                                if (!std.mem.eql(u8, name, effective_agent_name)) {
+                                    logger.infoFmt(
+                                        "GROUP: handing the turn to '{s}' session_id={s} hops={d}",
+                                        .{ name, copy_session_id, resolved.hops },
+                                    );
+                                    continue;
+                                }
+                            },
+                            .close => |reason| {
+                                logger.infoFmt(
+                                    "GROUP: nothing left to say session_id={s} reason={s}",
+                                    .{ copy_session_id, @tagName(reason) },
+                                );
+                            },
+                        }
+                    }
+                }
+
                 if (asked != null) {
                     logger.infoFmt(
                         "[CHECKPOINT] awaiting_user — ending the turn session_id={s} loop_counter={d}",
@@ -1539,7 +1603,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 );
                 // Forward the LIVE per-session profile (re-read at the top of
                 // this iteration) to handle_tool.
-                const tool_outcome = try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent);
+                const tool_outcome = try handle_tool(allocator, io, db, logger, copy_session_id, copy_parent_session_id, eff.model, copy_cwd, loop_counter, res_dynamic_agent, &agent_temperature, &isThinking, config.api_key, config.base_url, config, environment, live_selected_profile_model, copy_allowed_tools, copy_is_sub_agent, effective_agent_name);
 
                 // `is_stop` on a tool call (`command is_stop=true`): the
                 // model asked to end THIS turn.

@@ -14,6 +14,7 @@ const props = defineProps<{
 const store = useWorkspaceUsageStore()
 
 const RANGES: readonly { value: WorkspaceUsageRange; label: string }[] = [
+  { value: '1d', label: '1 day' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
   { value: '90d', label: '90 days' },
@@ -47,6 +48,11 @@ const coverage = computed(() => {
   return ((t.calls_with_cache / t.calls) * 100).toFixed(1)
 })
 
+const rangeLabel = computed<string>(
+  () => RANGES.find((option) => option.value === store.range)?.label ?? '30 days',
+)
+
+
 const figures = computed(() => {
   const t = totals.value
   return [
@@ -58,7 +64,7 @@ const figures = computed(() => {
           : `${t.cache_hit_rate}%`,
       muted: t?.cache_hit_rate === null || t?.cache_hit_rate === undefined,
       note: t
-        ? `${t.calls_with_cache.toLocaleString()} of ${t.calls.toLocaleString()} calls reported a counter`
+        ? `over ${compact(t.reported_input_tokens)} of ${compact(t.input_tokens)} input tokens`
         : '',
     },
     {
@@ -83,7 +89,7 @@ const figures = computed(() => {
       label: 'Cache counters',
       value: coverage.value === null ? '–' : `${coverage.value}%`,
       muted: true,
-      note: 'share of calls that reported any',
+      note: t ? `${t.calls_with_cache.toLocaleString()} of ${t.calls.toLocaleString()} calls` : '',
     },
   ]
 })
@@ -209,9 +215,8 @@ onMounted(() => {
         style="background: var(--semantic-card-bg); color: var(--semantic-text-muted)"
         data-testid="usage-empty"
       >
-        No LLM call in the last
-        {{ store.range === '7d' ? '7 days' : store.range === '90d' ? '90 days' : '30 days' }}. Widen
-        the range, or open a workspace that has run an agent.
+        No LLM call in the last {{ rangeLabel }}. Widen the range, or open a workspace that has
+        run an agent.
       </p>
 
       <template v-else>
@@ -338,7 +343,8 @@ onMounted(() => {
           >
             A dash in Cache rate means that model's calls carried no cache counter — not that we
             dropped one. Chat-completions, Responses and Anthropic payloads are all read for it,
-            so a dash means the provider sent none.
+            so a dash means the provider sent none. Those calls are left out of every rate on this
+            page, the headline included, instead of being read as misses.
           </p>
           <p
             v-if="(totals?.excluded_calls ?? 0) > 0"

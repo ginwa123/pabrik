@@ -46,12 +46,16 @@ export interface Message {
   is_input?: boolean
   is_output?: boolean
   reasoning_content?: string
+  /** The agent that wrote this row; empty in a single-agent thread. */
+  agent_name?: string
 }
 
 export interface MessageGroup {
   role: 'user' | 'assistant' | 'tool'
   messages: Message[]
   timestamp: Date
+  /** Set only when the thread has more than one author. */
+  author?: string
 }
 
 export interface ChatMessagePresentationDeps {
@@ -147,7 +151,13 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     for (const msg of filteredMessages.value) {
       const lastGroup = groups[groups.length - 1]
 
-      if (lastGroup && lastGroup.role === msg.role) {
+      // Consecutive assistant rows are one block — unless a different agent
+      // wrote the next one, which is exactly what a group thread does.
+      const sameAuthor =
+        msg.role !== 'assistant' ||
+        (lastGroup?.messages[0]?.agent_name ?? '') === (msg.agent_name ?? '')
+
+      if (lastGroup && lastGroup.role === msg.role && sameAuthor) {
         lastGroup.messages.push(msg)
         if (msg.timestamp > lastGroup.timestamp) {
           lastGroup.timestamp = msg.timestamp
@@ -158,6 +168,23 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
           messages: [msg],
           timestamp: msg.timestamp,
         })
+      }
+    }
+
+    // A thread with two authors is a group session: label every reply, and
+    // leave a one-agent chat exactly as it was.
+    const authors = new Set<string>()
+    for (const g of groups) {
+      if (g.role !== 'assistant') continue
+      for (const m of g.messages) {
+        if (m.agent_name) authors.add(m.agent_name)
+      }
+    }
+    if (authors.size > 1) {
+      for (const g of groups) {
+        if (g.role !== 'assistant') continue
+        const named = g.messages.find((m) => m.agent_name)
+        if (named?.agent_name) g.author = named.agent_name
       }
     }
 

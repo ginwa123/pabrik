@@ -67,6 +67,8 @@ export interface Message {
    * backend REST endpoint (http_response.zig SessionMessage.reasoning_content) and the SSE payload;
    * previously unmapped so ChatView never saw it. */
   reasoning_content?: string
+  /** The agent that wrote the row — how a shared thread names its authors. */
+  agent?: string
 }
 
 export interface SkillInfo {
