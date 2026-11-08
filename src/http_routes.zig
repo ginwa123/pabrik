@@ -118,10 +118,22 @@ fn registerWorkerRoutes(authed: *Group) !void {
     // Session detail incl. `workspace_id` (workspace-scoped sessions).
     try authed.get("/api/llm/session/:session_id", ai_mod.http_handlers.sessionGetHandler);
     try authed.get("/api/llm/session/:session_id/messages", ai_mod.http_handlers.sessionMessagesHandler);
+    // Single-message admin: delete ONE llm_history row, put it back, or drop
+    // it from the model's context. `restore` is a literal, so it is registered
+    // before the `:message_id` routes (route-order rule).
+    try authed.post("/api/llm/message/restore", ai_mod.http_handlers.messageRestoreHandler);
+    try authed.delete("/api/llm/message/:message_id", ai_mod.http_handlers.messageDeleteHandler);
+    try authed.patch("/api/llm/message/:message_id", ai_mod.http_handlers.messagePatchHandler);
     // Token usage + cache hit rate (same handler as the `/api/session/` alias
     // above).
     try authed.get("/api/llm/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
     try authed.get("/api/llm/session/:session_id/queue_messages", ai_mod.http_handlers.queueMessagesGetHandler);
+    // The roster of a multi-agent chat. A session becomes a group when an
+    // agent joins it; the loop then takes each turn's speaker from the roster.
+    try authed.get("/api/llm/session/:session_id/group", ai_mod.http_handlers.sessionGroupGetHandler);
+    try authed.post("/api/llm/session/:session_id/group/members", ai_mod.http_handlers.sessionGroupMemberAddHandler);
+    try authed.delete("/api/llm/session/:session_id/group/members/:agent", ai_mod.http_handlers.sessionGroupMemberRemoveHandler);
+    try authed.post("/api/llm/session/:session_id/group/lead", ai_mod.http_handlers.sessionGroupLeadHandler);
     // Session background-process endpoints (bg-completion): list + log tail
     // for `command background=true` rows. Registered next to queue_messages.
     try authed.get("/api/llm/session/:session_id/background_processes", ai_mod.http_handlers.backgroundProcessesListHandler);
@@ -931,6 +943,32 @@ test "route table: POST /api/llm/session/reorder_pinned wins over :session_id/pi
     };
     try testing.expect(pin.handler == ai_mod.http_handlers.sessionPinHandler);
     try testing.expectEqualStrings("sess_1", pin.params.get("session_id").?);
+}
+
+test "route table: the three single-message routes resolve, and restore is not a message id" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var router = try buildRouteTable(a);
+
+    const del = (try resolve(a, &router, "DELETE", "/api/llm/message/msg_1")) orelse {
+        return error.MessageDeleteRouteNotRegistered;
+    };
+    try testing.expect(del.handler == ai_mod.http_handlers.messageDeleteHandler);
+    try testing.expectEqualStrings("msg_1", del.params.get("message_id").?);
+
+    const patch = (try resolve(a, &router, "PATCH", "/api/llm/message/msg_1")) orelse {
+        return error.MessagePatchRouteNotRegistered;
+    };
+    try testing.expect(patch.handler == ai_mod.http_handlers.messagePatchHandler);
+    try testing.expectEqualStrings("msg_1", patch.params.get("message_id").?);
+
+    // `restore` is a literal on POST, so it must not be read as a message id.
+    const restore = (try resolve(a, &router, "POST", "/api/llm/message/restore")) orelse {
+        return error.MessageRestoreRouteNotRegistered;
+    };
+    try testing.expect(restore.handler == ai_mod.http_handlers.messageRestoreHandler);
+    try testing.expect(restore.params.get("message_id") == null);
 }
 
 test "route table: GET session usage resolves on both prefixes and shadows no sibling" {

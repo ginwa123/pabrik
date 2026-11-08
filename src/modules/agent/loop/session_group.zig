@@ -109,8 +109,14 @@ pub fn listMembers(allocator: std.mem.Allocator, db: *database.Db, session_id: [
 }
 
 /// An empty name clears the lead, which is how a session stops being a group.
+/// The roster follows: exactly the named member carries the `lead` role, so
+/// the roster the app draws and the lead the loop routes by never disagree.
 pub fn setLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, agent_name: []const u8) !void {
     try db.exec(allocator, "UPDATE sessions SET group_lead = ? WHERE id = ?", &.{ agent_name, session_id });
+    try db.exec(allocator, "UPDATE session_group_members SET role = 'worker' WHERE session_id = ?", &.{session_id});
+    if (agent_name.len > 0) {
+        try db.exec(allocator, "UPDATE session_group_members SET role = 'lead' WHERE session_id = ? AND agent_name = ?", &.{ session_id, agent_name });
+    }
 }
 
 /// A joining member becomes the group's lead when it says it is the lead, or

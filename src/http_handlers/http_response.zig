@@ -205,6 +205,9 @@ pub const SessionMessage = struct {
     /// The agent that wrote this row — the only way a client can tell two
     /// authors apart in a shared thread.
     agent: []const u8 = "",
+    /// `llm_history.is_feed_to_llm`. False once the row is dropped from the
+    /// model's context; the transcript still renders it.
+    is_feed_to_llm: bool = true,
 };
 
 pub const SessionMessagesResponse = struct {

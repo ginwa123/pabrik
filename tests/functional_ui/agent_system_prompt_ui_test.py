@@ -18,6 +18,7 @@ Plan: docs/superpowers/plans/2026-08-21-agent-system-prompt.md
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -61,6 +62,9 @@ def _open_agent_view(page, h: UIHarness, workspace_id: str, agent_id: str) -> No
     page.locator('[data-testid="agent-system-prompt-panel"]').first.wait_for(
         timeout=20000, state="visible"
     )
+    # The SPA rewrites the query URL to the path form on mount, which remounts
+    # the view. Interacting before that lands detaches the element mid-click.
+    page.wait_for_url(re.compile(r".*/app/ws_[^/]+/projects/[^/]+$"), timeout=20000)
 
 
 def _wait_for_text(page, text: str, timeout_ms: int = 10000) -> None:

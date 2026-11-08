@@ -668,6 +668,9 @@ pub const SessionMessage = struct {
     tool_calls_json: ?[]const u8 = null,
     /// The agent that wrote this row. Empty when the row never carried one.
     agent: []const u8 = "",
+    /// `llm_history.is_feed_to_llm` — false once the row is dropped from the
+    /// model's context. The transcript still shows it; `getLLMHistories` skips it.
+    is_feed_to_llm: bool = true,
 
     pub fn deinit(self: *const SessionMessage, allocator: std.mem.Allocator) void {
         allocator.free(self.id);
@@ -791,6 +794,7 @@ pub fn getSessionMessagesSorted(
             \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
             \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), ''),
             \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), ''),
+            \\       COALESCE(h.is_feed_to_llm, 1),
             \\       COALESCE(CAST(h.agent AS TEXT), '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s}{s} LIMIT ?
@@ -814,6 +818,7 @@ pub fn getSessionMessagesSorted(
             \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
             \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''), COALESCE(CAST(s.sub_agent_name AS TEXT), ''), COALESCE(CAST(s.parent_session_id AS TEXT), ''),
             \\       COALESCE(CAST(h.file_attachments_meta AS TEXT), ''),
+            \\       COALESCE(h.is_feed_to_llm, 1),
             \\       COALESCE(CAST(h.agent AS TEXT), '')
             \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
             \\WHERE h.session_id = ?{s} LIMIT ?
@@ -848,6 +853,7 @@ pub fn getSessionMessagesSorted(
                 \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
                 \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
                 \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''),
+                \\       COALESCE(h.is_feed_to_llm, 1),
                 \\       COALESCE(CAST(h.agent AS TEXT), '')
                 \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
                 \\WHERE h.session_id = ?{s}{s} LIMIT ?
@@ -871,6 +877,7 @@ pub fn getSessionMessagesSorted(
                 \\       COALESCE(CAST(h.finish_reason AS TEXT), ''), COALESCE(CAST(s.cwd AS TEXT), ''), COALESCE(CAST(s.git_worktree_cwd AS TEXT), ''), COALESCE(CAST(h.reasoning_content AS TEXT), ''), COALESCE(CAST(h.reasoning_id AS TEXT), ''), COALESCE(CAST(h.reasoning_encrypted_content AS TEXT), ''),
                 \\       COALESCE(CAST(h.diffview_before AS TEXT), ''), COALESCE(CAST(h.diffview_after AS TEXT), ''), COALESCE(CAST(h.image_url AS TEXT), ''), COALESCE(CAST(h.video_url AS TEXT), ''), COALESCE(CAST(h.tool_call_id AS TEXT), ''), COALESCE(CAST(h.tool_calls_json AS TEXT), ''),
                 \\       COALESCE(CAST(s.selected_profile_model AS TEXT), ''), COALESCE(CAST(s.pr_url AS TEXT), ''), COALESCE(CAST(s.pr_provider AS TEXT), ''),
+                \\       COALESCE(h.is_feed_to_llm, 1),
                 \\       COALESCE(CAST(h.agent AS TEXT), '')
                 \\FROM llm_history h LEFT JOIN sessions s ON h.session_id = s.id
                 \\WHERE h.session_id = ?{s} LIMIT ?
@@ -994,6 +1001,7 @@ pub fn getSessionMessagesSorted(
             .file_attachments_meta = if (row.values.len > 25 and row.values[25].len > 0) try allocator.dupe(u8, row.values[25]) else null,
             .tool_call_id = if (row.values[18].len > 0) try allocator.dupe(u8, row.values[18]) else null,
             .agent = try allocator.dupe(u8, row.values[row.values.len - 1]),
+            .is_feed_to_llm = parseRowBool(row.values[row.values.len - 2]),
             .tool_calls_json = if (row.values[19].len > 0) try allocator.dupe(u8, row.values[19]) else null,
         };
         try messages.append(allocator, msg);
@@ -1010,8 +1018,11 @@ pub fn getSessionMessagesSorted(
     else
         null;
 
-    // Return only limit messages if has_more.
-    const result_messages = if (has_more) messages.items[0..limit] else messages.items;
+    // `toOwnedSlice` reallocs to the exact length, so the caller's
+    // `allocator.free(res.messages)` is legal. `messages.items` is shorter
+    // than its allocation, which the debug allocator rejects as "Invalid free".
+    if (has_more) messages.shrinkRetainingCapacity(limit);
+    const result_messages = try messages.toOwnedSlice(allocator);
 
     // Get total count of messages for this session
     const total_count = getTotalMessageCountForSession(allocator, db, session_id);
@@ -1499,7 +1510,7 @@ pub fn saveMessage(
     const agentStr = input.agent_name orelse "Agent";
 
     // Option A envelopes (mirrors insert_llm_histories): user rows carry
-    // {user,name,msg}, non-empty assistant text carries {model,msg}.
+    // {user,name,msg}, non-empty assistant text carries {agent,msg}.
     var enveloped_owned: ?[]u8 = null;
     defer if (enveloped_owned) |e| allocator.free(e);
     var effective_content: []const u8 = contentStr;
@@ -3865,6 +3876,145 @@ pub fn delete_session(
         .pr_url = "",
         .pr_provider = "",
     }) catch {};
+}
+
+// ─── Single-message admin: delete, restore, drop from context ─────────────
+
+/// One `llm_history` row with every column as text, so it round-trips through
+/// JSON unchanged. The delete returns it; the restore takes it back.
+pub const MessageRow = struct {
+    id: []const u8,
+    session_id: []const u8,
+    model: []const u8,
+    response_content: []const u8,
+    tool_calls_json: []const u8,
+    finish_reason: []const u8,
+    usage_json: []const u8,
+    created_at_nano: []const u8,
+    role: []const u8,
+    reasoning_content: []const u8,
+    is_feed_to_llm: []const u8,
+    agent: []const u8,
+    loop_index: []const u8,
+    temperature: []const u8,
+    is_thinking: []const u8,
+    parent_session_id: []const u8,
+    parent_id: []const u8,
+    prompt_tokens: []const u8,
+    completion_tokens: []const u8,
+    total_tokens: []const u8,
+    is_input: []const u8,
+    is_output: []const u8,
+    tool_name: []const u8,
+    diffview_before: []const u8,
+    diffview_after: []const u8,
+    image_url: []const u8,
+    tool_call_id: []const u8,
+    created_iso: []const u8,
+    is_loading: []const u8,
+    cache_creation_input_tokens: []const u8,
+    cache_read_input_tokens: []const u8,
+    reasoning_id: []const u8,
+    reasoning_encrypted_content: []const u8,
+    video_url: []const u8,
+    file_attachments: []const u8,
+    file_attachments_meta: []const u8,
+};
+
+pub const MessageAdminError = error{ NotFound, StillStreaming, AlreadyExists, QueryFailed };
+
+/// Column order here IS `MessageRow`'s field order — `rowFromValues` relies on it.
+const MESSAGE_ROW_SELECT =
+    \\SELECT id, session_id, model, COALESCE(response_content, ''), COALESCE(tool_calls_json, ''),
+    \\       COALESCE(finish_reason, ''), COALESCE(usage_json, ''), COALESCE(CAST(created_at_nano AS TEXT), ''),
+    \\       COALESCE(role, ''), COALESCE(reasoning_content, ''), COALESCE(CAST(is_feed_to_llm AS TEXT), '1'),
+    \\       COALESCE(agent, ''), COALESCE(CAST(loop_index AS TEXT), '0'), COALESCE(CAST(temperature AS TEXT), '0.2'),
+    \\       COALESCE(CAST(is_thinking AS TEXT), '0'), COALESCE(parent_session_id, ''), COALESCE(parent_id, ''),
+    \\       COALESCE(CAST(prompt_tokens AS TEXT), '0'), COALESCE(CAST(completion_tokens AS TEXT), '0'),
+    \\       COALESCE(CAST(total_tokens AS TEXT), '0'), COALESCE(CAST(is_input AS TEXT), '0'),
+    \\       COALESCE(CAST(is_output AS TEXT), '0'), COALESCE(tool_name, ''), COALESCE(diffview_before, ''),
+    \\       COALESCE(diffview_after, ''), COALESCE(image_url, ''), COALESCE(tool_call_id, ''),
+    \\       COALESCE(created_iso, ''), COALESCE(CAST(is_loading AS TEXT), '0'),
+    \\       COALESCE(CAST(cache_creation_input_tokens AS TEXT), '0'),
+    \\       COALESCE(CAST(cache_read_input_tokens AS TEXT), '0'), COALESCE(reasoning_id, ''),
+    \\       COALESCE(reasoning_encrypted_content, ''), COALESCE(video_url, ''),
+    \\       COALESCE(file_attachments, ''), COALESCE(file_attachments_meta, '')
+    \\FROM llm_history WHERE id = ?
+;
+
+/// Same order as `MESSAGE_ROW_SELECT`. A narrower insert would drop
+/// `usage_json`, `temperature` and the token counters on the way back.
+const MESSAGE_ROW_INSERT =
+    \\INSERT INTO llm_history (id, session_id, model, response_content, tool_calls_json,
+    \\  finish_reason, usage_json, created_at_nano, role, reasoning_content, is_feed_to_llm,
+    \\  agent, loop_index, temperature, is_thinking, parent_session_id, parent_id,
+    \\  prompt_tokens, completion_tokens, total_tokens, is_input, is_output, tool_name,
+    \\  diffview_before, diffview_after, image_url, tool_call_id, created_iso, is_loading,
+    \\  cache_creation_input_tokens, cache_read_input_tokens, reasoning_id,
+    \\  reasoning_encrypted_content, video_url, file_attachments, file_attachments_meta)
+    \\VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+;
+
+fn rowFromValues(allocator: std.mem.Allocator, v: []const []const u8) !MessageRow {
+    var out: MessageRow = undefined;
+    inline for (std.meta.fields(MessageRow), 0..) |f, i| {
+        @field(out, f.name) = try allocator.dupe(u8, v[i]);
+    }
+    return out;
+}
+
+pub fn freeMessageRow(allocator: std.mem.Allocator, row: *const MessageRow) void {
+    inline for (std.meta.fields(MessageRow)) |f| allocator.free(@field(row.*, f.name));
+}
+
+/// Read one row in full. `null` when the id is unknown.
+pub fn getMessageRow(allocator: std.mem.Allocator, db: *database.Db, id: []const u8) !?MessageRow {
+    var rows = try db.query(allocator, MESSAGE_ROW_SELECT, &.{id});
+    defer rows.deinit();
+    const row = (try rows.next()) orelse return null;
+    defer row.deinit(allocator);
+    return try rowFromValues(allocator, row.values);
+}
+
+/// Delete one row and hand it back so the caller can offer an undo. Refuses
+/// while the loop is still writing the row (`is_loading = 1`).
+pub fn deleteMessageById(allocator: std.mem.Allocator, db: *database.Db, id: []const u8) MessageAdminError!MessageRow {
+    const row = (getMessageRow(allocator, db, id) catch return error.QueryFailed) orelse return error.NotFound;
+    if (std.mem.eql(u8, row.is_loading, "1")) {
+        freeMessageRow(allocator, &row);
+        return error.StillStreaming;
+    }
+    db.exec(allocator, "DELETE FROM llm_history WHERE id = ?", &.{id}) catch {
+        freeMessageRow(allocator, &row);
+        return error.QueryFailed;
+    };
+    return row;
+}
+
+/// Re-insert a row with the same id. The `llm_history_ai` trigger puts the
+/// `messages_fts` entry back, so no FTS statement is needed here.
+pub fn restoreMessage(allocator: std.mem.Allocator, db: *database.Db, row: MessageRow) MessageAdminError!void {
+    const existing = getMessageRow(allocator, db, row.id) catch return error.QueryFailed;
+    if (existing) |e| {
+        var copy = e;
+        freeMessageRow(allocator, &copy);
+        return error.AlreadyExists;
+    }
+    var argv: [36][]const u8 = undefined;
+    inline for (std.meta.fields(MessageRow), 0..) |f, i| argv[i] = @field(row, f.name);
+    db.exec(allocator, MESSAGE_ROW_INSERT, &argv) catch return error.QueryFailed;
+}
+
+/// Flip `is_feed_to_llm` on one row. `getLLMHistories` already filters on it,
+/// so false takes the row out of the model's context without deleting it.
+pub fn setMessageFeedToLlm(allocator: std.mem.Allocator, db: *database.Db, id: []const u8, feed: bool) MessageAdminError!void {
+    const existing = getMessageRow(allocator, db, id) catch return error.QueryFailed;
+    if (existing) |e| {
+        var copy = e;
+        freeMessageRow(allocator, &copy);
+    } else return error.NotFound;
+    db.exec(allocator, "UPDATE llm_history SET is_feed_to_llm = ? WHERE id = ?", &.{ if (feed) "1" else "0", id }) catch
+        return error.QueryFailed;
 }
 
 /// List all sessions
@@ -10237,7 +10387,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         .{ .session = "s_owned", .role = "user", .key = "user", .want = "u1" },
         .{ .session = "s_owned", .role = "user", .key = "name", .want = "Budi" },
         .{ .session = "s_owned", .role = "user", .key = "msg", .want = "i wanna ask" },
-        .{ .session = "s_owned", .role = "assistant", .key = "model", .want = "900ribu" },
+        .{ .session = "s_owned", .role = "assistant", .key = "agent", .want = "900ribu" },
         .{ .session = "s_owned", .role = "assistant", .key = "msg", .want = "hey human" },
         .{ .session = "s_anon", .role = "user", .key = "user", .want = "" },
         .{ .session = "s_anon", .role = "user", .key = "name", .want = "Agent" },

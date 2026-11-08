@@ -1739,11 +1739,11 @@ const sendMessage = () => {
   outline: none;
 }
 
-/* The `@` agent list is capped by the space above the composer
-   (`--chat-composer-inset` = the dock's published height) and scrolls: an
-   uncapped list ran off the top of the window, with no way to reach it. */
+/* Half the viewport, and scrolls. NOT `--chat-composer-inset`: that is the
+   dock's own height and this list is inside the dock, so the cap would depend
+   on a height the list sets — the two oscillate between 111px and 480px. */
 .agent-picker-list {
-  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
+  max-height: 50vh;
   overflow-y: auto;
   overflow-x: hidden;
 }
