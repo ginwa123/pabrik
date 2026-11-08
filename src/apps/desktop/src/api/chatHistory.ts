@@ -69,6 +69,9 @@ export interface Message {
   reasoning_content?: string
   /** The agent that wrote the row — how a shared thread names its authors. */
   agent?: string
+  /** `llm_history.is_feed_to_llm`. False once the row is dropped from the model's context; the
+   * transcript still renders it. */
+  is_feed_to_llm?: boolean
 }
 
 export interface SkillInfo {

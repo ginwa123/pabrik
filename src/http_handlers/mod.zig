@@ -42,6 +42,9 @@ pub const sessionStopHandler = @import("session_stop.zig").sessionStopHandler;
 pub const askUserAnswerHandler = @import("ask_user_answer.zig").askUserAnswerHandler;
 pub const sessionExistHandler = @import("session_exist.zig").sessionExistHandler;
 pub const sessionMessagesHandler = @import("session_messages_get.zig").sessionMessagesHandler;
+pub const messageDeleteHandler = @import("message_delete.zig").messageDeleteHandler;
+pub const messageRestoreHandler = @import("message_restore.zig").messageRestoreHandler;
+pub const messagePatchHandler = @import("message_patch.zig").messagePatchHandler;
 // The roster of a multi-agent chat: GET/POST/DELETE
 // /api/llm/session/:session_id/group...
 pub const sessionGroupGetHandler = @import("session_group.zig").sessionGroupGetHandler;
