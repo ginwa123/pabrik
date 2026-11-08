@@ -163,10 +163,27 @@ pub fn turnPersona(
 }
 
 /// Null when the session is not a group. Caller frees a non-null result.
+/// `sessions.group_lead` is the cache; the roster's `lead` role is the truth a
+/// chat with no `sessions` row yet still has.
 pub fn groupLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?[]const u8 {
+    const cached = blk: {
+        var row = db.queryRow(
+            allocator,
+            "SELECT COALESCE(CAST(group_lead AS TEXT), '') FROM sessions WHERE id = ?",
+            &.{session_id},
+        ) catch |err| switch (err) {
+            error.RowNotFound => break :blk null,
+            else => return err,
+        };
+        defer row.deinit(allocator);
+        if (row.values[0].len == 0) break :blk null;
+        break :blk try allocator.dupe(u8, row.values[0]);
+    };
+    if (cached) |lead| return lead;
+
     var row = db.queryRow(
         allocator,
-        "SELECT COALESCE(CAST(group_lead AS TEXT), '') FROM sessions WHERE id = ?",
+        "SELECT COALESCE(CAST(agent_name AS TEXT), '') FROM session_group_members WHERE session_id = ? AND role = 'lead' ORDER BY position ASC LIMIT 1",
         &.{session_id},
     ) catch |err| switch (err) {
         error.RowNotFound => return null,

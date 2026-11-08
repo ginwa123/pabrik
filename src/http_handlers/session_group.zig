@@ -22,19 +22,9 @@ pub const Roster = struct {
 pub const GroupError = error{
     SessionIdRequired,
     AgentRequired,
-    SessionNotFound,
     NotAMember,
     OutOfMemory,
 };
-
-fn sessionExists(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !bool {
-    var row = db.queryRow(allocator, "SELECT 1 FROM sessions WHERE id = ?", &.{session_id}) catch |err| switch (err) {
-        error.RowNotFound => return false,
-        else => return err,
-    };
-    row.deinit(allocator);
-    return true;
-}
 
 /// The roster as the wire carries it. `lead` and `members` are owned; free
 /// them with `freeRoster`. `session_id` points into the caller's memory.
@@ -76,9 +66,6 @@ pub fn addMemberUseCase(
 ) GroupError!Roster {
     if (session_id.len == 0) return error.SessionIdRequired;
     if (agent_name.len == 0) return error.AgentRequired;
-    if (!(sessionExists(allocator, db, session_id) catch return error.SessionNotFound)) {
-        return error.SessionNotFound;
-    }
 
     session_group.addMember(allocator, db, session_id, agent_name, session_group.Role.fromText(role_text), null) catch
         return error.OutOfMemory;
@@ -98,9 +85,6 @@ pub fn removeMemberUseCase(
 ) GroupError!Roster {
     if (session_id.len == 0) return error.SessionIdRequired;
     if (agent_name.len == 0) return error.AgentRequired;
-    if (!(sessionExists(allocator, db, session_id) catch return error.SessionNotFound)) {
-        return error.SessionNotFound;
-    }
 
     session_group.removeMember(allocator, db, session_id, agent_name) catch return error.OutOfMemory;
 
@@ -138,9 +122,6 @@ pub fn setLeadUseCase(
 ) GroupError!Roster {
     if (session_id.len == 0) return error.SessionIdRequired;
     if (agent_name.len == 0) return error.AgentRequired;
-    if (!(sessionExists(allocator, db, session_id) catch return error.SessionNotFound)) {
-        return error.SessionNotFound;
-    }
 
     const members = session_group.listMembers(allocator, db, session_id) catch return error.OutOfMemory;
     defer session_group.freeMembers(allocator, members);
@@ -163,7 +144,6 @@ pub fn encodeRoster(allocator: std.mem.Allocator, roster: Roster) ![]u8 {
 fn statusFor(err: GroupError) u16 {
     return switch (err) {
         error.SessionIdRequired, error.AgentRequired, error.NotAMember => 400,
-        error.SessionNotFound => 404,
         error.OutOfMemory => 500,
     };
 }
@@ -172,7 +152,6 @@ fn messageFor(err: GroupError) []const u8 {
     return switch (err) {
         error.SessionIdRequired => "session_id required",
         error.AgentRequired => "agent required",
-        error.SessionNotFound => "Session not found",
         error.NotAMember => "agent is not a member of this chat",
         error.OutOfMemory => "Out of memory",
     };
@@ -445,12 +424,18 @@ test "a chat with no session row yet has an empty roster, not an error" {
     try testing.expectEqual(@as(usize, 0), roster.members.len);
 }
 
-test "an unknown session cannot be joined" {
+test "a chat with no session row yet can still be joined" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try testing.expectError(error.SessionNotFound, addMemberUseCase(testing.allocator, &ctx.db, "nope", "BEAM", ""));
+    const roster = try addMemberUseCase(testing.allocator, &ctx.db, "task_without_a_session", "BEAM", "");
+    defer freeRoster(testing.allocator, roster);
+
+    try testing.expect(roster.group);
+    try testing.expectEqualStrings("BEAM", roster.lead);
+    try testing.expectEqual(@as(usize, 1), roster.members.len);
+    try testing.expectEqual(session_group.Role.lead, roster.members[0].role);
 }
 
 test "an empty agent name is rejected" {

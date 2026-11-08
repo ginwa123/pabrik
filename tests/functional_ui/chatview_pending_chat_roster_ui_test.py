@@ -33,6 +33,7 @@ Run:
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,47 @@ def _new_chat(h: UIHarness) -> tuple[str, str]:
         expect=201,
     ).json()
     return workspace_id, task["id"]
+
+
+def _kanban_chat(h: UIHarness) -> tuple[str, str]:
+    """Create a chat the way a kanban card does — that path writes the session."""
+    workspace_id = create_workspace(h)
+    kanban = h.http(
+        "POST",
+        f"/api/workspaces/{workspace_id}/items/kanban",
+        json_body={"name": "roster board"},
+        expect=201,
+    ).json()["item"]
+    columns = h.http(
+        "GET",
+        f"/api/workspaces/{workspace_id}/items/{kanban['id']}/kanban/columns",
+        expect=200,
+    ).json()["columns"]
+    todo = next(c for c in columns if c["name"].lower() == "todo")
+    task = h.http(
+        "POST",
+        f"/api/workspaces/{workspace_id}/items/{kanban['id']}/tasks",
+        json_body={"name": "kanban chat", "column_id": todo["id"]},
+        expect=201,
+    ).json()
+    return workspace_id, task["id"]
+
+
+def _seed_workspace_agents(h: UIHarness, workspace_id: str) -> None:
+    h.http(
+        "PUT",
+        f"/api/workspaces/{workspace_id}/config",
+        json_body={
+            "profiles": {
+                "BEAM": {
+                    "model": "beam-stub-model",
+                    "base_url": "http://127.0.0.1:1",
+                    "api_key": "stub-not-real",
+                }
+            }
+        },
+        expect=200,
+    )
 
 
 def _seed_real_chat(h: UIHarness, workspace_id: str, session_id: str) -> None:
@@ -137,3 +179,54 @@ def test_a_real_chat_still_reads_its_roster(page, ui_harness: UIHarness) -> None
 
     statuses = [r.status for r in responses]
     assert 200 in statuses, f"the roster endpoint never answered 200: {statuses}"
+
+
+def test_a_kanban_chat_reads_its_roster(page, ui_harness: UIHarness) -> None:
+    """The other creation path: a kanban card writes its `sessions` row up
+    front, so its chat reads a roster like any other."""
+    h = ui_harness
+    workspace_id, chat_id = _kanban_chat(h)
+    responses = _record_group_responses(page)
+
+    _open_roster_panel(page, h, workspace_id, chat_id)
+
+    assert page.locator('[data-testid="chat-group-roster-empty"]').count() == 1
+    assert page.locator('[data-testid="chat-group-roster-error"]').count() == 0
+
+    statuses = [r.status for r in responses]
+    assert 200 in statuses, f"the roster endpoint never answered 200: {statuses}"
+
+
+def test_a_new_chat_can_still_join_an_agent(page, ui_harness: UIHarness) -> None:
+    """The panel invites `+ <agent>` on a fresh chat, so that write has to work
+    before the first message creates the session row."""
+    h = ui_harness
+    workspace_id, chat_id = _new_chat(h)
+    _seed_workspace_agents(h, workspace_id)
+
+    _open_roster_panel(page, h, workspace_id, chat_id)
+    joins: list = []
+    page.on(
+        "response",
+        lambda r: joins.append(r) if "/group/members" in r.url else None,
+    )
+    page.locator('[data-testid="chat-group-add-BEAM"]').click()
+
+    count = page.locator('[data-testid="chat-group-roster-count"]')
+    deadline = time.monotonic() + 10
+    while count.inner_text().strip() != "1" and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert count.inner_text().strip() == "1", (
+        f"joining BEAM on a fresh chat did not land: count={count.inner_text()!r}"
+    )
+    assert page.locator('[data-testid="chat-group-roster-error"]').count() == 0
+    assert page.locator('[data-testid="chat-group-member-BEAM"]').count() == 1
+
+    assert [r.status for r in joins] == [200], (
+        f"the join answered {[r.status for r in joins]}"
+    )
+
+    roster = h.http("GET", f"/api/llm/session/{chat_id}/group", expect=200).json()
+    assert [m["name"] for m in roster["members"]] == ["BEAM"]
+    assert roster["group"] is True
+    assert roster["lead"] == "BEAM"
