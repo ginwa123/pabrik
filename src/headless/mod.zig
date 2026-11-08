@@ -9,6 +9,7 @@ pub const sessions = @import("sessions.zig");
 pub const documents = @import("documents.zig");
 pub const usage = @import("usage.zig");
 pub const group = @import("group.zig");
+pub const memories = @import("memories.zig");
 
 /// The subcommand to run, with its arguments already parsed. `help` is a
 /// first-class variant rather than an error so `pabrik headless --help` exits
@@ -25,6 +26,8 @@ pub const Command = union(enum) {
     usage: args.UsageArgs,
     /// Read or change a multi-agent session: its roster and who speaks next.
     group: args.GroupArgs,
+    /// Read or change a workspace's saved memories.
+    memories: args.MemoriesArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -41,6 +44,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .documents => |a| .{ .documents = a },
         .usage => |a| .{ .usage = a },
         .group => |a| .{ .group = a },
+        .memories => |a| .{ .memories = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };

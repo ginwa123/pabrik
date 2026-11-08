@@ -71,6 +71,7 @@ const harness_safety_test = @import("harness_safety_test.zig");
 const headless_run_test = @import("headless_run_test.zig");
 const headless_documents_test = @import("headless_documents_test.zig");
 const headless_usage_test = @import("headless_usage_test.zig");
+const headless_memories_test = @import("headless_memories_test.zig");
 const headless_group_test = @import("headless_group_test.zig");
 const hook_zig_fmt_test = @import("hook_zig_fmt_test.zig");
 const hooks_lua_test = @import("hooks_lua_test.zig");
@@ -232,6 +233,7 @@ pub const suites = .{
     headless_run_test,
     headless_documents_test,
     headless_usage_test,
+    headless_memories_test,
     headless_group_test,
     hook_zig_fmt_test,
     hooks_lua_test,

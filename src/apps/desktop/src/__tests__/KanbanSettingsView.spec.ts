@@ -139,9 +139,9 @@ describe('KanbanSettingsView', () => {
       attachTo: document.body,
       global: {
         stubs: {
-          // Stub the memories view — it's heavy (renders a full
-          // memories panel) and we only test its presence/absence.
-          WorkspaceItemMemoriesView: { template: '<div data-testid="stub-memories"></div>' },
+          // Stub the memories panel — it fetches its own list and we only
+          // test its presence/absence here.
+          WorkspaceMemoriesPanel: { template: '<div data-testid="stub-memories"></div>' },
           // Stub AgentView — it renders the full Knowledge + Tools + System Prompt
           // UI (reused from `item_type='agent'`). We only assert its
           // presence/absence here; AgentView's own spec covers behaviour.
@@ -462,8 +462,8 @@ describe('KanbanSettingsView', () => {
     expect(columnsList).not.toBeNull()
   })
 
-  // ─── Agent tab — embedded Local Memories section ───
-  it('renders Local Memories inside Agent tab when kanban has a path', async () => {
+  // ─── Agent tab — embedded Memories section ───
+  it('renders the memories panel inside the Agent tab', async () => {
     seedWorkspaces({ ...baseItem, path: '/tmp/some-folder' })
     setupRoute({ section: 'agent' })
     mountView()
@@ -476,29 +476,20 @@ describe('KanbanSettingsView', () => {
     expect(stubMemories).not.toBeNull()
   })
 
-  it('shows no-path hint inside Agent tab when kanban has no path', async () => {
+  it('renders the memories panel even when the kanban has no folder', async () => {
     seedWorkspaces({ ...baseItem, path: null })
     setupRoute({ section: 'agent' })
     mountView()
     await flushPromises()
-    const noPath = findInDom<HTMLElement>(
-      '[data-testid="kanban-settings-page-agent-memories-no-path"]',
-    )
-    expect(noPath).not.toBeNull()
-    expect(noPath?.textContent).toContain('No directory is set')
-    // Memories view should NOT be rendered.
-    expect(findInDom<HTMLElement>('[data-testid="stub-memories"]')).toBeNull()
+    expect(findInDom<HTMLElement>('[data-testid="stub-memories"]')).not.toBeNull()
   })
 
-  it('does NOT render Local Memories section when Agent tab is not active', async () => {
+  it('does NOT render the memories section when the Agent tab is not active', async () => {
     seedWorkspaces({ ...baseItem, path: '/tmp/some-folder' })
     setupRoute({}) // default = columns
     mountView()
     await flushPromises()
     expect(findInDom<HTMLElement>('[data-testid="kanban-settings-page-agent-memories"]')).toBeNull()
-    expect(
-      findInDom<HTMLElement>('[data-testid="kanban-settings-page-agent-memories-no-path"]'),
-    ).toBeNull()
     expect(findInDom<HTMLElement>('[data-testid="stub-memories"]')).toBeNull()
   })
 
