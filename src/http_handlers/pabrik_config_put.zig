@@ -701,13 +701,9 @@ fn applyToolsInput(
     return null;
 }
 
-/// First name in `names` that is absent from `UNIFIED_TOOL_REGISTRY()` AND
-/// absent from `on_disk`, or `null` when every name is either known or
-/// grandfathered. A name the registry no longer carries but the stored
-/// document still holds is drift, not a typo: the client replays the stored
-/// list on every save, so rejecting it would make every save fail forever.
-/// An empty list (`[]`) is a valid explicit-zero checklist and returns
-/// `null` (no error).
+/// First name in `names` that is neither in `UNIFIED_TOOL_REGISTRY()` nor
+/// already in `on_disk`. A stored name the registry dropped is drift, not a
+/// typo — the client replays it on every save, so rejecting it locks the user out.
 fn firstUnknownToolName(names: []const []const u8, on_disk: []const []const u8) ?[]const u8 {
     for (names) |name| {
         if (tools_equipped.isKnownToolName(name)) continue;

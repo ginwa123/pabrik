@@ -406,10 +406,9 @@ test "put_unknown_tool_name_returns_400" {
 // (e2) A stored name the registry no longer carries does not block the save
 // ============================================================================
 
-// The settings editor hydrates `tools` from GET and replays it on every save.
-// `ask_user` was a tool until it became a message block, so a document written
-// before that change carries a name the registry no longer has — and pre-fix
-// every save of ANY setting (the Chat view toggle included) returned 400.
+// The settings editor replays the stored `tools` list on every save, so a name
+// the registry dropped (`ask_user` became a message block) must not fail the
+// save — pre-fix every setting, the Chat view toggle included, returned 400.
 test "put_stored_stale_tool_name_does_not_block_the_save" {
     try harness.requirePabrikBin(io, gpa);
 
