@@ -28,6 +28,8 @@ const EmitRequest = struct {
     /// agentic-loop diagnostics through the real wire path
     /// (task_1787663566535_2).
     is_error: bool = false,
+    /// Mirrors SseEventLLMHistory.agent_name — the author the transcript badges.
+    agent_name: []const u8 = "",
 };
 
 pub fn emitLlmHandler(
@@ -82,7 +84,7 @@ pub fn emitLlmHandler(
         // SseEventLLMHistory-shaped. The frontend's `full` branch
         // requires finish_reason + at least one renderable field.
         try buf.print(allocator,
-            \\{{"index":{d},"content":{f},"type":"full","session_id":"{s}","role":"{s}","finish_reason":"{s}","tool_call_id":"{s}","tool_name":"{s}","is_error":{},"id":"test-{d}"}}
+            \\{{"index":{d},"content":{f},"type":"full","session_id":"{s}","role":"{s}","finish_reason":"{s}","tool_call_id":"{s}","tool_name":"{s}","is_error":{},"agent_name":{f},"id":"test-{d}"}}
         , .{
             parsed.index,
             std.json.fmt(parsed.content, .{}),
@@ -92,6 +94,7 @@ pub fn emitLlmHandler(
             parsed.tool_call_id,
             parsed.tool_name,
             parsed.is_error,
+            std.json.fmt(parsed.agent_name, .{}),
             parsed.index,
         });
     } else {

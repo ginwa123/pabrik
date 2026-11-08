@@ -10,13 +10,9 @@ const config = pabrikcore.config;
 const llm_history = ai_mod.llm_history;
 const chat_parsing = @import("../modules/agent/loop/parsing.zig");
 
-/// The agent that wrote a row. `llm_history.agent` is the placeholder `Agent`
-/// on rows written before the loop named its speaker, so the content envelope
-/// is the authority: it carries the agent name the turn actually ran as.
-fn wireAgent(allocator: std.mem.Allocator, column: []const u8, raw_content: []const u8) []const u8 {
-    if (column.len > 0 and !std.mem.eql(u8, column, "Agent")) return column;
-    const author = chat_parsing.assistantAuthor(allocator, raw_content) catch null;
-    return author orelse column;
+/// The agent that wrote a row, recovered the same way the live SSE row is.
+fn wireAgent(allocator: std.mem.Allocator, column: []const u8, raw_content: []const u8) ![]const u8 {
+    return try chat_parsing.wireAgentName(allocator, column, raw_content);
 }
 
 /// Get messages for a session
@@ -147,7 +143,7 @@ pub fn sessionMessagesHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
             .file_attachments = msg.file_attachments_meta orelse "",
             .tool_call_id = msg.tool_call_id orelse "",
             .tool_calls_json = msg.tool_calls_json orelse "",
-            .agent = wireAgent(allocator, msg.agent, msg.content),
+            .agent = try wireAgent(allocator, msg.agent, msg.content),
             .is_feed_to_llm = msg.is_feed_to_llm,
         };
     }
@@ -607,7 +603,7 @@ test "wire agent names the envelope author when the column is the placeholder" {
     const a = arena.allocator();
 
     const envelope = "{\"agent\":\"deepseek auto\",\"msg\":\"<markdown>hi</markdown>\"}";
-    try testing.expectEqualStrings("deepseek auto", wireAgent(a, "Agent", envelope));
+    try testing.expectEqualStrings("deepseek auto", try wireAgent(a, "Agent", envelope));
 }
 
 test "wire agent keeps a column that already names the speaker" {
@@ -616,7 +612,7 @@ test "wire agent keeps a column that already names the speaker" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    try testing.expectEqualStrings("BEAM", wireAgent(a, "BEAM", "{\"agent\":\"deepseek auto\",\"msg\":\"hi\"}"));
+    try testing.expectEqualStrings("BEAM", try wireAgent(a, "BEAM", "{\"agent\":\"deepseek auto\",\"msg\":\"hi\"}"));
 }
 
 test "wire agent reads the legacy model field of an old assistant row" {
@@ -625,7 +621,7 @@ test "wire agent reads the legacy model field of an old assistant row" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    try testing.expectEqualStrings("BEAM", wireAgent(a, "Agent", "{\"model\":\"BEAM\",\"msg\":\"hi\"}"));
+    try testing.expectEqualStrings("BEAM", try wireAgent(a, "Agent", "{\"model\":\"BEAM\",\"msg\":\"hi\"}"));
 }
 
 test "wire agent leaves a user row and a tool row on the placeholder" {
@@ -634,6 +630,6 @@ test "wire agent leaves a user row and a tool row on the placeholder" {
     defer arena.deinit();
     const a = arena.allocator();
 
-    try testing.expectEqualStrings("Agent", wireAgent(a, "Agent", "{\"user\":\"u1\",\"name\":\"Budi\",\"msg\":\"hi\"}"));
-    try testing.expectEqualStrings("Agent", wireAgent(a, "Agent", "{\"tool\":\"read_file\",\"parameters\":{}}"));
+    try testing.expectEqualStrings("Agent", try wireAgent(a, "Agent", "{\"user\":\"u1\",\"name\":\"Budi\",\"msg\":\"hi\"}"));
+    try testing.expectEqualStrings("Agent", try wireAgent(a, "Agent", "{\"tool\":\"read_file\",\"parameters\":{}}"));
 }

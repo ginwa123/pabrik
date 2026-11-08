@@ -373,8 +373,14 @@ describe('ChatView behavior lock — transcript projection', () => {
     })
   })
 
-  it('opens the @ agent list and reports the chosen agent to the session', async () => {
+  it('opens the @ agent list and joins the chosen agent to the chat', async () => {
     const update = vi.spyOn(api, 'updateSession').mockResolvedValue(undefined as never)
+    const join = vi.spyOn(api, 'addSessionGroupMember').mockResolvedValue({
+      session_id: 's_char_agents',
+      group: true,
+      lead: 'alpha',
+      members: [{ name: 'alpha', role: 'lead' }],
+    })
     wrapper = mount(ChatView, {
       props: { chatId: 's_char_agents', chatName: 'Characterization' },
       attachTo: document.body,
@@ -398,8 +404,10 @@ describe('ChatView behavior lock — transcript projection', () => {
     await row.trigger('click')
     await flushPromises()
 
-    // Picking an agent is a session update — that is what the chip used to do.
-    expect(update).toHaveBeenCalledWith('s_char_agents', { selectedAgent: 'alpha' })
+    // A mention addresses an agent: it joins the chat's roster, which is what
+    // makes the loop route the turn to it. The session's own agent stays put.
+    expect(join).toHaveBeenCalledWith('s_char_agents', 'alpha')
+    expect(update).not.toHaveBeenCalled()
   })
 
   it('sends the composer text through api.sendChatMessage', async () => {
