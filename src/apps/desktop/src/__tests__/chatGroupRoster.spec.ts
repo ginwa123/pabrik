@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import { useChatGroupRoster } from '../components/views/chat_view/useChatGroupRoster'
 import ChatGroupRoster from '../components/views/chat_view/ChatGroupRoster.vue'
-import type { GroupMember, SessionGroup } from '../api'
+import { ApiError, type GroupMember, type SessionGroup } from '../api'
 
 const getSessionGroup = vi.hoisted(() => vi.fn())
 const addSessionGroupMember = vi.hoisted(() => vi.fn())
@@ -143,6 +143,28 @@ describe('useChatGroupRoster', () => {
 
     expect(getSessionGroup).not.toHaveBeenCalled()
     expect(roster.members.value).toEqual([])
+  })
+
+  it('a session that does not exist yet has no roster and no error', async () => {
+    getSessionGroup.mockRejectedValue(
+      new ApiError(404, 'Not Found', JSON.stringify({ error: 'Session not found' })),
+    )
+    const roster = useChatGroupRoster({ sessionId: ref('s_gone') })
+
+    await roster.load()
+
+    expect(roster.members.value).toEqual([])
+    expect(roster.isGroup.value).toBe(false)
+    expect(roster.error.value).toBeNull()
+  })
+
+  it('a server failure still surfaces the reason', async () => {
+    getSessionGroup.mockRejectedValue(new ApiError(500, 'Internal Server Error', 'boom'))
+    const roster = useChatGroupRoster({ sessionId: ref('s_1') })
+
+    await roster.load()
+
+    expect(roster.error.value).toBe('HTTP 500 Internal Server Error')
   })
 })
 

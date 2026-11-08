@@ -44,9 +44,6 @@ pub fn rosterUseCase(
     session_id: []const u8,
 ) GroupError!Roster {
     if (session_id.len == 0) return error.SessionIdRequired;
-    if (!(sessionExists(allocator, db, session_id) catch return error.SessionNotFound)) {
-        return error.SessionNotFound;
-    }
 
     const members = session_group.listMembers(allocator, db, session_id) catch return error.OutOfMemory;
     errdefer session_group.freeMembers(allocator, members);
@@ -435,12 +432,24 @@ test "an agent outside the roster cannot lead it" {
     try testing.expectError(error.NotAMember, setLeadUseCase(testing.allocator, &ctx.db, "s_1", "deepseek auto"));
 }
 
-test "an unknown session is not found" {
+test "a chat with no session row yet has an empty roster, not an error" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
 
-    try testing.expectError(error.SessionNotFound, rosterUseCase(testing.allocator, &ctx.db, "nope"));
+    const roster = try rosterUseCase(testing.allocator, &ctx.db, "task_without_a_session");
+    defer freeRoster(testing.allocator, roster);
+
+    try testing.expect(!roster.group);
+    try testing.expectEqualStrings("", roster.lead);
+    try testing.expectEqual(@as(usize, 0), roster.members.len);
+}
+
+test "an unknown session cannot be joined" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
     try testing.expectError(error.SessionNotFound, addMemberUseCase(testing.allocator, &ctx.db, "nope", "BEAM", ""));
 }
 
