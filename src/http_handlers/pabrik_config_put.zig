@@ -688,33 +688,36 @@ fn applyToolsInput(
     tools: ?[]const []const u8,
 ) !?[]const u8 {
     const tool_names = tools orelse return null;
-    if (firstUnknownToolName(tool_names)) |bad| return bad;
+    const on_disk = config_json.tools orelse &[_][]const u8{};
+    if (firstUnknownToolName(tool_names, on_disk)) |bad| return bad;
 
-    const owned = try allocator.alloc([]const u8, tool_names.len);
-    errdefer allocator.free(owned);
-    for (tool_names, 0..) |name, i| {
-        owned[i] = try allocator.dupe(u8, name);
+    var kept: std.ArrayList([]const u8) = .empty;
+    errdefer kept.deinit(allocator);
+    for (tool_names) |name| {
+        if (!tools_equipped.isKnownToolName(name)) continue;
+        try kept.append(allocator, try allocator.dupe(u8, name));
     }
-    config_json.tools = owned;
+    config_json.tools = try kept.toOwnedSlice(allocator);
     return null;
 }
 
-/// First name in `names` that is absent from `UNIFIED_TOOL_REGISTRY()`,
-/// or `null` when every name is known. An empty list (`[]`) is a valid
-/// explicit-zero checklist and returns `null` (no error).
-fn firstUnknownToolName(names: []const []const u8) ?[]const u8 {
-    const registry = tools_equipped.UNIFIED_TOOL_REGISTRY();
+/// First name in `names` that is neither in `UNIFIED_TOOL_REGISTRY()` nor
+/// already in `on_disk`. A stored name the registry dropped is drift, not a
+/// typo — the client replays it on every save, so rejecting it locks the user out.
+fn firstUnknownToolName(names: []const []const u8, on_disk: []const []const u8) ?[]const u8 {
     for (names) |name| {
-        var known = false;
-        for (registry) |entry| {
-            if (std.mem.eql(u8, entry.name, name)) {
-                known = true;
-                break;
-            }
-        }
-        if (!known) return name;
+        if (tools_equipped.isKnownToolName(name)) continue;
+        if (containsName(on_disk, name)) continue;
+        return name;
     }
     return null;
+}
+
+fn containsName(names: []const []const u8, needle: []const u8) bool {
+    for (names) |name| {
+        if (std.mem.eql(u8, name, needle)) return true;
+    }
+    return false;
 }
 
 /// Deep copy a json.Value to avoid use-after-free from parsed.deinit()
@@ -1366,6 +1369,49 @@ test "applyToolsInput: unknown name is returned and the config is untouched" {
     // half-applies.
     try testing.expectEqual(@as(usize, 1), cj.tools.?.len);
     try testing.expectEqualStrings("command", cj.tools.?[0]);
+}
+
+test "applyToolsInput: a stored name the registry no longer carries is dropped instead of failing the save" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const on_disk = [_][]const u8{ "tool_removed_in_an_older_build", "command", "glob" };
+    var cj = ConfigJson{ .tools = &on_disk };
+
+    const replayed = [_][]const u8{ "tool_removed_in_an_older_build", "command", "glob" };
+    const bad = try applyToolsInput(arena.allocator(), &cj, &replayed);
+    try testing.expect(bad == null);
+    try testing.expectEqual(@as(usize, 2), cj.tools.?.len);
+    try testing.expectEqualStrings("command", cj.tools.?[0]);
+    try testing.expectEqualStrings("glob", cj.tools.?[1]);
+}
+
+test "applyToolsInput: a list of only stale names becomes an explicit empty list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const on_disk = [_][]const u8{"tool_removed_in_an_older_build"};
+    var cj = ConfigJson{ .tools = &on_disk };
+
+    const replayed = [_][]const u8{"tool_removed_in_an_older_build"};
+    const bad = try applyToolsInput(arena.allocator(), &cj, &replayed);
+    try testing.expect(bad == null);
+    try testing.expect(cj.tools != null);
+    try testing.expectEqual(@as(usize, 0), cj.tools.?.len);
+}
+
+test "applyToolsInput: a stale stored name does not excuse a new unknown name in the same list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const on_disk = [_][]const u8{ "tool_removed_in_an_older_build", "command" };
+    var cj = ConfigJson{ .tools = &on_disk };
+
+    const replayed = [_][]const u8{ "tool_removed_in_an_older_build", "command", "definitely_not_a_tool" };
+    const bad = try applyToolsInput(arena.allocator(), &cj, &replayed);
+    try testing.expect(bad != null);
+    try testing.expectEqualStrings("definitely_not_a_tool", bad.?);
+    try testing.expectEqual(@as(usize, 2), cj.tools.?.len);
 }
 
 test "applyToolsInput: serialization — null emits JSON null, list emits the array" {
