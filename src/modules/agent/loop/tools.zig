@@ -113,6 +113,8 @@ pub const ToolExecContext = struct {
     agent_temperature: *f32,
     is_thinking: *bool,
     environment: ?*const std.process.Environ.Map,
+    /// The object store document bodies live in, when one is configured.
+    storage: ?@import("../../storage/mod.zig").storage.Storage = null,
     selected_profile_model: []const u8 = "",
     cwd_override: ?[]const u8 = null,
     /// The active design page id (when the LLM is in a design-item session).

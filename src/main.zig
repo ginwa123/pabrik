@@ -179,6 +179,14 @@ pub fn main(init: std.process.Init) !void {
         .group_bg_watchers = .init,
     };
 
+    // The object store, when `PABRIK_STORAGE_BACKEND` names one. Unset means
+    // every document body stays in the `documents.content` column.
+    ctxParent.storage_runtime = pabrikcore.storage.runtime.Runtime.fromEnvironment(allocator, io, environment) catch |err| blk: {
+        std.log.err("storage: object store disabled: {s}", .{@errorName(err)});
+        break :blk null;
+    };
+    defer if (ctxParent.storage_runtime) |runtime| runtime.deinit();
+
     // `--no-static-dir` wins over `--static-dir` regardless of order.
     if (cli.no_static_dir) {
         if (cli.static_dir) |dir_arg| allocator.free(dir_arg);

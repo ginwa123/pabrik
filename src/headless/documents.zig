@@ -43,12 +43,12 @@ fn documentDto(row: documents_store.DocumentRow) DocumentDto {
 
 fn listJson(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     workspace_id: []const u8,
 ) ![]u8 {
-    const folders = try folders_store.listFolders(allocator, db, workspace_id);
+    const folders = try folders_store.listFolders(allocator, store.db, workspace_id);
     defer folders_store.freeFolderRows(allocator, folders);
-    const documents = try documents_store.listDocuments(allocator, db, workspace_id);
+    const documents = try store.listDocuments(allocator, workspace_id);
     defer documents_store.freeDocumentRows(allocator, documents);
 
     const folder_dtos = try allocator.alloc(FolderDto, folders.len);
@@ -82,21 +82,24 @@ pub fn run(
     backend: *boot_mod.Backend,
     a: args.DocumentsArgs,
 ) ![]u8 {
-    return runWithDb(allocator, backend.ctx.db, a);
+    return runWithDb(allocator, .{
+        .db = backend.ctx.db,
+        .storage = backend.ctx.objectStore(),
+    }, a);
 }
 
 /// The op table, over a plain `*Db` so a test can drive it against an
 /// in-memory database without booting a backend.
 pub fn runWithDb(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     a: args.DocumentsArgs,
 ) ![]u8 {
     switch (a.op) {
-        .list => return listJson(allocator, db, a.workspace_id),
+        .list => return listJson(allocator, store, a.workspace_id),
 
         .folder_create => {
-            const row = try folders_store.createFolder(allocator, db, .{
+            const row = try folders_store.createFolder(allocator, store.db, .{
                 .workspace_id = a.workspace_id,
                 .name = a.name,
                 .parent_id = a.parent_id,
@@ -106,7 +109,7 @@ pub fn runWithDb(
         },
 
         .folder_rename => {
-            const row = try folders_store.updateFolder(allocator, db, a.workspace_id, a.folder_id.?, .{
+            const row = try folders_store.updateFolder(allocator, store.db, a.workspace_id, a.folder_id.?, .{
                 .name = a.name,
             });
             defer folders_store.freeFolderRow(allocator, row);
@@ -114,7 +117,7 @@ pub fn runWithDb(
         },
 
         .folder_move => {
-            const row = try folders_store.updateFolder(allocator, db, a.workspace_id, a.folder_id.?, .{
+            const row = try folders_store.updateFolder(allocator, store.db, a.workspace_id, a.folder_id.?, .{
                 .parent_id = a.parent_id,
                 .move_parent = true,
             });
@@ -123,7 +126,7 @@ pub fn runWithDb(
         },
 
         .folder_delete => {
-            const kept = try folders_store.deleteFolder(allocator, db, a.workspace_id, a.folder_id.?);
+            const kept = try folders_store.deleteFolder(allocator, store.db, a.workspace_id, a.folder_id.?);
             return std.json.Stringify.valueAlloc(allocator, .{
                 .id = a.folder_id.?,
                 .success = true,
@@ -132,7 +135,7 @@ pub fn runWithDb(
         },
 
         .doc_create => {
-            const row = try documents_store.createDocument(allocator, db, .{
+            const row = try store.createDocument(allocator, .{
                 .workspace_id = a.workspace_id,
                 .title = a.title,
                 .folder_id = a.folder_id orelse a.parent_id,
@@ -142,9 +145,8 @@ pub fn runWithDb(
         },
 
         .doc_move => {
-            const row = try documents_store.updateDocument(
+            const row = try store.updateDocument(
                 allocator,
-                db,
                 a.workspace_id,
                 a.document_id.?,
                 .{ .folder_id = a.folder_id orelse a.parent_id, .move_folder = true },
@@ -176,6 +178,7 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -185,7 +188,7 @@ test "headless documents: folder-create then list returns the folder and the mov
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const folder_json = try runWithDb(alloc, &ctx.db, .{
+    const folder_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
         .op = .folder_create,
         .workspace_id = "ws_1",
         .name = "Split bill",
@@ -196,7 +199,7 @@ test "headless documents: folder-create then list returns the folder and the mov
     defer parsed.deinit();
     const folder_id = parsed.value.object.get("id").?.string;
 
-    const doc_json = try runWithDb(alloc, &ctx.db, .{
+    const doc_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
         .op = .doc_create,
         .workspace_id = "ws_1",
         .title = "POST split-bill",
@@ -204,7 +207,7 @@ test "headless documents: folder-create then list returns the folder and the mov
     });
     defer alloc.free(doc_json);
 
-    const list_json = try runWithDb(alloc, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
+    const list_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{ .op = .list, .workspace_id = "ws_1" });
     defer alloc.free(list_json);
 
     const list = try std.json.parseFromSlice(std.json.Value, alloc, list_json, .{});
@@ -230,7 +233,7 @@ test "headless documents: doc-move with no folder puts the document back at the 
     });
     defer documents_store.freeDocumentRow(alloc, doc);
 
-    const moved_json = try runWithDb(alloc, &ctx.db, .{
+    const moved_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
         .op = .doc_move,
         .workspace_id = "ws_1",
         .document_id = doc.id,

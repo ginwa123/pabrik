@@ -298,15 +298,15 @@ fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u8) !
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeAddDocument(
     allocator: std.mem.Allocator,
-    db: *database.Db,
+    store: documents_store.Store,
     caller_session_id: []const u8,
     input: AddDocumentInput,
 ) ![]const u8 {
-    const workspace_id = (try resolveScope(allocator, db, caller_session_id)) orelse
+    const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
         return scopeErrorJSON(allocator, caller_session_id);
     defer allocator.free(workspace_id);
 
-    const row = documents_store.createDocument(allocator, db, .{
+    const row = store.createDocument(allocator, .{
         .workspace_id = workspace_id,
         .title = input.title,
         .content = input.content,
@@ -331,7 +331,7 @@ pub fn executeAddDocument(
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeEditDocument(
     allocator: std.mem.Allocator,
-    db: *database.Db,
+    store: documents_store.Store,
     caller_session_id: []const u8,
     input: EditDocumentInput,
 ) ![]const u8 {
@@ -345,11 +345,11 @@ pub fn executeEditDocument(
         return errorJSON(allocator, "Nothing to change: supply `title`, `content`, or both. Omitted fields keep their current value.");
     }
 
-    const workspace_id = (try resolveScope(allocator, db, caller_session_id)) orelse
+    const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
         return scopeErrorJSON(allocator, caller_session_id);
     defer allocator.free(workspace_id);
 
-    const row = documents_store.updateDocument(allocator, db, workspace_id, input.document_id, .{
+    const row = store.updateDocument(allocator, workspace_id, input.document_id, .{
         .title = input.title,
         .content = input.content,
     }) catch |err| {
@@ -375,7 +375,7 @@ pub fn executeEditDocument(
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeDeleteDocument(
     allocator: std.mem.Allocator,
-    db: *database.Db,
+    store: documents_store.Store,
     caller_session_id: []const u8,
     input: DeleteDocumentInput,
 ) ![]const u8 {
@@ -383,11 +383,11 @@ pub fn executeDeleteDocument(
         return errorJSON(allocator, "document_id is required. Look the id up with search_documents.");
     }
 
-    const workspace_id = (try resolveScope(allocator, db, caller_session_id)) orelse
+    const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
         return scopeErrorJSON(allocator, caller_session_id);
     defer allocator.free(workspace_id);
 
-    const existing = documents_store.getDocument(allocator, db, workspace_id, input.document_id) catch |err| {
+    const existing = store.getDocument(allocator, workspace_id, input.document_id) catch |err| {
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
             // One message for "no such id" and "another workspace's id" —
@@ -400,7 +400,7 @@ pub fn executeDeleteDocument(
     };
     defer documents_store.freeDocumentRow(allocator, existing);
 
-    documents_store.deleteDocument(allocator, db, workspace_id, input.document_id) catch |err| {
+    store.deleteDocument(allocator, workspace_id, input.document_id) catch |err| {
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
             // Unreachable in practice: we just read the row through the
@@ -447,6 +447,7 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
 
     // ws_1 owns item i1; ws_2 owns item i2. s1 is task-linked to i1, s2
     // to i2 — the exact-task-link branch of resolveWorkspaceId.
@@ -523,7 +524,7 @@ test "add_document: creates a markdown document in the caller's own workspace" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeAddDocument(alloc, &ctx.db, "s1", .{
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{
         .title = "Release plan",
         .content = "# v1\n\nship it",
     });
@@ -545,7 +546,7 @@ test "add_document: a blank title is a tool error, not a Zig error" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeAddDocument(alloc, &ctx.db, "s1", .{ .title = "   \n " });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .title = "   \n " });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -559,7 +560,7 @@ test "add_document: an empty body round-trips as \"\" rather than blowing up on 
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeAddDocument(alloc, &ctx.db, "s1", .{ .title = "Blank", .content = "" });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .title = "Blank", .content = "" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -573,7 +574,7 @@ test "add_document: an empty caller session fails closed instead of picking a wo
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeAddDocument(alloc, &ctx.db, "", .{ .title = "Nowhere" });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "", .{ .title = "Nowhere" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -594,7 +595,7 @@ test "add_document: a session with no resolvable workspace fails closed" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeAddDocument(alloc, &ctx.db, "s_orphan", .{ .title = "Nowhere" });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s_orphan", .{ .title = "Nowhere" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -608,9 +609,9 @@ test "add_document: two workspaces writing the same title never collide or leak"
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const a = try executeAddDocument(alloc, &ctx.db, "s1", .{ .title = "Shared title", .content = "from A" });
+    const a = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .title = "Shared title", .content = "from A" });
     defer alloc.free(a);
-    const b = try executeAddDocument(alloc, &ctx.db, "s2", .{ .title = "Shared title", .content = "from B" });
+    const b = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .title = "Shared title", .content = "from B" });
     defer alloc.free(b);
 
     var pa = try parseJson(alloc, a);
@@ -628,7 +629,7 @@ test "add_document: two workspaces writing the same title never collide or leak"
 
 /// Create a document in ws_1 and return its id (caller frees).
 fn seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) ![]u8 {
-    const out = try executeAddDocument(alloc, db, "s1", .{ .title = title, .content = content });
+    const out = try executeAddDocument(alloc, .{ .db = db }, "s1", .{ .title = title, .content = content });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -645,7 +646,7 @@ test "edit_document: replaces the body and keeps the title when only content is 
     const id = try seedDoc(alloc, &ctx.db, "Plan", "old body");
     defer alloc.free(id);
 
-    const out = try executeEditDocument(alloc, &ctx.db, "s1", .{ .document_id = id, .content = "new body" });
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id, .content = "new body" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -664,7 +665,7 @@ test "edit_document: an omitted field is a no-op, an explicit empty string is a 
     defer alloc.free(id);
 
     // title-only patch: the body must survive.
-    const renamed = try executeEditDocument(alloc, &ctx.db, "s1", .{ .document_id = id, .title = "Renamed" });
+    const renamed = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id, .title = "Renamed" });
     defer alloc.free(renamed);
     var pr = try parseJson(alloc, renamed);
     defer pr.deinit();
@@ -672,7 +673,7 @@ test "edit_document: an omitted field is a no-op, an explicit empty string is a 
     try testing.expectEqualStrings("body to keep", pr.content);
 
     // explicit "" clears the body — different from omitting the field.
-    const cleared = try executeEditDocument(alloc, &ctx.db, "s1", .{ .document_id = id, .content = "" });
+    const cleared = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id, .content = "" });
     defer alloc.free(cleared);
     var pc = try parseJson(alloc, cleared);
     defer pc.deinit();
@@ -689,7 +690,7 @@ test "edit_document: a patch with neither field is rejected, not silently accept
     const id = try seedDoc(alloc, &ctx.db, "Plan", "unchanged");
     defer alloc.free(id);
 
-    const out = try executeEditDocument(alloc, &ctx.db, "s1", .{ .document_id = id });
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -703,7 +704,7 @@ test "edit_document: a missing document_id is rejected before any DB work" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeEditDocument(alloc, &ctx.db, "s1", .{ .content = "x" });
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .content = "x" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -721,14 +722,14 @@ test "edit_document: workspace B cannot edit workspace A's document, and the err
     defer alloc.free(id);
 
     // Same session, real foreign id.
-    const denied = try executeEditDocument(alloc, &ctx.db, "s2", .{ .document_id = id, .content = "hijacked" });
+    const denied = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = id, .content = "hijacked" });
     defer alloc.free(denied);
     var d = try parseJson(alloc, denied);
     defer d.deinit();
 
     // Different session, nonexistent id. If these two messages differ,
     // the tool is an oracle for other workspaces' row ids.
-    const missing = try executeEditDocument(alloc, &ctx.db, "s2", .{ .document_id = "doc_does_not_exist", .content = "x" });
+    const missing = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = "doc_does_not_exist", .content = "x" });
     defer alloc.free(missing);
     var m = try parseJson(alloc, missing);
     defer m.deinit();
@@ -752,7 +753,7 @@ test "edit_document: no content leaks through the cross-workspace denial" {
     const id = try seedDoc(alloc, &ctx.db, "Private", "TOPSECRETBODY");
     defer alloc.free(id);
 
-    const denied = try executeEditDocument(alloc, &ctx.db, "s2", .{ .document_id = id, .content = "x" });
+    const denied = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = id, .content = "x" });
     defer alloc.free(denied);
     try testing.expect(std.mem.indexOf(u8, denied, "TOPSECRETBODY") == null);
 }
@@ -768,7 +769,7 @@ test "delete_document: removes the row and names what it removed" {
     const id = try seedDoc(alloc, &ctx.db, "Obsolete plan", "no longer needed");
     defer alloc.free(id);
 
-    const out = try executeDeleteDocument(alloc, &ctx.db, "s1", .{ .document_id = id });
+    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -789,7 +790,7 @@ test "delete_document: an empty document_id is rejected before any DB work" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const out = try executeDeleteDocument(alloc, &ctx.db, "s1", .{ .document_id = "   " });
+    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = "   " });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -806,7 +807,7 @@ test "delete_document: an unresolvable session deletes nothing" {
     const id = try seedDoc(alloc, &ctx.db, "Survivor", "still here");
     defer alloc.free(id);
 
-    const out = try executeDeleteDocument(alloc, &ctx.db, "s_orphan", .{ .document_id = id });
+    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s_orphan", .{ .document_id = id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -826,12 +827,12 @@ test "delete_document: workspace B cannot delete workspace A's document, and the
     const id = try seedDoc(alloc, &ctx.db, "Private", "TOPSECRETBODY");
     defer alloc.free(id);
 
-    const denied = try executeDeleteDocument(alloc, &ctx.db, "s2", .{ .document_id = id });
+    const denied = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = id });
     defer alloc.free(denied);
     var d = try parseJson(alloc, denied);
     defer d.deinit();
 
-    const missing = try executeDeleteDocument(alloc, &ctx.db, "s2", .{
+    const missing = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s2", .{
         .document_id = "doc_nope",
     });
     defer alloc.free(missing);
@@ -951,7 +952,7 @@ pub fn execAddDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult
     // the LLM never supplies (or spoofs) a workspace id.
     const inner = document_mod.executeAddDocument(
         ctx.allocator,
-        ctx.db,
+        .{ .db = ctx.db, .storage = ctx.storage },
         ctx.session_id,
         parsed.value,
     ) catch |err| {
@@ -1001,7 +1002,7 @@ pub fn execEditDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
 
     const inner = document_mod.executeEditDocument(
         ctx.allocator,
-        ctx.db,
+        .{ .db = ctx.db, .storage = ctx.storage },
         ctx.session_id,
         parsed.value,
     ) catch |err| {
@@ -1051,7 +1052,7 @@ pub fn execDeleteDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRes
 
     const inner = document_mod.executeDeleteDocument(
         ctx.allocator,
-        ctx.db,
+        .{ .db = ctx.db, .storage = ctx.storage },
         ctx.session_id,
         parsed.value,
     ) catch |err| {
@@ -1230,6 +1231,7 @@ fn exec_setupDb() !exec_TestCtx {
     try exec_migration.Migration098CreateDocuments.up(&db, exec_testing.allocator);
     try exec_migration.Migration122AddDocumentPosition.up(&db, exec_testing.allocator);
     try exec_migration.Migration140AddDocumentFolders.up(&db, exec_testing.allocator);
+    try exec_migration.Migration143AddDocumentContentKey.up(&db, exec_testing.allocator);
 
     try db.exec(exec_testing.allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES
@@ -2425,4 +2427,3 @@ test "a refused document mutation announces nothing" {
 
     releaseDocumentSse();
 }
-

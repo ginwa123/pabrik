@@ -155,6 +155,7 @@ const migration_139 = @import("migration_139.zig");
 const migration_140 = @import("migration_140.zig");
 const migration_141 = @import("migration_141.zig");
 const migration_142 = @import("migration_142.zig");
+const migration_143 = @import("migration_143.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -299,6 +300,7 @@ pub const Migration139AddRoutineCwd = migration_139.Migration139AddRoutineCwd;
 pub const Migration140AddDocumentFolders = migration_140.Migration140AddDocumentFolders;
 pub const Migration141ContractSkillNameDescription = migration_141.Migration141ContractSkillNameDescription;
 pub const Migration142AddSessionGroup = migration_142.Migration142AddSessionGroup;
+pub const Migration143AddDocumentContentKey = migration_143.Migration143AddDocumentContentKey;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -565,6 +567,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration141ContractSkillNameDescription.version, .name = Migration141ContractSkillNameDescription.name, .up = Migration141ContractSkillNameDescription.up },
     // Migration 142 — a session can hold a roster of agents instead of one.
     .{ .version = Migration142AddSessionGroup.version, .name = Migration142AddSessionGroup.name, .up = Migration142AddSessionGroup.up },
+    .{ .version = Migration143AddDocumentContentKey.version, .name = Migration143AddDocumentContentKey.name, .up = Migration143AddDocumentContentKey.up },
 };
 
 /// Register all migrations with a MigrationManager

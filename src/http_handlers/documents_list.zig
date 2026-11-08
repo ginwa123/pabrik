@@ -34,15 +34,15 @@ pub const DocumentsListOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     input: DocumentsListInput,
 ) DocumentsListError!DocumentsListOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
     // Both reads, one response: the client builds the tree from `parent_id`,
     // and a second request per folder would be an N+1 on first paint.
     return .{
-        .documents = try documents_store.listDocuments(allocator, db, input.workspace_id),
-        .folders = try folders_store.listFolders(allocator, db, input.workspace_id),
+        .documents = try store.listDocuments(allocator, input.workspace_id),
+        .folders = try folders_store.listFolders(allocator, store.db, input.workspace_id),
     };
 }
 
@@ -62,7 +62,7 @@ pub fn documentsListHandler(
 
     const workspace_id = req.params.get("workspace_id") orelse "";
 
-    const output = useCase(allocator, sqlite_db, .{ .workspace_id = workspace_id }) catch |err| {
+    const output = useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{ .workspace_id = workspace_id }) catch |err| {
         const status: u16 = switch (err) {
             error.WorkspaceIdRequired => 400,
             error.QueryFailed, error.OutOfMemory => 500,
@@ -107,6 +107,7 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -118,7 +119,7 @@ test "useCase: empty workspace_id returns WorkspaceIdRequired" {
 
     try testing.expectError(
         error.WorkspaceIdRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "" }),
     );
 }
 
@@ -128,7 +129,7 @@ test "useCase: a workspace with no documents returns an empty list" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1" });
     defer documents_store.freeDocumentRows(alloc, output.documents);
     defer folders_store.freeFolderRows(alloc, output.folders);
     try testing.expectEqual(@as(usize, 0), output.documents.len);
@@ -147,7 +148,7 @@ test "useCase: never returns another workspace's documents" {
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
 
-    const mine = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1" });
+    const mine = try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1" });
     defer documents_store.freeDocumentRows(alloc, mine.documents);
     defer folders_store.freeFolderRows(alloc, mine.folders);
     try testing.expectEqual(@as(usize, 1), mine.documents.len);
@@ -156,7 +157,7 @@ test "useCase: never returns another workspace's documents" {
 
     // The foreign workspace sees only its own row — no leak in either
     // direction, and no "empty because mis-scoped" false negative.
-    const theirs = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_2" });
+    const theirs = try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_2" });
     defer documents_store.freeDocumentRows(alloc, theirs.documents);
     defer folders_store.freeFolderRows(alloc, theirs.folders);
     try testing.expectEqual(@as(usize, 1), theirs.documents.len);

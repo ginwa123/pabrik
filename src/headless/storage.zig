@@ -12,51 +12,22 @@ const storage = storage_mod.storage;
 const fs_backend = storage_mod.fs;
 const s3_backend = storage_mod.s3;
 const http_transport = storage_mod.http_transport;
+const runtime = storage_mod.runtime;
 
 /// Where objects live when neither `--root` nor `PABRIK_STORAGE_ROOT` says.
-pub const DEFAULT_ROOT_SUFFIX = ".local/share/pabrik/objects";
+pub const DEFAULT_ROOT_SUFFIX = runtime.DEFAULT_ROOT_SUFFIX;
 
-pub const Backend = enum { fs, s3 };
+pub const Backend = runtime.Backend;
 
 /// Resolve the backend: the flag, then `PABRIK_STORAGE_BACKEND`, then `fs`.
-pub fn resolveBackend(
-    environment: *const std.process.Environ.Map,
-    flag: ?[]const u8,
-) !Backend {
-    const name = flag orelse environment.get("PABRIK_STORAGE_BACKEND") orelse return .fs;
-    if (std.mem.eql(u8, name, "fs")) return .fs;
-    if (std.mem.eql(u8, name, "s3")) return .s3;
-    return error.UnknownBackend;
-}
+pub const resolveBackend = runtime.resolveBackend;
 
 /// S3 settings from the environment. Every slice borrows from `environment`,
 /// which outlives the store.
-pub fn resolveS3Config(environment: *const std.process.Environ.Map) !s3_backend.Config {
-    return .{
-        .endpoint = environment.get("PABRIK_S3_ENDPOINT") orelse return error.S3EndpointRequired,
-        .bucket = environment.get("PABRIK_S3_BUCKET") orelse return error.S3BucketRequired,
-        .region = environment.get("PABRIK_S3_REGION") orelse "us-east-1",
-        .access_key = environment.get("PABRIK_S3_ACCESS_KEY") orelse return error.S3AccessKeyRequired,
-        .secret_key = environment.get("PABRIK_S3_SECRET_KEY") orelse return error.S3SecretKeyRequired,
-    };
-}
+pub const resolveS3Config = runtime.resolveS3Config;
 
 /// Resolve the store root: the flag, then the environment, then `$HOME`.
-pub fn resolveRoot(
-    allocator: std.mem.Allocator,
-    environment: *const std.process.Environ.Map,
-    flag: ?[]const u8,
-) ![]u8 {
-    if (flag) |root| {
-        if (root.len == 0) return error.RootRequired;
-        return allocator.dupe(u8, root);
-    }
-    if (environment.get("PABRIK_STORAGE_ROOT")) |root| {
-        if (root.len > 0) return allocator.dupe(u8, root);
-    }
-    const home = environment.get("HOME") orelse return error.RootRequired;
-    return std.fs.path.join(allocator, &.{ home, DEFAULT_ROOT_SUFFIX });
-}
+pub const resolveRoot = runtime.resolveRoot;
 
 const PutDto = struct {
     key: []const u8,

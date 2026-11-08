@@ -43,11 +43,11 @@ pub const DocumentsCreateOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     input: DocumentsCreateInput,
 ) DocumentsCreateError!DocumentsCreateOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    return .{ .document = try documents_store.createDocument(allocator, db, .{
+    return .{ .document = try store.createDocument(allocator, .{
         .workspace_id = input.workspace_id,
         .title = input.body.title,
         .content = input.body.content,
@@ -85,7 +85,7 @@ pub fn documentsCreateHandler(
         };
     }
 
-    const output = useCase(allocator, sqlite_db, .{
+    const output = useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{
         .workspace_id = workspace_id,
         .body = body,
     }) catch |err| {
@@ -149,6 +149,7 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -160,7 +161,7 @@ test "useCase: empty workspace_id returns WorkspaceIdRequired" {
 
     try testing.expectError(
         error.WorkspaceIdRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "", .body = .{ .title = "x" } }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "", .body = .{ .title = "x" } }),
     );
 }
 
@@ -172,11 +173,11 @@ test "useCase: a blank or whitespace-only title returns TitleRequired" {
 
     try testing.expectError(
         error.TitleRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .body = .{ .title = "" } }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .body = .{ .title = "" } }),
     );
     try testing.expectError(
         error.TitleRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .body = .{ .title = "   \n\t " } }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .body = .{ .title = "   \n\t " } }),
     );
 }
 
@@ -186,7 +187,7 @@ test "useCase: creates a markdown document and stamps both timestamps" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .body = .{ .title = "  Release notes  ", .content = "# v1\n\nship it" },
     });
@@ -211,7 +212,7 @@ test "useCase: an empty body is stored as \"\" not NULL" {
     // The empty slice would bind as SQL NULL and violate
     // `content TEXT NOT NULL`; COALESCE(NULLIF(?, ''), '') is what stops
     // that, so a blank note must survive the round-trip.
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Blank", .content = "" },
     });
@@ -225,14 +226,14 @@ test "useCase: an explicit format is honoured, an empty one falls back to markdo
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const plain = try useCase(alloc, &ctx.db, .{
+    const plain = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Text", .content = "x", .format = "text" },
     });
     defer documents_store.freeDocumentRow(alloc, plain.document);
     try testing.expectEqualStrings("text", plain.document.format);
 
-    const fallback = try useCase(alloc, &ctx.db, .{
+    const fallback = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Default", .content = "x", .format = "" },
     });
@@ -246,7 +247,7 @@ test "useCase: the new document is invisible from another workspace" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Secret", .content = "nope" },
     });

@@ -50,6 +50,7 @@ pub const Backend = struct {
         // `freeAllLlmConfigs` frees `llm_config_holder.current`, which IS
         // `llm_config_ptr` (boot installed it there).
         pabrikcore.freeAllLlmConfigs(self.ctx);
+        if (self.ctx.storage_runtime) |runtime| runtime.deinit();
         allocator.destroy(self.ctx);
 
         pabrikcore.loggermod.deinitGlobal(io);
@@ -177,6 +178,12 @@ pub fn boot(
     // so every row lands in the shared bucket — the same behaviour the
     // server has with `--auth` off.
     ctx.auth_enabled = false;
+
+    // The object store, when `PABRIK_STORAGE_BACKEND` names one.
+    ctx.storage_runtime = pabrikcore.storage.runtime.Runtime.fromEnvironment(allocator, io, environment) catch |err| blk: {
+        std.log.err("storage: object store disabled: {s}", .{@errorName(err)});
+        break :blk null;
+    };
 
     try pabrikcore.setSingleton(ctx);
 

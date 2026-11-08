@@ -59,15 +59,14 @@ pub const DocumentsUpdateOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     input: DocumentsUpdateInput,
 ) DocumentsUpdateError!DocumentsUpdateOutput {
     if (input.workspace_id.len == 0 or input.document_id.len == 0) {
         return error.IdsRequired;
     }
-    return .{ .document = try documents_store.updateDocument(
+    return .{ .document = try store.updateDocument(
         allocator,
-        db,
         input.workspace_id,
         input.document_id,
         .{
@@ -139,7 +138,7 @@ pub fn documentsUpdateHandler(
         .move_folder = obj.get("folder_id") != null,
     };
 
-    const output = useCase(allocator, sqlite_db, .{
+    const output = useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{
         .workspace_id = req.params.get("workspace_id") orelse "",
         .document_id = req.params.get("document_id") orelse "",
         .body = body,
@@ -208,6 +207,7 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO documents (id, workspace_id, title, content) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
@@ -224,7 +224,7 @@ test "useCase: empty ids return IdsRequired" {
 
     try testing.expectError(
         error.IdsRequired,
-        useCase(alloc, &ctx.db, .{
+        useCase(alloc, .{ .db = &ctx.db }, .{
             .workspace_id = "ws_1",
             .document_id = "",
             .body = .{ .title = "x" },
@@ -240,7 +240,7 @@ test "useCase: a title-only PATCH leaves the body intact" {
 
     // The regression this guards: writing `content = ''` for an absent
     // field would silently destroy the document body.
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{ .title = "A renamed" },
@@ -257,7 +257,7 @@ test "useCase: a body-only PATCH leaves the title intact" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{ .content = "body a, revised" },
@@ -274,7 +274,7 @@ test "useCase: an explicit empty content clears the body without tripping NOT NU
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{ .content = "" },
@@ -291,12 +291,13 @@ test "useCase: an empty patch is a no-op that still advances updated_at" {
 
     // Backdate so a same-second CURRENT_TIMESTAMP write is still
     // detectable as a change.
-    try ctx.db.exec(alloc,
+    try ctx.db.exec(
+        alloc,
         "UPDATE documents SET updated_at = '2000-01-01 00:00:00' WHERE id = 'doc_a'",
         &.{},
     );
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{},
@@ -316,14 +317,14 @@ test "useCase: a blank title is rejected and leaves the row untouched" {
 
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, &ctx.db, .{
+        useCase(alloc, .{ .db = &ctx.db }, .{
             .workspace_id = "ws_1",
             .document_id = "doc_a",
             .body = .{ .title = "   " },
         }),
     );
 
-    const after = try useCase(alloc, &ctx.db, .{
+    const after = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{},
@@ -340,7 +341,7 @@ test "useCase: another workspace's document cannot be edited" {
 
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, &ctx.db, .{
+        useCase(alloc, .{ .db = &ctx.db }, .{
             .workspace_id = "ws_2",
             .document_id = "doc_a",
             .body = .{ .content = "hijacked" },
@@ -349,7 +350,7 @@ test "useCase: another workspace's document cannot be edited" {
 
     // The owner's copy is unchanged — a rejected cross-workspace edit must
     // not have half-applied.
-    const owner = try useCase(alloc, &ctx.db, .{
+    const owner = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{},
