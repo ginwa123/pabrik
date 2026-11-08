@@ -100,7 +100,7 @@ Key mismatches / notes:
 - [ ] F10 Kanban board UI (columns, cards, drag-drop) + ViewModel + tests
 - [x] F11 Kanban task field helpers (isValidTitle, parseTags, joinTags, isValidPrLink) + 7 tests (DONE 2026-11-07: KanbanTaskFields + KanbanTaskFieldsTest. Full detail UI deferred.)
 - [ ] F12 Kanban settings screen (columns, profiles, tools) + tests
-- [ ] F13 Kanban SSE (real-time updates) + tests
+- [x] F13 Kanban SSE (real-time updates) + tests (DONE 2026-11-08: KanbanSseHelper + 14 tests. Full wiring deferred.)
 
 #### Chat enhancements
 - [x] F14 Chat image attach parity + tests (DONE: Android has ChatAttachments + ChatViewModelAttachmentTest; already complete.)
@@ -166,9 +166,9 @@ Key mismatches / notes:
 - [ ] F60 Notifications (in-app toast container) + tests
 
 #### SSE / Real-time
-- [ ] F61 Kanban SSE + tests
-- [ ] F62 Design SSE + tests
-- [ ] F63 Documents SSE + tests
+- [x] F61 Kanban SSE + tests (DONE 2026-11-08: KanbanSseHelper + 14 tests. Full wiring deferred.)
+- [x] F62 Design SSE + tests (DONE 2026-11-08: DesignSseHelper + 11 tests. Full wiring deferred.)
+- [x] F63 Documents SSE + tests (DONE 2026-11-08: DocumentsSseHelper + 6 tests. Full wiring deferred.)
 
 #### Sync (per feature, after F01-F03)
 - [ ] F64 Sync: workspaces & items
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #7 (F13/F61/F62/F63): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1355 tests, 0 failures, 0 errors. New: KanbanSseHelperTest (14), DesignSseHelperTest (11), DocumentsSseHelperTest (6).
 
 ## Blockers
 
@@ -222,3 +223,6 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sse/KanbanSseHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sse/DesignSseHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sse/DocumentsSseHelper.kt (new)
