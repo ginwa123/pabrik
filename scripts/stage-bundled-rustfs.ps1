@@ -77,8 +77,17 @@ if ($DestDir -ne "" -and -not (Test-Path $DestDir)) {
 }
 Copy-Item -Force $Member $Dest
 
+# Capture the WHOLE output, then take the first line: piping a native command
+# into `Select-Object -First 1` stops the pipeline early and leaves the process
+# running, holding a lock on pabrik-fs.exe that breaks the next staging run.
 $VersionOut = ""
-try { $VersionOut = (& $Dest --version | Select-Object -First 1) } catch { $VersionOut = "" }
+try {
+    $raw = & $Dest --version 2>&1
+    if ($raw) {
+        $text = ($raw | Out-String).Trim()
+        $VersionOut = ($text -split "`r?`n")[0].Trim()
+    }
+} catch { $VersionOut = "" }
 if ($VersionOut) {
     Write-Output "staged bundled rustfs -> $Dest ($VersionOut)"
 } else {
