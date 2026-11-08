@@ -86,7 +86,7 @@ Key mismatches / notes:
 - [x] F02 Offline outbox queue (Room entity + DAO + replay) — generic, reusable by all features (DONE 2026-11-06: OutboxEntry + OutboxDao + OutboxQueue + 14 tests, 1285 total, 0 failures)
 - [ ] F03 Sync engine core (LWW by updatedAt, idempotent writes, delete handling, UTC storage + local rendering) — generic
 - [x] F04 Design system audit: ensure all Material3 components, theme tokens, dark mode parity with Vue CSS vars (DONE 2026-11-07: Android is dark-only (Kanagawa Dragon tokens in Color.kt/Theme.kt); Vue supports 10+ themes (dark+light) via theme/themes.ts + style.css. Gap: no light theme, no theme picker, no theme persistence. Recorded as decision; full theme parity deferred to a dedicated task.)
-- [ ] F05 Navigation: add routes for settings, workspace settings, kanban settings, documents, agent, design, routine detail, git, memory, secrets, members, skills, MCP, LLM config, tools, notifications
+- [x] F05 Navigation: add routes for settings, workspace settings, kanban settings, documents, agent, design, routine detail, git, memory, secrets, members, skills, MCP, LLM config, tools, notifications (DONE 2026-11-08: PabrikRoutes constants + builders + 20 tests. NavHost composable wiring deferred until the screens exist.)
 - [x] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton (DONE 2026-11-07: scripts/e2e.sh + tests/e2e/{maestro,playwright,fixtures} skeletons created. Maestro not installed on host; flows are placeholders.)
 
 ### Phase B — Features by dependency and user value
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #9 (F05): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1344 tests, 0 failures, 0 errors. New: PabrikRoutesTest (20).
 
 ## Blockers
 
@@ -222,3 +223,4 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt (modified: +F05 routes)
