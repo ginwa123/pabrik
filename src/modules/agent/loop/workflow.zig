@@ -1267,7 +1267,9 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             },
         );
 
-        const active_agent_prompt: []const u8 = if (sub_agent_system_prompt.len > 0) sub_agent_system_prompt else group_system_prompt;
+        const active_agent_prompt_owned = try session_group_mod.turnPersona(allocator, sub_agent_system_prompt, group_speaker, group_system_prompt);
+        defer allocator.free(active_agent_prompt_owned);
+        const active_agent_prompt: []const u8 = active_agent_prompt_owned;
         const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, active_agent_prompt);
 
         try messagesLists.appendSlice(allocator, initialMessages);
