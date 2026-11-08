@@ -184,10 +184,16 @@ if command -v unzip >/dev/null 2>&1; then
     want_size="$(unzip -l "$archive" rustfs 2>/dev/null | awk '$NF == "rustfs" { print $1; exit }')"
 fi
 
+# Extract to a temp file and rename into place: writing straight to `$dest`
+# fails with ETXTBSY when a smoke test left pabrik-fs running, and a rename
+# replaces the directory entry without touching the running inode.
+staged="${dest}.staged.$$"
+trap 'rm -f "$staged"' EXIT
+
 if command -v unzip >/dev/null 2>&1; then
-    unzip -p "$archive" rustfs > "$dest"
+    unzip -p "$archive" rustfs > "$staged"
 elif command -v python3 >/dev/null 2>&1; then
-    python3 - "$archive" "$dest" <<'PY'
+    python3 - "$archive" "$staged" <<'PY'
 import sys, zipfile
 archive, dest = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(archive) as z:
@@ -204,14 +210,15 @@ else
 fi
 
 if [[ -n "$want_size" ]]; then
-    got_size="$(wc -c < "$dest" | tr -d ' ')"
+    got_size="$(wc -c < "$staged" | tr -d ' ')"
     if [[ "$got_size" != "$want_size" ]]; then
         echo "extracted rustfs is ${got_size} bytes, expected ${want_size} (truncated write?)" >&2
         exit 1
     fi
 fi
 
-chmod 0755 "$dest"
+chmod 0755 "$staged"
+mv -f "$staged" "$dest"
 
 # Do NOT execute the staged binary to print its version: on Windows it leaves a
 # process behind that locks the file, and the next staging run cannot replace

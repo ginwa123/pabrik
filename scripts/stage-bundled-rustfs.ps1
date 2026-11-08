@@ -75,10 +75,21 @@ $DestDir = Split-Path -Parent $Dest
 if ($DestDir -ne "" -and -not (Test-Path $DestDir)) {
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 }
-Copy-Item -Force $Member $Dest
+$MemberSha = Get-HexDigest $Member
+try {
+    Copy-Item -Force $Member $Dest
+} catch {
+    # A running pabrik-fs.exe holds a lock on the destination (a smoke test
+    # that booted the backend leaves one behind on Windows). If the file
+    # already there is byte-identical to the extracted member, the staging
+    # goal is met and there is nothing to replace.
+    if ((Test-Path $Dest) -and ((Get-HexDigest $Dest) -eq $MemberSha)) {
+        Write-Output "pabrik-fs.exe is in use; the staged copy already matches the extracted binary"
+    } else {
+        throw $_
+    }
+}
 
-# Do NOT execute the staged binary to print its version. On Windows
-# `pabrik-fs.exe --version` leaves a process behind that holds a lock on the
-# file, so the next staging run fails with "being used by another process".
-# The sha256 above is the integrity proof; the version is the pinned constant.
+# The version is the pinned constant, not a probe: executing the staged binary
+# on Windows leaves a process behind that locks the file.
 Write-Output "staged bundled rustfs -> $Dest (rustfs $RustfsVersion)"
