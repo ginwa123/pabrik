@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUpdated, ref } from 'vue'
 import * as api from '../../api'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
@@ -19,6 +19,8 @@ import Bash from '../preview/Bash.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
+import ChatGroupRoster from './chat_view/ChatGroupRoster.vue'
+import { useChatGroupRoster } from './chat_view/useChatGroupRoster'
 import SessionTabStrip from '../session/SessionTabStrip.vue'
 import { useTabsStore } from '../../stores/tabs'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
@@ -125,6 +127,45 @@ const stripOwner = computed(() => {
 })
 onMounted(() => tabsStore.ensureRow(rowOwner.value))
 
+// The chat's roster of agents. A session with members is a group: the loop
+// takes each turn's speaker from it, so an `@` mention addresses a member
+// instead of switching the whole session's agent.
+const {
+  members: groupMembers,
+  lead: groupLead,
+  isGroup: isGroupChat,
+  isBusy: isGroupBusy,
+  error: groupError,
+  load: loadGroupRoster,
+  add: addGroupMember,
+  remove: removeGroupMember,
+  makeLead: makeGroupLead,
+} = useChatGroupRoster({ sessionId })
+
+let rosterLoadedFor = ''
+const syncGroupRoster = (): void => {
+  if (rosterLoadedFor === sessionId.value) return
+  rosterLoadedFor = sessionId.value
+  void loadGroupRoster()
+}
+onMounted(syncGroupRoster)
+onUpdated(syncGroupRoster)
+
+const handleSelectAgent = (name: string): void => {
+  if (isGroupChat.value) return
+  void selectAgent(name)
+}
+
+// In a group chat only the roster can answer, so `@` offers exactly those
+// agents. A one-agent chat keeps the full configured list.
+const composerAgents = computed(() => {
+  if (!isGroupChat.value) return availableAgents.value
+  const byName = new Map(availableAgents.value.map((a) => [a.name, a]))
+  return groupMembers.value.map(
+    (m) => byName.get(m.name) ?? { name: m.name, model: '', base_url: '', url_style: '' },
+  )
+})
+
 // State
 const messages = ref<Message[]>([])
 
@@ -183,11 +224,8 @@ const { setChatColumnEl, setComposerDockEl } = useChatComposerInset()
 const { setupCodeBlockCopyButtons } = useChatCodeCopy({ virtualScrollerRef, copyCodeContent })
 
 const {
-  activeAgent,
   activePillGroupIndex,
-  agentChipTooltip,
   agentError,
-  agentPickerRef,
   availableAgents,
   chatPrProvider,
   chatPrUrl,
@@ -197,7 +235,6 @@ const {
   collapsedCount,
   collapsedPaths,
   diffMode,
-  effectiveAgent,
   effectiveCwd,
   gitStatus,
   gitWorktreeCwd,
@@ -213,7 +250,6 @@ const {
   isLoading,
   isPendingSession,
   isSendingAttachments,
-  isUpdatingAgent,
   jumpToUserGroup,
   loadChatHistory,
   maxCapacityTotalTokens,
@@ -241,12 +277,10 @@ const {
   scrollToBottom,
   scrollerIsScrollable,
   selectAgent,
-  selectedAgent,
   sessionCwd,
   sessionSkills,
   setAllCollapsed,
   setDiffMode,
-  showAgentPicker,
   showCenterStage,
   showCodeViewer,
   showCreatePrDialog,
@@ -405,6 +439,17 @@ const compactSession = async () => {
         @close="emit('close')"
       >
         <template #extras>
+          <ChatGroupRoster
+            :members="groupMembers"
+            :lead="groupLead"
+            :is-group="isGroupChat"
+            :is-busy="isGroupBusy"
+            :error="groupError"
+            :agents="composerAgents"
+            @add="addGroupMember"
+            @remove="removeGroupMember"
+            @make-lead="makeGroupLead"
+          />
           <slot name="app-bar-extras" />
         </template>
       </SessionTabStrip>
@@ -417,6 +462,17 @@ const compactSession = async () => {
         @close="emit('close')"
       >
         <template #extras>
+          <ChatGroupRoster
+            :members="groupMembers"
+            :lead="groupLead"
+            :is-group="isGroupChat"
+            :is-busy="isGroupBusy"
+            :error="groupError"
+            :agents="availableAgents"
+            @add="addGroupMember"
+            @remove="removeGroupMember"
+            @make-lead="makeGroupLead"
+          />
           <slot name="app-bar-extras" />
         </template>
       </ChatAppBar>
@@ -584,8 +640,10 @@ const compactSession = async () => {
             :isLoading="isLoading || isSendingAttachments"
             :isInitializing="isInitializing"
             :isLLMProcessing="isLLMProcessing"
+            :agents="availableAgents"
             @submit="handleFileInputSubmit"
             @files-selected="handleFileInputSubmit"
+            @select-agent="handleSelectAgent"
             @stop-session="handleStopSession"
             :draft-key="sessionId ? `chat:${sessionId}` : undefined"
           >
@@ -628,76 +686,6 @@ const compactSession = async () => {
                     <span>{{ isCompacting ? 'Compacting...' : 'Compact' }}</span>
                   </button>
 
-                  <!-- Model/Agent selector -->
-                  <div ref="agentPickerRef" class="relative">
-                    <button
-                      @click.stop="showAgentPicker = !showAgentPicker"
-                      :disabled="isUpdatingAgent || isInitializing || !sessionId"
-                      class="composer-tool-btn"
-                      data-testid="agent-picker-button"
-                      :title="agentChipTooltip"
-                    >
-                      <span>{{ effectiveAgent ?? 'Default' }}</span>
-                      <span class="text-micro">▾</span>
-                    </button>
-                    <div
-                      v-if="showAgentPicker"
-                      class="agent-picker-menu absolute bottom-full mb-2 left-0 min-w-[240px] rounded-lg shadow-lg z-20"
-                      data-testid="agent-picker-menu"
-                      style="
-                        background-color: var(--semantic-card-bg);
-                        border: 1px solid var(--color-border);
-                      "
-                    >
-                      <button
-                        @click="selectAgent(null)"
-                        class="w-full text-left px-3 py-2 text-dense hover:opacity-80 flex items-center justify-between"
-                        style="color: var(--semantic-text)"
-                        data-testid="agent-picker-default"
-                      >
-                        <span>Default (top-level config)</span>
-                        <span v-if="!selectedAgent && !activeAgent">✓</span>
-                      </button>
-                      <button
-                        v-for="p in availableAgents"
-                        :key="p.name"
-                        @click="selectAgent(p.name)"
-                        class="w-full text-left px-3 py-2 text-dense hover:opacity-80"
-                        style="
-                          color: var(--semantic-text);
-                          border-top: 1px solid var(--color-border);
-                        "
-                        :data-testid="`agent-picker-${p.name}`"
-                      >
-                        <div class="flex items-center justify-between">
-                          <span class="font-medium">
-                            {{ p.name }}
-                            <span
-                              v-if="activeAgent === p.name"
-                              class="text-micro ml-1 px-1 py-0.5 rounded"
-                              :style="{
-                                backgroundColor: 'var(--color-violet)',
-                                color: 'var(--semantic-on-accent)',
-                              }"
-                              data-testid="agent-picker-active-badge"
-                              >(active)</span
-                            >
-                          </span>
-                          <span v-if="effectiveAgent === p.name">✓</span>
-                        </div>
-                        <div class="text-micro mt-0.5" style="color: var(--semantic-text-muted)">
-                          {{ p.model }} · {{ p.base_url }}
-                        </div>
-                      </button>
-                      <div
-                        v-if="availableAgents.length === 0"
-                        class="px-3 py-2 text-dense"
-                        style="color: var(--semantic-text-muted)"
-                      >
-                        No agents configured. Add one in Settings.
-                      </div>
-                    </div>
-                  </div>
                 </div>
                 <span class="composer-toolbar-divider" aria-hidden="true" />
                 <!-- Middle zone: token status (display-only, muted) -->

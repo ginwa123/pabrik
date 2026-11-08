@@ -71,7 +71,7 @@ pub fn inserLLMHistories(
     const agentStr = input.agent;
 
     // Option A envelopes: user rows always carry {user,name,msg}; non-empty
-    // assistant text carries {model,msg} even when tool_calls_json is present
+    // assistant text carries {agent,msg} even when tool_calls_json is present
     // (screenshot case).
     var enveloped_owned: ?[]u8 = null;
     defer if (enveloped_owned) |e| allocator.free(e);

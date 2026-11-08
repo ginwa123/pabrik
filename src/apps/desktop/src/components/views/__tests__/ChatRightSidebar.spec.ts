@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import ChatRightSidebar from '../chat_right_sidebar/ChatRightSidebar.vue'
 import { clearFolderDiffCache } from '../../../helpers/folderDiffCache'
 
@@ -51,6 +52,7 @@ describe('ChatRightSidebar', () => {
   it('renders nothing when closed', () => {
     const wrapper = mount(ChatRightSidebar, {
       props: { cwd: '/repo', open: false, width: 300 },
+      global: { plugins: [createPinia()] },
     })
     expect(wrapper.find('[data-testid="chat-right-sidebar"]').exists()).toBe(false)
   })
@@ -58,6 +60,7 @@ describe('ChatRightSidebar', () => {
   it('renders panel with width when open', async () => {
     const wrapper = mount(ChatRightSidebar, {
       props: { cwd: '/repo', open: true, width: 320 },
+      global: { plugins: [createPinia()] },
     })
     await flushPromises()
     const aside = wrapper.get('[data-testid="chat-right-sidebar"]')
@@ -72,6 +75,7 @@ describe('ChatRightSidebar', () => {
   it('emits close on ✕ click', async () => {
     const wrapper = mount(ChatRightSidebar, {
       props: { cwd: '/repo', open: true, width: 300 },
+      global: { plugins: [createPinia()] },
     })
     await flushPromises()
     await wrapper.get('[data-testid="chat-right-sidebar-close"]').trigger('click')

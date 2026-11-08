@@ -1,4 +1,4 @@
-/** FileInput `@` picker — server search + caps + abort (Task 2). */
+/** FileInput `/files-` picker — server search + caps + abort (Task 2). */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -39,8 +39,8 @@ async function mountInput(propsOverride: Record<string, unknown> = {}) {
 }
 
 /**  * Set the textarea value, park the cursor at the end, dispatch `input` so `autoResize` updates
- * `cursorPos`, then wait out BOTH debounces (150ms `@`-detect + 150ms server-search) plus promise
- * flushes. */
+ * `cursorPos`, then wait out BOTH debounces (100ms trigger-detect + 100ms server-search) plus
+ * promise flushes. */
 async function typeInTextarea(
   textareaWrapper: ReturnType<VueWrapper['find']>,
   value: string,
@@ -56,7 +56,7 @@ async function typeInTextarea(
 
 const fetchMock = vi.fn()
 
-describe('FileInput — @ picker server search + caps (Task 2)', () => {
+describe('FileInput — /files- picker server search + caps (Task 2)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     searchFilesMock.mockReset()
@@ -71,7 +71,7 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     vi.restoreAllMocks()
   })
 
-  it('typing @comp calls api.searchFiles once (no N-fetch full-tree walk)', async () => {
+  it('typing /files-comp calls api.searchFiles once (no N-fetch full-tree walk)', async () => {
     searchFilesMock.mockResolvedValue({
       entries: [
         {
@@ -85,7 +85,7 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, '@comp')
+    await typeInTextarea(textarea, '/files-comp')
 
     expect(searchFilesMock).toHaveBeenCalledTimes(1)
     expect(searchFilesMock).toHaveBeenCalledWith(
@@ -106,7 +106,7 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
 
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
-    await typeInTextarea(textarea, '@file')
+    await typeInTextarea(textarea, '/files-file')
 
     const buttons = wrapper.findAll('.file-picker-list button')
     expect(buttons.length).toBeLessThanOrEqual(50)
@@ -130,8 +130,8 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
 
-    // First open: `@` (empty query) hits the server once.
-    await typeInTextarea(textarea, '@')
+    // First open: `/files-` (empty query) hits the server once.
+    await typeInTextarea(textarea, '/files-')
     expect(searchFilesMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
 
@@ -140,10 +140,10 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     await flushPromises()
     expect(wrapper.find('.file-picker-list').exists()).toBe(false)
 
-    // Break the `@`-match, then reopen with the same empty query.
-    await typeInTextarea(textarea, '@ ', 250)
+    // Break the `/files-` match, then reopen with the same empty query.
+    await typeInTextarea(textarea, '/files- ', 250)
     expect(wrapper.find('.file-picker-list').exists()).toBe(false)
-    await typeInTextarea(textarea, '@')
+    await typeInTextarea(textarea, '/files-')
     expect(wrapper.find('.file-picker-list').exists()).toBe(true)
 
     // Cache hit — still exactly one network call.
@@ -173,11 +173,11 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     const textarea = wrapper.find('textarea')
 
     // First query — request stays in flight.
-    await typeInTextarea(textarea, '@slow')
+    await typeInTextarea(textarea, '/files-slow')
     expect(searchFilesMock).toHaveBeenCalledTimes(1)
 
     // Second query supersedes it and resolves immediately.
-    await typeInTextarea(textarea, '@fast')
+    await typeInTextarea(textarea, '/files-fast')
     expect(searchFilesMock).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.file-picker-list').text()).toContain('fast.ts')
 
@@ -216,11 +216,11 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
 
-    await typeInTextarea(textarea, '@comp')
+    await typeInTextarea(textarea, '/files-comp')
     expect(wrapper.find('.file-picker-list').text()).toContain('component-0.ts')
 
     // One more character: the request is in flight, the panel keeps its rows.
-    await typeInTextarea(textarea, '@compon', 250)
+    await typeInTextarea(textarea, '/files-compon', 250)
     const inFlight = wrapper.find('.file-picker-list').text()
     expect(inFlight).not.toContain('Searching…')
     expect(inFlight).toContain('component-0.ts')
@@ -241,13 +241,13 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
 
-    await typeInTextarea(textarea, '@comp')
+    await typeInTextarea(textarea, '/files-comp')
     expect(searchFilesMock).toHaveBeenCalledTimes(1)
 
-    await typeInTextarea(textarea, '@com') // a new query — one more round-trip
+    await typeInTextarea(textarea, '/files-com') // a new query — one more round-trip
     expect(searchFilesMock).toHaveBeenCalledTimes(2)
 
-    await typeInTextarea(textarea, '@comp') // back to a query already answered
+    await typeInTextarea(textarea, '/files-comp') // back to a query already answered
     expect(searchFilesMock).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.file-picker-list').text()).toContain('comp-0.ts')
   })
@@ -260,7 +260,7 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
 
-    await typeInTextarea(textarea, '@comp')
+    await typeInTextarea(textarea, '/files-comp')
     expect(searchFilesMock).toHaveBeenCalledTimes(1)
 
     await textarea.trigger('keydown', { key: 'Escape' })
@@ -269,7 +269,7 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
 
     // Same query, fresh session: the cache from the closed picker is gone, so
     // a file created meanwhile is not hidden behind a stale answer.
-    await typeInTextarea(textarea, '@comp')
+    await typeInTextarea(textarea, '/files-comp')
     expect(searchFilesMock).toHaveBeenCalledTimes(2)
   })
 
@@ -281,9 +281,9 @@ describe('FileInput — @ picker server search + caps (Task 2)', () => {
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
 
-    await typeInTextarea(textarea, '@c', 40)
-    await typeInTextarea(textarea, '@co', 40)
-    await typeInTextarea(textarea, '@comp', 300)
+    await typeInTextarea(textarea, '/files-c', 40)
+    await typeInTextarea(textarea, '/files-co', 40)
+    await typeInTextarea(textarea, '/files-comp', 300)
 
     expect(searchFilesMock).toHaveBeenCalledTimes(1)
     expect(searchFilesMock).toHaveBeenCalledWith('/home/user', 'comp', 50, 8, expect.anything())

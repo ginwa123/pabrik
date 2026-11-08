@@ -9,6 +9,7 @@ import { SyncRemoteError } from '../../sync/SyncError'
 import { runSyncResult } from '../../sync/runtime'
 import FilePreview from './FilePreview.vue'
 import UiIcon from '../ui/UiIcon.vue'
+import type { UiIconName } from '../ui/icons'
 import { parseBackgroundCommandOutput } from '@/helpers/isBackgroundCommandOutput'
 import {
   FILE_ATTACHMENT_ACCEPT,
@@ -45,12 +46,17 @@ const props = defineProps<{
    * session id unassigned or first history fetch outstanding). Disables the textarea + send button
    * so the user can't submit against an unloaded session. */
   isInitializing?: boolean
+  /** The agents `@` can address. The parent owns the list (workspace config)
+   * and the selection (the session's agent). */
+  agents?: Array<{ name: string; model?: string }>
 }>()
 
 const emit = defineEmits<{
   submit: [message: string, files?: File[]]
   /** Emitted when the user clicks the Stop button. */
   'stop-session': []
+  /** The user picked an agent from the `@` list; the parent selects it. */
+  'select-agent': [name: string]
 }>()
 
 interface FileEntry {
@@ -68,6 +74,73 @@ const isLoadingFiles = ref(false)
 const selectedFileIndex = ref(0)
 const filePickerRef = ref<HTMLElement | null>(null)
 let fileDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// ── `@` agent picker ──────────────────────────────────────────────────── `@`
+// addresses an agent; files moved to `/files-` so the two never compete.
+const showAgentPicker = ref(false)
+const agentQuery = ref('')
+const selectedAgentIndex = ref(0)
+const agentPickerRef = ref<HTMLElement | null>(null)
+
+const agentList = computed(() => props.agents ?? [])
+
+const filteredAgents = computed(() => {
+  const q = agentQuery.value.trim().toLowerCase()
+  if (!q) return agentList.value
+  return agentList.value.filter((a) => a.name.toLowerCase().includes(q))
+})
+
+const closeAgentPicker = () => {
+  showAgentPicker.value = false
+  agentQuery.value = ''
+  selectedAgentIndex.value = 0
+}
+
+const detectAgentTrigger = () => {
+  const textBeforeCursor = inputText.value.slice(0, cursorPos.value)
+  // Agent names carry spaces ("deepseek auto"), so the query may too.
+  const match = textBeforeCursor.match(/@([\w .-]*)$/)
+  if (!match) {
+    closeAgentPicker()
+    return
+  }
+  const q = match[1] ?? ''
+  const wasOpen = showAgentPicker.value
+  const changed = q !== agentQuery.value
+  agentQuery.value = q
+  if (!wasOpen) {
+    showAgentPicker.value = true
+    selectedAgentIndex.value = 0
+    closeFilePicker()
+    closeSkillPicker()
+    closeToolPicker()
+  } else if (changed) {
+    selectedAgentIndex.value = 0
+  }
+}
+
+const selectAgentEntry = (agent: { name: string }) => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const textAfterCursor = text.slice(pos)
+  const match = textBeforeCursor.match(/@([\w .-]*)$/)
+  if (match && match.index !== undefined) {
+    inputText.value = textBeforeCursor.slice(0, match.index) + `@${agent.name} ` + textAfterCursor
+  }
+  emit('select-agent', agent.name)
+  closeAgentPicker()
+}
+
+const scrollAgentSelectedIntoView = () => {
+  setTimeout(() => {
+    const root = agentPickerRef.value
+    if (!root) return
+    const buttons = root.querySelectorAll('button')
+    const selectedBtn = buttons[selectedAgentIndex.value]
+    if (selectedBtn) selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
+  }, 50)
+}
 
 // File input ref for native file selection
 const nativeFileInput = ref<HTMLInputElement | null>(null)
@@ -170,7 +243,8 @@ const MAX_VIDEO_BYTES = 25 * 1024 * 1024
 const sendMessageWithFiles = async () => {
   if (!inputText.value.trim() && previewFiles.value.length === 0) return
 
-  const message = inputText.value
+  // `/files-<path>` is a composer token, not prose — the model gets the path.
+  const message = inputText.value.replace(/(^|\s)\/files-([\w./\\:-]+)/g, '$1$2')
   const files = previewFiles.value.map((p) => p.file)
 
   // Clear state before emit so parent can process
@@ -189,6 +263,7 @@ const sendMessageWithFiles = async () => {
   showFilePicker.value = false
   closeSkillPicker()
   closeToolPicker()
+  closeCommandMenu()
   previewFiles.value.forEach((item) => {
     if (item.previewUrl.startsWith('blob:')) {
       URL.revokeObjectURL(item.previewUrl)
@@ -536,20 +611,24 @@ const filteredFiles = computed(() => {
 // Render cap: at most 50 rows in the DOM (v1 — no virtual list).
 const visibleFiles = computed(() => filteredFiles.value.slice(0, 50))
 
-const detectAtTrigger = () => {
+// `/files-<query>` is the file trigger (it used to be `@`, which now
+// addresses an agent). The query may carry a path: `/`, `\`, `:` and `-`.
+const FILES_TOKEN_RE = /(^|\s)\/files-([\w./\\:-]*)$/i
+
+const detectFilesTrigger = () => {
   const text = inputText.value
   const pos = cursorPos.value
-  // Find @ before cursor that starts a file query (includes / and \ for paths)
   const textBeforeCursor = text.slice(0, pos)
-  const atMatch = textBeforeCursor.match(/@([\w./\\:-]*)$/)
+  const atMatch = textBeforeCursor.match(FILES_TOKEN_RE)
   if (atMatch) {
-    const q = atMatch[1] ?? ''
+    const q = atMatch[2] ?? ''
     const wasOpen = showFilePicker.value
     const queryChanged = q !== fileQuery.value
     fileQuery.value = q
     if (!wasOpen) {
       showFilePicker.value = true
       selectedFileIndex.value = 0
+      closeAgentPicker()
       closeSkillPicker()
       scheduleFileSearch(true) // immediate on open
     } else if (queryChanged) {
@@ -566,27 +645,23 @@ const detectAtTrigger = () => {
   }
 }
 
-// Debounced @-mention and /skill / /tool detection, driven by the textarea's
-// @input handler instead of a watcher — same 150 ms trailing run.
+// Debounced @-mention, /skill, /tool and /files detection, driven by the textarea's @input handler
+// instead of a watcher — same 100 ms trailing run. The command menu runs last so it can see which
+// picker (if any) the token opened.
 function scheduleDetectAtTrigger(): void {
   if (fileDebounceTimer) clearTimeout(fileDebounceTimer)
   fileDebounceTimer = setTimeout(() => {
-    detectAtTrigger()
+    detectAgentTrigger()
+    detectFilesTrigger()
     detectSlashTrigger()
     detectToolTrigger()
+    detectCommandMenu()
   }, PICKER_DEBOUNCE_MS)
 }
 
-// ── /skill picker (mirrors the @ picker above) ───────────────────────── Two triggers, in order of
-// how far the user has typed: 1. `SLASH_COMMAND_RE` — a NON-EMPTY PROPER PREFIX of `skill-` at
-// message start or after whitespace (`/s`, `/sk`, `/ski`, `/skil`, `/skill`).
-const SLASH_COMMAND_RE = /(^|\s)\/(s|sk|ski|skil|skill)$/i
+// ── /skill picker (mirrors the @ picker above) ─────────────────────────
 const SLASH_TOKEN_RE = /(^|\s)\/skill-([\w.-]*)$/i
 const showSkillPicker = ref(false)
-// True while the `/skill-` completion hint is showing (the user typed a proper prefix of the
-// command but not the dash yet). Kept separate from `showSkillPicker` so the two surfaces never
-// render at once and the hint never triggers a skills fetch.
-const showSkillCommand = ref(false)
 // Lower-cased filter text after the `skill-` marker (empty = show all).
 const skillQuery = ref('')
 const skillList = ref<api.Skill[]>([])
@@ -607,7 +682,6 @@ const activeWorkspaceId = (): string | null => {
 
 const closeSkillPicker = () => {
   showSkillPicker.value = false
-  showSkillCommand.value = false
   skillQuery.value = ''
   selectedSkillIndex.value = 0
   skillError.value = null
@@ -663,41 +737,7 @@ const detectSlashTrigger = () => {
     }
     return
   }
-  // Not the full token yet — is the user on the way there? A proper prefix of `skill-` (`/s`,
-  // `/sk`, `/ski`, `/skil`, `/skill`) offers the one completion that exists. No fetch happens here:
-  // the hint is a static string, so it costs nothing and works with no workspace.
-  if (textBeforeCursor.match(SLASH_COMMAND_RE)) {
-    showSkillCommand.value = true
-    closeFilePicker()
-    return
-  }
   closeSkillPicker()
-}
-
-// Enter/Tab on the `/skill-` hint: rewrite the typed prefix to the canonical token so the picker's
-// own trigger fires on the next keystroke. The whitespace the regex consumed is preserved, and the
-// cursor lands right after the dash — exactly where the skill name goes.
-const acceptSkillCommand = () => {
-  const text = inputText.value
-  const pos = cursorPos.value
-  const textBeforeCursor = text.slice(0, pos)
-  const textAfterCursor = text.slice(pos)
-  const match = textBeforeCursor.match(SLASH_COMMAND_RE)
-  if (!match || match.index === undefined) return
-  const slashPos = match.index + (match[1] ?? '').length
-  inputText.value = textBeforeCursor.slice(0, slashPos) + '/skill-' + textAfterCursor
-  showSkillCommand.value = false
-  nextTick(() => {
-    const el = chatTextareaRef.value
-    if (!el) return
-    const caret = slashPos + '/skill-'.length
-    el.setSelectionRange(caret, caret)
-    cursorPos.value = caret
-    // Run the picker's own detection now rather than waiting for the
-    // next keystroke, so the list is already up when the user types
-    // the first letter of the skill name.
-    detectSlashTrigger()
-  })
 }
 
 // Client-side substring filter over the cached workspace list. Matches the bare name, the full
@@ -728,16 +768,9 @@ const selectSkill = (skill: api.Skill) => {
   closeSkillPicker()
 }
 
-// ── /tool picker (mirrors the /skill picker above) ───────────────────── Same two-trigger shape,
-// same position rule, same dash requirement — the only differences are the marker (`tool-`), the
-// data source (the canonical tool registry instead of the workspace skill list) and the icon.
-const TOOL_COMMAND_RE = /(^|\s)\/(t|to|too|tool)$/i
+// ── /tool picker (mirrors the /skill picker above) ─────────────────────
 const TOOL_TOKEN_RE = /(^|\s)\/tool-([\w.-]*)$/i
 const showToolPicker = ref(false)
-// True while the `/tool-` completion hint is showing. Separate from
-// `showToolPicker` for the same reason the skill pair is separate: the two
-// surfaces never render at once and the hint never fetches the registry.
-const showToolCommand = ref(false)
 // Lower-cased filter text after the `tool-` marker (empty = show all).
 const toolQuery = ref('')
 const toolList = ref<api.AgentRegistryEntry[]>([])
@@ -752,7 +785,6 @@ const toolsLoaded = ref(false)
 
 const closeToolPicker = () => {
   showToolPicker.value = false
-  showToolCommand.value = false
   toolQuery.value = ''
   selectedToolIndex.value = 0
   toolError.value = null
@@ -808,42 +840,7 @@ const detectToolTrigger = () => {
     }
     return
   }
-  // Not the full token yet — is the user on the way there? A proper prefix
-  // of `tool-` (`/t`, `/to`, `/too`, `/tool`) offers the one completion
-  // that exists. No fetch happens here: the hint is a static string.
-  if (textBeforeCursor.match(TOOL_COMMAND_RE)) {
-    showToolCommand.value = true
-    closeFilePicker()
-    closeSkillPicker()
-    return
-  }
   closeToolPicker()
-}
-
-// Enter/Tab on the `/tool-` hint: rewrite the typed prefix to the canonical token so the picker's
-// own trigger fires on the next keystroke. The whitespace the regex consumed is preserved, and the
-// cursor lands right after the dash — exactly where the tool name goes.
-const acceptToolCommand = () => {
-  const text = inputText.value
-  const pos = cursorPos.value
-  const textBeforeCursor = text.slice(0, pos)
-  const textAfterCursor = text.slice(pos)
-  const match = textBeforeCursor.match(TOOL_COMMAND_RE)
-  if (!match || match.index === undefined) return
-  const slashPos = match.index + (match[1] ?? '').length
-  inputText.value = textBeforeCursor.slice(0, slashPos) + '/tool-' + textAfterCursor
-  showToolCommand.value = false
-  nextTick(() => {
-    const el = chatTextareaRef.value
-    if (!el) return
-    const caret = slashPos + '/tool-'.length
-    el.setSelectionRange(caret, caret)
-    cursorPos.value = caret
-    // Run the picker's own detection now rather than waiting for the
-    // next keystroke, so the list is already up when the user types
-    // the first letter of the tool name.
-    detectToolTrigger()
-  })
 }
 
 // Client-side substring filter over the cached registry. Matches the bare name, the full
@@ -877,32 +874,163 @@ const selectTool = (tool: api.AgentRegistryEntry) => {
 const selectFile = (file: FileEntry) => {
   const text = inputText.value
   const pos = cursorPos.value
-  // Replace @query at cursor position (includes /, \, :, - for paths).
-  // The @ trigger must be preserved — the picked path is inserted AFTER the @,
-  // not in place of it, so users see "@/folder" in the input rather than "/folder".
   const textBeforeCursor = text.slice(0, pos)
   const textAfterCursor = text.slice(pos)
-  const atMatch = textBeforeCursor.match(/@([\w./\\:-]*)$/)
-  if (atMatch && atMatch.index !== undefined) {
-    // Slice up to (but not including) the @ — keeps everything before the trigger untouched. Then
-    // prepend @ + picked path. The query part (atMatch[1]) is dropped because the picker already
-    // filtered down to exactly the entry the user picked.
-    inputText.value = textBeforeCursor.slice(0, atMatch.index) + '@' + file.path + textAfterCursor
+  const token = textBeforeCursor.match(FILES_TOKEN_RE)
+  if (token && token.index !== undefined) {
+    // The picker already narrowed to this entry, so the query is dropped.
+    const markerPos = token.index + (token[1] ?? '').length
+    inputText.value = textBeforeCursor.slice(0, markerPos) + `/files-${file.path}` + textAfterCursor
   }
   closeFilePicker()
 }
 
+// ── slash command menu ───────────────────────────────────────────────── A bare `/` at message
+// start or after whitespace lists the commands the composer understands; typing letters narrows
+// it. Accepting a row rewrites the prefix to the token the matching picker's trigger looks for.
+const SLASH_MENU_RE = /(^|\s)\/([a-z]*)$/i
+
+type SlashCommand = {
+  token: string
+  description: string
+  icon: UiIconName
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  { token: 'skill-', description: 'Insert a skill', icon: 'brain' },
+  { token: 'tool-', description: 'Insert a tool', icon: 'tools' },
+  { token: 'files-', description: 'Reference a file', icon: 'file' },
+]
+
+const showCommandMenu = ref(false)
+const commandQuery = ref('')
+const selectedCommandIndex = ref(0)
+const commandMenuRef = ref<HTMLElement | null>(null)
+
+const filteredCommands = computed(() => {
+  const q = commandQuery.value
+  if (q === '') return SLASH_COMMANDS
+  return SLASH_COMMANDS.filter((c) => c.token.startsWith(q))
+})
+
+const closeCommandMenu = () => {
+  showCommandMenu.value = false
+  commandQuery.value = ''
+  selectedCommandIndex.value = 0
+}
+
+const detectCommandMenu = () => {
+  if (
+    showAgentPicker.value ||
+    showFilePicker.value ||
+    showSkillPicker.value ||
+    showToolPicker.value
+  ) {
+    closeCommandMenu()
+    return
+  }
+  const textBeforeCursor = inputText.value.slice(0, cursorPos.value)
+  const match = textBeforeCursor.match(SLASH_MENU_RE)
+  if (!match) {
+    closeCommandMenu()
+    return
+  }
+  const q = (match[2] ?? '').toLowerCase()
+  const rows = q === '' ? SLASH_COMMANDS : SLASH_COMMANDS.filter((c) => c.token.startsWith(q))
+  if (rows.length === 0) {
+    closeCommandMenu()
+    return
+  }
+  const changed = q !== commandQuery.value
+  commandQuery.value = q
+  if (!showCommandMenu.value) {
+    showCommandMenu.value = true
+    selectedCommandIndex.value = 0
+  } else if (changed) {
+    selectedCommandIndex.value = 0
+  }
+}
+
+const acceptCommand = (command: SlashCommand) => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const textAfterCursor = text.slice(pos)
+  const match = textBeforeCursor.match(SLASH_MENU_RE)
+  if (!match || match.index === undefined) return
+  const slashPos = match.index + (match[1] ?? '').length
+  inputText.value = textBeforeCursor.slice(0, slashPos) + `/${command.token}` + textAfterCursor
+  closeCommandMenu()
+  nextTick(() => {
+    const el = chatTextareaRef.value
+    if (!el) return
+    const caret = slashPos + command.token.length + 1
+    el.setSelectionRange(caret, caret)
+    cursorPos.value = caret
+    detectFilesTrigger()
+    detectSlashTrigger()
+    detectToolTrigger()
+  })
+}
+
+const scrollCommandSelectedIntoView = () => {
+  setTimeout(() => {
+    const root = commandMenuRef.value
+    if (!root) return
+    const buttons = root.querySelectorAll('button')
+    const selectedBtn = buttons[selectedCommandIndex.value]
+    if (selectedBtn) selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
+  }, 50)
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
-  // The `/tool-` completion hint takes precedence — only one surface is
-  // ever open, and this one has exactly one row, so arrows are no-ops.
-  if (showToolCommand.value) {
-    if (e.key === 'Enter' || e.key === 'Tab') {
+  // The `@` agent list is the only surface `@` opens, so it goes first.
+  if (showAgentPicker.value) {
+    const agents = filteredAgents.value
+    if (e.key === 'ArrowDown') {
       e.preventDefault()
       e.stopPropagation()
-      acceptToolCommand()
+      selectedAgentIndex.value = Math.min(selectedAgentIndex.value + 1, agents.length - 1)
+      scrollAgentSelectedIntoView()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedAgentIndex.value = Math.max(selectedAgentIndex.value - 1, 0)
+      scrollAgentSelectedIntoView()
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      const selected = agents[selectedAgentIndex.value]
+      if (selected) selectAgentEntry(selected)
     } else if (e.key === 'Escape') {
       e.stopPropagation()
-      closeToolPicker()
+      closeAgentPicker()
+    }
+    return
+  }
+
+  // The slash command menu is the only surface a bare `/` opens, and it is
+  // never open at the same time as a picker.
+  if (showCommandMenu.value) {
+    const commands = filteredCommands.value
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedCommandIndex.value = Math.min(selectedCommandIndex.value + 1, commands.length - 1)
+      scrollCommandSelectedIntoView()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedCommandIndex.value = Math.max(selectedCommandIndex.value - 1, 0)
+      scrollCommandSelectedIntoView()
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      const selected = commands[selectedCommandIndex.value]
+      if (selected) acceptCommand(selected)
+    } else if (e.key === 'Escape') {
+      e.stopPropagation()
+      closeCommandMenu()
     }
     return
   }
@@ -937,20 +1065,6 @@ const handleKeydown = (e: KeyboardEvent) => {
       if (selectedTool) {
         selectTool(selectedTool)
       }
-    }
-    return
-  }
-
-  // The `/skill-` completion hint takes precedence — only one surface is
-  // ever open, and this one has exactly one row, so arrows are no-ops.
-  if (showSkillCommand.value) {
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault()
-      e.stopPropagation()
-      acceptSkillCommand()
-    } else if (e.key === 'Escape') {
-      e.stopPropagation()
-      closeSkillPicker()
     }
     return
   }
@@ -1114,6 +1228,48 @@ const sendMessage = () => {
       >
     </div>
 
+    <!-- `@` agent list — the composer addresses an agent by name. -->
+    <div
+      v-if="showAgentPicker"
+      ref="agentPickerRef"
+      class="agent-picker-list mb-2 p-2 rounded-lg shadow-lg max-h-72 overflow-y-auto"
+      style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+      tabindex="0"
+      data-testid="agent-picker-list"
+    >
+      <div
+        v-if="filteredAgents.length === 0"
+        class="p-2 text-body"
+        style="color: var(--semantic-text-dim)"
+        data-testid="agent-picker-empty"
+      >
+        No agents configured. Add one in Settings.
+      </div>
+      <div v-else>
+        <button
+          v-for="(agent, idx) in filteredAgents"
+          :key="agent.name"
+          type="button"
+          @click="selectAgentEntry(agent)"
+          class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors"
+          :class="idx === selectedAgentIndex ? 'file-item-selected' : ''"
+          :style="
+            idx === selectedAgentIndex
+              ? 'background-color: var(--color-violet); color: var(--color-bg);'
+              : 'color: var(--semantic-text);'
+          "
+          @mouseenter="selectedAgentIndex = idx"
+          :data-agent-name="agent.name"
+        >
+          <UiIcon name="brain" size-class="w-3.5 h-3.5" />
+          <span class="truncate font-mono text-dense">@{{ agent.name }}</span>
+          <span v-if="agent.model" class="ml-auto truncate text-dense" style="opacity: 0.75">{{
+            agent.model
+          }}</span>
+        </button>
+      </div>
+    </div>
+
     <!-- File picker dropdown -->
     <div
       v-if="showFilePicker && (filteredFiles.length > 0 || isLoadingFiles || fileQuery.length > 0)"
@@ -1165,27 +1321,37 @@ const sendMessage = () => {
       </div>
     </div>
 
-    <!-- `/skill-` completion hint — the user typed a proper prefix of the
-      command (`/s`, `/sk`, `/ski`, `/skil`, `/skill`) but not the dash
-      yet, so the composer offers the one completion that exists. Enter
-      or Tab rewrites the token to `/skill-` and the picker below takes
-      over. Rendered instead of the picker, never alongside it. -->
+    <!-- Slash command menu — a bare `/` (or `/` plus a partial command name) lists the commands
+      the composer understands. Accepting a row rewrites the token and the matching picker below
+      takes over, so this never renders alongside a picker. -->
     <div
-      v-if="showSkillCommand"
-      class="skill-command-suggestion mb-2 p-2 rounded-lg shadow-lg"
+      v-if="showCommandMenu"
+      ref="commandMenuRef"
+      class="slash-command-menu mb-2 p-2 rounded-lg shadow-lg"
       style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
-      data-testid="skill-command-suggestion"
+      data-testid="slash-command-menu"
     >
       <button
+        v-for="(command, idx) in filteredCommands"
+        :key="command.token"
         type="button"
-        class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors file-item-selected"
-        style="background-color: var(--color-violet); color: var(--color-bg)"
-        data-testid="skill-command-suggestion-row"
-        @click="acceptSkillCommand"
+        class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors"
+        :class="idx === selectedCommandIndex ? 'file-item-selected' : ''"
+        :style="
+          idx === selectedCommandIndex
+            ? 'background-color: var(--color-violet); color: var(--color-bg);'
+            : 'color: var(--semantic-text);'
+        "
+        :data-testid="`slash-command-${command.token}`"
+        @mouseenter="selectedCommandIndex = idx"
+        @click="acceptCommand(command)"
       >
-        <UiIcon name="brain" size-class="w-3.5 h-3.5" />
-        <span class="truncate font-mono text-dense">/skill-</span>
-        <span class="ml-auto text-dense" style="opacity: 0.75">Tab</span>
+        <UiIcon :name="command.icon" size-class="w-3.5 h-3.5" />
+        <span class="truncate font-mono text-dense">/{{ command.token }}</span>
+        <span class="truncate text-dense" style="opacity: 0.75">{{ command.description }}</span>
+        <span v-if="idx === selectedCommandIndex" class="ml-auto text-dense" style="opacity: 0.75"
+          >Tab</span
+        >
       </button>
     </div>
 
@@ -1246,30 +1412,6 @@ const sendMessage = () => {
           </span>
         </button>
       </div>
-    </div>
-
-    <!-- `/tool-` completion hint — the user typed a proper prefix of the
-      command (`/t`, `/to`, `/too`, `/tool`) but not the dash yet, so the
-      composer offers the one completion that exists. Enter or Tab
-      rewrites the token to `/tool-` and the picker below takes over.
-      Rendered instead of the picker, never alongside it. -->
-    <div
-      v-if="showToolCommand"
-      class="tool-command-suggestion mb-2 p-2 rounded-lg shadow-lg"
-      style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
-      data-testid="tool-command-suggestion"
-    >
-      <button
-        type="button"
-        class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors file-item-selected"
-        style="background-color: var(--color-violet); color: var(--color-bg)"
-        data-testid="tool-command-suggestion-row"
-        @click="acceptToolCommand"
-      >
-        <UiIcon name="tools" size-class="w-3.5 h-3.5" />
-        <span class="truncate font-mono text-dense">/tool-</span>
-        <span class="ml-auto text-dense" style="opacity: 0.75">Tab</span>
-      </button>
     </div>
 
     <!-- Tool picker dropdown — stays open while the `/tool-` trigger is
@@ -1435,7 +1577,7 @@ const sendMessage = () => {
       <textarea
         ref="chatTextareaRef"
         v-model="inputText"
-        placeholder="Type a message... (@ files, /skill- skills, /tool- tools)"
+        placeholder="Type a message... (@ agents, /files- files, /skill- skills, /tool- tools)"
         :disabled="isInitializing"
         data-testid="chat-message-textarea"
         class="flex-1 px-4 py-3 rounded-xl text-body outline-none transition-all duration-200 resize-none"
@@ -1597,14 +1739,18 @@ const sendMessage = () => {
   outline: none;
 }
 
-/* The `/skill-` completion hint is a single-row dropdown, so it needs no
-   scroll container — only the same outline suppression the picker gets. */
-.skill-command-suggestion {
-  outline: none;
+/* The `@` agent list is capped by the space above the composer
+   (`--chat-composer-inset` = the dock's published height) and scrolls: an
+   uncapped list ran off the top of the window, with no way to reach it. */
+.agent-picker-list {
+  max-height: min(60vh, calc(100vh - var(--chat-composer-inset, 0px) - 2rem));
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-/* Same for the `/tool-` hint. */
-.tool-command-suggestion {
+/* The slash command menu is a short list, so it needs no scroll container —
+   only the same outline suppression the pickers get. */
+.slash-command-menu {
   outline: none;
 }
 

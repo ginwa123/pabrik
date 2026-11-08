@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { createApp, nextTick, type App as VueApp } from 'vue'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { Effect } from 'effect'
 
 import * as api from '../api'
@@ -292,6 +292,8 @@ describe('ChatView behavior lock — transcript projection', () => {
     await nextTick()
 
     const rows = wrapper.findAll('[data-group-key]')
+    // Peek mode hides the composer, so the placeholder probe must tolerate absence.
+    const composer = wrapper.find('[data-testid="chat-message-textarea"]')
     return {
       rowTokens: normalize(rows.map((w) => projectRow(w.element))),
       groupCount: rows.length,
@@ -305,7 +307,10 @@ describe('ChatView behavior lock — transcript projection', () => {
         composerDock: wrapper.find('[data-testid="composer-dock"]').exists(),
         composerScrim: wrapper.find('[data-testid="composer-scrim"]').exists(),
         tokensStatus: wrapper.find('[data-testid="tokens-status"]').exists(),
-        agentPicker: wrapper.find('[data-testid="agent-picker-button"]').exists(),
+        // The chip is gone; the composer advertises the `@` list in its placeholder.
+        agentPickerChip: wrapper.find('[data-testid="agent-picker-button"]').exists(),
+        agentMentionHint:
+          composer.exists() && (composer.attributes('placeholder') ?? '').includes('@ agents'),
         worktreeButton: wrapper.find('[data-testid="worktree-status-button"]').exists(),
         pillRail: wrapper.findComponent(UserPillRail).exists(),
         scrollSlider: wrapper.findComponent(ChatScrollSlider).exists(),
@@ -329,7 +334,8 @@ describe('ChatView behavior lock — transcript projection', () => {
       composerDock: true,
       composerScrim: true,
       tokensStatus: true,
-      agentPicker: true,
+      agentPickerChip: false,
+      agentMentionHint: true,
       worktreeButton: true,
       pillRail: true,
       scrollSlider: true,
@@ -354,7 +360,8 @@ describe('ChatView behavior lock — transcript projection', () => {
       composerDock: false,
       composerScrim: false,
       tokensStatus: false,
-      agentPicker: false,
+      agentPickerChip: false,
+      agentMentionHint: false,
       worktreeButton: false,
       pillRail: true,
       scrollSlider: true,
@@ -366,21 +373,33 @@ describe('ChatView behavior lock — transcript projection', () => {
     })
   })
 
-  it('opens the agent picker and reports the chosen agent', async () => {
+  it('opens the @ agent list and reports the chosen agent to the session', async () => {
+    const update = vi.spyOn(api, 'updateSession').mockResolvedValue(undefined as never)
     wrapper = mount(ChatView, {
       props: { chatId: 's_char_agents', chatName: 'Characterization' },
       attachTo: document.body,
     })
     await waitFor(() => wrapper!.findAll('[data-group-key]').length > 0)
 
-    const picker = wrapper.find('[data-testid="agent-picker-button"]')
-    expect(picker.exists()).toBe(true)
-    await picker.trigger('click')
-    await nextTick()
-    const menu = wrapper.find('[data-testid="agent-picker-menu"]')
-    expect(menu.exists()).toBe(true)
-    expect(wrapper.find('[data-testid="agent-picker-default"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="agent-picker-alpha"]').exists()).toBe(true)
+    // `@` in the composer is the agent surface now (the chip is gone).
+    const textarea = wrapper.find('[data-testid="chat-message-textarea"]')
+    expect(textarea.exists()).toBe(true)
+    const el = textarea.element as HTMLTextAreaElement
+    await textarea.setValue('@')
+    el.setSelectionRange(1, 1)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    // The trigger detect is debounced (100 ms) — wait it out.
+    await new Promise((r) => setTimeout(r, 250))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="agent-picker-list"]').exists()).toBe(true)
+    const row = wrapper.find('[data-agent-name="alpha"]')
+    expect(row.exists()).toBe(true)
+    await row.trigger('click')
+    await flushPromises()
+
+    // Picking an agent is a session update — that is what the chip used to do.
+    expect(update).toHaveBeenCalledWith('s_char_agents', { selectedAgent: 'alpha' })
   })
 
   it('sends the composer text through api.sendChatMessage', async () => {

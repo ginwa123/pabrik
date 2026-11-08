@@ -42,6 +42,19 @@ pub const sessionStopHandler = @import("session_stop.zig").sessionStopHandler;
 pub const askUserAnswerHandler = @import("ask_user_answer.zig").askUserAnswerHandler;
 pub const sessionExistHandler = @import("session_exist.zig").sessionExistHandler;
 pub const sessionMessagesHandler = @import("session_messages_get.zig").sessionMessagesHandler;
+// The roster of a multi-agent chat: GET/POST/DELETE
+// /api/llm/session/:session_id/group...
+pub const sessionGroupGetHandler = @import("session_group.zig").sessionGroupGetHandler;
+pub const sessionGroupMemberAddHandler = @import("session_group.zig").sessionGroupMemberAddHandler;
+pub const sessionGroupMemberRemoveHandler = @import("session_group.zig").sessionGroupMemberRemoveHandler;
+pub const sessionGroupLeadHandler = @import("session_group.zig").sessionGroupLeadHandler;
+pub const sessionGroupRosterUseCase = @import("session_group.zig").rosterUseCase;
+pub const sessionGroupAddMemberUseCase = @import("session_group.zig").addMemberUseCase;
+pub const sessionGroupRemoveMemberUseCase = @import("session_group.zig").removeMemberUseCase;
+pub const sessionGroupSetLeadUseCase = @import("session_group.zig").setLeadUseCase;
+pub const sessionGroupEncodeRoster = @import("session_group.zig").encodeRoster;
+pub const sessionGroupFreeRoster = @import("session_group.zig").freeRoster;
+pub const SessionGroupRoster = @import("session_group.zig").Roster;
 // GET /api/llm/session/:session_id/stream — in-flight stream snapshot
 // (task_1787673548905_0 stream-resume-on-reselect).
 pub const streamGetHandler = @import("stream_get.zig").streamGetHandler;
@@ -275,6 +288,11 @@ pub const localMemoryDetailHandler = @import("local_memories_detail.zig").localM
 pub const localMemoryCreateHandler = @import("local_memories_create.zig").localMemoryCreateHandler;
 pub const localMemoryUpdateHandler = @import("local_memories_update.zig").localMemoryUpdateHandler;
 pub const localMemoryDeleteHandler = @import("local_memories_delete.zig").localMemoryDeleteHandler;
+pub const workspaceMemoriesListHandler = @import("workspace_memories.zig").workspaceMemoriesListHandler;
+pub const workspaceMemoryGetHandler = @import("workspace_memories.zig").workspaceMemoryGetHandler;
+pub const workspaceMemoryCreateHandler = @import("workspace_memories.zig").workspaceMemoryCreateHandler;
+pub const workspaceMemoryDeleteHandler = @import("workspace_memories.zig").workspaceMemoryDeleteHandler;
+pub const workspace_memories = @import("workspace_memories.zig");
 
 // Git API handlers
 pub const gitStatusHandler = @import("git_status.zig").gitStatusHandler;

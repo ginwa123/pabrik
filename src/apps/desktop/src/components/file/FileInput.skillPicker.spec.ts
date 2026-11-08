@@ -333,26 +333,23 @@ describe('FileInput — /skill picker', () => {
     })
   })
 
-  // The discoverability step that precedes the picker: the user has typed enough to be heading for
-  // the skill command but not the dash yet, so the composer offers the one completion that exists.
-  describe('the /skill- completion hint', () => {
-    const HINT = '[data-testid="skill-command-suggestion"]'
+  describe('the slash command menu', () => {
+    const MENU = '[data-testid="slash-command-menu"]'
     const PICKER = '[data-testid="skill-picker-list"]'
 
-    it("typing '/sk' shows exactly one suggestion reading /skill-", async () => {
+    it("typing '/sk' narrows the menu to the one skill command", async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, '/sk')
 
-      const hint = wrapper.find(HINT)
-      expect(hint.exists()).toBe(true)
-      expect(hint.text()).toContain('/skill-')
-      // One row, not a list of candidates.
-      expect(hint.findAll('button')).toHaveLength(1)
+      const menu = wrapper.find(MENU)
+      expect(menu.exists()).toBe(true)
+      expect(menu.findAll('button')).toHaveLength(1)
+      expect(menu.text()).toContain('/skill-')
     })
 
-    it('the hint does not fetch skills and does not open the picker', async () => {
+    it('the menu does not fetch skills and does not open the picker', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
@@ -362,35 +359,37 @@ describe('FileInput — /skill picker', () => {
       expect(wrapper.find(PICKER).exists()).toBe(false)
     })
 
-    it('every proper prefix of the command shows the hint', async () => {
+    it('every proper prefix of the command keeps the menu on the skill row', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
 
-      const seen: Record<string, { hint: boolean; picker: boolean }> = {}
+      const seen: Record<string, { menu: boolean; rows: number; picker: boolean }> = {}
       for (const prefix of ['/s', '/sk', '/ski', '/skil', '/skill']) {
         await typeInTextarea(textarea, prefix)
         seen[prefix] = {
-          hint: wrapper.find(HINT).exists(),
+          menu: wrapper.find(MENU).exists(),
+          rows: wrapper.find(MENU).findAll('button').length,
           picker: wrapper.find(PICKER).exists(),
         }
       }
       expect(seen).toEqual({
-        '/s': { hint: true, picker: false },
-        '/sk': { hint: true, picker: false },
-        '/ski': { hint: true, picker: false },
-        '/skil': { hint: true, picker: false },
-        '/skill': { hint: true, picker: false },
+        '/s': { menu: true, rows: 1, picker: false },
+        '/sk': { menu: true, rows: 1, picker: false },
+        '/ski': { menu: true, rows: 1, picker: false },
+        '/skil': { menu: true, rows: 1, picker: false },
+        '/skill': { menu: true, rows: 1, picker: false },
       })
     })
 
-    it('the hint is case-insensitive: /SK', async () => {
+    it('the menu is case-insensitive: /SK', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, '/SK')
 
-      expect(wrapper.find(HINT).exists()).toBe(true)
+      expect(wrapper.find(MENU).exists()).toBe(true)
+      expect(wrapper.find(MENU).text()).toContain('/skill-')
     })
 
     it('Enter completes the token to /skill- and opens the picker', async () => {
@@ -404,7 +403,7 @@ describe('FileInput — /skill picker', () => {
 
       const element = textarea.element as HTMLTextAreaElement
       expect(element.value).toBe('/skill-')
-      expect(wrapper.find(HINT).exists()).toBe(false)
+      expect(wrapper.find(MENU).exists()).toBe(false)
       expect(wrapper.find(PICKER).exists()).toBe(true)
       expect(getSkillsMock).toHaveBeenCalledTimes(1)
       expect(wrapper.find(PICKER).text()).toContain('review')
@@ -424,13 +423,13 @@ describe('FileInput — /skill picker', () => {
       expect(wrapper.find(PICKER).exists()).toBe(true)
     })
 
-    it('clicking the suggestion row completes the token', async () => {
+    it('clicking the skill row completes the token', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, '/sk')
 
-      await wrapper.find('[data-testid="skill-command-suggestion-row"]').trigger('click')
+      await wrapper.find('[data-testid="slash-command-skill-"]').trigger('click')
       await flushPromises()
 
       const element = textarea.element as HTMLTextAreaElement
@@ -438,23 +437,23 @@ describe('FileInput — /skill picker', () => {
       expect(wrapper.find(PICKER).exists()).toBe(true)
     })
 
-    it('Esc dismisses the hint without touching the text', async () => {
+    it('Esc dismisses the menu without touching the text', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, '/sk')
-      expect(wrapper.find(HINT).exists()).toBe(true)
+      expect(wrapper.find(MENU).exists()).toBe(true)
 
       await textarea.trigger('keydown', { key: 'Escape' })
       await flushPromises()
 
-      expect(wrapper.find(HINT).exists()).toBe(false)
+      expect(wrapper.find(MENU).exists()).toBe(false)
       const element = textarea.element as HTMLTextAreaElement
       expect(element.value).toBe('/sk')
       expect(getSkillsMock).not.toHaveBeenCalled()
     })
 
-    it('Enter on the hint does not send the message', async () => {
+    it('Enter on the menu does not send the message', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
@@ -466,7 +465,7 @@ describe('FileInput — /skill picker', () => {
       expect(wrapper.emitted('submit')).toBeUndefined()
     })
 
-    it('the hint keeps the prose before the token', async () => {
+    it('the menu keeps the prose before the token', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
@@ -492,51 +491,39 @@ describe('FileInput — /skill picker', () => {
       expect(list.exists()).toBe(true)
       expect(list.text()).toContain('deploy')
       expect(list.text()).not.toContain('review')
-      // Still one fetch — the completion did not restart the load.
       expect(getSkillsMock).toHaveBeenCalledTimes(1)
     })
 
-    it('a bare `/` shows no hint', async () => {
-      seedWorkspace()
-      const wrapper = await mountInput()
-      const textarea = wrapper.find('textarea')
-      await typeInTextarea(textarea, '/')
-
-      expect(wrapper.find(HINT).exists()).toBe(false)
-      expect(getSkillsMock).not.toHaveBeenCalled()
-    })
-
-    it('a path or URL shows no hint', async () => {
+    it('a path or URL does not open the menu', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
 
       await typeInTextarea(textarea, 'see http://example.com/x')
-      expect(wrapper.find(HINT).exists()).toBe(false)
+      expect(wrapper.find(MENU).exists()).toBe(false)
 
       await typeInTextarea(textarea, 'check /home/ginwa/pabrik')
-      expect(wrapper.find(HINT).exists()).toBe(false)
+      expect(wrapper.find(MENU).exists()).toBe(false)
       expect(getSkillsMock).not.toHaveBeenCalled()
     })
 
-    it('a prefix mid-word shows no hint', async () => {
+    it('a prefix mid-word does not open the menu', async () => {
       seedWorkspace()
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, 'a/sk')
 
-      expect(wrapper.find(HINT).exists()).toBe(false)
+      expect(wrapper.find(MENU).exists()).toBe(false)
     })
 
-    it('the hint works with no workspace scope (it is a static string)', async () => {
+    it('completing works with no workspace scope; only the picker stays shut', async () => {
       const wrapper = await mountInput()
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, '/sk')
 
-      expect(wrapper.find(HINT).exists()).toBe(true)
+      expect(wrapper.find(MENU).exists()).toBe(true)
       expect(getSkillsMock).not.toHaveBeenCalled()
 
-      // Completing still rewrites the text; only the picker stays shut.
       await textarea.trigger('keydown', { key: 'Enter' })
       await flushPromises()
       const element = textarea.element as HTMLTextAreaElement

@@ -122,6 +122,12 @@ fn registerWorkerRoutes(authed: *Group) !void {
     // above).
     try authed.get("/api/llm/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
     try authed.get("/api/llm/session/:session_id/queue_messages", ai_mod.http_handlers.queueMessagesGetHandler);
+    // The roster of a multi-agent chat. A session becomes a group when an
+    // agent joins it; the loop then takes each turn's speaker from the roster.
+    try authed.get("/api/llm/session/:session_id/group", ai_mod.http_handlers.sessionGroupGetHandler);
+    try authed.post("/api/llm/session/:session_id/group/members", ai_mod.http_handlers.sessionGroupMemberAddHandler);
+    try authed.delete("/api/llm/session/:session_id/group/members/:agent", ai_mod.http_handlers.sessionGroupMemberRemoveHandler);
+    try authed.post("/api/llm/session/:session_id/group/lead", ai_mod.http_handlers.sessionGroupLeadHandler);
     // Session background-process endpoints (bg-completion): list + log tail
     // for `command background=true` rows. Registered next to queue_messages.
     try authed.get("/api/llm/session/:session_id/background_processes", ai_mod.http_handlers.backgroundProcessesListHandler);
@@ -430,6 +436,13 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     // The ONE route that returns a credential. Member-only (`workspace_members_gate`),
     // 404 for anybody else, and `Cache-Control: no-store` on the answer.
     try authed.get("/api/workspaces/:workspace_id/secrets/:secret_id/reveal", ai_mod.http_handlers.secretsRevealHandler);
+
+    // Workspace-scoped memories — the `agent_memories` rows the
+    // `save_memory` / `load_memory` tools write (Migration 070 / 095).
+    try authed.get("/api/workspaces/:workspace_id/memories", ai_mod.http_handlers.workspaceMemoriesListHandler);
+    try authed.post("/api/workspaces/:workspace_id/memories", ai_mod.http_handlers.workspaceMemoryCreateHandler);
+    try authed.get("/api/workspaces/:workspace_id/memories/:memory_id", ai_mod.http_handlers.workspaceMemoryGetHandler);
+    try authed.delete("/api/workspaces/:workspace_id/memories/:memory_id", ai_mod.http_handlers.workspaceMemoryDeleteHandler);
 
     // Per-workspace config overlay (Migration 105): the config sections that
     // moved out of the User-scope Pabrik page into Workspace settings.
