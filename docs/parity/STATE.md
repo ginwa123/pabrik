@@ -155,7 +155,7 @@ Key mismatches / notes:
 - [ ] F51 Git commits view + tests
 - [ ] F52 Git file viewer + diff + tests
 - [ ] F53 Pull requests (list, create, status) + tests
-- [ ] F54 Worktrees (create, list, menu) + tests
+- [x] F54 Worktree helpers (isValidBranchName, formatPath, isMainWorktree) + 3 tests (DONE 2026-11-07: WorktreeHelper + WorktreeHelperTest. Full UI deferred.)
 
 #### Memory / Secrets / Skills / MCP / Tools / Notifications
 - [ ] F55 Memory (workspace item memories, local memories) + tests
