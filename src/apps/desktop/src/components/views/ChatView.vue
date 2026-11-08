@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUpdated, ref } from 'vue'
 import * as api from '../../api'
 import { useChatContentWidth } from '../../composables/useChatContentWidth'
 import { useChatScrollRestore } from '../../composables/useChatScrollRestore'
@@ -19,6 +19,8 @@ import Bash from '../preview/Bash.vue'
 import SubAgentPeekHost from '../pabrik/SubAgentPeekHost.vue'
 import ChatRightSidebar from './chat_right_sidebar/ChatRightSidebar.vue'
 import ChatAppBar from './ChatAppBar.vue'
+import ChatGroupRoster from './chat_view/ChatGroupRoster.vue'
+import { useChatGroupRoster } from './chat_view/useChatGroupRoster'
 import SessionTabStrip from '../session/SessionTabStrip.vue'
 import { useTabsStore } from '../../stores/tabs'
 import CenterDiffSection from './chat_right_sidebar/CenterDiffSection.vue'
@@ -124,6 +126,45 @@ const stripOwner = computed(() => {
   return owner && tabsStore.stripOf(owner).length > 0 ? owner : ''
 })
 onMounted(() => tabsStore.ensureRow(rowOwner.value))
+
+// The chat's roster of agents. A session with members is a group: the loop
+// takes each turn's speaker from it, so an `@` mention addresses a member
+// instead of switching the whole session's agent.
+const {
+  members: groupMembers,
+  lead: groupLead,
+  isGroup: isGroupChat,
+  isBusy: isGroupBusy,
+  error: groupError,
+  load: loadGroupRoster,
+  add: addGroupMember,
+  remove: removeGroupMember,
+  makeLead: makeGroupLead,
+} = useChatGroupRoster({ sessionId })
+
+let rosterLoadedFor = ''
+const syncGroupRoster = (): void => {
+  if (rosterLoadedFor === sessionId.value) return
+  rosterLoadedFor = sessionId.value
+  void loadGroupRoster()
+}
+onMounted(syncGroupRoster)
+onUpdated(syncGroupRoster)
+
+const handleSelectAgent = (name: string): void => {
+  if (isGroupChat.value) return
+  void selectAgent(name)
+}
+
+// In a group chat only the roster can answer, so `@` offers exactly those
+// agents. A one-agent chat keeps the full configured list.
+const composerAgents = computed(() => {
+  if (!isGroupChat.value) return availableAgents.value
+  const byName = new Map(availableAgents.value.map((a) => [a.name, a]))
+  return groupMembers.value.map(
+    (m) => byName.get(m.name) ?? { name: m.name, model: '', base_url: '', url_style: '' },
+  )
+})
 
 // State
 const messages = ref<Message[]>([])
@@ -398,6 +439,17 @@ const compactSession = async () => {
         @close="emit('close')"
       >
         <template #extras>
+          <ChatGroupRoster
+            :members="groupMembers"
+            :lead="groupLead"
+            :is-group="isGroupChat"
+            :is-busy="isGroupBusy"
+            :error="groupError"
+            :agents="composerAgents"
+            @add="addGroupMember"
+            @remove="removeGroupMember"
+            @make-lead="makeGroupLead"
+          />
           <slot name="app-bar-extras" />
         </template>
       </SessionTabStrip>
@@ -410,6 +462,17 @@ const compactSession = async () => {
         @close="emit('close')"
       >
         <template #extras>
+          <ChatGroupRoster
+            :members="groupMembers"
+            :lead="groupLead"
+            :is-group="isGroupChat"
+            :is-busy="isGroupBusy"
+            :error="groupError"
+            :agents="availableAgents"
+            @add="addGroupMember"
+            @remove="removeGroupMember"
+            @make-lead="makeGroupLead"
+          />
           <slot name="app-bar-extras" />
         </template>
       </ChatAppBar>
@@ -580,7 +643,7 @@ const compactSession = async () => {
             :agents="availableAgents"
             @submit="handleFileInputSubmit"
             @files-selected="handleFileInputSubmit"
-            @select-agent="selectAgent"
+            @select-agent="handleSelectAgent"
             @stop-session="handleStopSession"
             :draft-key="sessionId ? `chat:${sessionId}` : undefined"
           >

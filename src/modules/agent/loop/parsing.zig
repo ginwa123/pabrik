@@ -293,7 +293,7 @@ fn stripToolEnvelopeImpl(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
 
 // ─── Chat content envelopes (user + assistant) ────────────────────────────
 // / / Option A: `llm_history.response_content` holds a JSON object string for
-// / `role=user` (`{"user","name","msg"}`) and for non-empty `role=assistant`
+// / `role=user` (`{"user","name","msg"}`) and `role=assistant` (`{"agent","msg"}`).
 pub const UserEnvelope = struct {
     user: []const u8,
     name: []const u8,
@@ -301,7 +301,7 @@ pub const UserEnvelope = struct {
 };
 
 pub const AssistantEnvelope = struct {
-    model: []const u8,
+    agent: []const u8,
     msg: []const u8,
 };
 
@@ -309,8 +309,24 @@ pub fn encodeUserContent(allocator: std.mem.Allocator, user: []const u8, name: [
     return try std.json.Stringify.valueAlloc(allocator, UserEnvelope{ .user = user, .name = name, .msg = msg }, .{});
 }
 
-pub fn encodeAssistantContent(allocator: std.mem.Allocator, model: []const u8, msg: []const u8) ![]u8 {
-    return try std.json.Stringify.valueAlloc(allocator, AssistantEnvelope{ .model = model, .msg = msg }, .{});
+pub fn encodeAssistantContent(allocator: std.mem.Allocator, agent_name: []const u8, msg: []const u8) ![]u8 {
+    return try std.json.Stringify.valueAlloc(allocator, AssistantEnvelope{ .agent = agent_name, .msg = msg }, .{});
+}
+
+/// The agent that wrote an assistant row, from its content envelope. Rows
+/// written before the rename carry `model`; both name the agent. Null when
+/// `raw` is not an assistant envelope. Caller frees a non-null result.
+pub fn assistantAuthor(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
+    const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
+    if (trimmed.len == 0 or trimmed[0] != '{') return null;
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const obj = parsed.value.object;
+    if (obj.get("msg") == null) return null;
+    const author = obj.get("agent") orelse obj.get("model") orelse return null;
+    if (author != .string or author.string.len == 0) return null;
+    return try allocator.dupe(u8, author.string);
 }
 
 /// True when `raw` already parses as a chat envelope (object with a string
@@ -326,6 +342,7 @@ pub fn isChatEnvelope(allocator: std.mem.Allocator, raw: []const u8) bool {
     const msg = obj.get("msg") orelse return false;
     if (msg != .string) return false;
     if (obj.get("user") != null) return true;
+    if (obj.get("agent") != null) return true;
     if (obj.get("model") != null) return true;
     return false;
 }
@@ -346,7 +363,7 @@ pub fn unwrapChatContent(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     if (msg != .string) return try allocator.dupe(u8, raw);
     // Require the identity marker so a user-typed `{"msg":"hi"}` literal
     // without `user`/`model` stays verbatim instead of being unwrapped.
-    if (obj.get("user") == null and obj.get("model") == null) return try allocator.dupe(u8, raw);
+    if (obj.get("user") == null and obj.get("agent") == null and obj.get("model") == null) return try allocator.dupe(u8, raw);
     return try allocator.dupe(u8, msg.string);
 }
 
@@ -682,6 +699,44 @@ test "assistant envelope round-trips through encode + unwrap" {
     defer allocator.free(enc);
     try testing.expect(isChatEnvelope(allocator, enc));
     const msg = try unwrapChatContent(allocator, enc);
+    defer allocator.free(msg);
+    try testing.expectEqualStrings("hey human", msg);
+}
+
+test "assistant envelope names the agent that wrote the row" {
+    const allocator = testing.allocator;
+    const enc = try encodeAssistantContent(allocator, "deepseek auto", "hey human");
+    defer allocator.free(enc);
+
+    const author = (try assistantAuthor(allocator, enc)).?;
+    defer allocator.free(author);
+    try testing.expectEqualStrings("deepseek auto", author);
+}
+
+test "assistant author reads the legacy model field of an old row" {
+    const allocator = testing.allocator;
+    const author = (try assistantAuthor(allocator, "{\"model\":\"BEAM\",\"msg\":\"hi\"}")).?;
+    defer allocator.free(author);
+    try testing.expectEqualStrings("BEAM", author);
+}
+
+test "assistant author prefers the agent field when a row carries both" {
+    const allocator = testing.allocator;
+    const author = (try assistantAuthor(allocator, "{\"agent\":\"BEAM\",\"model\":\"beam-free\",\"msg\":\"hi\"}")).?;
+    defer allocator.free(author);
+    try testing.expectEqualStrings("BEAM", author);
+}
+
+test "assistant author is null for a user envelope, plain text, and an empty name" {
+    const allocator = testing.allocator;
+    try testing.expect((try assistantAuthor(allocator, "{\"user\":\"u1\",\"name\":\"Budi\",\"msg\":\"hi\"}")) == null);
+    try testing.expect((try assistantAuthor(allocator, "plain text")) == null);
+    try testing.expect((try assistantAuthor(allocator, "{\"agent\":\"\",\"msg\":\"hi\"}")) == null);
+}
+
+test "a legacy model envelope still unwraps to its msg" {
+    const allocator = testing.allocator;
+    const msg = try unwrapChatContent(allocator, "{\"model\":\"BEAM\",\"msg\":\"hey human\"}");
     defer allocator.free(msg);
     try testing.expectEqualStrings("hey human", msg);
 }
