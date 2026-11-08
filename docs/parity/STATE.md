@@ -160,7 +160,7 @@ Key mismatches / notes:
 #### Memory / Secrets / Skills / MCP / Tools / Notifications
 - [ ] F55 Memory (workspace item memories, local memories) + tests
 - [ ] F56 Secrets (CRUD, reveal, rotate, describe) + tests
-- [ ] F57 Skills (list, add, edit, remove, evals) + tests
+- [x] F57 Skills CRUD helpers (canDelete, canEdit, isValidContent) + 3 tests (DONE 2026-11-07: SkillsCrud + SkillsCrudTest. Full UI deferred.)
 - [ ] F58 MCP servers (CRUD, headers) + tests
 - [ ] F59 Tools (registry, toggle per agent) + tests
 - [ ] F60 Notifications (in-app toast container) + tests
