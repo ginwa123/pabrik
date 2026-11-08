@@ -156,7 +156,7 @@ test "useCase: never returns another workspace's documents" {
     defer ctx.db.deinit();
 
     try ctx.db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content) VALUES
+        \\INSERT INTO documents (id, workspace_id, title, preview) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
@@ -166,7 +166,7 @@ test "useCase: never returns another workspace's documents" {
     defer folders_store.freeFolderRows(alloc, mine.folders);
     try testing.expectEqual(@as(usize, 1), mine.documents.len);
     try testing.expectEqualStrings("doc_a", mine.documents[0].id);
-    try testing.expectEqualStrings("body a", mine.documents[0].content);
+    try testing.expectEqualStrings("body a", mine.documents[0].preview);
 
     // The foreign workspace sees only its own row — no leak in either
     // direction, and no "empty because mis-scoped" false negative.

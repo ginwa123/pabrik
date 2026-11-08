@@ -209,7 +209,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try db.exec(testing.allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content) VALUES
+        \\INSERT INTO documents (id, workspace_id, title, preview) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
@@ -248,7 +248,7 @@ test "useCase: a title-only PATCH leaves the body intact" {
     defer documents_store.freeDocumentRow(alloc, output.document);
 
     try testing.expectEqualStrings("A renamed", output.document.title);
-    try testing.expectEqualStrings("body a", output.document.content);
+    try testing.expectEqualStrings("body a", output.document.preview);
 }
 
 test "useCase: a body-only PATCH leaves the title intact" {
@@ -265,7 +265,7 @@ test "useCase: a body-only PATCH leaves the title intact" {
     defer documents_store.freeDocumentRow(alloc, output.document);
 
     try testing.expectEqualStrings("A", output.document.title);
-    try testing.expectEqualStrings("body a, revised", output.document.content);
+    try testing.expectEqualStrings("body a, revised", output.document.preview);
 }
 
 test "useCase: an explicit empty content clears the body without tripping NOT NULL" {
@@ -280,7 +280,7 @@ test "useCase: an explicit empty content clears the body without tripping NOT NU
         .body = .{ .content = "" },
     });
     defer documents_store.freeDocumentRow(alloc, output.document);
-    try testing.expectEqualStrings("", output.document.content);
+    try testing.expectEqualStrings("", output.document.preview);
 }
 
 test "useCase: an empty patch is a no-op that still advances updated_at" {
@@ -305,7 +305,7 @@ test "useCase: an empty patch is a no-op that still advances updated_at" {
     defer documents_store.freeDocumentRow(alloc, output.document);
 
     try testing.expectEqualStrings("A", output.document.title);
-    try testing.expectEqualStrings("body a", output.document.content);
+    try testing.expectEqualStrings("body a", output.document.preview);
     try testing.expect(!std.mem.eql(u8, output.document.updated_at, "2000-01-01 00:00:00"));
 }
 
@@ -356,5 +356,5 @@ test "useCase: another workspace's document cannot be edited" {
         .body = .{},
     });
     defer documents_store.freeDocumentRow(alloc, owner.document);
-    try testing.expectEqualStrings("body a", owner.document.content);
+    try testing.expectEqualStrings("body a", owner.document.preview);
 }

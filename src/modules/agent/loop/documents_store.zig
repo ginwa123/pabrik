@@ -192,7 +192,7 @@ fn freeCandidates(allocator: std.mem.Allocator, candidates: []Candidate) void {
 /// The SELECT list, shared by every read so no call site can accidentally
 /// return a different shape.
 const SELECT_COLUMNS =
-    "SELECT id, workspace_id, title, content, format, " ++
+    "SELECT id, workspace_id, title, format, " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
     "COALESCE(CAST(position AS TEXT), '0'), COALESCE(folder_id, ''), " ++
     "COALESCE(content_key, ''), COALESCE(content_sha256, ''), " ++
@@ -200,23 +200,25 @@ const SELECT_COLUMNS =
     "FROM documents";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !DocumentRow {
-    const folder: ?[]const u8 = if (values[8].len == 0) null else try allocator.dupe(u8, values[8]);
-    const content_key: ?[]const u8 = if (values[9].len == 0) null else try allocator.dupe(u8, values[9]);
-    const content_sha256: ?[]const u8 = if (values[10].len == 0) null else try allocator.dupe(u8, values[10]);
+    const folder: ?[]const u8 = if (values[7].len == 0) null else try allocator.dupe(u8, values[7]);
+    const content_key: ?[]const u8 = if (values[8].len == 0) null else try allocator.dupe(u8, values[8]);
+    const content_sha256: ?[]const u8 = if (values[9].len == 0) null else try allocator.dupe(u8, values[9]);
     return .{
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
         .title = try allocator.dupe(u8, values[2]),
-        .content = try allocator.dupe(u8, values[3]),
-        .format = try allocator.dupe(u8, values[4]),
-        .created_at = try allocator.dupe(u8, values[5]),
-        .updated_at = try allocator.dupe(u8, values[6]),
-        .position = std.fmt.parseInt(i64, values[7], 10) catch 0,
+        .format = try allocator.dupe(u8, values[3]),
+        .created_at = try allocator.dupe(u8, values[4]),
+        .updated_at = try allocator.dupe(u8, values[5]),
+        .position = std.fmt.parseInt(i64, values[6], 10) catch 0,
         .folder_id = folder,
         .content_key = content_key,
         .content_sha256 = content_sha256,
-        .content_bytes = std.fmt.parseInt(i64, values[11], 10) catch 0,
-        .preview = try allocator.dupe(u8, values[12]),
+        .content_bytes = std.fmt.parseInt(i64, values[10], 10) catch 0,
+        .preview = try allocator.dupe(u8, values[11]),
+        // The body is not a column any more: `getDocument` hydrates it from
+        // the object store, and a list or search read leaves it empty.
+        .content = "",
     };
 }
 
@@ -287,8 +289,7 @@ pub fn searchDocumentsRaw(
         SELECT_COLUMNS ++
             " WHERE workspace_id = ?" ++
             " AND (LOWER(title) LIKE LOWER(?) ESCAPE '\\'" ++
-            " OR LOWER(preview) LIKE LOWER(?) ESCAPE '\\'" ++
-            " OR LOWER(content) LIKE LOWER(?) ESCAPE '\\')" ++
+            " OR LOWER(preview) LIKE LOWER(?) ESCAPE '\\')" ++
             " ORDER BY updated_at DESC, id DESC"
     else
         SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC";
@@ -297,7 +298,7 @@ pub fn searchDocumentsRaw(
         allocator,
         sql,
         if (pattern) |p|
-            &[_][]const u8{ workspace_id, p, p, p }
+            &[_][]const u8{ workspace_id, p, p }
         else
             &[_][]const u8{workspace_id},
     ) catch return error.QueryFailed;
@@ -436,10 +437,10 @@ pub const Store = struct {
         const folder = args.folder_id orelse "";
         const level = if (folder.len == 0) ROOT_LEVEL else folder;
         self.db.exec(allocator,
-            \\INSERT INTO documents (id, workspace_id, title, content, format, folder_id, position,
+            \\INSERT INTO documents (id, workspace_id, title, format, folder_id, position,
             \\                       content_key, content_sha256, content_bytes, preview,
             \\                       created_at, updated_at)
-            \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), NULLIF(?, ''),
+            \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), NULLIF(?, ''),
             \\        COALESCE((SELECT MIN(position) FROM documents WHERE workspace_id = ? AND COALESCE(folder_id, '#root') = ?), 0) - 1,
             \\        NULLIF(?, ''), NULLIF(?, ''), ?, COALESCE(NULLIF(?, ''), ''),
             \\        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
@@ -447,7 +448,6 @@ pub const Store = struct {
             document_id,
             args.workspace_id,
             title,
-            args.content,
             format,
             folder,
             args.workspace_id,
@@ -482,10 +482,10 @@ pub const Store = struct {
             if (c.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
         }
 
-        // Load the current values so an absent field is a true no-op rather than
-        // a wipe. Without this a PATCH of `{title}` alone would blank the body —
-        // the exact class of bug the "effective_*" pattern exists to prevent.
-        const existing = self.readRow(allocator, workspace_id, document_id) catch
+        // Load the current values so an absent field is a true no-op. This MUST
+        // hydrate: a title-only PATCH that read the row without its body would
+        // write an empty object and lose the document.
+        const existing = self.getDocument(allocator, workspace_id, document_id) catch
             return error.NotFound;
         defer freeDocumentRow(allocator, existing);
 
@@ -496,10 +496,19 @@ pub const Store = struct {
         } else existing.title;
         const content = patch.content orelse existing.content;
 
-        const placed = self.placeBody(allocator, workspace_id, document_id, content) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.ObjectStoreFailed => return error.UpdateFailed,
-        };
+        // With no store and no new body there is nothing to place: reuse the
+        // row's own pointer and preview. Recomputing from an empty body would
+        // wipe the preview of a document whose body lives elsewhere.
+        const placed = if (self.storage == null and patch.content == null)
+            placedFromRow(allocator, existing) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.ObjectStoreFailed => return error.UpdateFailed,
+            }
+        else
+            self.placeBody(allocator, workspace_id, document_id, content) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.ObjectStoreFailed => return error.UpdateFailed,
+            };
         defer placed.deinit(allocator);
 
         if (patch.move_folder) {
@@ -509,13 +518,12 @@ pub const Store = struct {
             }
             self.db.exec(allocator,
                 \\UPDATE documents
-                \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), folder_id = NULLIF(?, ''),
+                \\SET title = COALESCE(NULLIF(?, ''), ''), folder_id = NULLIF(?, ''),
                 \\    content_key = NULLIF(?, ''), content_sha256 = NULLIF(?, ''), content_bytes = ?, preview = COALESCE(NULLIF(?, ''), ''),
                 \\    updated_at = CURRENT_TIMESTAMP
                 \\WHERE id = ? AND workspace_id = ?
             , &[_][]const u8{
                 title,
-                content,
                 folder,
                 placed.key orelse "",
                 placed.sha256 orelse "",
@@ -528,13 +536,12 @@ pub const Store = struct {
         } else {
             self.db.exec(allocator,
                 \\UPDATE documents
-                \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''),
+                \\SET title = COALESCE(NULLIF(?, ''), ''),
                 \\    content_key = NULLIF(?, ''), content_sha256 = NULLIF(?, ''), content_bytes = ?, preview = COALESCE(NULLIF(?, ''), ''),
                 \\    updated_at = CURRENT_TIMESTAMP
                 \\WHERE id = ? AND workspace_id = ?
             , &[_][]const u8{
                 title,
-                content,
                 placed.key orelse "",
                 placed.sha256 orelse "",
                 placed.bytesText(),
@@ -628,10 +635,13 @@ pub const Store = struct {
         allocator: std.mem.Allocator,
         opts: BackfillOptions,
     ) BackfillError![]Candidate {
+        // The body is not a column any more, so a row with no key has no body
+        // to move. The query still runs so the report is honest about what is
+        // left, and every candidate lands in `skipped_empty`.
         const sql = if (opts.workspace_id != null)
-            "SELECT id, workspace_id, content FROM documents WHERE content_key IS NULL AND workspace_id = ? ORDER BY id"
+            "SELECT id, workspace_id, '' FROM documents WHERE content_key IS NULL AND workspace_id = ? ORDER BY id"
         else
-            "SELECT id, workspace_id, content FROM documents WHERE content_key IS NULL ORDER BY id";
+            "SELECT id, workspace_id, '' FROM documents WHERE content_key IS NULL ORDER BY id";
 
         var q = self.db.query(
             allocator,
@@ -731,6 +741,22 @@ pub const Store = struct {
 };
 
 pub const PlaceError = error{ ObjectStoreFailed, OutOfMemory };
+
+/// A `Placed` that reuses an existing row's pointer and preview, for a patch
+/// that changes neither. The strings are duplicated so `Placed.deinit` stays
+/// the only owner.
+fn placedFromRow(allocator: std.mem.Allocator, row: DocumentRow) PlaceError!Placed {
+    var placed = Placed{ .preview = row.preview };
+    const text = std.fmt.bufPrint(&placed.bytes_buf, "{d}", .{row.content_bytes}) catch "0";
+    placed.bytes_len = text.len;
+    if (row.content_key) |key| {
+        placed.key = allocator.dupe(u8, key) catch return error.OutOfMemory;
+    }
+    if (row.content_sha256) |digest| {
+        placed.sha256 = allocator.dupe(u8, digest) catch return error.OutOfMemory;
+    }
+    return placed;
+}
 
 /// What `placeBody` produced. `key` and `sha256` are owned when non-null; the
 /// byte count lives in `bytes_buf` so the struct stays copyable.
@@ -1085,7 +1111,7 @@ test "createDocument: a new document lands above every existing one" {
     try testing.expectEqualStrings("Second", rows[2].title);
 }
 
-// ─── Object store: dual-write and dual-read ─────────────────────────────
+// ─── Object store: the body lives there, not in a column ────────────────
 
 const memory_backend = @import("pabrikcore").storage.memory;
 
@@ -1139,7 +1165,7 @@ test "previewOf: the cut never splits a multi-byte codepoint" {
     try testing.expect(preview.len <= PREVIEW_MAX_BYTES);
 }
 
-test "createDocument with no store keeps the body in the column and no key" {
+test "createDocument with no store persists no body and no key" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1152,11 +1178,11 @@ test "createDocument with no store keeps the body in the column and no key" {
     });
     defer freeDocumentRow(alloc, row);
 
-    try testing.expectEqualStrings("# Plan\n", row.content);
+    // There is nowhere to put the body, so it is not persisted at all. The
+    // metadata and the preview still are.
+    try testing.expectEqualStrings("", row.content);
     try testing.expect(row.content_key == null);
     try testing.expect(row.content_sha256 == null);
-    // The byte count and the preview are useful with or without a store, so
-    // they are filled in either way.
     try testing.expectEqual(@as(i64, 7), row.content_bytes);
     try testing.expectEqualStrings("# Plan\n", row.preview);
 }
@@ -1178,29 +1204,25 @@ test "createDocument with a store writes the object and points the row at it" {
     });
     defer freeDocumentRow(alloc, row);
 
-    // The pointer is set, and it is the content-addressed key.
     const key = row.content_key orelse return error.KeyMissing;
     try testing.expect(std.mem.startsWith(u8, key, "ws/ws_1/documents/"));
     try testing.expect(std.mem.endsWith(u8, key, ".md"));
 
-    // The digest is the body's, and the byte count is the body's length.
     var expected: [object_store.SHA256_HEX_BYTES]u8 = undefined;
     object_store.sha256Hex("# Plan\n", &expected);
     try testing.expectEqualStrings(&expected, row.content_sha256.?);
     try testing.expectEqual(@as(i64, 7), row.content_bytes);
 
-    // The object really holds the body.
     const stored = try objects.asStorage().get(alloc, key);
     defer alloc.free(stored);
     try testing.expectEqualStrings("# Plan\n", stored);
 
-    // Dual-write: the column still holds it too, so a list read needs no
-    // round-trip.
+    // The returned row carries the body, hydrated from the object.
     try testing.expectEqualStrings("# Plan\n", row.content);
     try testing.expectEqualStrings("# Plan\n", row.preview);
 }
 
-test "getDocument reads the body from the object, not the column" {
+test "getDocument reads the body from the object" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1213,7 +1235,7 @@ test "getDocument reads the body from the object, not the column" {
     const created = try store.createDocument(alloc, .{
         .workspace_id = "ws_1",
         .title = "Plan",
-        .content = "column copy",
+        .content = "original",
     });
     defer freeDocumentRow(alloc, created);
 
@@ -1226,7 +1248,7 @@ test "getDocument reads the body from the object, not the column" {
     try testing.expectEqualStrings("object copy", row.content);
 }
 
-test "getDocument falls back to the column when the object is gone" {
+test "getDocument returns an empty body when the object is gone" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1239,33 +1261,19 @@ test "getDocument falls back to the column when the object is gone" {
     const created = try store.createDocument(alloc, .{
         .workspace_id = "ws_1",
         .title = "Plan",
-        .content = "column copy",
+        .content = "body",
     });
     defer freeDocumentRow(alloc, created);
 
     try objects.asStorage().delete(created.content_key.?);
 
+    // There is no column to fall back to any more. The row still reads, with
+    // an empty body and its preview — a missing object is a lost body, not a
+    // failed read.
     const row = try store.getDocument(alloc, "ws_1", created.id);
     defer freeDocumentRow(alloc, row);
-    try testing.expectEqualStrings("column copy", row.content);
-}
-
-test "getDocument with no store never touches the object" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const created = try createDocument(alloc, &ctx.db, .{
-        .workspace_id = "ws_1",
-        .title = "Plan",
-        .content = "column copy",
-    });
-    defer freeDocumentRow(alloc, created);
-
-    const row = try getDocument(alloc, &ctx.db, "ws_1", created.id);
-    defer freeDocumentRow(alloc, row);
-    try testing.expectEqualStrings("column copy", row.content);
+    try testing.expectEqualStrings("", row.content);
+    try testing.expectEqualStrings("body", row.preview);
 }
 
 test "updateDocument with a store points the row at the new body's key" {
@@ -1290,7 +1298,6 @@ test "updateDocument with a store points the row at the new body's key" {
     const updated = try store.updateDocument(alloc, "ws_1", created.id, .{ .content = "second version" });
     defer freeDocumentRow(alloc, updated);
 
-    // A new body means a new digest, so a new key.
     try testing.expect(!std.mem.eql(u8, first_key, updated.content_key.?));
     try testing.expectEqual(@as(i64, 14), updated.content_bytes);
 
@@ -1304,7 +1311,7 @@ test "updateDocument with a store points the row at the new body's key" {
     try testing.expectEqualStrings("first version", old);
 }
 
-test "updateDocument with a store and no content change keeps the same key" {
+test "updateDocument with a title-only patch keeps the body" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1328,7 +1335,11 @@ test "updateDocument with a store and no content change keeps the same key" {
 
     try testing.expectEqualStrings("Renamed", updated.title);
     try testing.expectEqualStrings(first_key, updated.content_key.?);
+    // The body survived: a title-only PATCH must not write an empty object.
     try testing.expectEqualStrings("unchanged body", updated.content);
+    const stored = try objects.asStorage().get(alloc, first_key);
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("unchanged body", stored);
 }
 
 test "deleteDocument with a store removes the object too" {
@@ -1386,7 +1397,11 @@ test "updateDocument leaves the row untouched when the object store refuses" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const created = try createDocument(alloc, &ctx.db, .{
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const good = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try good.createDocument(alloc, .{
         .workspace_id = "ws_1",
         .title = "Plan",
         .content = "original",
@@ -1394,18 +1409,18 @@ test "updateDocument leaves the row untouched when the object store refuses" {
     defer freeDocumentRow(alloc, created);
 
     var marker: u8 = 0;
-    const store = Store{ .db = &ctx.db, .storage = failingStorage(&marker) };
+    const broken = Store{ .db = &ctx.db, .storage = failingStorage(&marker) };
 
-    try testing.expectError(error.UpdateFailed, store.updateDocument(alloc, "ws_1", created.id, .{
+    try testing.expectError(error.UpdateFailed, broken.updateDocument(alloc, "ws_1", created.id, .{
         .content = "replacement",
     }));
 
-    const row = try getDocument(alloc, &ctx.db, "ws_1", created.id);
+    const row = try good.getDocument(alloc, "ws_1", created.id);
     defer freeDocumentRow(alloc, row);
     try testing.expectEqualStrings("original", row.content);
 }
 
-test "listDocuments still reads the column, so a list needs no object round-trip" {
+test "listDocuments never fetches a body" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -1428,95 +1443,25 @@ test "listDocuments still reads the column, so a list needs no object round-trip
     const rows = try listDocuments(alloc, &ctx.db, "ws_1");
     defer freeDocumentRows(alloc, rows);
     try testing.expectEqual(@as(usize, 1), rows.len);
-    try testing.expectEqualStrings("body", rows[0].content);
+    // A list row carries metadata and the preview, never the body.
+    try testing.expectEqualStrings("", rows[0].content);
     try testing.expectEqualStrings("body", rows[0].preview);
 }
 
 // ─── Backfill ───────────────────────────────────────────────────────────
 
-test "backfill moves a column-only body into the object store" {
+test "backfill reports nothing to move once the body is not a column" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // Written with no store, so the body is only in the column.
-    const seeded = try createDocument(alloc, &ctx.db, .{
-        .workspace_id = "ws_1",
-        .title = "Plan",
-        .content = "# Plan\n- ship it\n",
-    });
-    defer freeDocumentRow(alloc, seeded);
-    try testing.expect(seeded.content_key == null);
-
-    var objects = memory_backend.MemoryStorage.init(alloc);
-    defer objects.deinit();
-    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
-
-    const report = try store.backfill(alloc, .{});
-    try testing.expectEqual(@as(usize, 1), report.scanned);
-    try testing.expectEqual(@as(usize, 1), report.moved);
-    try testing.expectEqual(@as(usize, 0), report.failed);
-
-    const row = try store.getDocument(alloc, "ws_1", seeded.id);
-    defer freeDocumentRow(alloc, row);
-
-    const key = row.content_key orelse return error.KeyMissing;
-    try testing.expect(std.mem.startsWith(u8, key, "ws/ws_1/documents/"));
-
-    var expected: [object_store.SHA256_HEX_BYTES]u8 = undefined;
-    object_store.sha256Hex("# Plan\n- ship it\n", &expected);
-    try testing.expectEqualStrings(&expected, row.content_sha256.?);
-    try testing.expectEqual(@as(i64, 17), row.content_bytes);
-    try testing.expectEqualStrings("# Plan\n- ship it\n", row.preview);
-
-    // The object holds the body, and the column still does too.
-    const stored = try objects.asStorage().get(alloc, key);
-    defer alloc.free(stored);
-    try testing.expectEqualStrings("# Plan\n- ship it\n", stored);
-    try testing.expectEqualStrings("# Plan\n- ship it\n", row.content);
-}
-
-test "backfill is idempotent: a second run moves nothing" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const seeded = try createDocument(alloc, &ctx.db, .{
-        .workspace_id = "ws_1",
-        .title = "Plan",
-        .content = "body",
-    });
-    defer freeDocumentRow(alloc, seeded);
-
-    var objects = memory_backend.MemoryStorage.init(alloc);
-    defer objects.deinit();
-    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
-
-    const first = try store.backfill(alloc, .{});
-    try testing.expectEqual(@as(usize, 1), first.moved);
-
-    const second = try store.backfill(alloc, .{});
-    try testing.expectEqual(@as(usize, 0), second.scanned);
-    try testing.expectEqual(@as(usize, 0), second.moved);
-
-    // And the object count did not grow.
-    try testing.expectEqual(@as(usize, 1), objects.count());
-}
-
-test "backfill skips an empty body and leaves its key null" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const seeded = try createDocument(alloc, &ctx.db, .{
-        .workspace_id = "ws_1",
-        .title = "Blank",
-        .content = "",
-    });
-    defer freeDocumentRow(alloc, seeded);
+    // A row with no key: its body is gone with the column, so there is
+    // nothing to move. The report says so rather than inventing work.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, preview)
+        \\VALUES ('doc_orphan', 'ws_1', 'Plan', 'a preview')
+    , &[_][]const u8{});
 
     var objects = memory_backend.MemoryStorage.init(alloc);
     defer objects.deinit();
@@ -1527,91 +1472,6 @@ test "backfill skips an empty body and leaves its key null" {
     try testing.expectEqual(@as(usize, 0), report.moved);
     try testing.expectEqual(@as(usize, 1), report.skipped_empty);
     try testing.expectEqual(@as(usize, 0), objects.count());
-
-    const row = try store.getDocument(alloc, "ws_1", seeded.id);
-    defer freeDocumentRow(alloc, row);
-    try testing.expect(row.content_key == null);
-}
-
-test "backfill dry run reports what would move and writes nothing" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const seeded = try createDocument(alloc, &ctx.db, .{
-        .workspace_id = "ws_1",
-        .title = "Plan",
-        .content = "body",
-    });
-    defer freeDocumentRow(alloc, seeded);
-
-    var objects = memory_backend.MemoryStorage.init(alloc);
-    defer objects.deinit();
-    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
-
-    const report = try store.backfill(alloc, .{ .dry_run = true });
-    try testing.expectEqual(@as(usize, 1), report.moved);
-    try testing.expectEqual(@as(usize, 0), objects.count());
-
-    const row = try store.getDocument(alloc, "ws_1", seeded.id);
-    defer freeDocumentRow(alloc, row);
-    try testing.expect(row.content_key == null);
-}
-
-test "backfill with a limit is resumable: the next run picks up the rest" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    for (0..3) |i| {
-        const title = try std.fmt.allocPrint(alloc, "Doc {d}", .{i});
-        defer alloc.free(title);
-        const row = try createDocument(alloc, &ctx.db, .{
-            .workspace_id = "ws_1",
-            .title = title,
-            .content = "body",
-        });
-        freeDocumentRow(alloc, row);
-    }
-
-    var objects = memory_backend.MemoryStorage.init(alloc);
-    defer objects.deinit();
-    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
-
-    const first = try store.backfill(alloc, .{ .limit = 2 });
-    try testing.expectEqual(@as(usize, 2), first.moved);
-
-    const second = try store.backfill(alloc, .{ .limit = 2 });
-    try testing.expectEqual(@as(usize, 1), second.moved);
-
-    const third = try store.backfill(alloc, .{});
-    try testing.expectEqual(@as(usize, 0), third.scanned);
-    try testing.expectEqual(@as(usize, 3), objects.count());
-}
-
-test "backfill scoped to one workspace leaves the other alone" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const mine = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "Mine", .content = "a" });
-    defer freeDocumentRow(alloc, mine);
-    const theirs = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_2", .title = "Theirs", .content = "b" });
-    defer freeDocumentRow(alloc, theirs);
-
-    var objects = memory_backend.MemoryStorage.init(alloc);
-    defer objects.deinit();
-    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
-
-    const report = try store.backfill(alloc, .{ .workspace_id = "ws_1" });
-    try testing.expectEqual(@as(usize, 1), report.moved);
-
-    const untouched = try store.getDocument(alloc, "ws_2", theirs.id);
-    defer freeDocumentRow(alloc, untouched);
-    try testing.expect(untouched.content_key == null);
 }
 
 test "backfill with no object store is refused" {
@@ -1623,46 +1483,17 @@ test "backfill with no object store is refused" {
     try testing.expectError(error.NoStorage, (Store{ .db = &ctx.db }).backfill(alloc, .{}));
 }
 
-test "backfill counts a refused body as failed and leaves the row alone" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
-
-    const seeded = try createDocument(alloc, &ctx.db, .{
-        .workspace_id = "ws_1",
-        .title = "Plan",
-        .content = "body",
-    });
-    defer freeDocumentRow(alloc, seeded);
-
-    var marker: u8 = 0;
-    const store = Store{ .db = &ctx.db, .storage = failingStorage(&marker) };
-
-    const report = try store.backfill(alloc, .{});
-    try testing.expectEqual(@as(usize, 1), report.scanned);
-    try testing.expectEqual(@as(usize, 0), report.moved);
-    try testing.expectEqual(@as(usize, 1), report.failed);
-
-    const row = try getDocument(alloc, &ctx.db, "ws_1", seeded.id);
-    defer freeDocumentRow(alloc, row);
-    try testing.expect(row.content_key == null);
-    try testing.expectEqualStrings("body", row.content);
-}
-
 // ─── Search without the body ────────────────────────────────────────────
 
-test "searchDocuments finds a document by a word in its preview when the body is gone" {
+test "searchDocuments finds a document by a word in its preview" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // The shape a row has once its body lives in the object store: `content`
-    // is empty and only `preview` is left in SQL.
     try ctx.db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, preview, content_bytes)
-        \\VALUES ('doc_moved', 'ws_1', 'Release plan', '', 'ship the zephyrword turbine', 4096)
+        \\INSERT INTO documents (id, workspace_id, title, preview, content_bytes)
+        \\VALUES ('doc_moved', 'ws_1', 'Release plan', 'ship the zephyrword turbine', 4096)
     , &[_][]const u8{});
 
     const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "zephyrword");
@@ -1670,41 +1501,37 @@ test "searchDocuments finds a document by a word in its preview when the body is
 
     try testing.expectEqual(@as(usize, 1), rows.len);
     try testing.expectEqualStrings("doc_moved", rows[0].id);
-    // The body is still absent — search found it, it did not resurrect it.
     try testing.expectEqualStrings("", rows[0].content);
     try testing.expectEqualStrings("ship the zephyrword turbine", rows[0].preview);
 }
 
-test "searchDocuments still finds a word that is only in the body" {
+test "searchDocuments does not search a body that is not a column" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    // A body longer than the preview: the needle sits past the 512-byte cut,
-    // so only the `content` column can answer.
-    const body = "x" ** (PREVIEW_MAX_BYTES + 10) ++ "quasarterm";
+    // The preview is the first 512 bytes; this needle is past it, so search
+    // cannot see it. That is the documented bound.
     try ctx.db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, preview, content_bytes)
-        \\VALUES ('doc_long', 'ws_1', 'Long', ?, ?, ?)
-    , &[_][]const u8{ body, previewOf(body), "522" });
+        \\INSERT INTO documents (id, workspace_id, title, preview, content_bytes)
+        \\VALUES ('doc_long', 'ws_1', 'Long', 'the first 512 bytes', 4096)
+    , &[_][]const u8{});
 
     const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "quasarterm");
     defer freeDocumentRows(alloc, rows);
-
-    try testing.expectEqual(@as(usize, 1), rows.len);
-    try testing.expectEqualStrings("doc_long", rows[0].id);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }
 
-test "searchDocuments does not match a word that is in neither the preview nor the body" {
+test "searchDocuments does not match a word that is in neither the preview nor the title" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
     try ctx.db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, preview)
-        \\VALUES ('doc_moved', 'ws_1', 'Release plan', '', 'ship it')
+        \\INSERT INTO documents (id, workspace_id, title, preview)
+        \\VALUES ('doc_moved', 'ws_1', 'Release plan', 'ship it')
     , &[_][]const u8{});
 
     const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "hippopotamus");

@@ -69,16 +69,14 @@ pub const Runtime = struct {
         store: s3_backend.S3Storage,
     };
 
-    /// Build the store the environment asks for. Returns null when
-    /// `PABRIK_STORAGE_BACKEND` is unset, so an install with no object store
-    /// keeps today's behaviour.
+    /// Build the store the environment asks for. `PABRIK_STORAGE_BACKEND`
+    /// unset means `fs` at the default root: the body is not a column any
+    /// more, so an install with no store would have nowhere to put one.
     pub fn fromEnvironment(
         allocator: std.mem.Allocator,
         io: std.Io,
         environment: *const std.process.Environ.Map,
     ) !?*Runtime {
-        if (environment.get("PABRIK_STORAGE_BACKEND") == null) return null;
-
         const runtime = try allocator.create(Runtime);
         errdefer allocator.destroy(runtime);
 
@@ -133,12 +131,27 @@ pub const Runtime = struct {
 
 const testing = std.testing;
 
-test "runtime: no PABRIK_STORAGE_BACKEND means no object store" {
+test "runtime: no PABRIK_STORAGE_BACKEND defaults to the filesystem store" {
     const alloc = testing.allocator;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const base_len = try tmp.dir.realPath(testing.io, &path_buf);
+    const root = try std.fs.path.join(alloc, &.{ path_buf[0..base_len], "objects" });
+    defer alloc.free(root);
+
     var env = std.process.Environ.Map.init(alloc);
     defer env.deinit();
+    try env.put("PABRIK_STORAGE_ROOT", root);
 
-    try testing.expect(try Runtime.fromEnvironment(alloc, testing.io, &env) == null);
+    const runtime = (try Runtime.fromEnvironment(alloc, testing.io, &env)).?;
+    defer runtime.deinit();
+
+    try runtime.asStorage().put("k.md", "default store");
+    const body = try runtime.asStorage().get(alloc, "k.md");
+    defer alloc.free(body);
+    try testing.expectEqualStrings("default store", body);
 }
 
 test "runtime: an fs backend round-trips a body through the store" {

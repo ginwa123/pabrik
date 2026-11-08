@@ -112,7 +112,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try db.exec(testing.allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content) VALUES
+        \\INSERT INTO documents (id, workspace_id, title, preview) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
@@ -135,7 +135,7 @@ test "useCase: empty ids return IdsRequired" {
     );
 }
 
-test "useCase: happy path returns the document body" {
+test "useCase: happy path returns the document row" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
@@ -146,7 +146,7 @@ test "useCase: happy path returns the document body" {
 
     try testing.expectEqualStrings("doc_a", output.document.id);
     try testing.expectEqualStrings("A", output.document.title);
-    try testing.expectEqualStrings("body a", output.document.content);
+    try testing.expectEqualStrings("body a", output.document.preview);
     try testing.expectEqualStrings("markdown", output.document.format);
 }
 

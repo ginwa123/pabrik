@@ -424,6 +424,14 @@ pub fn executeDeleteDocument(
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
+    /// The body lives here now, not in a column.
+    objects: @import("pabrikcore").storage.memory.MemoryStorage,
+
+    fn deinit(self: *TestCtx) void {
+        self.objects.deinit();
+        self.db.deinit();
+        self.threaded.deinit();
+    }
 };
 
 /// Two workspaces, one session each, so a cross-workspace leak has somewhere
@@ -466,7 +474,11 @@ fn setupDb() !TestCtx {
         \\  ('s1', 'One', 'active', '/proj/a'),
         \\  ('s2', 'Two', 'active', '/proj/b')
     , &.{});
-    return .{ .db = db, .threaded = threaded };
+    return .{
+        .db = db,
+        .threaded = threaded,
+        .objects = @import("pabrikcore").storage.memory.MemoryStorage.init(testing.allocator),
+    };
 }
 
 /// Owned, deinit-able view of a tool result. `std.json.parseFromSlice`
@@ -522,10 +534,9 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
 test "add_document: creates a markdown document in the caller's own workspace" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
         .title = "Release plan",
         .content = "# v1\n\nship it",
     });
@@ -544,10 +555,9 @@ test "add_document: creates a markdown document in the caller's own workspace" {
 test "add_document: a blank title is a tool error, not a Zig error" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .title = "   \n " });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .title = "   \n " });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -558,10 +568,9 @@ test "add_document: a blank title is a tool error, not a Zig error" {
 test "add_document: an empty body round-trips as \"\" rather than blowing up on NOT NULL" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .title = "Blank", .content = "" });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .title = "Blank", .content = "" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -572,10 +581,9 @@ test "add_document: an empty body round-trips as \"\" rather than blowing up on 
 test "add_document: an empty caller session fails closed instead of picking a workspace" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "", .{ .title = "Nowhere" });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "", .{ .title = "Nowhere" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -593,10 +601,9 @@ test "add_document: an empty caller session fails closed instead of picking a wo
 test "add_document: a session with no resolvable workspace fails closed" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s_orphan", .{ .title = "Nowhere" });
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", .{ .title = "Nowhere" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -607,12 +614,11 @@ test "add_document: a session with no resolvable workspace fails closed" {
 test "add_document: two workspaces writing the same title never collide or leak" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const a = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .title = "Shared title", .content = "from A" });
+    const a = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .title = "Shared title", .content = "from A" });
     defer alloc.free(a);
-    const b = try executeAddDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .title = "Shared title", .content = "from B" });
+    const b = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{ .title = "Shared title", .content = "from B" });
     defer alloc.free(b);
 
     var pa = try parseJson(alloc, a);
@@ -629,8 +635,8 @@ test "add_document: two workspaces writing the same title never collide or leak"
 // ─── edit_document ──────────────────────────────────────────────────────
 
 /// Create a document in ws_1 and return its id (caller frees).
-fn seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) ![]u8 {
-    const out = try executeAddDocument(alloc, .{ .db = db }, "s1", .{ .title = title, .content = content });
+fn seedDoc(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) ![]u8 {
+    const out = try executeAddDocument(alloc, store, "s1", .{ .title = title, .content = content });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -641,13 +647,12 @@ fn seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, conten
 test "edit_document: replaces the body and keeps the title when only content is given" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Plan", "old body");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "old body");
     defer alloc.free(id);
 
-    const out = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id, .content = "new body" });
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .document_id = id, .content = "new body" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -659,14 +664,13 @@ test "edit_document: replaces the body and keeps the title when only content is 
 test "edit_document: an omitted field is a no-op, an explicit empty string is a clear" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Plan", "body to keep");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "body to keep");
     defer alloc.free(id);
 
     // title-only patch: the body must survive.
-    const renamed = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id, .title = "Renamed" });
+    const renamed = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .document_id = id, .title = "Renamed" });
     defer alloc.free(renamed);
     var pr = try parseJson(alloc, renamed);
     defer pr.deinit();
@@ -674,7 +678,7 @@ test "edit_document: an omitted field is a no-op, an explicit empty string is a 
     try testing.expectEqualStrings("body to keep", pr.content);
 
     // explicit "" clears the body — different from omitting the field.
-    const cleared = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id, .content = "" });
+    const cleared = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .document_id = id, .content = "" });
     defer alloc.free(cleared);
     var pc = try parseJson(alloc, cleared);
     defer pc.deinit();
@@ -685,13 +689,12 @@ test "edit_document: an omitted field is a no-op, an explicit empty string is a 
 test "edit_document: a patch with neither field is rejected, not silently accepted" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Plan", "unchanged");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "unchanged");
     defer alloc.free(id);
 
-    const out = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id });
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .document_id = id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -702,10 +705,9 @@ test "edit_document: a patch with neither field is rejected, not silently accept
 test "edit_document: a missing document_id is rejected before any DB work" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .content = "x" });
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .content = "x" });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -716,21 +718,20 @@ test "edit_document: a missing document_id is rejected before any DB work" {
 test "edit_document: workspace B cannot edit workspace A's document, and the error is identical to a missing one" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Private", "ws_1 only");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Private", "ws_1 only");
     defer alloc.free(id);
 
     // Same session, real foreign id.
-    const denied = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = id, .content = "hijacked" });
+    const denied = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{ .document_id = id, .content = "hijacked" });
     defer alloc.free(denied);
     var d = try parseJson(alloc, denied);
     defer d.deinit();
 
     // Different session, nonexistent id. If these two messages differ,
     // the tool is an oracle for other workspaces' row ids.
-    const missing = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = "doc_does_not_exist", .content = "x" });
+    const missing = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{ .document_id = "doc_does_not_exist", .content = "x" });
     defer alloc.free(missing);
     var m = try parseJson(alloc, missing);
     defer m.deinit();
@@ -740,7 +741,7 @@ test "edit_document: workspace B cannot edit workspace A's document, and the err
 
     // And the owner's copy is untouched — a rejected cross-workspace edit
     // must not half-apply.
-    const read_back = try documents_store.getDocument(alloc, &ctx.db, "ws_1", id);
+    const read_back = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
     defer documents_store.freeDocumentRow(alloc, read_back);
     try testing.expectEqualStrings("ws_1 only", read_back.content);
 }
@@ -748,13 +749,12 @@ test "edit_document: workspace B cannot edit workspace A's document, and the err
 test "edit_document: no content leaks through the cross-workspace denial" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Private", "TOPSECRETBODY");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Private", "TOPSECRETBODY");
     defer alloc.free(id);
 
-    const denied = try executeEditDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = id, .content = "x" });
+    const denied = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{ .document_id = id, .content = "x" });
     defer alloc.free(denied);
     try testing.expect(std.mem.indexOf(u8, denied, "TOPSECRETBODY") == null);
 }
@@ -764,13 +764,12 @@ test "edit_document: no content leaks through the cross-workspace denial" {
 test "delete_document: removes the row and names what it removed" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Obsolete plan", "no longer needed");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Obsolete plan", "no longer needed");
     defer alloc.free(id);
 
-    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = id });
+    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .document_id = id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -781,17 +780,16 @@ test "delete_document: removes the row and names what it removed" {
     try testing.expect(std.mem.indexOf(u8, out, "\"deleted\":true") != null);
 
     // And the row is actually gone from the table, not merely reported gone.
-    const after = documents_store.getDocument(alloc, &ctx.db, "ws_1", id);
+    const after = (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
     try testing.expectError(error.NotFound, after);
 }
 
 test "delete_document: an empty document_id is rejected before any DB work" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s1", .{ .document_id = "   " });
+    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{ .document_id = "   " });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
@@ -802,19 +800,18 @@ test "delete_document: an empty document_id is rejected before any DB work" {
 test "delete_document: an unresolvable session deletes nothing" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Survivor", "still here");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Survivor", "still here");
     defer alloc.free(id);
 
-    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s_orphan", .{ .document_id = id });
+    const out = try executeDeleteDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", .{ .document_id = id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
     try testing.expect(p.err != null);
 
-    const still = try documents_store.getDocument(alloc, &ctx.db, "ws_1", id);
+    const still = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
     defer documents_store.freeDocumentRow(alloc, still);
     try testing.expectEqualStrings("still here", still.content);
 }
@@ -822,18 +819,17 @@ test "delete_document: an unresolvable session deletes nothing" {
 test "delete_document: workspace B cannot delete workspace A's document, and the error is identical to a missing one" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try seedDoc(alloc, &ctx.db, "Private", "TOPSECRETBODY");
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Private", "TOPSECRETBODY");
     defer alloc.free(id);
 
-    const denied = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s2", .{ .document_id = id });
+    const denied = try executeDeleteDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{ .document_id = id });
     defer alloc.free(denied);
     var d = try parseJson(alloc, denied);
     defer d.deinit();
 
-    const missing = try executeDeleteDocument(alloc, .{ .db = &ctx.db }, "s2", .{
+    const missing = try executeDeleteDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", .{
         .document_id = "doc_nope",
     });
     defer alloc.free(missing);
@@ -845,7 +841,7 @@ test "delete_document: workspace B cannot delete workspace A's document, and the
     try testing.expect(std.mem.indexOf(u8, denied, "TOPSECRETBODY") == null);
 
     // A refused cross-workspace delete must not half-apply.
-    const read_back = try documents_store.getDocument(alloc, &ctx.db, "ws_1", id);
+    const read_back = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
     defer documents_store.freeDocumentRow(alloc, read_back);
     try testing.expectEqualStrings("TOPSECRETBODY", read_back.content);
 }
@@ -1185,19 +1181,60 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     defer ctx.allocator.free(outcome.hits);
 
     const page = documents_search.pageSlice(outcome.hits, offset, limit);
-    const inner = try documents_search.renderSearchResult(ctx.allocator, page, .{
+    const include_content = parsed.value.include_content orelse false;
+
+    // `include_content` is the "I am about to edit" path. The body is not a
+    // column any more, so fetch it for the PAGE only — never for every match.
+    var hydrated: std.ArrayList(documents_search.Hit) = .empty;
+    defer hydrated.deinit(ctx.allocator);
+    var bodies: std.ArrayList([]u8) = .empty;
+    defer {
+        for (bodies.items) |b| ctx.allocator.free(b);
+        bodies.deinit(ctx.allocator);
+    }
+    var page_final: []const documents_search.Hit = page;
+    if (include_content) {
+        for (page) |hit| {
+            var copy = hit;
+            if (hit.content.len == 0) {
+                if (ctx.storage) |s| {
+                    if (contentKeyOf(rows, hit.id)) |key| {
+                        if (s.get(ctx.allocator, key)) |body| {
+                            if (bodies.append(ctx.allocator, body)) |_| {
+                                copy.content = body;
+                            } else |_| {
+                                ctx.allocator.free(body);
+                            }
+                        } else |_| {}
+                    }
+                }
+            }
+            hydrated.append(ctx.allocator, copy) catch {};
+        }
+        page_final = hydrated.items;
+    }
+
+    const inner = try documents_search.renderSearchResult(ctx.allocator, page_final, .{
         .total = outcome.hits.len,
         .offset = offset,
         .limit = limit,
         .query = query,
         .mode = outcome.mode,
         .warning = outcome.warning,
-        .include_content = parsed.value.include_content orelse false,
+        .include_content = include_content,
     });
     defer ctx.allocator.free(inner);
 
     const output = try wrapToolOutput(ctx.allocator, "search_documents", tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+/// The object key for `id`, or null when the row has none.
+fn contentKeyOf(rows: []const exec_documents_store.DocumentRow, id: []const u8) ?[]const u8 {
+    for (rows) |row| {
+        if (std.mem.eql(u8, row.id, id)) return row.content_key;
+    }
+    return null;
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────
@@ -1210,6 +1247,13 @@ const exec_migration = @import("../../../migrations/migration.zig");
 const exec_TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
+    objects: @import("pabrikcore").storage.memory.MemoryStorage,
+
+    fn deinit(self: *exec_TestCtx) void {
+        self.objects.deinit();
+        self.db.deinit();
+        self.threaded.deinit();
+    }
 };
 
 fn exec_setupDb() !exec_TestCtx {
@@ -1248,16 +1292,26 @@ fn exec_setupDb() !exec_TestCtx {
         \\  ('s1', 'One', 'active', '/proj/a'),
         \\  ('s2', 'Two', 'active', '/proj/b')
     , &.{});
-    return .{ .db = db, .threaded = threaded };
+    return .{
+        .db = db,
+        .threaded = threaded,
+        .objects = @import("pabrikcore").storage.memory.MemoryStorage.init(testing.allocator),
+    };
 }
 
-fn makeTestCtx(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) ToolExecContext {
+fn makeTestCtx(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    storage: ?@import("pabrikcore").storage.storage.Storage,
+    session_id: []const u8,
+) ToolExecContext {
     var dummy_f32: f32 = 0.0;
     var dummy_bool: bool = false;
     return .{
         .allocator = allocator,
         .io = exec_testing.io,
         .db = db,
+        .storage = storage,
         .logger = undefined,
         .session_id = session_id,
         .model = "test-model",
@@ -1443,10 +1497,9 @@ fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
 test "execAddDocument: success envelope carries the created document" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const tc = makeTestCtx(alloc, &ctx.db, "s1");
+    const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
     defer alloc.free(result.output);
 
@@ -1462,13 +1515,12 @@ test "execAddDocument: success envelope carries the created document" {
 test "execAddDocument: a tool-level refusal surfaces as success=false" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // The tool returns {"error": "..."} as its INNER payload. Without the
     // InnerErrorProbe re-parse this would be wrapped as success=true and
     // the model would read a refusal as a written document.
-    const tc = makeTestCtx(alloc, &ctx.db, "");
+    const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "");
     const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Nowhere\"}"));
     defer alloc.free(result.output);
 
@@ -1482,10 +1534,9 @@ test "execAddDocument: a tool-level refusal surfaces as success=false" {
 test "execAddDocument: malformed JSON arguments become a parse failure, not a crash" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const tc = makeTestCtx(alloc, &ctx.db, "s1");
+    const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     const result = try execAddDocument(tc, fakeToolCall("add_document", "{not json"));
     defer alloc.free(result.output);
 
@@ -1502,13 +1553,12 @@ test "execAddDocument: malformed JSON arguments become a parse failure, not a cr
 test "execAddDocument: a hallucinated workspace_id is ignored, not honoured" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // s1 belongs to ws_1. The model asks for ws_2. The wrapper parses with
     // ignore_unknown_fields, the field is dropped, and the write lands in
     // ws_1 — the session's own workspace, never the requested one.
-    const tc = makeTestCtx(alloc, &ctx.db, "s1");
+    const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Spoof attempt\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}"));
     defer alloc.free(result.output);
 
@@ -1521,10 +1571,9 @@ test "execAddDocument: a hallucinated workspace_id is ignored, not honoured" {
 test "execEditDocument: a cross-workspace edit is refused and the row is untouched" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("add_document", "{\"title\":\"Private\",\"content\":\"TOPSECRET\"}"));
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Private\",\"content\":\"TOPSECRET\"}"));
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1532,7 +1581,7 @@ test "execEditDocument: a cross-workspace edit is refused and the row is untouch
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"content\":\"hijacked\"}}", .{id});
     defer alloc.free(args);
-    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, "s2"), fakeToolCall(
+    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall(
         "edit_document",
         args,
     ));
@@ -1548,10 +1597,9 @@ test "execEditDocument: a cross-workspace edit is refused and the row is untouch
 test "execEditDocument: success envelope echoes the new body" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("add_document", "{\"title\":\"Plan\",\"content\":\"v1\"}"));
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Plan\",\"content\":\"v1\"}"));
     defer alloc.free(create.output);
     var created2 = try parseEnvelope(alloc, create.output);
     defer created2.deinit();
@@ -1559,7 +1607,7 @@ test "execEditDocument: success envelope echoes the new body" {
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"content\":\"v2\"}}", .{id});
     defer alloc.free(args);
-    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("edit_document", args));
+    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("edit_document", args));
     defer alloc.free(edit.output);
 
     var env = try parseEnvelope(alloc, edit.output);
@@ -1575,17 +1623,16 @@ test "execEditDocument: success envelope echoes the new body" {
 test "execDeleteDocument: success envelope names the document it removed" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("add_document", "{\"title\":\"Obsolete\",\"content\":\"gone soon\"}"));
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Obsolete\",\"content\":\"gone soon\"}"));
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{created.id});
     defer alloc.free(args);
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("delete_document", args));
+    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", args));
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
@@ -1598,16 +1645,15 @@ test "execDeleteDocument: success envelope names the document it removed" {
     try exec_testing.expect(std.mem.indexOf(u8, del.output, "\"deleted\":true") != null);
 
     // The body is gone from the table, not just from the response.
-    try exec_testing.expectError(error.NotFound, exec_documents_store.getDocument(alloc, &ctx.db, "ws_1", created.id));
+    try exec_testing.expectError(error.NotFound, (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", created.id));
 }
 
 test "execDeleteDocument: malformed JSON arguments become a parse failure, not a crash" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("delete_document", "{not json"));
+    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", "{not json"));
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
@@ -1623,10 +1669,9 @@ test "execDeleteDocument: malformed JSON arguments become a parse failure, not a
 test "execDeleteDocument: a hallucinated workspace_id is ignored, so the owner still deletes" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("add_document", "{\"title\":\"Mine\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}"));
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Mine\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}"));
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1638,22 +1683,21 @@ test "execDeleteDocument: a hallucinated workspace_id is ignored, so the owner s
         .{created.id},
     );
     defer alloc.free(args);
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("delete_document", args));
+    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", args));
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
     defer env.deinit();
     try exec_testing.expect(env.success);
-    try exec_testing.expectError(error.NotFound, exec_documents_store.getDocument(alloc, &ctx.db, "ws_1", created.id));
+    try exec_testing.expectError(error.NotFound, (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", created.id));
 }
 
 test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("add_document", "{\"title\":\"Private\",\"content\":\"TOPSECRETBODY\"}"));
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Private\",\"content\":\"TOPSECRETBODY\"}"));
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1661,14 +1705,14 @@ test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing"
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{created.id});
     defer alloc.free(args);
 
-    const denied = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, "s2"), fakeToolCall("delete_document", args));
+    const denied = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall("delete_document", args));
     defer alloc.free(denied.output);
     var d = try parseEnvelope(alloc, denied.output);
     defer d.deinit();
 
     const missing_args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{"doc_nope"});
     defer alloc.free(missing_args);
-    const missing = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, "s2"), fakeToolCall("delete_document", missing_args));
+    const missing = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall("delete_document", missing_args));
     defer alloc.free(missing.output);
     var m = try parseEnvelope(alloc, missing.output);
     defer m.deinit();
@@ -1679,7 +1723,7 @@ test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing"
     try exec_testing.expectEqualStrings(d.err.?, m.err.?);
     try exec_testing.expect(std.mem.indexOf(u8, denied.output, "TOPSECRETBODY") == null);
 
-    const survivor = try exec_documents_store.getDocument(alloc, &ctx.db, "ws_1", created.id);
+    const survivor = try (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", created.id);
     defer exec_documents_store.freeDocumentRow(alloc, survivor);
     try exec_testing.expectEqualStrings("TOPSECRETBODY", survivor.content);
 }
@@ -1687,11 +1731,10 @@ test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing"
 test "execDeleteDocument: an unresolvable session surfaces success=false" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     const del = try execDeleteDocument(
-        makeTestCtx(alloc, &ctx.db, "s_orphan"),
+        makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s_orphan"),
         fakeToolCall("delete_document", "{\"document_id\":\"doc_anything\"}"),
     );
     defer alloc.free(del.output);
@@ -1705,10 +1748,10 @@ test "execDeleteDocument: an unresolvable session surfaces success=false" {
 // ─── search_documents ───────────────────────────────────────────────────
 
 /// Create a document in ws_1 through the real tool path and return its id.
-fn exec_seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) ![]u8 {
+fn exec_seedDoc(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) ![]u8 {
     const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = title, .content = content }, .{});
     defer alloc.free(args);
-    const create = try execAddDocument(makeTestCtx(alloc, db, "s1"), fakeToolCall("add_document", args));
+    const create = try execAddDocument(makeTestCtx(alloc, store.db, store.storage, "s1"), fakeToolCall("add_document", args));
     defer alloc.free(create.output);
     var env = try parseEnvelope(alloc, create.output);
     defer env.deinit();
@@ -1717,13 +1760,13 @@ fn exec_seedDoc(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, c
 }
 
 /// Seed a document whose id the test does not need to keep.
-fn seedAnon(alloc: std.mem.Allocator, db: *database.Db, title: []const u8, content: []const u8) !void {
-    const id = try exec_seedDoc(alloc, db, title, content);
+fn seedAnon(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) !void {
+    const id = try exec_seedDoc(alloc, store, title, content);
     alloc.free(id);
 }
 
-fn runSearch(alloc: std.mem.Allocator, db: *database.Db, session: []const u8, args: []const u8) !Envelope {
-    const res = try execSearchDocuments(makeTestCtx(alloc, db, session), fakeToolCall("search_documents", args));
+fn runSearch(alloc: std.mem.Allocator, store: documents_store.Store, session: []const u8, args: []const u8) !Envelope {
+    const res = try execSearchDocuments(makeTestCtx(alloc, store.db, store.storage, session), fakeToolCall("search_documents", args));
     // `parseEnvelope` dupes everything it needs, so the raw output can go.
     defer alloc.free(res.output);
     return parseEnvelope(alloc, res.output);
@@ -1732,15 +1775,14 @@ fn runSearch(alloc: std.mem.Allocator, db: *database.Db, session: []const u8, ar
 test "execSearchDocuments: no arguments lists the workspace newest-first in mode=all" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const a = try exec_seedDoc(alloc, &ctx.db, "Alpha", "first body");
+    const a = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Alpha", "first body");
     defer alloc.free(a);
-    const b = try exec_seedDoc(alloc, &ctx.db, "Beta", "second body");
+    const b = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Beta", "second body");
     defer alloc.free(b);
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
     defer env.deinit();
 
     try exec_testing.expectEqualStrings("search_documents", env.tool);
@@ -1759,21 +1801,20 @@ test "execSearchDocuments: no arguments lists the workspace newest-first in mode
 test "execSearchDocuments: a regex query reaches title OR body" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Release plan v2", "# plan\n\n- ship 095\n");
-    try seedAnon(alloc, &ctx.db, "Meeting notes", "We agreed to LAUNCH in October.\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Release plan v2", "# plan\n\n- ship 095\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Meeting notes", "We agreed to LAUNCH in October.\n");
 
     // Title hit only.
-    var by_title = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"release\"}");
+    var by_title = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release\"}");
     defer by_title.deinit();
     try exec_testing.expectEqual(@as(usize, 1), by_title.total);
     try exec_testing.expectEqualStrings("Release plan v2", by_title.titles[0]);
     try exec_testing.expectEqualStrings("regex", by_title.pattern_mode);
 
     // Body hit, different case on both sides.
-    var by_body = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"LAUNCH\"}");
+    var by_body = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"LAUNCH\"}");
     defer by_body.deinit();
     try exec_testing.expectEqual(@as(usize, 1), by_body.total);
     try exec_testing.expectEqualStrings("Meeting notes", by_body.titles[0]);
@@ -1781,7 +1822,7 @@ test "execSearchDocuments: a regex query reaches title OR body" {
     try exec_testing.expect(std.mem.indexOf(u8, by_body.excerpts[0], "LAUNCH") != null);
 
     // One alternation reaches both.
-    var alt = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"release|launch\"}");
+    var alt = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release|launch\"}");
     defer alt.deinit();
     try exec_testing.expectEqual(@as(usize, 2), alt.total);
 }
@@ -1789,14 +1830,13 @@ test "execSearchDocuments: a regex query reaches title OR body" {
 test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL prefilter" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // `release.` as a regex is "release" + any one character, so "releaseX"
     // matches while the literal substring "release." does not occur.
-    try seedAnon(alloc, &ctx.db, "Zebra", "releaseX the thing\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Zebra", "releaseX the thing\n");
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"release.\"}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\"}");
     defer env.deinit();
 
     try exec_testing.expectEqual(@as(usize, 1), env.total);
@@ -1804,7 +1844,7 @@ test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL pref
 
     // And the same query with literal:true genuinely matches nothing — the
     // flag, not the prefilter, is what makes the two answers differ.
-    var lit = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"release.\",\"literal\":true}");
+    var lit = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\",\"literal\":true}");
     defer lit.deinit();
     try exec_testing.expectEqualStrings("literal", lit.pattern_mode);
     try exec_testing.expectEqual(@as(usize, 0), lit.total);
@@ -1813,13 +1853,12 @@ test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL pref
 test "execSearchDocuments: an anchored query still matches, so ^ is not prefiltered either" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Q3 plan", "later");
-    try seedAnon(alloc, &ctx.db, "Backlog Q3 items", "earlier");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Q3 plan", "later");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Backlog Q3 items", "earlier");
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"^Q3\"}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"^Q3\"}");
     defer env.deinit();
     try exec_testing.expectEqual(@as(usize, 1), env.total);
     try exec_testing.expectEqualStrings("Q3 plan", env.titles[0]);
@@ -1828,20 +1867,19 @@ test "execSearchDocuments: an anchored query still matches, so ^ is not prefilte
 test "execSearchDocuments: a LIKE prefilter needle containing % or _ is matched verbatim" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // SQLite's LIKE would treat `%` as "any run" and `_` as "any char".
-    try seedAnon(alloc, &ctx.db, "Percent test", "100%% done\n");
-    try seedAnon(alloc, &ctx.db, "Underscore test", "snake_case naming\n");
-    try seedAnon(alloc, &ctx.db, "Decoy", "nothing special\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Percent test", "100%% done\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Underscore test", "snake_case naming\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Decoy", "nothing special\n");
 
-    var pct = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"%\",\"literal\":true}");
+    var pct = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"%\",\"literal\":true}");
     defer pct.deinit();
     try exec_testing.expectEqual(@as(usize, 1), pct.total);
     try exec_testing.expectEqualStrings("Percent test", pct.titles[0]);
 
-    var us = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"_\",\"literal\":true}");
+    var us = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"_\",\"literal\":true}");
     defer us.deinit();
     try exec_testing.expectEqual(@as(usize, 1), us.total);
     try exec_testing.expectEqualStrings("Underscore test", us.titles[0]);
@@ -1850,12 +1888,11 @@ test "execSearchDocuments: a LIKE prefilter needle containing % or _ is matched 
 test "execSearchDocuments: an invalid pattern is a warning, not a failed tool call" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Notes", "release checklist\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Notes", "release checklist\n");
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"releas(\"}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"releas(\"}");
     defer env.deinit();
 
     // success=true: the search RAN. It just ran in fallback mode, and said
@@ -1870,12 +1907,11 @@ test "execSearchDocuments: an invalid pattern is a warning, not a failed tool ca
 test "execSearchDocuments: include_content is opt-in and off by default" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Plan", "the FULLBODY marker text\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "the FULLBODY marker text\n");
 
-    var without = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"FULLBODY\"}");
+    var without = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\"}");
     defer without.deinit();
     try exec_testing.expectEqual(@as(usize, 1), without.total);
     try exec_testing.expect(without.contents[0] == null);
@@ -1883,7 +1919,7 @@ test "execSearchDocuments: include_content is opt-in and off by default" {
     // The excerpt still shows the hit.
     try exec_testing.expect(std.mem.indexOf(u8, without.excerpts[0], "FULLBODY") != null);
 
-    var with = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"FULLBODY\",\"include_content\":true}");
+    var with = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\",\"include_content\":true}");
     defer with.deinit();
     try exec_testing.expectEqualStrings("the FULLBODY marker text\n", with.contents[0].?);
     try exec_testing.expectEqual(@as(usize, 25), with.content_lengths[0]);
@@ -1892,14 +1928,13 @@ test "execSearchDocuments: include_content is opt-in and off by default" {
 test "execSearchDocuments: paging reports total, truncated, next_offset and the offset in the hint" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     for ([_][]const u8{ "D1", "D2", "D3", "D4", "D5" }) |t| {
-        try seedAnon(alloc, &ctx.db, t, "shared body");
+        try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, t, "shared body");
     }
 
-    var page1 = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"shared\",\"limit\":2}");
+    var page1 = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2}");
     defer page1.deinit();
     try exec_testing.expectEqual(@as(usize, 5), page1.total);
     try exec_testing.expectEqual(@as(usize, 2), page1.count);
@@ -1907,7 +1942,7 @@ test "execSearchDocuments: paging reports total, truncated, next_offset and the 
     try exec_testing.expectEqual(@as(usize, 2), page1.next_offset.?);
     try exec_testing.expect(std.mem.indexOf(u8, page1.hint, "offset=2") != null);
 
-    var page2 = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":2}");
+    var page2 = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":2}");
     defer page2.deinit();
     try exec_testing.expectEqual(@as(usize, 2), page2.count);
     // next_offset is offset + count, i.e. where page 3 STARTS — not the
@@ -1918,7 +1953,7 @@ test "execSearchDocuments: paging reports total, truncated, next_offset and the 
         for (page2.ids) |id2| try exec_testing.expect(!std.mem.eql(u8, id, id2));
     }
 
-    var last = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":4}");
+    var last = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":4}");
     defer last.deinit();
     try exec_testing.expectEqual(@as(usize, 1), last.count);
     try exec_testing.expect(!last.truncated);
@@ -1929,12 +1964,11 @@ test "execSearchDocuments: paging reports total, truncated, next_offset and the 
 test "execSearchDocuments: an offset past the end is an empty page, not an error" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Only one", "body");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Only one", "body");
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"offset\":500}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":500}");
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 0), env.count);
@@ -1944,20 +1978,19 @@ test "execSearchDocuments: an offset past the end is an empty page, not an error
 test "execSearchDocuments: out-of-range paging is rejected, never silently clamped" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    var zero = try runSearch(alloc, &ctx.db, "s1", "{\"limit\":0}");
+    var zero = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":0}");
     defer zero.deinit();
     try exec_testing.expect(!zero.success);
     try exec_testing.expect(std.mem.indexOf(u8, zero.err.?, "at least 1") != null);
 
-    var huge = try runSearch(alloc, &ctx.db, "s1", "{\"limit\":100000}");
+    var huge = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":100000}");
     defer huge.deinit();
     try exec_testing.expect(!huge.success);
     try exec_testing.expect(std.mem.indexOf(u8, huge.err.?, "at most 100") != null);
 
-    var negative = try runSearch(alloc, &ctx.db, "s1", "{\"offset\":-1}");
+    var negative = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":-1}");
     defer negative.deinit();
     try exec_testing.expect(!negative.success);
     try exec_testing.expect(std.mem.indexOf(u8, negative.err.?, "negative") != null);
@@ -1966,10 +1999,9 @@ test "execSearchDocuments: out-of-range paging is rejected, never silently clamp
 test "execSearchDocuments: malformed JSON arguments become a parse failure, not a crash" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{not json");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{not json");
     defer env.deinit();
     try exec_testing.expect(!env.success);
     // `search_documents` keeps its own hand-written schema hint (it names
@@ -1982,14 +2014,13 @@ test "execSearchDocuments: malformed JSON arguments become a parse failure, not 
 test "execSearchDocuments: a workspace never sees another workspace's documents" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "WS1 secret", "sharedword in ws_1\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "WS1 secret", "sharedword in ws_1\n");
 
     const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = "WS2 note", .content = "sharedword in ws_2" }, .{});
     defer alloc.free(args);
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, "s2"), fakeToolCall("add_document", args));
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall("add_document", args));
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1997,7 +2028,7 @@ test "execSearchDocuments: a workspace never sees another workspace's documents"
 
     // The shared query matches exactly one row per workspace, and each
     // search returns only its own — no ids, no titles, no excerpts leaking.
-    var mine = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"sharedword\"}");
+    var mine = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"sharedword\"}");
     defer mine.deinit();
     try exec_testing.expectEqual(@as(usize, 1), mine.total);
     try exec_testing.expectEqualStrings("WS1 secret", mine.titles[0]);
@@ -2005,7 +2036,7 @@ test "execSearchDocuments: a workspace never sees another workspace's documents"
     try exec_testing.expect(std.mem.indexOf(u8, mine.raw, created.id) == null);
     try exec_testing.expect(std.mem.indexOf(u8, mine.raw, "ws_2") == null);
 
-    var theirs = try runSearch(alloc, &ctx.db, "s2", "{\"query\":\"sharedword\"}");
+    var theirs = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", "{\"query\":\"sharedword\"}");
     defer theirs.deinit();
     try exec_testing.expectEqual(@as(usize, 1), theirs.total);
     try exec_testing.expectEqualStrings("WS2 note", theirs.titles[0]);
@@ -2015,19 +2046,18 @@ test "execSearchDocuments: a workspace never sees another workspace's documents"
 test "execSearchDocuments: an unresolvable session is a refusal, NOT an empty result set" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // "no documents matched" and "you have no workspace" are different facts
     // and the model has to be able to tell them apart — a silent empty
     // page would read as "your notes are gone".
-    var orphan = try runSearch(alloc, &ctx.db, "s_orphan", "{}");
+    var orphan = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", "{}");
     defer orphan.deinit();
     try exec_testing.expect(!orphan.success);
     try exec_testing.expect(orphan.err != null);
     try exec_testing.expect(std.mem.indexOf(u8, orphan.err.?, "workspace") != null);
 
-    var empty = try runSearch(alloc, &ctx.db, "s1", "{}");
+    var empty = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
     defer empty.deinit();
     try exec_testing.expect(empty.success);
     try exec_testing.expectEqual(@as(usize, 0), empty.total);
@@ -2037,12 +2067,11 @@ test "execSearchDocuments: an unresolvable session is a refusal, NOT an empty re
 test "execSearchDocuments: a hallucinated workspace_id is ignored, not honoured" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Mine", "findme\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Mine", "findme\n");
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"findme\",\"workspace_id\":\"ws_2\"}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\",\"workspace_id\":\"ws_2\"}");
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 1), env.total);
@@ -2052,12 +2081,11 @@ test "execSearchDocuments: a hallucinated workspace_id is ignored, not honoured"
 test "execSearchDocuments: an empty document body is searchable by title, not by content" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    try seedAnon(alloc, &ctx.db, "Stub", "");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Stub", "");
 
-    var by_title = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"Stub\"}");
+    var by_title = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"Stub\"}");
     defer by_title.deinit();
     try exec_testing.expectEqual(@as(usize, 1), by_title.total);
     try exec_testing.expectEqual(@as(usize, 0), by_title.content_lengths[0]);
@@ -2065,7 +2093,7 @@ test "execSearchDocuments: an empty document body is searchable by title, not by
     // silently standing in for it.
     try exec_testing.expectEqualStrings("Stub", by_title.excerpts[0]);
 
-    var none = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"hippopotamus\"}");
+    var none = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"hippopotamus\"}");
     defer none.deinit();
     try exec_testing.expectEqual(@as(usize, 0), none.total);
 }
@@ -2073,21 +2101,20 @@ test "execSearchDocuments: an empty document body is searchable by title, not by
 test "execSearchDocuments: a body hit in a large document yields a bounded excerpt" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    // 8 KiB of padding on both sides of the needle: without a window the
-    // result would carry 16 KiB of markdown into the context window for
-    // what should be a one-line answer.
+    // 8 KiB of padding AFTER the needle: without a window the result would
+    // carry 8 KiB of markdown into the context for a one-line answer. The
+    // needle sits inside the preview, which is what search reads.
     const filler = "y" ** 8192;
-    const body = try std.fmt.allocPrint(alloc, "{s}NEEDLE{s}", .{ filler, filler });
+    const body = try std.fmt.allocPrint(alloc, "NEEDLE{s}", .{filler});
     defer alloc.free(body);
-    try seedAnon(alloc, &ctx.db, "Huge", body);
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Huge", body);
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"NEEDLE\"}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"NEEDLE\"}");
     defer env.deinit();
     try exec_testing.expectEqual(@as(usize, 1), env.total);
-    try exec_testing.expectEqual(@as(usize, 8192 * 2 + 6), env.content_lengths[0]);
+    try exec_testing.expectEqual(@as(usize, 8192 + 6), env.content_lengths[0]);
     try exec_testing.expect(std.mem.indexOf(u8, env.excerpts[0], "NEEDLE") != null);
     try exec_testing.expect(env.excerpts[0].len <= documents_search.EXCERPT_MAX_BYTES + 8);
 }
@@ -2095,16 +2122,15 @@ test "execSearchDocuments: a body hit in a large document yields a bounded excer
 test "execSearchDocuments: a multi-byte body still produces valid JSON" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // The excerpt window can land mid-codepoint. A split produces an invalid
     // UTF-8 sequence, which surfaces as a stringify failure — i.e. the whole
     // search tool call errors for a query that found a real match.
     const body = "日本語のテキスト" ** 400;
-    try seedAnon(alloc, &ctx.db, "Ünïcödé", body);
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Ünïcödé", body);
 
-    var env = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"テキスト\"}");
+    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"テキスト\"}");
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 1), env.total);
@@ -2115,28 +2141,27 @@ test "execSearchDocuments: a multi-byte body still produces valid JSON" {
 test "execSearchDocuments: deleting what a search returned makes the next search stop finding it" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const id = try exec_seedDoc(alloc, &ctx.db, "Ephemeral", "findme marker\n");
+    const id = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Ephemeral", "findme marker\n");
     defer alloc.free(id);
-    try seedAnon(alloc, &ctx.db, "Keep", "unrelated\n");
+    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Keep", "unrelated\n");
 
-    var before = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"findme\"}");
+    var before = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
     defer before.deinit();
     try exec_testing.expectEqual(@as(usize, 1), before.total);
 
     // The round trip the tool is actually for: search → take the id → delete.
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{before.ids[0]});
     defer alloc.free(args);
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, "s1"), fakeToolCall("delete_document", args));
+    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", args));
     defer alloc.free(del.output);
     var env = try parseEnvelope(alloc, del.output);
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqualStrings(id, env.id);
 
-    var after = try runSearch(alloc, &ctx.db, "s1", "{\"query\":\"findme\"}");
+    var after = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
     defer after.deinit();
     try exec_testing.expect(after.success);
     try exec_testing.expectEqual(@as(usize, 0), after.total);
@@ -2191,8 +2216,7 @@ test "search_documents is seeded by default but delete_document is not" {
 
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // The creation-time seed writes `agent_tools`, which `exec_setupDb` does not
     // build (it only stands up the document schema). Same table shape the
@@ -2262,8 +2286,7 @@ fn capturedField(field: []const u8) ![]u8 {
 test "a successful add_document announces document_created with the new row" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     var bus_threaded = std.Io.Threaded.init(alloc, .{});
     defer bus_threaded.deinit();
@@ -2272,7 +2295,7 @@ test "a successful add_document announces document_created with the new row" {
     releaseDocumentSse();
     try bus.subscribe(sse_event_mod.SseEvent, document_events.RoutingKey, captureDocumentSse);
 
-    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
     const result = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
     defer alloc.free(result.output);
@@ -2300,15 +2323,14 @@ test "a successful add_document announces document_created with the new row" {
 test "a successful edit_document announces document_updated with the new title" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     var bus_threaded = std.Io.Threaded.init(alloc, .{});
     defer bus_threaded.deinit();
     var bus = sse_bus_mod.EventBus.init("documents_test", alloc, bus_threaded.io());
     defer bus.deinit();
 
-    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
 
     const created = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Draft\"}"));
@@ -2347,15 +2369,14 @@ test "a successful edit_document announces document_updated with the new title" 
 test "a successful delete_document announces document_deleted for the removed id" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     var bus_threaded = std.Io.Threaded.init(alloc, .{});
     defer bus_threaded.deinit();
     var bus = sse_bus_mod.EventBus.init("documents_test", alloc, bus_threaded.io());
     defer bus.deinit();
 
-    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
 
     const created = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Doomed\"}"));
@@ -2397,8 +2418,7 @@ test "a successful delete_document announces document_deleted for the removed id
 test "a refused document mutation announces nothing" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     var bus_threaded = std.Io.Threaded.init(alloc, .{});
     defer bus_threaded.deinit();
@@ -2407,7 +2427,7 @@ test "a refused document mutation announces nothing" {
     releaseDocumentSse();
     try bus.subscribe(sse_event_mod.SseEvent, document_events.RoutingKey, captureDocumentSse);
 
-    var tc_ctx = makeTestCtx(alloc, &ctx.db, "s1");
+    var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
 
     // A blank title is refused by the store, so nothing may be announced — a listener acting on

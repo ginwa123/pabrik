@@ -196,7 +196,7 @@ test "useCase: creates a markdown document and stamps both timestamps" {
     try testing.expectEqualStrings("ws_1", output.document.workspace_id);
     // Trimmed — the sidebar row must not render leading padding.
     try testing.expectEqualStrings("Release notes", output.document.title);
-    try testing.expectEqualStrings("# v1\n\nship it", output.document.content);
+    try testing.expectEqualStrings("# v1\n\nship it", output.document.preview);
     try testing.expectEqualStrings("markdown", output.document.format);
     try testing.expect(output.document.id.len > 0);
     try testing.expect(output.document.created_at.len > 0);
