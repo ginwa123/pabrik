@@ -85,18 +85,44 @@ pub const HttpTransport = struct {
 
 const testing = std.testing;
 
-test "http transport: a refused connection is NetworkFailed, not a panic" {
+/// Accept one connection and close it, so the client's connect succeeds and
+/// the request fails at the handshake. A refused connect would do the same
+/// job, but Windows prints a stack trace for it in Debug builds.
+fn acceptOnceAndClose(io: std.Io, server: *std.Io.net.Server) void {
+    const stream = server.accept(io) catch return;
+    stream.close(io);
+}
+
+/// Send one request to a listener that hangs up immediately and assert the
+/// transport reports NetworkFailed.
+fn expectNetworkFailed(method: transport.Method, body: []const u8) !void {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     defer threaded.deinit();
+    const io = threaded.io();
 
-    var t = HttpTransport.init(testing.allocator, threaded.io());
+    const address = std.Io.net.IpAddress{ .ip4 = .loopback(0) };
+    var server = try address.listen(io, .{ .mode = .stream });
+    defer server.deinit(io);
+    const port = server.socket.address.getPort();
+
+    const acceptor = try std.Thread.spawn(.{}, acceptOnceAndClose, .{ io, &server });
+    defer acceptor.join();
+
+    var t = HttpTransport.init(testing.allocator, io);
     defer t.deinit();
 
-    // Port 1 on loopback is never listening, so the connect fails immediately.
+    const url = try std.fmt.allocPrint(testing.allocator, "http://127.0.0.1:{d}/x", .{port});
+    defer testing.allocator.free(url);
+
     try testing.expectError(error.NetworkFailed, t.asTransport().send(testing.allocator, .{
-        .method = .get,
-        .url = "http://127.0.0.1:1/nothing",
+        .method = method,
+        .url = url,
+        .body = body,
     }));
+}
+
+test "http transport: a connection that dies is NetworkFailed, not a panic" {
+    try expectNetworkFailed(.get, "");
 }
 
 test "http transport: an unparseable URL is NetworkFailed" {
@@ -113,14 +139,5 @@ test "http transport: an unparseable URL is NetworkFailed" {
 }
 
 test "http transport: a bodiless PUT is sent, not asserted away" {
-    var threaded = std.Io.Threaded.init(testing.allocator, .{});
-    defer threaded.deinit();
-
-    var t = HttpTransport.init(testing.allocator, threaded.io());
-    defer t.deinit();
-
-    try testing.expectError(error.NetworkFailed, t.asTransport().send(testing.allocator, .{
-        .method = .put,
-        .url = "http://127.0.0.1:1/bucket",
-    }));
+    try expectNetworkFailed(.put, "");
 }
