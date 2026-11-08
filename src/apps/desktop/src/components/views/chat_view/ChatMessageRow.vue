@@ -16,9 +16,13 @@ import { hasSkillEnvelope } from '../../../helpers/skillEnvelope'
 import { buildHtmlSrcdoc } from '../../../helpers/chatHtmlFrame'
 import { useThemeTick } from '../../../composables/useThemeTick'
 import type { ChatViewMode } from '../../../stores/chatView'
+import MessageActions from './MessageActions.vue'
 import type { Message, MessageGroup } from './useChatMessagePresentation'
 
 const themeTick = useThemeTick()
+
+/** A row was deleted or dropped from context; the host reloads the transcript. */
+const emit = defineEmits<{ changed: [] }>()
 
 /** The shell is a string of literal colours, so it is rebuilt when the theme changes. */
 function htmlFrameSrcDoc(block: string): string {
@@ -147,6 +151,8 @@ defineProps<{
                 v-for="(userMsg, userMsgIdx) in group.messages"
                 :key="userMsg.id || `u-${userMsgIdx}`"
               >
+                <div class="msg-item">
+                  <div class="msg-item-body">
                 <ChatAttachments
                   v-if="
                     (userMsg.image_urls && userMsg.image_urls.length > 0) ||
@@ -169,6 +175,15 @@ defineProps<{
                     :content="userMsg.content || ''"
                   /><span v-else-if="userMsg.content">{{ userMsg.content }}</span></template
                 >
+                  </div>
+                  <MessageActions
+                    v-if="userMsg.id"
+                    :message-id="userMsg.id"
+                    :label="userMsg.content || ''"
+                    :is-dropped="userMsg.is_feed_to_llm === false"
+                    @changed="emit('changed')"
+                  />
+                </div>
               </template>
             </template>
           </template>
@@ -264,6 +279,7 @@ defineProps<{
                 :key="msg.id || `answer-${idx}`"
                 class="assistant-item"
               >
+                <div class="assistant-item-body">
                 <!-- <html> and <mermaid> blocks render as themselves.
                      `allow-forms` is what makes an interactive block work — without it a
                      <form> submit never fires its event. `allow-same-origin` must stay OUT:
@@ -295,6 +311,14 @@ defineProps<{
                   </template>
                 </template>
                 <span v-else v-html="renderMessageHtml(msg)"></span>
+                </div>
+                <MessageActions
+                  v-if="msg.id"
+                  :message-id="msg.id"
+                  :label="msg.content || ''"
+                  :is-dropped="msg.is_feed_to_llm === false"
+                  @changed="emit('changed')"
+                />
               </div>
             </div>
             <AskUser
@@ -330,6 +354,23 @@ defineProps<{
 
 .assistant-messages {
   margin-bottom: 0.375rem;
+}
+
+.msg-item,
+.assistant-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+}
+
+.msg-item + .msg-item {
+  margin-top: 0.5rem;
+}
+
+.msg-item-body,
+.assistant-item-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .assistant-item + .assistant-item {
@@ -381,5 +422,33 @@ defineProps<{
     outline: 2px solid var(--color-violet, #8b5cf6);
     outline-offset: 2px;
   }
+}
+
+/* A thread with more than one agent labels each reply; a one-agent chat
+   never shows this row. Sizes come from the type scale, not from the
+   template. */
+.msg-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.msg-author-avatar {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  color: var(--semantic-on-accent);
+  background: var(--color-violet);
+}
+
+.msg-author-name {
+  font-size: var(--text-dense);
+  font-weight: 600;
+  color: var(--semantic-text);
 }
 </style>

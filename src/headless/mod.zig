@@ -8,6 +8,7 @@ pub const run = @import("run.zig");
 pub const sessions = @import("sessions.zig");
 pub const documents = @import("documents.zig");
 pub const usage = @import("usage.zig");
+pub const messages_admin = @import("messages_admin.zig");
 pub const group = @import("group.zig");
 pub const memories = @import("memories.zig");
 
@@ -24,6 +25,8 @@ pub const Command = union(enum) {
     /// Read or change document folders (Migration 140).
     documents: args.DocumentsArgs,
     usage: args.UsageArgs,
+    /// Delete, restore or drop one `llm_history` row.
+    message: args.MessageArgs,
     /// Read or change a multi-agent session: its roster and who speaks next.
     group: args.GroupArgs,
     /// Read or change a workspace's saved memories.
@@ -43,6 +46,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .messages => |a| .{ .messages = a },
         .documents => |a| .{ .documents = a },
         .usage => |a| .{ .usage = a },
+        .message => |a| .{ .message = a },
         .group => |a| .{ .group = a },
         .memories => |a| .{ .memories = a },
         .help => .help,

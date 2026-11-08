@@ -12,6 +12,8 @@ import type { SavedReviewComment } from './chat_view/useChatReviewComments'
 import type { VirtualScrollerExposed } from './chat_view/chatViewTypes'
 import type { Message } from './chat_view/useChatMessagePresentation'
 import ChatMessageRow from './chat_view/ChatMessageRow.vue'
+import RawHistoryView from './chat_view/RawHistoryView.vue'
+import { useChatViewStore } from '../../stores/chatView'
 import ChatTranscriptStates from './chat_view/ChatTranscriptStates.vue'
 import FileInput from '../file/FileInput.vue'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in <template> as <Bash> (~line 2507); typescript-eslint doesn't always see template usages via the Vue parser
@@ -168,6 +170,9 @@ const composerAgents = computed(() => {
 
 // State
 const messages = ref<Message[]>([])
+// The grouped transcript and the raw table are two views of the same rows; the
+// app bar's toggle flips this and the template picks the child.
+const chatView = useChatViewStore()
 
 const virtualScrollerRef = ref<VirtualScrollerExposed | null>(null)
 
@@ -521,8 +526,17 @@ const compactSession = async () => {
         </button>
         <ChatTranscriptStates v-bind="statesProps" />
 
+        <RawHistoryView
+          v-if="chatView.mode === 'raw'"
+          :session-id="sessionId || props.chatId"
+          :messages="messages"
+          @changed="loadChatHistory"
+        />
+
         <VirtualScroller
-          v-if="!isInitializing && (isLoading || messageGroups.length > 0)"
+          v-if="
+            chatView.mode !== 'raw' && !isInitializing && (isLoading || messageGroups.length > 0)
+          "
           ref="virtualScrollerRef"
           :items="messageGroups"
           :item-key="groupKey"
@@ -540,7 +554,7 @@ const compactSession = async () => {
           @content-shift="onContentShift"
         >
           <template #default="{ item: group, index: groupIndex }">
-            <ChatMessageRow v-bind="rowProps(group, groupIndex)" />
+            <ChatMessageRow v-bind="rowProps(group, groupIndex)" @changed="loadChatHistory" />
           </template>
         </VirtualScroller>
 
