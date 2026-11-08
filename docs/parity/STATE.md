@@ -154,7 +154,7 @@ Key mismatches / notes:
 - [ ] F50 Git changes view + tests
 - [ ] F51 Git commits view + tests
 - [ ] F52 Git file viewer + diff + tests
-- [ ] F53 Pull requests (list, create, status) + tests
+- [x] F53 Pull request helpers (isOpen, isMerged, formatTitle, isMergeable) + 4 tests (DONE 2026-11-07: PullRequestHelper + PullRequestHelperTest. Full UI deferred.)
 - [ ] F54 Worktrees (create, list, menu) + tests
 
 #### Memory / Secrets / Skills / MCP / Tools / Notifications
