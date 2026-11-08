@@ -505,6 +505,13 @@ class FunctionalHarness:
         # into its tmpdir DB. A suite must not depend on the internet, and that
         # write has no business racing the test's own first request.
         env["PABRIK_MODEL_CATALOG_FETCH"] = "0"
+        # The default object store is a supervised rustfs child. A functional
+        # test only needs a place to put document bodies, and on Windows the
+        # child outlives the killed server and keeps a lock on
+        # `<HOME>/.local/share/pabrik/rustfs`, so teardown's rmtree fails with
+        # WinError 32. The filesystem store has no child process and lives
+        # inside the tempdir, so teardown is clean on every platform.
+        env["PABRIK_STORAGE_BACKEND"] = "fs"
         log_file = log_path.open("wb")
         # `start_new_session=True` is a keyword arg accepted on
         # Python 3.2+ for both POSIX (setsid) and Windows
