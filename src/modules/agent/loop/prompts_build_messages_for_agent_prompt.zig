@@ -41,6 +41,7 @@ const AgentToolFunction = tool_models.AgentToolFunction;
 const ToolParameters = tool_models.ToolParameters;
 const ToolProperty = tool_models.ToolProperty;
 const agentic_loop = @import("workflow.zig");
+const ask_user_message = @import("ask_user_message.zig");
 
 const bash_tool_mod = pabrikcore.bash_tool;
 const read_file_mod = pabrikcore.read_file;
@@ -303,12 +304,38 @@ pub fn buildMessages(
     try allMessages.append(allocator, systemMessage);
     for (historyMessages) |hist| {
         const agentMsgs = try agentic_loop.parsing_mod.transformLLMHistoryToAgentMessage(allocator, hist);
+        defer allocator.free(agentMsgs);
         for (agentMsgs) |msg| {
             try allMessages.append(allocator, msg);
         }
     }
 
+    try handBackResolvedQuestion(allocator, &allMessages);
+
     return try allMessages.toOwnedSlice(allocator);
+}
+
+/// A resolved `<ask_user>` block is rewritten INSIDE the model's own assistant
+/// message, so a resumed run would end on an assistant turn — which a provider
+/// reads as "keep writing this message".
+fn handBackResolvedQuestion(
+    allocator: std.mem.Allocator,
+    allMessages: *std.ArrayList(agent.AgentMessage),
+) !void {
+    if (allMessages.items.len == 0) return;
+    const last = &allMessages.items[allMessages.items.len - 1];
+    if (last.role != .assistant) return;
+    const content = last.content orelse return;
+
+    const res = ask_user_message.resolution(allocator, content) orelse return;
+    defer res.deinit();
+
+    const turn = try ask_user_message.resolvedTurn(allocator, res);
+    const stripped = try ask_user_message.strip(allocator, content);
+    allocator.free(content);
+    last.content = stripped;
+
+    try allMessages.append(allocator, .{ .role = .user, .content = turn });
 }
 
 /// Build activity info string for the agent prompt
@@ -1821,6 +1848,131 @@ test "buildMessages: a top-level session gets no agent-configuration section" {
     defer testing.allocator.free(prompt);
 
     try testing.expect(std.mem.indexOf(u8, prompt, "## Your Active Agent Configuration") == null);
+}
+
+fn assistantHistoryRow(allocator: std.mem.Allocator, content: []const u8) !agentic_loop.LLMHistory {
+    return .{
+        .id = try allocator.dupe(u8, "row_1"),
+        .session_id = try allocator.dupe(u8, "sess_resume"),
+        .model = try allocator.dupe(u8, "deepseek auto"),
+        .created_at = try allocator.dupe(u8, "1"),
+        .response_content = try allocator.dupe(u8, content),
+        .finish_reason = try allocator.dupe(u8, "awaiting_user"),
+        .role = try allocator.dupe(u8, "assistant"),
+        .agent = try allocator.dupe(u8, "Agent"),
+        .session_name = try allocator.dupe(u8, ""),
+        .tool_name = try allocator.dupe(u8, ""),
+        .tool_calls_json = try allocator.dupe(u8, ""),
+    };
+}
+
+fn buildMessagesForOneRow(
+    ctx: *PromptDbCtx,
+    cwd: []const u8,
+    history: []agentic_loop.LLMHistory,
+) ![]agent.AgentMessage {
+    return buildMessages(
+        testing.allocator,
+        ctx.threaded.io(),
+        &ctx.db,
+        cwd,
+        "sess_resume",
+        "",
+        false,
+        history,
+        &.{},
+        "",
+        "",
+    );
+}
+
+fn freeBuiltMessages(messages: []agent.AgentMessage) void {
+    for (messages) |*msg| msg.deinit(testing.allocator);
+    testing.allocator.free(messages);
+}
+
+test "buildMessages: a resumed run ends on a user turn carrying the answer" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    var history = [_]agentic_loop.LLMHistory{try assistantHistoryRow(
+        testing.allocator,
+        "{\"agent\":\"deepseek auto\",\"msg\":\"<markdown>\\nWhich mark?\\n" ++
+            "<ask_user>{\\\"status\\\":\\\"answered\\\",\\\"question\\\":\\\"Which mark?\\\",\\\"answer\\\":\\\"No mark\\\"}</ask_user>\\n" ++
+            "</markdown>\"}",
+    )};
+    defer for (&history) |*h| h.deinit(testing.allocator);
+
+    const messages = try buildMessagesForOneRow(&ctx, cwd, &history);
+    defer freeBuiltMessages(messages);
+
+    const last = messages[messages.len - 1];
+    try testing.expect(last.role == .user);
+    try testing.expect(std.mem.indexOf(u8, last.content.?, "No mark") != null);
+
+    const assistant_turn = messages[messages.len - 2];
+    try testing.expect(assistant_turn.role == .assistant);
+    try testing.expect(std.mem.indexOf(u8, assistant_turn.content.?, "<ask_user>") == null);
+}
+
+test "buildMessages: a plain assistant tail adds no user turn" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    var history = [_]agentic_loop.LLMHistory{try assistantHistoryRow(
+        testing.allocator,
+        "{\"agent\":\"deepseek auto\",\"msg\":\"<markdown>\\nDone.\\n</markdown>\"}",
+    )};
+    defer for (&history) |*h| h.deinit(testing.allocator);
+
+    const messages = try buildMessagesForOneRow(&ctx, cwd, &history);
+    defer freeBuiltMessages(messages);
+
+    try testing.expectEqual(@as(usize, 2), messages.len);
+    try testing.expect(messages[1].role == .assistant);
+}
+
+test "buildMessages: a still-pending question adds no user turn" {
+    var ctx = try setupPromptDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(testing.io, &path_buf);
+    const cwd = try testing.allocator.dupe(u8, path_buf[0..n]);
+    defer testing.allocator.free(cwd);
+
+    var history = [_]agentic_loop.LLMHistory{try assistantHistoryRow(
+        testing.allocator,
+        "{\"agent\":\"deepseek auto\",\"msg\":\"<markdown>\\nWhich mark?\\n" ++
+            "<ask_user>{\\\"question\\\":\\\"Which mark?\\\",\\\"options\\\":[\\\"a\\\",\\\"b\\\"]}</ask_user>\\n" ++
+            "</markdown>\"}",
+    )};
+    defer for (&history) |*h| h.deinit(testing.allocator);
+
+    const messages = try buildMessagesForOneRow(&ctx, cwd, &history);
+    defer freeBuiltMessages(messages);
+
+    try testing.expectEqual(@as(usize, 2), messages.len);
+    try testing.expect(messages[1].role == .assistant);
 }
 
 test "buildMessages: the cross-project block reaches the prompt, after the workspace, listing workspace_items siblings" {
