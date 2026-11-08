@@ -229,11 +229,11 @@ pub fn loadMemoriesByFts(
             \\        COALESCE(to_char(m.created_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS created_at,
             \\        COALESCE(to_char(m.updated_at, 'YYYY-MM-DD HH24:MI:SS'), '') AS updated_at,
             \\        -ts_rank(
-            ++ comptime dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
+        ++ comptime dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
             \\, q.tsq) AS fts_rank
             \\    FROM agent_memories m, to_tsquery('simple'::regconfig, ?) AS q(tsq)
             \\    WHERE
-            ++ " " ++ dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
+        ++ " " ++ dialect.tsVectorText("COALESCE(CAST(m.content AS TEXT), '') || ' ' || COALESCE(CAST(m.tags AS TEXT), '')") ++
             \\ @@ q.tsq
             \\      AND COALESCE(CAST(m.workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')
         );
@@ -316,6 +316,104 @@ pub fn loadMemoriesByFts(
     }
 
     return try hits.toOwnedSlice(allocator);
+}
+
+/// Options for `listMemories`.
+pub const ListOptions = struct {
+    workspace_id: []const u8,
+    /// Case-insensitive substring over the body and the tags. Empty = no
+    /// filter.
+    query: []const u8 = "",
+    limit: u32 = 50,
+    offset: u32 = 0,
+};
+
+/// One page of `listMemories`. `total_count` is the number of rows the
+/// workspace holds, not the number in `rows`.
+pub const MemoryPage = struct {
+    rows: []MemoryRow,
+    total_count: u32,
+};
+
+pub fn freeMemoryPage(allocator: std.mem.Allocator, page: MemoryPage) void {
+    freeMemoryRows(allocator, page.rows);
+}
+
+/// Every memory the workspace holds, newest first. Unlike `loadMemoriesByFts`
+/// this needs no query — it is the browse list behind the settings page.
+pub fn listMemories(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    opts: ListOptions,
+) !MemoryPage {
+    const created_expr = dialect.timestampText("created_at");
+    const updated_expr = dialect.timestampText("updated_at");
+    const tiebreak = if (dialect.is_postgres) "id DESC" else "rowid DESC";
+    const select = try std.fmt.allocPrint(
+        allocator,
+        "SELECT id, content, tags, COALESCE(CAST(workspace_id AS TEXT), ''), " ++
+            "COALESCE({s}, ''), COALESCE({s}, ''), COUNT(*) OVER () " ++
+            "FROM agent_memories " ++
+            "WHERE COALESCE(CAST(workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '') " ++
+            "{s} " ++
+            "ORDER BY updated_at DESC, " ++ tiebreak ++ " LIMIT {d} OFFSET {d}",
+        .{ created_expr, updated_expr, if (opts.query.len > 0) "AND (content LIKE ? OR tags LIKE ?)" else "", opts.limit, opts.offset },
+    );
+    defer allocator.free(select);
+
+    const pattern = if (opts.query.len > 0) try std.fmt.allocPrint(allocator, "%{s}%", .{opts.query}) else "";
+    defer if (pattern.len > 0) allocator.free(pattern);
+
+    var q = if (opts.query.len > 0)
+        try db.query(allocator, select, &.{ opts.workspace_id, pattern, pattern })
+    else
+        try db.query(allocator, select, &.{opts.workspace_id});
+    defer q.deinit();
+
+    var rows: std.ArrayList(MemoryRow) = .empty;
+    errdefer {
+        for (rows.items) |row| freeMemoryRow(allocator, row);
+        rows.deinit(allocator);
+    }
+
+    var total_count: u32 = 0;
+    while (try q.next()) |row| {
+        defer row.deinit(allocator);
+        total_count = std.fmt.parseInt(u32, row.values[6], 10) catch 0;
+        try rows.append(allocator, .{
+            .id = try allocator.dupe(u8, row.values[0]),
+            .content = try allocator.dupe(u8, row.values[1]),
+            .tags = try allocator.dupe(u8, row.values[2]),
+            .workspace_id = try allocator.dupe(u8, row.values[3]),
+            .created_at = try allocator.dupe(u8, row.values[4]),
+            .updated_at = try allocator.dupe(u8, row.values[5]),
+        });
+    }
+
+    return .{ .rows = try rows.toOwnedSlice(allocator), .total_count = total_count };
+}
+
+/// Remove one memory from one workspace. Returns false when the id is not in
+/// that workspace, so a caller can answer 404 without a second read.
+pub fn deleteMemory(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    id: []const u8,
+    workspace_id: []const u8,
+) !bool {
+    const existing = try getMemoryById(allocator, db, id, workspace_id);
+    if (existing) |row| {
+        freeMemoryRow(allocator, row);
+    } else {
+        return false;
+    }
+
+    try db.exec(
+        allocator,
+        "DELETE FROM agent_memories WHERE id = ? AND COALESCE(CAST(workspace_id AS TEXT), '') = COALESCE(CAST(? AS TEXT), '')",
+        &.{ id, workspace_id },
+    );
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -983,4 +1081,145 @@ test "legacy rows (pre-Migration-095, workspace_id '') are invisible to workspac
     }
     try testing.expectEqual(@as(usize, 1), legacy_hits.len);
     try testing.expectEqualStrings(legacy.id, legacy_hits[0].id);
+}
+
+test "listMemories: returns only the workspace's rows, newest first" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const first = try saveMemory(alloc, &ctx.db, .{
+        .content = "first note in the workspace",
+        .tags = &.{"a"},
+        .workspace_id = "ws_alpha",
+    });
+    defer freeMemoryRow(alloc, first);
+    const second = try saveMemory(alloc, &ctx.db, .{
+        .content = "second note in the workspace",
+        .tags = &.{"b"},
+        .workspace_id = "ws_alpha",
+    });
+    defer freeMemoryRow(alloc, second);
+    const other = try saveMemory(alloc, &ctx.db, .{
+        .content = "a note belonging to another workspace",
+        .tags = &.{"c"},
+        .workspace_id = "ws_beta",
+    });
+    defer freeMemoryRow(alloc, other);
+
+    const page = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_alpha" });
+    defer freeMemoryPage(alloc, page);
+
+    try testing.expectEqual(@as(usize, 2), page.rows.len);
+    try testing.expectEqualStrings(second.id, page.rows[0].id);
+    try testing.expectEqualStrings(first.id, page.rows[1].id);
+    try testing.expectEqualStrings("b", page.rows[0].tags);
+    try testing.expect(page.rows[0].created_at.len > 0);
+}
+
+test "listMemories: total_count counts the workspace's rows, not the page" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    for (0..3) |i| {
+        const content = try std.fmt.allocPrint(alloc, "note number {d}", .{i});
+        defer alloc.free(content);
+        const row = try saveMemory(alloc, &ctx.db, .{ .content = content, .tags = &.{}, .workspace_id = "ws_alpha" });
+        freeMemoryRow(alloc, row);
+    }
+
+    const page = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_alpha", .limit = 2 });
+    defer freeMemoryPage(alloc, page);
+
+    try testing.expectEqual(@as(usize, 2), page.rows.len);
+    try testing.expectEqual(@as(u32, 3), page.total_count);
+}
+
+test "listMemories: offset pages through the list without repeating a row" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    for (0..3) |i| {
+        const content = try std.fmt.allocPrint(alloc, "note number {d}", .{i});
+        defer alloc.free(content);
+        const row = try saveMemory(alloc, &ctx.db, .{ .content = content, .tags = &.{}, .workspace_id = "ws_alpha" });
+        freeMemoryRow(alloc, row);
+    }
+
+    const head = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_alpha", .limit = 2 });
+    defer freeMemoryPage(alloc, head);
+    const tail = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_alpha", .limit = 2, .offset = 2 });
+    defer freeMemoryPage(alloc, tail);
+
+    try testing.expectEqual(@as(usize, 1), tail.rows.len);
+    try testing.expect(!std.mem.eql(u8, head.rows[0].id, tail.rows[0].id));
+    try testing.expect(!std.mem.eql(u8, head.rows[1].id, tail.rows[0].id));
+}
+
+test "listMemories: a workspace with no rows answers an empty page" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const page = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_empty" });
+    defer freeMemoryPage(alloc, page);
+
+    try testing.expectEqual(@as(usize, 0), page.rows.len);
+    try testing.expectEqual(@as(u32, 0), page.total_count);
+}
+
+test "deleteMemory: removes the row from its own workspace" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const row = try saveMemory(alloc, &ctx.db, .{
+        .content = "a note that is about to be deleted",
+        .tags = &.{"temp"},
+        .workspace_id = "ws_alpha",
+    });
+    defer freeMemoryRow(alloc, row);
+
+    try testing.expect(try deleteMemory(alloc, &ctx.db, row.id, "ws_alpha"));
+
+    const page = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_alpha" });
+    defer freeMemoryPage(alloc, page);
+    try testing.expectEqual(@as(usize, 0), page.rows.len);
+}
+
+test "deleteMemory: a row owned by another workspace is not deleted" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const row = try saveMemory(alloc, &ctx.db, .{
+        .content = "a note another workspace must not be able to remove",
+        .tags = &.{"keep"},
+        .workspace_id = "ws_alpha",
+    });
+    defer freeMemoryRow(alloc, row);
+
+    try testing.expect(!try deleteMemory(alloc, &ctx.db, row.id, "ws_beta"));
+
+    const page = try listMemories(alloc, &ctx.db, .{ .workspace_id = "ws_alpha" });
+    defer freeMemoryPage(alloc, page);
+    try testing.expectEqual(@as(usize, 1), page.rows.len);
+    try testing.expectEqualStrings(row.id, page.rows[0].id);
+}
+
+test "deleteMemory: an unknown id answers false instead of failing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expect(!try deleteMemory(alloc, &ctx.db, "mem_0000000000000000", "ws_alpha"));
 }
