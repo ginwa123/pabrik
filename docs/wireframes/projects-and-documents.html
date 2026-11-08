@@ -59,6 +59,20 @@
   .marks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
   .mkbtn { height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--bg-panel); color: var(--fg-dim); font: inherit; font-size: 11px; cursor: pointer; }
   .mkbtn.on { background: var(--bg-active); color: var(--fg); }
+
+  .icon { width: 16px; flex: 0 0 16px; display: grid; place-items: center; }
+  .icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon.kanban { color: var(--blue); }
+  .icon.agent { color: var(--violet); }
+  .icon.routine { color: var(--yellow); }
+  .icon.design { color: var(--green); }
+
+  .picker { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sw { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 7px; background: var(--bg-panel); color: var(--fg-muted); cursor: pointer; }
+  .sw.on { background: var(--bg-active); color: var(--fg); }
+  .sw svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .sw .bar { position: static; width: 3px; height: 14px; border-radius: 1px; }
+  .examples { margin-top: 18px; }
   .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .meta { padding-left: 8px; font-size: 10px; color: var(--fg-dim); opacity: .7; font-variant-numeric: tabular-nums; }
   .row .meta.run { color: var(--yellow); opacity: 1; }
@@ -134,6 +148,20 @@
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-board" viewBox="0 0 12 12"><rect x="1" y="1.5" width="2.6" height="9" rx="1"/><rect x="4.7" y="1.5" width="2.6" height="5.5" rx="1"/><rect x="8.4" y="1.5" width="2.6" height="7.5" rx="1"/></symbol>
+  <symbol id="i-agent" viewBox="0 0 12 12"><rect x="1.8" y="3.4" width="8.4" height="6.2" rx="2"/><circle cx="4.6" cy="6.5" r=".8"/><circle cx="7.4" cy="6.5" r=".8"/><path d="M6 3.4V1.6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.4"/><path d="M6 3.4V6l1.9 1.4"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 12 12"><path d="M2 10l.9-2.8 4.6-4.6 1.9 1.9-4.6 4.6L2 10z"/><path d="M7 3.2l1.9 1.9"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 12 12"><path d="M1.4 3.2h3.4l1.1 1.2h4.7v5.4H1.4z"/></symbol>
+  <symbol id="i-term" viewBox="0 0 12 12"><rect x="1.2" y="2.2" width="9.6" height="7.6" rx="1.6"/><path d="M3.4 5l1.8 1.4-1.8 1.4"/></symbol>
+  <symbol id="i-db" viewBox="0 0 12 12"><ellipse cx="6" cy="3.2" rx="4" ry="1.6"/><path d="M2 3.2v5.6c0 .9 1.8 1.6 4 1.6s4-.7 4-1.6V3.2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.4"/><path d="M1.6 6h8.8"/><path d="M6 1.6c1.9 2.4 1.9 6.4 0 8.8"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 12 12"><circle cx="6" cy="6.6" r="2.8"/><path d="M6 3.8V1.8M3.4 4.4L1.8 2.8M8.6 4.4l1.6-1.6M3.2 8.8L1.6 10.4M8.8 8.8l1.6 1.6"/></symbol>
+  <symbol id="i-book" viewBox="0 0 12 12"><path d="M2 2.2h8v7.6H2z"/><path d="M6 2.2v7.6"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 12 12"><path d="M8.2 1.4a2.8 2.8 0 00-2.4 4.2L1.6 9.8l.6.6 4.2-4.2a2.8 2.8 0 001.8-4.8z"/></symbol>
+  <symbol id="i-rocket" viewBox="0 0 12 12"><path d="M6 1.4c1.9 1.5 2.8 3.4 2.8 5.6L6 10.2 3.2 7c0-2.2.9-4.1 2.8-5.6z"/><circle cx="6" cy="5" r="1"/></symbol>
+</svg>
 <main class="page">
 
   <h1>Projects and Documents, redrawn</h1>
@@ -199,9 +227,9 @@
             <div class="row" data-type="routine" data-name="Routines Android Sync"><i class="bar routine"></i><span class="chev">▶</span><span class="name">Routines Android Sync</span></div>
             <div class="row" data-type="routine" data-name="Collecting security Issuess"><i class="bar routine"></i><span class="chev">▶</span><span class="name">Collecting security Issuess</span></div>
             <div class="row" data-type="routine" data-name="Clean Cache Development"><i class="bar routine"></i><span class="chev">▶</span><span class="name">Clean Cache Development</span></div>
-            <div class="row" data-type="kanban" data-name="kabelweb"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">kabelweb</span></div>
+            <div class="row" data-type="kanban" data-name="kabelweb"><i class="bar kanban"></i><span class="chev">▶</span><span class="icon kanban"><svg><use href="#i-globe"/></svg></span><span class="name">kabelweb</span></div>
             <div class="row" data-type="kanban" data-name="website pabrik"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">website pabrik</span></div>
-            <div class="row" data-type="kanban" data-name="ruangsql"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">ruangsql</span></div>
+            <div class="row" data-type="kanban" data-name="ruangsql"><i class="bar kanban"></i><span class="chev">▶</span><span class="icon kanban"><svg><use href="#i-db"/></svg></span><span class="name">ruangsql</span></div>
             <div class="row" data-type="kanban" data-name="glinlandui"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">glinlandui</span></div>
             <div class="row" data-type="kanban" data-name="meja"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">meja</span></div>
             <div class="row" data-type="kanban" data-name="Ios Mobile"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">Ios Mobile</span></div>
@@ -276,6 +304,32 @@
     </div>
   </figure>
 
+  <figure class="strip" data-ui="icon-picker">
+    <figcaption>The mark, made yours. One glyph per project, tinted by its kind.</figcaption>
+    <div class="box">
+      <div class="picker">
+        <button class="sw on" aria-label="Default bar"><i class="bar kanban"></i></button>
+        <button class="sw" aria-label="Board"><svg><use href="#i-board"/></svg></button>
+        <button class="sw" aria-label="Agent"><svg><use href="#i-agent"/></svg></button>
+        <button class="sw" aria-label="Clock"><svg><use href="#i-clock"/></svg></button>
+        <button class="sw" aria-label="Pen"><svg><use href="#i-pen"/></svg></button>
+        <button class="sw" aria-label="Folder"><svg><use href="#i-folder"/></svg></button>
+        <button class="sw" aria-label="Terminal"><svg><use href="#i-term"/></svg></button>
+        <button class="sw" aria-label="Database"><svg><use href="#i-db"/></svg></button>
+        <button class="sw" aria-label="Globe"><svg><use href="#i-globe"/></svg></button>
+        <button class="sw" aria-label="Bug"><svg><use href="#i-bug"/></svg></button>
+        <button class="sw" aria-label="Book"><svg><use href="#i-book"/></svg></button>
+        <button class="sw" aria-label="Wrench"><svg><use href="#i-wrench"/></svg></button>
+        <button class="sw" aria-label="Rocket"><svg><use href="#i-rocket"/></svg></button>
+      </div>
+      <div class="examples">
+        <div class="row"><i class="bar kanban"></i><span class="icon kanban"><svg><use href="#i-globe"/></svg></span><span class="name">kabelweb</span></div>
+        <div class="row"><i class="bar kanban"></i><span class="icon kanban"><svg><use href="#i-db"/></svg></span><span class="name">ruangsql</span></div>
+        <div class="row"><i class="bar agent"></i><span class="icon agent"><svg><use href="#i-wrench"/></svg></span><span class="name">pabrik</span></div>
+      </div>
+    </div>
+  </figure>
+
   <ol class="changes" id="changes">
     <li><span class="k">1</span><div><h2>The arrow goes, and a bar in the gutter takes its place</h2><p>Twelve boards, two agents, four routines and one design page render as the same chevron and name. The chevron is identical on all nineteen rows and only says "this row opens", which every row does, so it earns nothing. A 3px bar flush to the rail's left edge, one colour per kind, answers the question the row actually raises: what am I opening. The filter chips carry the same bar, so the legend teaches itself. If you want a mark back, the switcher under the redrawn rail shows a thin chevron, a plus and a caret on the same nineteen rows.</p></div></li>
     <li><span class="k">2</span><div><h2>Search, because nineteen rows is past scanning</h2><p>There is no search in the rail today; it was removed on purpose and pinned by a spec. One field above the sections filters projects and documents together, so position stops mattering and the 608px to Documents stops being a problem.</p></div></li>
@@ -283,7 +337,8 @@
     <li><span class="k">4</span><div><h2>A new folder is named before it exists</h2><p>Three of the four folders in the database are called "New folder" with zero children, because the create writes that literal string and then opens a rename field you can click away from. Create it in rename mode, and an empty name deletes the row instead of keeping it.</p></div></li>
     <li><span class="k">5</span><div><h2>Delete leaves the row at rest</h2><p>The cross sits at opacity .55 on every folder row and deletes the folder and its children with no confirm. It moves into a hover menu, and the delete asks first.</p></div></li>
     <li><span class="k">6</span><div><h2>Documents get a time, not a zero</h2><p>A folder's child count is useful; a document's is always zero. The trailing slot shows when it was last edited, which is the only thing that helps you pick between two documents.</p></div></li>
-    <li><span class="k">7</span><div><h2>Still open: a document cannot be found from its project</h2><p>Documents are workspace-scoped by design, so the note about kabelweb lives in a section that knows nothing about kabelweb. The fix is one nullable <code>project_id</code> and a Documents child row inside the expanded project. It is a migration, so it is not in this drawing.</p></div></li>
+    <li><span class="k">7</span><div><h2>The mark is yours to set</h2><p>One glyph per project, tinted by its kind, so the two marks carry different things: the bar says what kind of thing it is, the glyph says which one. It costs one nullable <code>icon</code> column on <code>workspace_items</code>, one more optional field in <code>workspace_items_update.zig</code> (the handler already takes <code>item_type</code>, <code>path</code> and <code>name</code> with the same presence semantics), one line in the API type, and a picker in the row menu. No new endpoint.</p></div></li>
+    <li><span class="k">8</span><div><h2>Still open: a document cannot be found from its project</h2><p>Documents are workspace-scoped by design, so the note about kabelweb lives in a section that knows nothing about kabelweb. The fix is one nullable <code>project_id</code> and a Documents child row inside the expanded project. It is a migration, so it is not in this drawing.</p></div></li>
   </ol>
 
   <p class="foot">Every number here was read from <code>~/.config/pabrik/agent.db</code> read-only or from the shipped components: 19 items in the active workspace (12 kanban, 2 agent, 4 routine, 1 design), 2 documents both empty, 4 folders of which 3 are "New folder" with 0 children, 8 <code>item_type='folder'</code> rows the UI cannot create. Row height 32px, rail 280px, both from <code>style.css</code>. Two inspector findings are defended rather than fixed: <b>still-page</b>, because a spec document that animates itself would fake the motion it describes, and <b>no-footage</b>, because an internal rail has no clip to show.</p>
