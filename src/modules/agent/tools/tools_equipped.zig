@@ -70,6 +70,7 @@ const search_tool_mod = pabrikcore.search_tool;
 const list_directory_mod = pabrikcore.list_directory;
 const semantic_search_mod = pabrikcore.semantic_search;
 const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
+const delegate_agent_tool = pabrikcore.delegate_agent;
 const kanban_create_task_tool = pabrikcore.create_kanban_task;
 const command_tool_mod = pabrikcore.command_tool;
 // `process` — the read/stop/list half of the detached `mode`s.
@@ -84,6 +85,7 @@ const ToolExecResult = tools.ToolExecResult;
 pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
     const tools_list = comptime &[_]AgentTool{
         spawn_sub_agent_tool.spawn_sub_agent_tool,
+        delegate_agent_tool.delegate_agent_tool,
         // 2026-08-19 — session_plan tools (Task 4).
         update_plan_mod.update_plan_tool,
         get_plan_mod.get_plan_tool,
@@ -184,6 +186,7 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
     return &.{
         // === AGENT CONTROL (main agent only) ===
         .{ .name = "spawn_sub_agent", .exec = tools.execSpawnSubAgent, .tool_def = spawn_sub_agent_tool.spawn_sub_agent_tool },
+        .{ .name = "delegate_agent", .exec = tools.execDelegateAgent, .tool_def = delegate_agent_tool.delegate_agent_tool },
 
         // === PLAN TOOLS === 2026-08-19 — session_plan agent tools (Task 4 of
         // 2026-08-19-session-plan-agent-tool.md).
@@ -371,6 +374,7 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
 
     // spawn
     spawn_sub_agent_tool.spawn_sub_agent_tool.function.name,
+    delegate_agent_tool.delegate_agent_tool.function.name,
     list_agents_mod.list_agents_tool.function.name,
 
     // introspection — "what tools do I have" (read-only, sub-agent-safe).
