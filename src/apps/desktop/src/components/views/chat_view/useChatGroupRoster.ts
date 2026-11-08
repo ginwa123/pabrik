@@ -44,6 +44,7 @@ export function useChatGroupRoster(deps: ChatGroupRosterDeps) {
     const sid = deps.sessionId.value
     if (!sid) {
       roster.value = null
+      error.value = null
       return
     }
     const result = await api.getSessionGroup(sid).then(
@@ -51,6 +52,11 @@ export function useChatGroupRoster(deps: ChatGroupRosterDeps) {
       (err: unknown) => err,
     )
     if (result instanceof Error) {
+      if (result instanceof api.ApiError && result.status === 404) {
+        roster.value = null
+        error.value = null
+        return
+      }
       error.value = failure(result)
       return
     }
