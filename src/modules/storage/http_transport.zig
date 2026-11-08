@@ -53,7 +53,9 @@ pub const HttpTransport = struct {
         }) catch return error.NetworkFailed;
         defer request.deinit();
 
-        if (req.body.len > 0) {
+        // PUT always carries a body, even an empty one: `sendBodiless` asserts
+        // the method has none, and a bucket-create is a bodiless PUT.
+        if (req.body.len > 0 or httpMethod(req.method).requestHasBody()) {
             request.sendBodyComplete(@constCast(req.body)) catch return error.NetworkFailed;
         } else {
             request.sendBodiless() catch return error.NetworkFailed;
@@ -107,5 +109,18 @@ test "http transport: an unparseable URL is NetworkFailed" {
     try testing.expectError(error.NetworkFailed, t.asTransport().send(testing.allocator, .{
         .method = .get,
         .url = "not a url",
+    }));
+}
+
+test "http transport: a bodiless PUT is sent, not asserted away" {
+    var threaded = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded.deinit();
+
+    var t = HttpTransport.init(testing.allocator, threaded.io());
+    defer t.deinit();
+
+    try testing.expectError(error.NetworkFailed, t.asTransport().send(testing.allocator, .{
+        .method = .put,
+        .url = "http://127.0.0.1:1/bucket",
     }));
 }

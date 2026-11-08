@@ -262,6 +262,16 @@ jobs:
             ./scripts/stage-bundled-ripgrep.ps1 -Target "x86_64-windows-gnu" -Dest $rg
             if (-not (Test-Path $rg)) { throw "could not stage rg-pabrik.exe for the Windows image" }
           }
+          # The object store, same deal: Dockerfile.windows COPYs
+          # pabrik-fs.exe, so the context must carry one. A zip published
+          # before the bundled rustfs existed is backfilled from the pinned
+          # upstream build instead of failing the image.
+          $fs = Join-Path $ctx "pabrik-fs.exe"
+          if (-not (Test-Path $fs)) {
+            Write-Host "pabrik-fs.exe not in the release zip; staging the pinned rustfs"
+            ./scripts/stage-bundled-rustfs.ps1 -Target "x86_64-windows-gnu" -Dest $fs
+            if (-not (Test-Path $fs)) { throw "could not stage pabrik-fs.exe for the Windows image" }
+          }
           foreach ($name in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll", "vcomp140.dll")) {
             $source = Join-Path $env:SystemRoot ("System32\" + $name)
             if (Test-Path $source) {

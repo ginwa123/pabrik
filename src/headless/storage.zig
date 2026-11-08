@@ -58,7 +58,12 @@ pub fn run(
     environment: *const std.process.Environ.Map,
     a: args.StorageArgs,
 ) ![]u8 {
-    switch (try resolveBackend(environment, a.backend)) {
+    const chosen = if (a.backend) |flag|
+        try resolveBackend(environment, flag)
+    else
+        try runtime.chooseBackend(environment, storage_mod.rustfs_binary.available(allocator, io));
+
+    switch (chosen) {
         .fs => {
             const root = try resolveRoot(allocator, environment, a.root);
             defer allocator.free(root);
@@ -76,6 +81,14 @@ pub fn run(
 
             var backend = s3_backend.S3Storage.init(allocator, io, config, http.asTransport());
             return runWith(allocator, io, backend.asStorage(), a);
+        },
+        .rustfs => {
+            // The supervised backend owns a process, so it goes through the
+            // runtime rather than being built here.
+            const built = try runtime.Runtime.fromBackend(allocator, io, environment, .rustfs);
+            const owned = built orelse return error.UnknownBackend;
+            defer owned.deinit();
+            return runWith(allocator, io, owned.asStorage(), a);
         },
     }
 }

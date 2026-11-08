@@ -179,8 +179,8 @@ pub fn main(init: std.process.Init) !void {
         .group_bg_watchers = .init,
     };
 
-    // The object store, when `PABRIK_STORAGE_BACKEND` names one. Unset means
-    // every document body stays in the `documents.content` column.
+    // The object store. With nothing configured the supervised rustfs wins
+    // when its binary is installed, and the filesystem store is the fallback.
     ctxParent.storage_runtime = pabrikcore.storage.runtime.Runtime.fromEnvironment(allocator, io, environment) catch |err| blk: {
         std.log.err("storage: object store disabled: {s}", .{@errorName(err)});
         break :blk null;
@@ -458,9 +458,13 @@ pub fn main(init: std.process.Init) !void {
             std.log.warn("background service shutdown kill failed: {s}", .{@errorName(err)});
         }
 
-        // Exit instead of unwinding: full unwind segfaults (defer teardowns
-        // race draining Io worker threads) and the stops race
-        // signal-interrupted workers.
+        // Exit instead of unwinding: full unwind segfaults and the stops race
+        // signal-interrupted workers. The object store is stopped by hand
+        // first: its defer never runs here, and rustfs would outlive us.
+        if (ctxParent.storage_runtime) |runtime| {
+            runtime.deinit();
+            ctxParent.storage_runtime = null;
+        }
         helpers.sleepMillis(50);
         std.process.exit(0);
     }

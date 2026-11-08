@@ -224,7 +224,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
     "  pabrik headless storage <op> [flags]      Read or write the object store\n" ++
     "      ops: put | get | stat | delete\n" ++
-    "      flags: --key <k> --body <text> --body-file <path> --root <dir> --backend fs|s3\n" ++
+    "      flags: --key <k> --body <text> --body-file <path> --root <dir> --backend fs|s3|rustfs\n" ++
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++

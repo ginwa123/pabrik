@@ -1,5 +1,30 @@
 ARG UBUNTU_VERSION=24.04
 
+# The object store that holds document bodies. Pinned and sha256-verified, the
+# same way scripts/stage-bundled-rustfs.sh does it for the installers. It lands
+# as `pabrik-fs` so the process is identifiable and never shadows a `rustfs`
+# the user installed.
+FROM ubuntu:${UBUNTU_VERSION} AS rustfs
+
+ARG RUSTFS_VERSION=1.0.4
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "$(uname -m)" in \
+      x86_64) rustfs_arch=x86_64-gnu; rustfs_sha=4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b ;; \
+      aarch64 | arm64) rustfs_arch=aarch64-gnu; rustfs_sha=5c2d4dad2685f41635441b685dc4dead225f84bce2a9a365d87f8151ec88a049 ;; \
+      *) echo "unsupported build architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/rustfs/rustfs/releases/download/${RUSTFS_VERSION}/rustfs-linux-${rustfs_arch}-v${RUSTFS_VERSION}.zip" -o /tmp/rustfs.zip; \
+    echo "${rustfs_sha}  /tmp/rustfs.zip" | sha256sum -c -; \
+    unzip -p /tmp/rustfs.zip rustfs > /usr/local/bin/pabrik-fs; \
+    chmod 0755 /usr/local/bin/pabrik-fs; \
+    rm /tmp/rustfs.zip; \
+    /usr/local/bin/pabrik-fs --version
+
 FROM ubuntu:${UBUNTU_VERSION} AS build
 
 ARG ZIG_VERSION=0.16.0
@@ -68,6 +93,7 @@ RUN set -eux; \
     fi
 
 COPY --from=build /usr/local/bin/pabrik /usr/local/bin/pabrik
+COPY --from=rustfs /usr/local/bin/pabrik-fs /usr/local/bin/pabrik-fs
 
 ENV HOME=/data
 RUN mkdir -p /data

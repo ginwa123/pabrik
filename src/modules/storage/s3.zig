@@ -170,6 +170,59 @@ pub const S3Storage = struct {
     }
 };
 
+pub const EnsureBucketError = error{ ServiceNotReady, IoFailed, OutOfMemory };
+
+/// Create the bucket if it is not there: a supervised rustfs starts empty, so
+/// the first write would fail with NoSuchBucket. `409` is success, and `503`
+/// means rustfs is still bringing its IAM and storage quorum up.
+pub fn ensureBucket(self: *S3Storage) EnsureBucketError!void {
+    const url = std.fmt.allocPrint(self.allocator, "{s}/{s}", .{
+        endpointBase(self.config.endpoint),
+        self.config.bucket,
+    }) catch return error.OutOfMemory;
+    defer self.allocator.free(url);
+
+    var date_buf: [16]u8 = undefined;
+    const amz_date = self.amzDate(&date_buf);
+
+    const auth = sigv4.authorization(self.allocator, self.credentials(), .{
+        .method = "PUT",
+        .host = endpointHost(self.config.endpoint),
+        .path = try bucketPath(self.allocator, self.config.bucket),
+        .payload_sha256 = sigv4.EMPTY_PAYLOAD_SHA256,
+        .amz_date = amz_date,
+    }) catch return error.OutOfMemory;
+    defer self.allocator.free(auth);
+
+    const headers = [_]transport_mod.Header{
+        .{ .name = "x-amz-content-sha256", .value = sigv4.EMPTY_PAYLOAD_SHA256 },
+        .{ .name = "x-amz-date", .value = amz_date },
+        .{ .name = "authorization", .value = auth },
+    };
+
+    const resp = self.transport.send(self.allocator, .{
+        .method = .put,
+        .url = url,
+        .headers = &headers,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.NetworkFailed => return error.IoFailed,
+    };
+    defer resp.deinit(self.allocator);
+
+    if (resp.status >= 200 and resp.status < 300) return;
+    if (resp.status == 409) return;
+    if (resp.status == 503) return error.ServiceNotReady;
+    return error.IoFailed;
+}
+
+/// `/{bucket}`, URI-encoded, for the canonical request.
+fn bucketPath(allocator: std.mem.Allocator, bucket: []const u8) ![]u8 {
+    const raw = try std.fmt.allocPrint(allocator, "/{s}", .{bucket});
+    defer allocator.free(raw);
+    return sigv4.uriEncodePath(allocator, raw);
+}
+
 /// `https://host:port/path` → `host:port`.
 pub fn endpointHost(endpoint: []const u8) []const u8 {
     var rest = endpoint;

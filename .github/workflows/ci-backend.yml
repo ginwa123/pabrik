@@ -1441,6 +1441,27 @@ jobs:
           set -euo pipefail
           scripts/stage-bundled-ripgrep.sh "$TARGET" zig-out/bin/rg-pabrik
 
+      - name: Stage bundled rustfs (POSIX)
+        # Document bodies live in an S3-compatible object store, and the
+        # backend pabrik supervises is rustfs. Staging it as `pabrik-fs`
+        # beside the pabrik binary means an install needs no separate
+        # service: the runtime finds it next to the executable, starts it on
+        # a free loopback port, and the process shows up as `pabrik-fs` in a
+        # task manager. The name is NOT `rustfs` for the same reason as
+        # `rg-pabrik`: install.sh --system writes to /usr/local/bin.
+        #
+        # Upstream publishes no x86_64 macOS build, so that cell stages
+        # nothing and the runtime falls back to the filesystem store.
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target_zig }}
+        run: |
+          set -euo pipefail
+          if ! scripts/stage-bundled-rustfs.sh "$TARGET" zig-out/bin/pabrik-fs; then
+            echo "warning: no bundled rustfs for $TARGET -- the install falls back to the filesystem store" >&2
+          fi
+
       - name: Stage bundled ripgrep (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -1449,6 +1470,19 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           ./scripts/stage-bundled-ripgrep.ps1 -Target $env:TARGET -Dest "zig-out/bin/rg-pabrik.exe"
+
+      - name: Stage bundled rustfs (Windows)
+        # Same reason as the POSIX step: the object store ships with the
+        # install so a user never starts a service by hand. It rides inside
+        # the desktop zip as `pabrik-fs.exe` (see the zip step) instead of a
+        # bare release asset, and the runtime finds it beside pabrik.exe.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ inputs.target_zig }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/stage-bundled-rustfs.ps1 -Target $env:TARGET -Dest "zig-out/bin/pabrik-fs.exe"
 
       - name: Stage binaries with target-triple names
         # Replaces the old actions/upload-artifact@v4 step. Artifacts are
@@ -1512,6 +1546,21 @@ jobs:
           else
             echo "✗ zig-out/bin/rg-pabrik missing for $TARGET — the install would ship without a bundled ripgrep" >&2
             exit 1
+          fi
+          # Bundled object store. `pabrik-fs-$TARGET` is the supervised rustfs
+          # the runtime starts; install.sh drops it beside the pabrik binary
+          # under the name `pabrik-fs`. Windows needs no separate asset (its
+          # pabrik-fs.exe rides inside the desktop zip), and a cell upstream
+          # has no build for (x86_64 macOS) simply publishes none — the
+          # runtime then falls back to the filesystem store.
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            echo "→ pabrik-fs.exe ships inside pabrik-desktop-$TARGET.zip (no separate asset)"
+          elif [ -f "zig-out/bin/pabrik-fs" ]; then
+            cp "zig-out/bin/pabrik-fs" "$stage/pabrik-fs-$TARGET"
+            chmod 0755 "$stage/pabrik-fs-$TARGET"
+            echo "→ staged $stage/pabrik-fs-$TARGET"
+          else
+            echo "→ no bundled rustfs for $TARGET — the install falls back to the filesystem store"
           fi
           # Shipped UI for installer layouts (Linux/macOS bare binaries
           # have no other UI source; the Windows zip carries html/ too,
@@ -1609,6 +1658,19 @@ jobs:
           }
           Copy-Item -Force $rgSrc (Join-Path $tmp "rg-pabrik.exe")
           Write-Host "ok rg-pabrik.exe bundled"
+          # Bundled object store. Document bodies live in rustfs, and the
+          # runtime starts it as a child process; Install-Pabrik.ps1 drops
+          # this beside pabrik.exe, which is the resolver's first candidate.
+          # Named pabrik-fs.exe so Task Manager shows `pabrik-fs` and it can
+          # never collide with a rustfs the user installed. HARD GATE: without
+          # it the install falls back to the filesystem store.
+          $fsSrc = "zig-out/bin/pabrik-fs.exe"
+          if (-not (Test-Path $fsSrc)) {
+            Write-Error "pabrik-fs.exe missing at $fsSrc -- the zip would ship without the bundled object store; see the Stage bundled rustfs step log"
+            exit 1
+          }
+          Copy-Item -Force $fsSrc (Join-Path $tmp "pabrik-fs.exe")
+          Write-Host "ok pabrik-fs.exe bundled"
           # Setup script: makes the zip a setup package. The user extracts
           # and runs `powershell -ExecutionPolicy Bypass -File
           # Install-Pabrik.ps1` for a user-local install (LOCALAPPDATA, no
