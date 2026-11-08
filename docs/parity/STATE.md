@@ -1,6 +1,6 @@
 # Full Parity — State
 
-Status: IN_PROGRESS (run #2, F02 done, F01 blocked, 2026-11-06)
+Status: IN_PROGRESS (run #3, F02+F03 done, F01 blocked, 2026-11-06)
 Repo: pabrik (github.com/ginwa123/pabrik), main @ a1bb70364
 Vue app: `src/apps/desktop/` (Vue 3 + TS, Pinia, Vitest, Playwright E2E)
 Android app: `src/apps/android_mobile/` (Kotlin, Compose Material 3, Navigation-Compose, Room, no DI — manual construction in MainActivity/PabrikNavGraph, cookie auth via AuthTransport, JUnit4 + Robolectric + Compose UI test, androidTest functional harness)
@@ -84,7 +84,7 @@ Key mismatches / notes:
 
 - [~] F01 Add WorkManager dependency + sync trigger scaffolding (app start, foreground, reconnect) — skeleton only, no feature logic (BLOCKED: androidx.work:work-runtime not in local Gradle/Maven cache and no network; in-process triggers can be added without it but the dependency + background worker require network. Deferred. Recorded 2026-11-06.)
 - [x] F02 Offline outbox queue (Room entity + DAO + replay) — generic, reusable by all features (DONE 2026-11-06: OutboxEntry + OutboxDao + OutboxQueue + 14 tests, 1285 total, 0 failures)
-- [ ] F03 Sync engine core (LWW by updatedAt, idempotent writes, delete handling, UTC storage + local rendering) — generic
+- [x] F03 Sync engine core (LWW by updatedAt, idempotent writes, delete handling, UTC storage + local rendering) — generic (DONE 2026-11-08: Syncable + SyncEngine + UtcTime + 33 tests, 1357 total, 0 failures)
 - [x] F04 Design system audit: ensure all Material3 components, theme tokens, dark mode parity with Vue CSS vars (DONE 2026-11-07: Android is dark-only (Kanagawa Dragon tokens in Color.kt/Theme.kt); Vue supports 10+ themes (dark+light) via theme/themes.ts + style.css. Gap: no light theme, no theme picker, no theme persistence. Recorded as decision; full theme parity deferred to a dedicated task.)
 - [ ] F05 Navigation: add routes for settings, workspace settings, kanban settings, documents, agent, design, routine detail, git, memory, secrets, members, skills, MCP, LLM config, tools, notifications
 - [x] F06 Test infrastructure: Maestro setup, seed/reset script, scripts/e2e.sh, Playwright cross-platform suite skeleton (DONE 2026-11-07: scripts/e2e.sh + tests/e2e/{maestro,playwright,fixtures} skeletons created. Maestro not installed on host; flows are placeholders.)
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #3 (F03): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1357 tests, 0 failures, 0 errors. New: SyncEngineTest (23), UtcTimeTest (10).
 
 ## Blockers
 
@@ -222,3 +223,8 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/Syncable.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/SyncEngine.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/UtcTime.kt (new)
+- src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/SyncEngineTest.kt (new)
+- src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/UtcTimeTest.kt (new)
