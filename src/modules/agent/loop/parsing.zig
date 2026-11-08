@@ -329,6 +329,14 @@ pub fn assistantAuthor(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
     return try allocator.dupe(u8, author.string);
 }
 
+/// The agent name the wire carries for a row: the column when it names a
+/// speaker, else the content envelope's author. Caller frees the result.
+pub fn wireAgentName(allocator: std.mem.Allocator, column: []const u8, envelope: []const u8) ![]u8 {
+    if (column.len > 0 and !std.mem.eql(u8, column, "Agent")) return try allocator.dupe(u8, column);
+    const author = try assistantAuthor(allocator, envelope);
+    return author orelse try allocator.dupe(u8, column);
+}
+
 /// True when `raw` already parses as a chat envelope (object with a string
 /// `msg` plus `user` or `model`). Used by write paths for idempotence —
 /// never double-envelop a row that is already enveloped.
@@ -732,6 +740,51 @@ test "assistant author is null for a user envelope, plain text, and an empty nam
     try testing.expect((try assistantAuthor(allocator, "{\"user\":\"u1\",\"name\":\"Budi\",\"msg\":\"hi\"}")) == null);
     try testing.expect((try assistantAuthor(allocator, "plain text")) == null);
     try testing.expect((try assistantAuthor(allocator, "{\"agent\":\"\",\"msg\":\"hi\"}")) == null);
+}
+
+test "wire agent names the envelope author when the column is the placeholder" {
+    const allocator = testing.allocator;
+    const enc = try encodeAssistantContent(allocator, "deepseek auto", "hey human");
+    defer allocator.free(enc);
+
+    const name = try wireAgentName(allocator, "Agent", enc);
+    defer allocator.free(name);
+    try testing.expectEqualStrings("deepseek auto", name);
+}
+
+test "wire agent keeps a column that already names the speaker" {
+    const allocator = testing.allocator;
+    const enc = try encodeAssistantContent(allocator, "deepseek auto", "hey human");
+    defer allocator.free(enc);
+
+    const name = try wireAgentName(allocator, "BEAM", enc);
+    defer allocator.free(name);
+    try testing.expectEqualStrings("BEAM", name);
+}
+
+test "wire agent reads the legacy model field of an old assistant row" {
+    const allocator = testing.allocator;
+    const name = try wireAgentName(allocator, "Agent", "{\"model\":\"BEAM\",\"msg\":\"hi\"}");
+    defer allocator.free(name);
+    try testing.expectEqualStrings("BEAM", name);
+}
+
+test "wire agent leaves a user row and a tool row on the placeholder" {
+    const allocator = testing.allocator;
+    const user = try wireAgentName(allocator, "Agent", "{\"user\":\"u1\",\"name\":\"Budi\",\"msg\":\"hi\"}");
+    defer allocator.free(user);
+    try testing.expectEqualStrings("Agent", user);
+
+    const tool = try wireAgentName(allocator, "Agent", "{\"tool\":\"read_file\",\"parameters\":{}}");
+    defer allocator.free(tool);
+    try testing.expectEqualStrings("Agent", tool);
+}
+
+test "wire agent falls back to the column when the content is not an envelope" {
+    const allocator = testing.allocator;
+    const name = try wireAgentName(allocator, "Agent", "plain assistant text");
+    defer allocator.free(name);
+    try testing.expectEqualStrings("Agent", name);
 }
 
 test "a legacy model envelope still unwraps to its msg" {

@@ -154,8 +154,8 @@ onMounted(syncGroupRoster)
 onUpdated(syncGroupRoster)
 
 const handleSelectAgent = (name: string): void => {
-  if (isGroupChat.value) return
-  void selectAgent(name)
+  if (!name) return
+  void addGroupMember(name)
 }
 
 // In a group chat only the roster can answer, so `@` offers exactly those
@@ -281,7 +281,6 @@ const {
   rowProps,
   scrollToBottom,
   scrollerIsScrollable,
-  selectAgent,
   sessionCwd,
   sessionSkills,
   setAllCollapsed,
