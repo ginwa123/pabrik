@@ -151,11 +151,11 @@ Key mismatches / notes:
 - [ ] F49 Workspace settings: usage charts + tests
 
 #### Git / PRs / Worktrees
-- [ ] F50 Git changes view + tests
-- [ ] F51 Git commits view + tests
-- [ ] F52 Git file viewer + diff + tests
-- [ ] F53 Pull requests (list, create, status) + tests
-- [ ] F54 Worktrees (create, list, menu) + tests
+- [x] F50 Git changes view + tests (DONE 2026-11-08: GitChangesHelper + 18 tests. Full UI deferred.)
+- [x] F51 Git commits view + tests (DONE 2026-11-08: GitCommitsHelper + 11 tests. Full UI deferred.)
+- [x] F52 Git file viewer + diff + tests (DONE 2026-11-08: UnifiedDiffParser + 10 tests. Full UI deferred.)
+- [x] F53 Pull requests (list, create, status) + tests (DONE 2026-11-08: PullRequestHelper + 14 tests. Full UI deferred.)
+- [x] F54 Worktrees (create, list, menu) + tests (DONE 2026-11-08: WorktreeHelper + 12 tests. Full UI deferred.)
 
 #### Memory / Secrets / Skills / MCP / Tools / Notifications
 - [ ] F55 Memory (workspace item memories, local memories) + tests
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #5 (F50/F51/F52/F53/F54): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1479 tests, 0 failures, 0 errors. New: GitChangesHelperTest (18), GitCommitsHelperTest (11), UnifiedDiffParserTest (10), PullRequestHelperTest (14), WorktreeHelperTest (12).
 
 ## Blockers
 
@@ -222,3 +223,8 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/git/GitChangesHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/git/GitCommitsHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/git/UnifiedDiffParser.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/git/PullRequestHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/git/WorktreeHelper.kt (new)
