@@ -617,11 +617,17 @@ pub fn seedDefaultKanbanTools(
 test "DEFAULT_AGENT_TOOLS ships the spawn pair and the progressive meta-tools" {
     var found_spawn = false;
     var found_list = false;
+    var found_delegate = false;
     for (DEFAULT_AGENT_TOOLS) |name| {
         if (std.mem.eql(u8, name, "spawn_sub_agent")) found_spawn = true;
         if (std.mem.eql(u8, name, "list_agents")) found_list = true;
+        if (std.mem.eql(u8, name, "delegate_agent")) found_delegate = true;
     }
     try std.testing.expect(found_spawn and found_list);
+    try std.testing.expect(found_delegate);
+    // A seeded name the registry does not know is a tool the model can see
+    // and never call.
+    try std.testing.expect(isKnownToolName("delegate_agent"));
 
     // Progressive tool search is part of the default equipped set in every
     // mode: agent items seed DEFAULT_AGENT_TOOLS, kanban items seed it plus
