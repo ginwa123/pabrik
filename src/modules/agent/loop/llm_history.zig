@@ -1510,7 +1510,7 @@ pub fn saveMessage(
     const agentStr = input.agent_name orelse "Agent";
 
     // Option A envelopes (mirrors insert_llm_histories): user rows carry
-    // {user,name,msg}, non-empty assistant text carries {model,msg}.
+    // {user,name,msg}, non-empty assistant text carries {agent,msg}.
     var enveloped_owned: ?[]u8 = null;
     defer if (enveloped_owned) |e| allocator.free(e);
     var effective_content: []const u8 = contentStr;
@@ -10387,7 +10387,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         .{ .session = "s_owned", .role = "user", .key = "user", .want = "u1" },
         .{ .session = "s_owned", .role = "user", .key = "name", .want = "Budi" },
         .{ .session = "s_owned", .role = "user", .key = "msg", .want = "i wanna ask" },
-        .{ .session = "s_owned", .role = "assistant", .key = "model", .want = "900ribu" },
+        .{ .session = "s_owned", .role = "assistant", .key = "agent", .want = "900ribu" },
         .{ .session = "s_owned", .role = "assistant", .key = "msg", .want = "hey human" },
         .{ .session = "s_anon", .role = "user", .key = "user", .want = "" },
         .{ .session = "s_anon", .role = "user", .key = "name", .want = "Agent" },

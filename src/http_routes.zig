@@ -128,6 +128,12 @@ fn registerWorkerRoutes(authed: *Group) !void {
     // above).
     try authed.get("/api/llm/session/:session_id/usage", ai_mod.http_handlers.sessionUsageHandler);
     try authed.get("/api/llm/session/:session_id/queue_messages", ai_mod.http_handlers.queueMessagesGetHandler);
+    // The roster of a multi-agent chat. A session becomes a group when an
+    // agent joins it; the loop then takes each turn's speaker from the roster.
+    try authed.get("/api/llm/session/:session_id/group", ai_mod.http_handlers.sessionGroupGetHandler);
+    try authed.post("/api/llm/session/:session_id/group/members", ai_mod.http_handlers.sessionGroupMemberAddHandler);
+    try authed.delete("/api/llm/session/:session_id/group/members/:agent", ai_mod.http_handlers.sessionGroupMemberRemoveHandler);
+    try authed.post("/api/llm/session/:session_id/group/lead", ai_mod.http_handlers.sessionGroupLeadHandler);
     // Session background-process endpoints (bg-completion): list + log tail
     // for `command background=true` rows. Registered next to queue_messages.
     try authed.get("/api/llm/session/:session_id/background_processes", ai_mod.http_handlers.backgroundProcessesListHandler);

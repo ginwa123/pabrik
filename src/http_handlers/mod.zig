@@ -45,6 +45,19 @@ pub const sessionMessagesHandler = @import("session_messages_get.zig").sessionMe
 pub const messageDeleteHandler = @import("message_delete.zig").messageDeleteHandler;
 pub const messageRestoreHandler = @import("message_restore.zig").messageRestoreHandler;
 pub const messagePatchHandler = @import("message_patch.zig").messagePatchHandler;
+// The roster of a multi-agent chat: GET/POST/DELETE
+// /api/llm/session/:session_id/group...
+pub const sessionGroupGetHandler = @import("session_group.zig").sessionGroupGetHandler;
+pub const sessionGroupMemberAddHandler = @import("session_group.zig").sessionGroupMemberAddHandler;
+pub const sessionGroupMemberRemoveHandler = @import("session_group.zig").sessionGroupMemberRemoveHandler;
+pub const sessionGroupLeadHandler = @import("session_group.zig").sessionGroupLeadHandler;
+pub const sessionGroupRosterUseCase = @import("session_group.zig").rosterUseCase;
+pub const sessionGroupAddMemberUseCase = @import("session_group.zig").addMemberUseCase;
+pub const sessionGroupRemoveMemberUseCase = @import("session_group.zig").removeMemberUseCase;
+pub const sessionGroupSetLeadUseCase = @import("session_group.zig").setLeadUseCase;
+pub const sessionGroupEncodeRoster = @import("session_group.zig").encodeRoster;
+pub const sessionGroupFreeRoster = @import("session_group.zig").freeRoster;
+pub const SessionGroupRoster = @import("session_group.zig").Roster;
 // GET /api/llm/session/:session_id/stream — in-flight stream snapshot
 // (task_1787673548905_0 stream-resume-on-reselect).
 pub const streamGetHandler = @import("stream_get.zig").streamGetHandler;
