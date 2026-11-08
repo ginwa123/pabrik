@@ -174,6 +174,68 @@ pub fn detect(allocator: std.mem.Allocator, content: []const u8) ?Detection {
     return .{ .parsed = parsed, .span = span };
 }
 
+const ResolvedBlock = struct {
+    status: []const u8 = "",
+    question: []const u8 = "",
+    answer: []const u8 = "",
+};
+
+/// The resolved shape of the same `<ask_user>` marker: `detect` parses the
+/// question the model writes, this parses the block the answer endpoint
+/// rewrites in place.
+pub const Resolution = struct {
+    parsed: std.json.Parsed(ResolvedBlock),
+
+    pub fn deinit(self: Resolution) void {
+        self.parsed.deinit();
+    }
+
+    pub fn status(self: Resolution) Status {
+        return Status.from_str(self.parsed.value.status) orelse .pending;
+    }
+
+    pub fn question(self: Resolution) []const u8 {
+        return self.parsed.value.question;
+    }
+
+    pub fn answer(self: Resolution) []const u8 {
+        return self.parsed.value.answer;
+    }
+};
+
+pub fn resolution(allocator: std.mem.Allocator, content: []const u8) ?Resolution {
+    const span = findSpan(content) orelse return null;
+    const body = content[span.start + MARKER_OPEN.len .. span.end - MARKER_CLOSE.len];
+    const parsed = std.json.parseFromSlice(ResolvedBlock, allocator, body, .{
+        .allocate = .alloc_always,
+        .ignore_unknown_fields = true,
+    }) catch return null;
+    const status = Status.from_str(parsed.value.status) orelse {
+        parsed.deinit();
+        return null;
+    };
+    if (status == .pending) {
+        parsed.deinit();
+        return null;
+    }
+    return .{ .parsed = parsed };
+}
+
+/// Without this turn the transcript ends on the model's own assistant message,
+/// and the provider continues that message instead of starting a new one.
+pub fn resolvedTurn(allocator: std.mem.Allocator, res: Resolution) ![]u8 {
+    return switch (res.status()) {
+        .answered => if (res.question().len > 0)
+            std.fmt.allocPrint(allocator, "The human answered your question.\nQuestion: {s}\nAnswer: {s}", .{ res.question(), res.answer() })
+        else
+            std.fmt.allocPrint(allocator, "The human answered your question: {s}", .{res.answer()}),
+        .skipped => allocator.dupe(u8, instructionFor(.skipped)),
+        .abandoned => allocator.dupe(u8, instructionFor(.abandoned)),
+        .unavailable => allocator.dupe(u8, instructionFor(.unavailable)),
+        .pending => allocator.dupe(u8, ""),
+    };
+}
+
 fn trimEndCopy(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     return allocator.dupe(u8, std.mem.trimEnd(u8, s, " \t\r\n"));
 }
@@ -276,4 +338,71 @@ test "the example in the prompt parses as a valid question" {
     try testing.expect(q.question.len > 0);
     try testing.expect(q.options.len >= MIN_OPTIONS);
     try testing.expect(q.recommended.len > 0);
+}
+
+test "a block the human answered reports its status and answer" {
+    const content =
+        \\<markdown>
+        \\Which mark?
+        \\<ask_user>{"status":"answered","question_id":"q_1","question":"Which mark?","answer":"No mark","answers_count":1}</ask_user>
+        \\</markdown>
+    ;
+    const res = resolution(a, content).?;
+    defer res.deinit();
+    try testing.expectEqual(Status.answered, res.status());
+    try testing.expectEqualStrings("Which mark?", res.question());
+    try testing.expectEqualStrings("No mark", res.answer());
+}
+
+test "a still-pending block is not a resolution" {
+    const content =
+        \\<ask_user>{"status":"pending","question":"Which mark?","options":["a","b"]}</ask_user>
+    ;
+    try testing.expect(resolution(a, content) == null);
+}
+
+test "a question block with no status is not a resolution" {
+    const content =
+        \\<ask_user>{"question":"Which mark?","options":["a","b"]}</ask_user>
+    ;
+    try testing.expect(resolution(a, content) == null);
+}
+
+test "a message with no block is not a resolution" {
+    try testing.expect(resolution(a, "Just prose.") == null);
+    try testing.expect(resolution(a, "") == null);
+}
+
+test "an answered question becomes a user turn carrying the answer" {
+    const content =
+        \\<ask_user>{"status":"answered","question":"Which mark?","answer":"No mark"}</ask_user>
+    ;
+    const res = resolution(a, content).?;
+    defer res.deinit();
+    const turn = try resolvedTurn(a, res);
+    defer a.free(turn);
+    try testing.expect(std.mem.indexOf(u8, turn, "Which mark?") != null);
+    try testing.expect(std.mem.indexOf(u8, turn, "No mark") != null);
+}
+
+test "a skipped question becomes a user turn that forbids guessing" {
+    const content =
+        \\<ask_user>{"status":"skipped","question":"Which mark?"}</ask_user>
+    ;
+    const res = resolution(a, content).?;
+    defer res.deinit();
+    const turn = try resolvedTurn(a, res);
+    defer a.free(turn);
+    try testing.expectEqualStrings(instructionFor(.skipped), turn);
+}
+
+test "an abandoned question becomes a user turn that forbids guessing" {
+    const content =
+        \\<ask_user>{"status":"abandoned","question":"Which mark?"}</ask_user>
+    ;
+    const res = resolution(a, content).?;
+    defer res.deinit();
+    const turn = try resolvedTurn(a, res);
+    defer a.free(turn);
+    try testing.expectEqualStrings(instructionFor(.abandoned), turn);
 }

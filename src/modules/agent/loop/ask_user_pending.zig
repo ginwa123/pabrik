@@ -386,6 +386,10 @@ fn rewriteInsideChatEnvelope(
 ) !?[]u8 {
     const trimmed = std.mem.trim(u8, previous, &std.ascii.whitespace);
     if (trimmed.len == 0 or trimmed[0] != '{') return null;
+    // One definition of "is a chat envelope": a hand-rolled key list here
+    // missed `agent`, so the assistant envelope fell to the raw-splice path,
+    // which pasted the block's quotes into the JSON string.
+    if (!parsing.isChatEnvelope(allocator, trimmed)) return null;
 
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, trimmed, .{}) catch return null;
     defer parsed.deinit();
@@ -393,7 +397,6 @@ fn rewriteInsideChatEnvelope(
 
     const msg_field = parsed.value.object.get("msg") orelse return null;
     if (msg_field != .string) return null;
-    if (parsed.value.object.get("model") == null and parsed.value.object.get("user") == null) return null;
 
     const msg = msg_field.string;
     const span = ask_user_mod.findSpan(msg) orelse return null;
@@ -625,10 +628,10 @@ fn setupDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    status TEXT NOT NULL DEFAULT 'pending',
         \\    answer TEXT,
         \\    created_at 
-        ++ pabrikcore.dialect.epoch_type ++
+    ++ pabrikcore.dialect.epoch_type ++
         \\ NOT NULL,
         \\    resolved_at 
-        ++ pabrikcore.dialect.epoch_type ++
+    ++ pabrikcore.dialect.epoch_type ++
         \\)
     , &.{});
     try db.exec(
@@ -1054,4 +1057,64 @@ test "ask_user_pending: rewriting inside a chat envelope keeps the envelope vali
     try testing.expect(std.mem.indexOf(u8, msg, "\"answer\":\"staging\"") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "<ask_user>{") != null);
     try testing.expectEqualStrings("deepseek auto", parsed.value.object.get("model").?.string);
+}
+
+test "ask_user_pending: the assistant envelope keeps its JSON when the block is rewritten" {
+    const a = testing.allocator;
+    var s = try setupDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    try s.db.exec(a,
+        \\CREATE TABLE llm_history (
+        \\    id TEXT PRIMARY KEY,
+        \\    session_id TEXT NOT NULL,
+        \\    model TEXT NOT NULL,
+        \\    response_content TEXT,
+        \\    role TEXT,
+        \\    tool_name TEXT,
+        \\    diffview_before TEXT,
+        \\    diffview_after TEXT,
+        \\    is_loading INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &.{});
+
+    // The shape `insertLLMHistories` writes: `{agent, msg}`, no `model`.
+    const envelope =
+        "{\"agent\":\"deepseek auto\",\"msg\":\"<markdown>\\nFound it.\\n" ++
+        "<ask_user>{\\\"question\\\":\\\"Which environment?\\\"}</ask_user>" ++
+        "\\n</markdown>\"}";
+    try s.db.exec(a,
+        \\INSERT INTO llm_history (id, session_id, model, response_content, role, tool_name)
+        \\VALUES ('row_agent', 'sess_1', 'm', ?, 'assistant', NULL)
+    , &.{envelope});
+
+    const inner = try ask_user_mod.buildAskUserJson(a, .{
+        .status = .answered,
+        .question_id = "q_agent",
+        .question = "Which environment?",
+        .answer = "staging",
+        .answers_count = 1,
+    });
+    defer a.free(inner);
+
+    try rewriteAnchorRow(.{
+        .allocator = a,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .session_id = "sess_1",
+        .llm_history_id = "row_agent",
+        .inner = inner,
+    });
+
+    const after = (try readRowContent(a, &s.db, "row_agent")).?;
+    defer a.free(after);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, after, .{});
+    defer parsed.deinit();
+    const msg = parsed.value.object.get("msg").?.string;
+    try testing.expect(std.mem.startsWith(u8, msg, "<markdown>"));
+    try testing.expect(std.mem.indexOf(u8, msg, "\"status\":\"answered\"") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "\"answer\":\"staging\"") != null);
+    try testing.expectEqualStrings("deepseek auto", parsed.value.object.get("agent").?.string);
 }
