@@ -403,6 +403,45 @@ test "put_unknown_tool_name_returns_400" {
 }
 
 // ============================================================================
+// (e2) A stored name the registry no longer carries does not block the save
+// ============================================================================
+
+// The settings editor hydrates `tools` from GET and replays it on every save.
+// `ask_user` was a tool until it became a message block, so a document written
+// before that change carries a name the registry no longer has — and pre-fix
+// every save of ANY setting (the Chat view toggle included) returned 400.
+test "put_stored_stale_tool_name_does_not_block_the_save" {
+    try harness.requirePabrikBin(io, gpa);
+
+    const seeded = [_][]const u8{ "ask_user", "command", "glob" };
+    const seeded_json = try toolsJson(&seeded);
+    defer gpa.free(seeded_json);
+    const seed = try baseConfig(seeded_json);
+    defer gpa.free(seed);
+
+    var h = try bootSeeded(seed);
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    {
+        const body = try settingsBody(seeded_json);
+        defer gpa.free(body);
+        var r = try h.http(io, .PUT, "/api/config/pabrik", .{ .json_body = body, .expect = &.{200} });
+        defer r.deinit();
+    }
+
+    const live = [_][]const u8{ "command", "glob" };
+    try expectDiskTools(h.temp_dir, &live);
+
+    var r = try getConfig(&h);
+    defer r.deinit();
+    var doc = try r.json();
+    defer doc.deinit();
+    try expectWireTools(&doc, r.body, &live);
+}
+
+// ============================================================================
 // (f) PUT "tools": null preserves the existing value
 // ============================================================================
 
