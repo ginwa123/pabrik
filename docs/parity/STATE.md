@@ -61,6 +61,8 @@ Legend: Status = Missing / Partial / Complete / Android-only. Effort = S/M/L/XL.
 | 30 | SSE / real-time (chat stream, kanban SSE, design SSE, documents SSE) | sseClient, sseBus, *Sse stores | Partial | chat SSE done; kanban/design/documents SSE missing | — | features | L | P2 |
 | 31 | Sync engine (offline queue, outbox, LWW, triggers, WorkManager) | (Vue has none) | Missing | entire engine | core | all | XL | P1 |
 | 32 | E2E tests (Maestro + Playwright cross-platform) | Playwright specs | Missing | entire suite | — | all | XL | P3 |
+| 33 | Web search providers (config.json `web_search` map: name, url, key, curl template, description, enabled) | WebSearchSection, webSearchProviders.ts | Missing | entire feature | sync | workspaces, settings | M | P3 |
+| 34 | Sub-agent peek (read-only slide-over of a running sub-agent's chat) | SubAgentPeekHost, SubAgentPeekPanel | Missing | entire feature | SSE stream | chat, agent | M | P3 |
 
 ## API contract mismatches
 
@@ -185,8 +187,8 @@ Key mismatches / notes:
 - [ ] F73 Cross-platform sync E2E (Playwright Vue + Maestro Android) + docs/sync.md
 
 ### Phase C — Finish
-- [ ] F74 Re-audit Vue app for new features since run #1; add any new ones to matrix
-- [ ] F75 docs/sync.md (sync design, conflict policy, how to run tests, known limitations per feature)
+- [x] F74 Re-audit Vue app for new features since run #1; add any new ones to matrix (DONE 2026-11-08: found 2 new features — web search providers (#33), sub-agent peek (#34). Added to matrix.)
+- [x] F75 docs/sync.md (sync design, conflict policy, how to run tests, known limitations per feature) (DONE 2026-11-08: docs/sync.md written.)
 - [ ] F76 Set STATE.md status to COMPLETE; final PR
 
 ## Decisions
@@ -222,3 +224,4 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- docs/sync.md (new)
