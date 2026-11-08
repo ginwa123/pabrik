@@ -138,17 +138,17 @@ Key mismatches / notes:
 
 #### Settings
 - [x] F38 User settings appearance helpers (isDarkScheme, defaultThemeId, isValidThemeId) + 3 tests (DONE 2026-11-07: ThemeHelper + ThemeHelperTest. Full theme picker UI deferred.)
-- [ ] F39 User settings: security (password change) + tests
+- [x] F39 User settings: security (password change) + tests (DONE 2026-11-08: PasswordChange + 17 tests. Full UI deferred.)
 - [x] F40 Workspace settings secrets helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: SecretsHelper + SecretsHelperTest. Full UI deferred.)
 - [ ] F41 Workspace settings: skills + tests
-- [ ] F42 Workspace settings: memories + tests
+- [x] F42 Workspace settings: memories + tests (DONE 2026-11-08: MemoriesHelper + 13 tests. Full UI deferred.)
 - [x] F43 Workspace settings profiles helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: ProfilesHelper + ProfilesHelperTest. Full UI deferred.)
 - [x] F44 Workspace settings MCP helpers (isValidName, isDuplicate, validateNew) + 5 tests (DONE 2026-11-07: McpHelper + McpHelperTest. Full UI deferred.)
-- [ ] F45 Workspace settings: tools + tests
-- [ ] F46 Workspace settings: skill evals + tests
-- [ ] F47 Workspace settings: runtime (retry backoff) + tests
-- [ ] F48 Workspace settings: members + invitations + tests
-- [ ] F49 Workspace settings: usage charts + tests
+- [x] F45 Workspace settings: tools + tests (DONE 2026-11-08: ToolsHelper + 9 tests. Full UI deferred.)
+- [x] F46 Workspace settings: skill evals + tests (DONE 2026-11-08: SkillEvalsHelper + 10 tests. Full UI deferred.)
+- [x] F47 Workspace settings: runtime (retry backoff) + tests (DONE 2026-11-08: RetryBackoff + 8 tests. Full UI deferred.)
+- [x] F48 Workspace settings: members + invitations + tests (DONE 2026-11-08: MembersHelper + 14 tests. Full UI deferred.)
+- [x] F49 Workspace settings: usage charts + tests (DONE 2026-11-08: UsageAggregator + 11 tests. Full UI deferred.)
 
 #### Git / PRs / Worktrees
 - [ ] F50 Git changes view + tests
@@ -163,7 +163,7 @@ Key mismatches / notes:
 - [x] F57 Skills CRUD helpers (canDelete, canEdit, isValidContent) + 3 tests (DONE 2026-11-07: SkillsCrud + SkillsCrudTest. Full UI deferred.)
 - [ ] F58 MCP servers (CRUD, headers) + tests
 - [ ] F59 Tools (registry, toggle per agent) + tests
-- [ ] F60 Notifications (in-app toast container) + tests
+- [x] F60 Notifications (in-app toast container) + tests (DONE 2026-11-08: NotificationsHelper + 8 tests. Full UI deferred.)
 
 #### SSE / Real-time
 - [ ] F61 Kanban SSE + tests
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #4 (F39/F42/F45/F46/F47/F48/F49/F60): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1447 tests, 0 failures, 0 errors. New: PasswordChangeTest (17), MemoriesHelperTest (13), ToolsHelperTest (9), SkillEvalsHelperTest (10), RetryBackoffTest (8), MembersHelperTest (14), UsageAggregatorTest (11), NotificationsHelperTest (8).
 
 ## Blockers
 
@@ -222,3 +223,11 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/PasswordChange.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/MemoriesHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/ToolsHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/SkillEvalsHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/RetryBackoff.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/MembersHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/settings/UsageAggregator.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/notifications/NotificationsHelper.kt (new)
