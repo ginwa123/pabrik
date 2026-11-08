@@ -119,9 +119,9 @@ pub fn setLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []con
     }
 }
 
-/// A joining member becomes the group's lead when it says it is the lead, or
-/// when the group has no lead yet, so a roster assembled one join at a time
-/// still has somebody to speak first.
+/// A joining member leads the room when it says so, or when nobody leads yet.
+/// The lead is re-applied either way, so a member that joins after the lead was
+/// chosen still gets its role written.
 pub fn setLeadIfUnset(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -134,7 +134,9 @@ pub fn setLeadIfUnset(
 
     if (Role.fromText(role_text) == .lead or current == null) {
         try setLead(allocator, db, session_id, agent_name);
+        return;
     }
+    try setLead(allocator, db, session_id, current.?);
 }
 
 /// The identity a routed group turn runs under: the member's own name, then its
