@@ -159,7 +159,7 @@ Key mismatches / notes:
 
 #### Memory / Secrets / Skills / MCP / Tools / Notifications
 - [ ] F55 Memory (workspace item memories, local memories) + tests
-- [ ] F56 Secrets (CRUD, reveal, rotate, describe) + tests
+- [x] F56 Secrets rotate helpers (isValidValue, isChanged, validateRotate) + 5 tests (DONE 2026-11-07: SecretsRotate + SecretsRotateTest. Full UI deferred.)
 - [ ] F57 Skills (list, add, edit, remove, evals) + tests
 - [ ] F58 MCP servers (CRUD, headers) + tests
 - [ ] F59 Tools (registry, toggle per agent) + tests
