@@ -89,14 +89,13 @@ pub fn inserLLMHistories(
             enveloped_owned = try parsing.encodeUserContent(allocator, uid, nm, contentStr);
             effective_content = enveloped_owned.?;
         } else if (std.mem.eql(u8, roleStr, "assistant")) {
-            // Agent name the user picked; raw model id when Default /
-            // auth off / lookup fails.
             const profile_owned: ?[]u8 = parsing.resolveProfileName(allocator, db, session_id) catch null;
             defer if (profile_owned) |pr| allocator.free(pr);
             var label: []const u8 = model;
             if (profile_owned) |pr| {
                 if (pr.len > 0) label = pr;
             }
+            if (agentStr.len > 0 and !std.mem.eql(u8, agentStr, "Agent")) label = agentStr;
             enveloped_owned = try parsing.encodeAssistantContent(allocator, label, contentStr);
             effective_content = enveloped_owned.?;
         }
@@ -362,7 +361,8 @@ fn setupHistoryDb() !struct { db: database.Db, threaded: std.Io.Threaded } {
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT,
         \\    cwd TEXT,
-        \\    updated_at TEXT
+        \\    updated_at TEXT,
+        \\    selected_profile_model TEXT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -583,6 +583,114 @@ test "the live SSE row keeps a column that already names the speaker" {
 
     const ev = captured_llm_event orelse return error.NoEventCaptured;
     try testing.expect(std.mem.indexOf(u8, ev.data, "\"agent_name\": \"BEAM\"") != null);
+}
+
+fn storedEnvelopeAuthor(allocator: std.mem.Allocator, db: *database.Db, id: []const u8) ![]u8 {
+    var q = try db.query(allocator, "SELECT response_content FROM llm_history WHERE id = ?", &.{id});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.HistoryRowMissing;
+    defer row.deinit(allocator);
+    return (try parsing.assistantAuthor(allocator, row.values[0])) orelse error.NotAnAssistantEnvelope;
+}
+
+test "the assistant envelope names the turn's speaker, not the session profile" {
+    var s = try setupHistoryDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    try s.db.exec(testing.allocator, "INSERT INTO sessions (id, name, selected_profile_model) VALUES ('s_group', 'group', 'BEAM')", &.{});
+
+    const id = try inserLLMHistories(.{
+        .allocator = testing.allocator,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .logger = null,
+        .event_bus = null,
+        .is_emit_sse = false,
+        .cwd = "/tmp",
+        .entity = .{
+            .id = "entity-id",
+            .session_id = "s_group",
+            .model = "deepseek/deepseek-v4.1-flash",
+            .created_at = "1",
+            .response_content = "hey human",
+            .finish_reason = "stop",
+            .role = "assistant",
+            .tool_calls_json = "",
+            .agent = "deepseek auto",
+        },
+    });
+    defer testing.allocator.free(id);
+
+    const author = try storedEnvelopeAuthor(testing.allocator, &s.db, id);
+    defer testing.allocator.free(author);
+    try testing.expectEqualStrings("deepseek auto", author);
+}
+
+test "the assistant envelope falls back to the session profile when the column is the placeholder" {
+    var s = try setupHistoryDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    try s.db.exec(testing.allocator, "INSERT INTO sessions (id, name, selected_profile_model) VALUES ('s_solo', 'solo', 'BEAM')", &.{});
+
+    const id = try inserLLMHistories(.{
+        .allocator = testing.allocator,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .logger = null,
+        .event_bus = null,
+        .is_emit_sse = false,
+        .cwd = "/tmp",
+        .entity = .{
+            .id = "entity-id",
+            .session_id = "s_solo",
+            .model = "beam-free",
+            .created_at = "1",
+            .response_content = "hey human",
+            .finish_reason = "stop",
+            .role = "assistant",
+            .tool_calls_json = "",
+            .agent = "Agent",
+        },
+    });
+    defer testing.allocator.free(id);
+
+    const author = try storedEnvelopeAuthor(testing.allocator, &s.db, id);
+    defer testing.allocator.free(author);
+    try testing.expectEqualStrings("BEAM", author);
+}
+
+test "the assistant envelope falls back to the model when the session has no profile" {
+    var s = try setupHistoryDb();
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    const id = try inserLLMHistories(.{
+        .allocator = testing.allocator,
+        .io = s.threaded.io(),
+        .db = &s.db,
+        .logger = null,
+        .event_bus = null,
+        .is_emit_sse = false,
+        .cwd = "/tmp",
+        .entity = .{
+            .id = "entity-id",
+            .session_id = "s_no_profile",
+            .model = "beam-free",
+            .created_at = "1",
+            .response_content = "hey human",
+            .finish_reason = "stop",
+            .role = "assistant",
+            .tool_calls_json = "",
+            .agent = "Agent",
+        },
+    });
+    defer testing.allocator.free(id);
+
+    const author = try storedEnvelopeAuthor(testing.allocator, &s.db, id);
+    defer testing.allocator.free(author);
+    try testing.expectEqualStrings("beam-free", author);
 }
 
 /// Get all skills loaded for a session

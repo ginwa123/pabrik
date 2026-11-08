@@ -137,6 +137,29 @@ pub fn setLeadIfUnset(
     }
 }
 
+/// The identity a routed group turn runs under: the member's own name, then its
+/// persona when it has one. Without it a member answers as whoever the
+/// transcript last named. Caller frees the result.
+pub fn speakerIdentity(allocator: std.mem.Allocator, speaker: []const u8, persona: []const u8) ![]u8 {
+    if (persona.len == 0) {
+        return try std.fmt.allocPrint(allocator, "You are {s}, one of the agents in this chat. Answer as {s}.", .{ speaker, speaker });
+    }
+    return try std.fmt.allocPrint(allocator, "You are {s}, one of the agents in this chat. Answer as {s}.\n\n{s}", .{ speaker, speaker, persona });
+}
+
+/// The persona a turn runs under: the sub-agent's own, else the routed group
+/// member's identity, else the group persona. Caller frees the result.
+pub fn turnPersona(
+    allocator: std.mem.Allocator,
+    sub_agent_persona: []const u8,
+    group_speaker: []const u8,
+    group_persona: []const u8,
+) ![]u8 {
+    if (sub_agent_persona.len > 0) return try allocator.dupe(u8, sub_agent_persona);
+    if (group_speaker.len > 0) return try speakerIdentity(allocator, group_speaker, group_persona);
+    return try allocator.dupe(u8, group_persona);
+}
+
 /// Null when the session is not a group. Caller frees a non-null result.
 pub fn groupLead(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?[]const u8 {
     var row = db.queryRow(
@@ -440,4 +463,48 @@ test "the group lead is null for a session that never joined a group" {
     try ctx.db.exec(testing.allocator, "INSERT INTO sessions (id, name) VALUES ('s_1', 'plain')", &.{});
 
     try testing.expect((try groupLead(testing.allocator, &ctx.db, "s_1")) == null);
+}
+
+test "a routed member is told its own name when it has no persona" {
+    const identity = try speakerIdentity(testing.allocator, "deepseek auto", "");
+    defer testing.allocator.free(identity);
+
+    try testing.expectEqualStrings(
+        "You are deepseek auto, one of the agents in this chat. Answer as deepseek auto.",
+        identity,
+    );
+}
+
+test "a routed member keeps its persona under its own name" {
+    const identity = try speakerIdentity(testing.allocator, "BEAM", "You are a strict code reviewer.");
+    defer testing.allocator.free(identity);
+
+    try testing.expectEqualStrings(
+        "You are BEAM, one of the agents in this chat. Answer as BEAM.\n\nYou are a strict code reviewer.",
+        identity,
+    );
+}
+
+test "a sub-agent turn keeps its own persona and gains no group identity" {
+    const persona = try turnPersona(testing.allocator, "You are a strict code reviewer.", "BEAM", "group persona");
+    defer testing.allocator.free(persona);
+
+    try testing.expectEqualStrings("You are a strict code reviewer.", persona);
+}
+
+test "a routed group turn runs under the member's identity" {
+    const persona = try turnPersona(testing.allocator, "", "deepseek auto", "");
+    defer testing.allocator.free(persona);
+
+    try testing.expectEqualStrings(
+        "You are deepseek auto, one of the agents in this chat. Answer as deepseek auto.",
+        persona,
+    );
+}
+
+test "a turn that is neither a sub-agent nor a group keeps the group persona" {
+    const persona = try turnPersona(testing.allocator, "", "", "");
+    defer testing.allocator.free(persona);
+
+    try testing.expectEqualStrings("", persona);
 }
