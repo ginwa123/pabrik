@@ -433,14 +433,19 @@ test "runtime: the data dir follows XDG_DATA_HOME, then HOME" {
     try env.put("XDG_DATA_HOME", "/xdg");
     try env.put("HOME", "/home/u");
 
+    // Built with `path.join` so the assertion holds on Windows too.
+    const want_xdg = try std.fs.path.join(alloc, &.{ "/xdg", "pabrik" });
+    defer alloc.free(want_xdg);
     const xdg = try resolveDataDir(alloc, &env);
     defer alloc.free(xdg);
-    try testing.expectEqualStrings("/xdg/pabrik", xdg);
+    try testing.expectEqualStrings(want_xdg, xdg);
 
     _ = env.orderedRemove("XDG_DATA_HOME");
+    const want_home = try std.fs.path.join(alloc, &.{ "/home/u", ".local", "share", "pabrik" });
+    defer alloc.free(want_home);
     const home = try resolveDataDir(alloc, &env);
     defer alloc.free(home);
-    try testing.expectEqualStrings("/home/u/.local/share/pabrik", home);
+    try testing.expectEqualStrings(want_home, home);
 }
 
 test "runtime: PABRIK_RUSTFS_PORT is honoured, and a free port is picked otherwise" {
