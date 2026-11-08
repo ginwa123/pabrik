@@ -64,6 +64,10 @@ pub const Hit = struct {
     /// the excerpt and only reads the whole of it when `include_content`
     /// was asked for.
     content: []const u8,
+    /// What the excerpt is cut from: the body when the row carries one,
+    /// otherwise the `preview`. Separate from `content` so `include_content`
+    /// never returns a preview dressed up as a body.
+    excerpt_source: []const u8,
     /// Byte length of the body. Reported so the model can tell a 40-byte
     /// stub from a 4 MiB document before deciding to ask for the body.
     content_length: usize,
@@ -104,6 +108,19 @@ fn invalidPatternWarningFor(err: progressive_regex.Error) []const u8 {
 
 fn exhaustedWarning() []const u8 {
     return "the pattern was too expensive to finish matching, so some documents were skipped — anchor it with '^' or pass literal:true";
+}
+
+/// The text a query is matched against and excerpted from. The body when the
+/// row still carries one; otherwise the `preview`, which is all SQL keeps once
+/// the body moves to the object store.
+pub fn searchableText(row: documents_store.DocumentRow) []const u8 {
+    return if (row.content.len > 0) row.content else row.preview;
+}
+
+/// The body's real length, even when only the preview is available.
+fn bodyLength(row: documents_store.DocumentRow) usize {
+    if (row.content.len > 0) return row.content.len;
+    return if (row.content_bytes > 0) @intCast(row.content_bytes) else row.preview.len;
 }
 
 fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
@@ -166,19 +183,20 @@ pub fn matchQuery(
     }
 
     for (rows) |row| {
+        const text = searchableText(row);
         if (regex) |*re| {
             const in_title = re.isMatch(row.title);
-            const in_content = re.isMatch(row.content);
+            const in_content = re.isMatch(text);
             if (!in_title and !in_content) continue;
             // A pattern with no metacharacters IS a substring, so the hit can
             // be located and the excerpt centred on it.
-            const anchor = if (anchorable) indexOfIgnoreCase(row.content, query) else null;
+            const anchor = if (anchorable) indexOfIgnoreCase(text, query) else null;
             try matched.append(allocator, hitOf(row, anchor, in_title));
         } else {
             const in_title = containsIgnoreCase(row.title, query);
-            const in_content = containsIgnoreCase(row.content, query);
+            const in_content = containsIgnoreCase(text, query);
             if (!in_title and !in_content) continue;
-            try matched.append(allocator, hitOf(row, indexOfIgnoreCase(row.content, query), in_title));
+            try matched.append(allocator, hitOf(row, indexOfIgnoreCase(text, query), in_title));
         }
     }
 
@@ -206,7 +224,8 @@ fn hitOf(
         .format = row.format,
         .updated_at = row.updated_at,
         .content = row.content,
-        .content_length = row.content.len,
+        .excerpt_source = searchableText(row),
+        .content_length = bodyLength(row),
         .content_anchor = anchor,
         .title_matched = title_matched,
     };
@@ -305,8 +324,8 @@ pub fn renderSearchResult(
         // the title.
         const source: []const u8 = if (hit.title_matched)
             hit.title
-        else if (hit.content.len > 0)
-            hit.content
+        else if (hit.excerpt_source.len > 0)
+            hit.excerpt_source
         else
             hit.title;
         const anchor = if (hit.title_matched) null else hit.content_anchor;
@@ -817,4 +836,97 @@ test "renderSearchResult: a title hit excerpts the title, a body hit excerpts th
             try testing.expect(std.mem.indexOf(u8, r.excerpt, "Release plan") != null);
         }
     }
+}
+
+// ─── Search without the body ────────────────────────────────────────────
+
+/// A row whose body has moved to the object store: `content` is empty and only
+/// `preview` is left in SQL.
+fn movedRow(
+    id: []const u8,
+    title: []const u8,
+    preview: []const u8,
+    content_bytes: i64,
+) documents_store.DocumentRow {
+    return .{
+        .id = id,
+        .workspace_id = "ws_1",
+        .title = title,
+        .content = "",
+        .format = "markdown",
+        .created_at = "2026-09-01 10:00:00",
+        .updated_at = "2026-09-01 10:00:00",
+        .position = 0,
+        .folder_id = null,
+        .content_bytes = content_bytes,
+        .preview = preview,
+    };
+}
+
+test "searchableText: the body when the row carries one, the preview otherwise" {
+    const with_body = testRow("doc_1", "T", "the body", "2026-09-01 10:00:00");
+    try testing.expectEqualStrings("the body", searchableText(with_body));
+
+    const moved = movedRow("doc_2", "T", "the preview", 4096);
+    try testing.expectEqualStrings("the preview", searchableText(moved));
+}
+
+test "bodyLength: the real body length even when only the preview is left" {
+    const with_body = testRow("doc_1", "T", "the body", "2026-09-01 10:00:00");
+    try testing.expectEqual(@as(usize, 8), bodyLength(with_body));
+
+    // The preview is 11 bytes; the body it stands in for is 4096.
+    const moved = movedRow("doc_2", "T", "the preview", 4096);
+    try testing.expectEqual(@as(usize, 4096), bodyLength(moved));
+}
+
+test "matchQuery finds a hit in the preview when the body is gone" {
+    const alloc = testing.allocator;
+    const rows = [_]documents_store.DocumentRow{
+        movedRow("doc_moved", "Release plan", "ship the zephyrword turbine", 4096),
+        movedRow("doc_other", "Notes", "nothing relevant here", 12),
+    };
+
+    const res = try matchQuery(alloc, &rows, "zephyrword", .{});
+    defer alloc.free(res.hits);
+
+    try testing.expectEqual(@as(usize, 1), res.hits.len);
+    try testing.expectEqualStrings("doc_moved", res.hits[0].id);
+    // The excerpt is cut from the preview, and the anchor points into it.
+    try testing.expect(res.hits[0].content_anchor != null);
+    // `content` stays empty: `include_content` must not return a preview
+    // dressed up as a body.
+    try testing.expectEqualStrings("", res.hits[0].content);
+    // The model still learns the real size.
+    try testing.expectEqual(@as(usize, 4096), res.hits[0].content_length);
+}
+
+test "renderSearchResult excerpts the preview when the body is gone" {
+    const alloc = testing.allocator;
+    const rows = [_]documents_store.DocumentRow{
+        movedRow("doc_moved", "Release plan", "ship the zephyrword turbine", 4096),
+    };
+
+    const res = try matchQuery(alloc, &rows, "zephyrword", .{});
+    defer alloc.free(res.hits);
+
+    const out = try renderSearchResult(alloc, res.hits, .{
+        .total = res.hits.len,
+        .offset = 0,
+        .limit = 20,
+        .query = "zephyrword",
+        .mode = res.mode,
+        .warning = "",
+        .include_content = false,
+    });
+    defer alloc.free(out);
+
+    const parsed = try parseRendered(alloc, out);
+    defer parsed.deinit();
+
+    const row = parsed.value.documents[0];
+    try testing.expect(std.mem.indexOf(u8, row.excerpt, "zephyrword") != null);
+    try testing.expectEqual(@as(usize, 4096), row.content_length);
+    // `include_content` was not asked for, so there is no body to report.
+    try testing.expect(row.content == null);
 }

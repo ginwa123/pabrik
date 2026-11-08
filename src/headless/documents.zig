@@ -43,6 +43,13 @@ const BackfillDto = struct {
     dry_run: bool,
 };
 
+/// A `search` result: the matching rows, no folder tree.
+const SearchDto = struct {
+    workspace_id: []const u8,
+    documents: []DocumentDto,
+    count: usize,
+};
+
 fn folderDto(row: folders_store.FolderRow) FolderDto {
     return .{ .id = row.id, .parent_id = row.parent_id, .name = row.name, .position = row.position };
 }
@@ -82,6 +89,24 @@ fn folderJson(allocator: std.mem.Allocator, folder: folders_store.FolderRow) ![]
     return std.json.Stringify.valueAlloc(allocator, folderDto(folder), .{});
 }
 
+/// The `{workspace_id, documents, count}` envelope, without the folder tree.
+/// `search` returns matches, not a level of the tree.
+fn documentsJson(
+    allocator: std.mem.Allocator,
+    workspace_id: []const u8,
+    documents: []const documents_store.DocumentRow,
+) ![]u8 {
+    const document_dtos = try allocator.alloc(DocumentDto, documents.len);
+    defer allocator.free(document_dtos);
+    for (documents, 0..) |d, i| document_dtos[i] = documentDto(d);
+
+    return std.json.Stringify.valueAlloc(allocator, SearchDto{
+        .workspace_id = workspace_id,
+        .documents = document_dtos,
+        .count = documents.len,
+    }, .{});
+}
+
 fn documentJson(allocator: std.mem.Allocator, document: documents_store.DocumentRow) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, documentDto(document), .{});
 }
@@ -107,6 +132,12 @@ pub fn runWithDb(
 ) ![]u8 {
     switch (a.op) {
         .list => return listJson(allocator, store, a.workspace_id),
+
+        .search => {
+            const rows = try store.searchDocuments(allocator, a.workspace_id, a.query);
+            defer documents_store.freeDocumentRows(allocator, rows);
+            return documentsJson(allocator, a.workspace_id, rows);
+        },
 
         .folder_create => {
             const row = try folders_store.createFolder(allocator, store.db, .{
@@ -268,4 +299,31 @@ test "headless documents: doc-move with no folder puts the document back at the 
     const parsed = try std.json.parseFromSlice(std.json.Value, alloc, moved_json, .{});
     defer parsed.deinit();
     try testing.expect(parsed.value.object.get("folder_id").? == .null);
+}
+
+test "headless documents: search returns only the matching documents" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, content, preview)
+        \\VALUES ('doc_hit', 'ws_1', 'Release plan', '', 'ship the zephyrword turbine'),
+        \\       ('doc_miss', 'ws_1', 'Notes', 'nothing relevant', 'nothing relevant')
+    , &[_][]const u8{});
+
+    const json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
+        .op = .search,
+        .workspace_id = "ws_1",
+        .query = "zephyrword",
+    });
+    defer alloc.free(json);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, json, .{});
+    defer parsed.deinit();
+
+    const obj = parsed.value.object;
+    try testing.expectEqual(@as(i64, 1), obj.get("count").?.integer);
+    try testing.expectEqualStrings("doc_hit", obj.get("documents").?.array.items[0].object.get("id").?.string);
 }

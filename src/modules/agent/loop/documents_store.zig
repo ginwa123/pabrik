@@ -265,10 +265,10 @@ fn likeContainsPattern(allocator: std.mem.Allocator, needle: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Documents in one workspace whose TITLE or CONTENT contains `needle`,
-/// case-insensitively — newest-updated first. `needle` is a LITERAL
-/// substring, never a pattern.
-fn searchDocumentsRaw(
+/// Documents in one workspace whose TITLE, PREVIEW or CONTENT contains
+/// `needle`, case-insensitively — newest-updated first. `preview` is in the
+/// predicate so search survives the body leaving the column.
+pub fn searchDocumentsRaw(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
@@ -286,7 +286,9 @@ fn searchDocumentsRaw(
     const sql = if (pattern != null)
         SELECT_COLUMNS ++
             " WHERE workspace_id = ?" ++
-            " AND (LOWER(title) LIKE LOWER(?) ESCAPE '\\' OR LOWER(content) LIKE LOWER(?) ESCAPE '\\')" ++
+            " AND (LOWER(title) LIKE LOWER(?) ESCAPE '\\'" ++
+            " OR LOWER(preview) LIKE LOWER(?) ESCAPE '\\'" ++
+            " OR LOWER(content) LIKE LOWER(?) ESCAPE '\\')" ++
             " ORDER BY updated_at DESC, id DESC"
     else
         SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC";
@@ -295,7 +297,7 @@ fn searchDocumentsRaw(
         allocator,
         sql,
         if (pattern) |p|
-            &[_][]const u8{ workspace_id, p, p }
+            &[_][]const u8{ workspace_id, p, p, p }
         else
             &[_][]const u8{workspace_id},
     ) catch return error.QueryFailed;
@@ -1646,4 +1648,66 @@ test "backfill counts a refused body as failed and leaves the row alone" {
     defer freeDocumentRow(alloc, row);
     try testing.expect(row.content_key == null);
     try testing.expectEqualStrings("body", row.content);
+}
+
+// ─── Search without the body ────────────────────────────────────────────
+
+test "searchDocuments finds a document by a word in its preview when the body is gone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // The shape a row has once its body lives in the object store: `content`
+    // is empty and only `preview` is left in SQL.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, content, preview, content_bytes)
+        \\VALUES ('doc_moved', 'ws_1', 'Release plan', '', 'ship the zephyrword turbine', 4096)
+    , &[_][]const u8{});
+
+    const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "zephyrword");
+    defer freeDocumentRows(alloc, rows);
+
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    try testing.expectEqualStrings("doc_moved", rows[0].id);
+    // The body is still absent — search found it, it did not resurrect it.
+    try testing.expectEqualStrings("", rows[0].content);
+    try testing.expectEqualStrings("ship the zephyrword turbine", rows[0].preview);
+}
+
+test "searchDocuments still finds a word that is only in the body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // A body longer than the preview: the needle sits past the 512-byte cut,
+    // so only the `content` column can answer.
+    const body = "x" ** (PREVIEW_MAX_BYTES + 10) ++ "quasarterm";
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, content, preview, content_bytes)
+        \\VALUES ('doc_long', 'ws_1', 'Long', ?, ?, ?)
+    , &[_][]const u8{ body, previewOf(body), "522" });
+
+    const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "quasarterm");
+    defer freeDocumentRows(alloc, rows);
+
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    try testing.expectEqualStrings("doc_long", rows[0].id);
+}
+
+test "searchDocuments does not match a word that is in neither the preview nor the body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, content, preview)
+        \\VALUES ('doc_moved', 'ws_1', 'Release plan', '', 'ship it')
+    , &[_][]const u8{});
+
+    const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "hippopotamus");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }

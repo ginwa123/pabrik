@@ -162,6 +162,7 @@ pub const search_documents_tool_system_prompt =
     \\- Results are PAGED: `limit` (default 20, max 100) caps how many rows you get back, `total` is the real match count, `offset` continues the listing, and `hint` names the exact next offset.
     \\- An invalid pattern is not a failure: it is matched as a literal substring and the result carries `pattern_warning`. Read it instead of retrying blindly.
     \\- Every row carries a short `excerpt` around the hit plus `content_length` (bytes) — enough to tell documents apart without dumping megabytes of markdown into your context.
+    \\- A document whose body lives in the object store is searched through its PREVIEW (the first 512 bytes). `content_length` still reports the real size, so a row whose `content_length` is much larger than its excerpt may hold the match further in — open it with `include_content: true` to read the whole body.
     \\- Pass `include_content: true` when the NEXT action is `edit_document`, which replaces the WHOLE body and therefore needs the current one first. Leave it off otherwise.
     \\- Omitting `query` lists your documents, newest-updated first — that is the right first call when you do not know what you are looking for.
     \\

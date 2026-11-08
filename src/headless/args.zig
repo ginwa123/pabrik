@@ -86,6 +86,7 @@ pub const MemoriesArgs = struct {
 /// so an agent can drive the whole feature with no server and no port.
 pub const DocumentsOp = enum {
     list,
+    search,
     folder_create,
     folder_move,
     folder_rename,
@@ -112,6 +113,8 @@ pub const DocumentsArgs = struct {
     limit: usize = 0,
     /// `backfill`: report what would move without writing anything.
     dry_run: bool = false,
+    /// `search`: the literal substring to look for.
+    query: []const u8 = "",
 };
 
 /// The object-store verbs. One per `Storage` method, so an agent can exercise
@@ -188,8 +191,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
+    "      search flags: --query <text>\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next\n" ++
@@ -312,6 +316,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     const op: DocumentsOp = blk: {
         const word = argv[0];
         if (std.mem.eql(u8, word, "list")) break :blk .list;
+        if (std.mem.eql(u8, word, "search")) break :blk .search;
         if (std.mem.eql(u8, word, "folder-create")) break :blk .folder_create;
         if (std.mem.eql(u8, word, "folder-move")) break :blk .folder_move;
         if (std.mem.eql(u8, word, "folder-rename")) break :blk .folder_rename;
@@ -357,6 +362,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
                 return fail(.{ .kind = .invalid_number, .value = argv[i] });
         } else if (std.mem.eql(u8, flag, "--dry-run")) {
             got.dry_run = true;
+        } else if (std.mem.eql(u8, flag, "--query")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.query = argv[i];
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
@@ -368,6 +377,9 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     }
     switch (op) {
         .list, .folder_delete, .backfill => {},
+        .search => {
+            if (got.query.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--query" });
+        },
         .folder_create, .folder_rename => {
             if (got.name.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--name" });
             if (op == .folder_rename and got.folder_id == null) {
@@ -919,6 +931,16 @@ test "parse: documents backfill reads the limit, the dry run and the workspace" 
 
 test "parse: documents backfill refuses a non-numeric limit" {
     try expectFailure(&.{ "documents", "backfill", "--limit", "lots" }, .invalid_number);
+}
+
+test "parse: documents search reads the query and needs a workspace" {
+    const a = try parse(&.{ "documents", "search", "--workspace", "ws_1", "--query", "zephyr" });
+    try testing.expectEqual(DocumentsOp.search, a.documents.op);
+    try testing.expectEqualStrings("zephyr", a.documents.query);
+}
+
+test "parse: documents search refuses to run with no query" {
+    try expectFailure(&.{ "documents", "search", "--workspace", "ws_1" }, .documents_requires_flag);
 }
 
 test "the help text lists every flag the table gives this scope" {
