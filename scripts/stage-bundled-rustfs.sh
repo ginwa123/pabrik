@@ -48,8 +48,22 @@ archive_name() {
     echo "rustfs-$1-v${rustfs_version}.zip"
 }
 
+# The release asset id, not the `releases/download/<tag>/<name>` URL: that
+# redirect answers 504 for these assets (verified 2026-11-08, twice), while the
+# API asset endpoint 302s to a working signed URL.
+asset_id() {
+    case "$1" in
+        linux-x86_64-gnu) echo "675522651" ;;
+        linux-aarch64-gnu) echo "675521975" ;;
+        linux-x86_64-musl) echo "675522955" ;;
+        linux-aarch64-musl) echo "675522332" ;;
+        macos-aarch64) echo "675523423" ;;
+        *) return 1 ;;
+    esac
+}
+
 archive_url() {
-    echo "https://github.com/rustfs/rustfs/releases/download/${rustfs_version}/$(archive_name "$1")"
+    echo "https://api.github.com/repos/rustfs/rustfs/releases/assets/$(asset_id "$1")"
 }
 
 if [[ $# -lt 1 ]]; then
@@ -123,9 +137,10 @@ else
     rm -f "$archive"
     echo "downloading $(basename "$archive")"
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --connect-timeout 20 --max-time 900 --retry 3 -o "$archive" "$url"
+        curl -fsSL --connect-timeout 20 --max-time 900 --retry 3 \
+            -H "Accept: application/octet-stream" -o "$archive" "$url"
     elif command -v wget >/dev/null 2>&1; then
-        wget --timeout=20 --tries=3 -qO "$archive" "$url"
+        wget --timeout=20 --tries=3 --header="Accept: application/octet-stream" -qO "$archive" "$url"
     else
         echo "need curl or wget to download ${url}" >&2
         exit 1

@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $RustfsVersion = "1.0.4"
 
 $Pinned = @{
-    "x86_64-windows-gnu" = @{ Upstream = "windows-x86_64"; Sha256 = "2e3af0b187dd70435dfdefe5f61aae7eede5a21fc9a2a2f07e289f727adbcfa6" }
+    "x86_64-windows-gnu" = @{ AssetId = "675523770"; Upstream = "windows-x86_64"; Sha256 = "2e3af0b187dd70435dfdefe5f61aae7eede5a21fc9a2a2f07e289f727adbcfa6" }
 }
 
 if (-not $Pinned.ContainsKey($Target)) {
@@ -19,7 +19,10 @@ if (-not $Pinned.ContainsKey($Target)) {
 $Upstream = $Pinned[$Target].Upstream
 $WantSha = $Pinned[$Target].Sha256
 $ArchiveName = "rustfs-$Upstream-v$RustfsVersion.zip"
-$Url = "https://github.com/rustfs/rustfs/releases/download/$RustfsVersion/$ArchiveName"
+# The release asset id, not the `releases/download/<tag>/<name>` URL: that
+# redirect answers 504 for these assets, while the API asset endpoint 302s to a
+# working signed URL.
+$Url = "https://api.github.com/repos/rustfs/rustfs/releases/assets/$($Pinned[$Target].AssetId)"
 
 $WorkDir = Join-Path ([System.IO.Path]::GetTempPath()) "pabrik-rustfs-$Upstream"
 $Archive = Join-Path $WorkDir $ArchiveName
@@ -37,7 +40,8 @@ if ($cached) {
 } else {
     if (Test-Path $Archive) { Remove-Item $Archive -Force }
     Write-Output "downloading $ArchiveName"
-    Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing -TimeoutSec 900
+    Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing -TimeoutSec 900 `
+        -Headers @{ "Accept" = "application/octet-stream" }
 }
 
 $GotSha = Get-HexDigest $Archive
