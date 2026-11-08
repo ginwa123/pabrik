@@ -143,6 +143,7 @@ pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
         .max_capacity_token_model = cfg.max_capacity_token_model,
         .compaction_threshold_percent = cfg.compaction_threshold_percent,
         .retry_delay_ms = cfg.retry_delay_ms,
+        .llm_read_timeout_ms = cfg.llm_read_timeout_ms,
         .tools = cfg.tools,
         .web_search = masked_web_search,
         .skill_evals = .{
@@ -186,6 +187,9 @@ pub const ConfigJson = struct {
     /// Delay in milliseconds before retrying a failed workflow call.
     /// See `LlmConfig.retry_delay_ms` for semantics.
     retry_delay_ms: u32 = 0,
+    /// Overall deadline in milliseconds for ONE streaming LLM call.
+    /// See `LlmConfig.llm_read_timeout_ms` for semantics.
+    llm_read_timeout_ms: u32 = 900_000,
     /// Default tool checklist (Tools tab, plan
     /// 2026-09-22-tools-menu-config-default-tools). Emitted as JSON
     /// `null` when the on-disk key is absent (mirrors `mcp_servers`).

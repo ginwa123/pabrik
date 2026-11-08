@@ -153,6 +153,10 @@ export interface PabrikConfig {
    * delay (current behavior, the retry fires immediately on the next loop iteration). Range: 0–60
    * 000. The backend clamps values > 60 000 to 60 000. */
   retry_delay_ms?: number
+  /** Overall deadline in milliseconds for ONE streaming LLM call (response head to last chunk).
+   * Range: 1 000–1 800 000. The backend clamps outside that window. Defaults to 900 000 (15
+   * minutes) when absent — a design turn's 100k-token prompt needs more than the old 5. */
+  llm_read_timeout_ms?: number
   /** Plan 2026-09-10-web-launch-toggle — browser-mode flag. When true, the settings General tab
    * advertises the same UI in the system browser (URL pill + auto-open) and the server defaults to
    * a random local port at startup. Defaults to `false` when absent (matches `LlmConfigJson`). */

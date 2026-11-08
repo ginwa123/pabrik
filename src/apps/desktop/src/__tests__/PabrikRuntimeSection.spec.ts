@@ -7,13 +7,20 @@ import PabrikRuntimeSection, {
   type PabrikRuntimeSettings,
 } from '../components/pabrik/PabrikRuntimeSection.vue'
 
-function mountSection(settings: PabrikRuntimeSettings) {
-  return mount(PabrikRuntimeSection, { props: { modelValue: { ...settings } } })
+function mountSection(settings: Partial<PabrikRuntimeSettings>) {
+  return mount(PabrikRuntimeSection, {
+    props: { modelValue: { retry_delay_ms: 0, llm_read_timeout_ms: 900_000, ...settings } },
+  })
 }
 
 function emittedMs(wrapper: ReturnType<typeof mountSection>, index = 0): number {
   const payload = wrapper.emitted('update:modelValue')?.[index]?.[0] as PabrikRuntimeSettings
   return payload.retry_delay_ms
+}
+
+function emittedReadTimeoutMs(wrapper: ReturnType<typeof mountSection>, index = 0): number {
+  const payload = wrapper.emitted('update:modelValue')?.[index]?.[0] as PabrikRuntimeSettings
+  return payload.llm_read_timeout_ms
 }
 
 describe('PabrikRuntimeSection', () => {
@@ -61,5 +68,40 @@ describe('PabrikRuntimeSection', () => {
     const wrapper = mountSection({ retry_delay_ms: 5000 })
     await wrapper.find('[data-testid="input-retry-delay-seconds"]').setValue('')
     expect(emittedMs(wrapper)).toBe(0)
+  })
+
+  it('shows the streaming deadline in seconds, and the raw milliseconds underneath', () => {
+    const wrapper = mountSection({ llm_read_timeout_ms: 1_800_000 })
+    expect(
+      Number(
+        (wrapper.find('[data-testid="input-read-timeout-seconds"]').element as HTMLInputElement)
+          .value,
+      ),
+    ).toBe(1800)
+    expect(wrapper.find('[data-testid="read-timeout-ms-readout"]').text()).toContain('1800000 ms')
+  })
+
+  it('typing a new streaming deadline in seconds emits the millisecond value', async () => {
+    const wrapper = mountSection({ llm_read_timeout_ms: 900_000 })
+    await wrapper.find('[data-testid="input-read-timeout-seconds"]').setValue('600')
+    expect(emittedReadTimeoutMs(wrapper)).toBe(600_000)
+  })
+
+  it('clamps a streaming deadline above 30 minutes to 1 800 000 ms', async () => {
+    const wrapper = mountSection({ llm_read_timeout_ms: 900_000 })
+    await wrapper.find('[data-testid="input-read-timeout-seconds"]').setValue('99999')
+    expect(emittedReadTimeoutMs(wrapper)).toBe(1_800_000)
+  })
+
+  it('clamps a streaming deadline below one second to 1 000 ms', async () => {
+    const wrapper = mountSection({ llm_read_timeout_ms: 900_000 })
+    await wrapper.find('[data-testid="input-read-timeout-seconds"]').setValue('0')
+    expect(emittedReadTimeoutMs(wrapper)).toBe(1_000)
+  })
+
+  it('an emptied streaming deadline falls back to the 15-minute default', async () => {
+    const wrapper = mountSection({ llm_read_timeout_ms: 60_000 })
+    await wrapper.find('[data-testid="input-read-timeout-seconds"]').setValue('')
+    expect(emittedReadTimeoutMs(wrapper)).toBe(900_000)
   })
 })

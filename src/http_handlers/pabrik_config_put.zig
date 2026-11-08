@@ -181,6 +181,11 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     if (input.retry_delay_ms) |ms| {
         config_json.retry_delay_ms = if (ms > 60_000) 60_000 else ms;
     }
+    // llm_read_timeout_ms: clamp to [1_000, 1_800_000]. Below a second the
+    // call could never finish; above 30 minutes a hung stream parks a worker.
+    if (input.llm_read_timeout_ms) |ms| {
+        config_json.llm_read_timeout_ms = clampReadTimeoutMs(ms);
+    }
     // Handle the `tools` default checklist (plan
     // 2026-09-22-tools-menu-config-default-tools, D2).
     if (try applyWebSearchInput(allocator, &config_json, input.web_search)) |bad| {
@@ -510,6 +515,9 @@ pub const ConfigInput = struct {
     /// Delay in milliseconds before retrying a failed workflow call.
     /// Range-validated at apply time: 0 ≤ value ≤ 60_000.
     retry_delay_ms: ?u32 = null,
+    /// Overall deadline in milliseconds for ONE streaming LLM call.
+    /// Range-validated at apply time: 1_000 ≤ value ≤ 1_800_000.
+    llm_read_timeout_ms: ?u32 = null,
     /// Whole-list replace for the `tools` default checklist (plan
     /// 2026-09-22-tools-menu-config-default-tools, D2).
     tools: ?[]const []const u8 = null,
@@ -549,6 +557,14 @@ fn isChatViewMode(raw: []const u8) bool {
     return std.mem.eql(u8, raw, "dev") or std.mem.eql(u8, raw, "compact");
 }
 
+/// The streaming deadline a PUT may store. Below a second the call could never
+/// finish; above 30 minutes a hung stream parks a worker for half an hour.
+pub fn clampReadTimeoutMs(ms: u32) u32 {
+    if (ms > 1_800_000) return 1_800_000;
+    if (ms < 1_000) return 1_000;
+    return ms;
+}
+
 const ConfigJson = struct {
     // Plan 2026-08-24-config-simplify-remove-defaults: the top-level LLM
     // defaults (api_key/model/base_url/url_style/max_tokens/system_prompt)
@@ -586,6 +602,10 @@ const ConfigJson = struct {
     /// Mirrors `LlmConfig.retry_delay_ms` (Config.zig). Clamped to
     /// [0, 60_000] by the apply block. Default 0 = no delay.
     retry_delay_ms: u32 = 0,
+    /// Overall deadline in milliseconds for ONE streaming LLM call.
+    /// Mirrors `LlmConfig.llm_read_timeout_ms` (Config.zig). Clamped to
+    /// [1_000, 1_800_000] by the apply block.
+    llm_read_timeout_ms: u32 = 900_000,
     /// Default tool checklist (Tools tab, plan
     /// 2026-09-22-tools-menu-config-default-tools).
     tools: ?[]const []const u8 = null,
@@ -1511,4 +1531,12 @@ test "a document written from a one-field PUT is readable by the GET parser" {
     try std.testing.expectEqual(@as(u32, 2500), parsed.value.retry_delay_ms);
     try std.testing.expectEqual(false, parsed.value.notify_on_complete);
     try std.testing.expectEqualStrings("dev", parsed.value.chat_view);
+}
+
+test "a streaming deadline a PUT may store stays inside [1s, 30min]" {
+    try std.testing.expectEqual(@as(u32, 1_800_000), clampReadTimeoutMs(99_999_999));
+    try std.testing.expectEqual(@as(u32, 1_000), clampReadTimeoutMs(0));
+    try std.testing.expectEqual(@as(u32, 1_000), clampReadTimeoutMs(999));
+    try std.testing.expectEqual(@as(u32, 900_000), clampReadTimeoutMs(900_000));
+    try std.testing.expectEqual(@as(u32, 1_800_000), clampReadTimeoutMs(1_800_000));
 }

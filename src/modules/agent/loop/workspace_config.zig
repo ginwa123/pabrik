@@ -155,6 +155,9 @@ pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
     // Retry backoff is a property of the run, not of the account: two
     // workspaces can want different patience against the same provider.
     .{ .disk = "retry_delay_ms", .max = 60_000 },
+    // One model call's deadline is a property of the run too: a workspace
+    // that asks for long design turns needs more patience than a chat one.
+    .{ .disk = "llm_read_timeout_ms", .max = 1_800_000 },
 };
 
 /// The value for one scoped key, preferring the ON-DISK spelling.
@@ -526,6 +529,7 @@ const USER_CONFIG =
     \\ "notify_on_complete":true,
     \\ "notify_on_error":true,
     \\ "retry_delay_ms":2000,
+    \\ "llm_read_timeout_ms":1200000,
     \\ "web_launch_enabled":true,
     \\ "model_compaction_size_kb":250,
     \\ "max_capacity_token_model":200000,
@@ -548,6 +552,7 @@ test "the copy carries every workspace-scoped key" {
     try testing.expectEqual(true, obj.get("skill_evals").?.object.get("enabled").?.bool);
     try testing.expect(obj.get("web_search") != null);
     try testing.expectEqual(@as(i64, 2000), obj.get("retry_delay_ms").?.integer);
+    try testing.expectEqual(@as(i64, 1_200_000), obj.get("llm_read_timeout_ms").?.integer);
 }
 
 test "a retry delay above the cap is clamped on the way into a workspace" {
@@ -568,6 +573,26 @@ test "a retry delay under the cap is stored exactly as written" {
     var parsed = try parse(alloc, copy);
     defer parsed.deinit();
     try testing.expectEqual(@as(i64, 2500), parsed.value.object.get("retry_delay_ms").?.integer);
+}
+
+test "a streaming deadline above 30 minutes is clamped on the way into a workspace" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(alloc, "{\"llm_read_timeout_ms\":99999999}");
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 1_800_000), parsed.value.object.get("llm_read_timeout_ms").?.integer);
+}
+
+test "a streaming deadline under the cap is stored exactly as written" {
+    const alloc = testing.allocator;
+    const copy = try workspaceScopedOverlay(alloc, "{\"llm_read_timeout_ms\":1200000}");
+    defer alloc.free(copy);
+
+    var parsed = try parse(alloc, copy);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(i64, 1_200_000), parsed.value.object.get("llm_read_timeout_ms").?.integer);
 }
 
 test "the copy does NOT carry the General-tab keys, so they keep applying everywhere" {
