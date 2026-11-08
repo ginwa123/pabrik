@@ -90,27 +90,41 @@ fn contentLength(headers: []const kabelweb.Header) ?u64 {
 
 const testing = std.testing;
 
-/// A one-shot HTTP stub: accept, read whatever the client sent, write
-/// `response`, close. Every failure here is a *protocol* failure, never a
-/// socket-level one — Windows prints a stack trace for those in Debug builds.
-fn serveOnce(io: std.Io, server: *std.Io.net.Server, response: []const u8) void {
+/// A one-shot HTTP stub. It records the request line it received and answers
+/// with `response`, so a test can assert on what went out even when the
+/// client's own outcome is not the subject.
+const Stub = struct {
+    response: []const u8,
+    request_line: [64]u8 = undefined,
+    request_len: usize = 0,
+
+    fn line(self: *const Stub) []const u8 {
+        return self.request_line[0..self.request_len];
+    }
+};
+
+fn serveOnce(io: std.Io, server: *std.Io.net.Server, stub: *Stub) void {
     const stream = server.accept(io) catch return;
     defer stream.close(io);
 
     var read_buf: [1024]u8 = undefined;
     var request: [1024]u8 = undefined;
     var reader = stream.reader(io, &read_buf);
-    _ = reader.interface.readSliceShort(&request) catch {};
+    const n = reader.interface.readSliceShort(&request) catch 0;
+    const copy = @min(n, stub.request_line.len);
+    @memcpy(stub.request_line[0..copy], request[0..copy]);
+    stub.request_len = copy;
 
     var write_buf: [1024]u8 = undefined;
     var writer = stream.writer(io, &write_buf);
-    writer.interface.writeAll(response) catch return;
+    writer.interface.writeAll(stub.response) catch return;
     writer.interface.flush() catch return;
 }
 
-/// Send one request to a stub that answers with `response`, and return the
-/// status the transport reports.
-fn statusFromStub(method: transport.Method, body: []const u8, response: []const u8) !u16 {
+const Outcome = union(enum) { status: u16, err: transport.Error };
+
+/// Send one request to `stub` and report what the transport did with it.
+fn sendToStub(stub: *Stub, method: transport.Method, body: []const u8) !Outcome {
     var threaded = std.Io.Threaded.init(testing.allocator, .{});
     defer threaded.deinit();
     const io = threaded.io();
@@ -120,8 +134,8 @@ fn statusFromStub(method: transport.Method, body: []const u8, response: []const 
     defer server.deinit(io);
     const port = server.socket.address.getPort();
 
-    const stub = try std.Thread.spawn(.{}, serveOnce, .{ io, &server, response });
-    defer stub.join();
+    const thread = try std.Thread.spawn(.{}, serveOnce, .{ io, &server, stub });
+    defer thread.join();
 
     var t = HttpTransport.init(testing.allocator, io);
     defer t.deinit();
@@ -129,22 +143,33 @@ fn statusFromStub(method: transport.Method, body: []const u8, response: []const 
     const url = try std.fmt.allocPrint(testing.allocator, "http://127.0.0.1:{d}/x", .{port});
     defer testing.allocator.free(url);
 
-    const resp = try t.asTransport().send(testing.allocator, .{
+    const resp = t.asTransport().send(testing.allocator, .{
         .method = method,
         .url = url,
         .body = body,
-    });
+    }) catch |err| return Outcome{ .err = err };
     defer resp.deinit(testing.allocator);
-    return resp.status;
+    return Outcome{ .status = resp.status };
 }
 
-test "http transport: a bodiless PUT is sent, not asserted away" {
-    const status = try statusFromStub(.put, "", "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-    try testing.expectEqual(@as(u16, 200), status);
+test "http transport: a 200 response is reported as-is" {
+    var stub = Stub{ .response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" };
+    const outcome = try sendToStub(&stub, .get, "");
+    try testing.expectEqual(@as(u16, 200), outcome.status);
+}
+
+test "http transport: a bodiless PUT goes out as a PUT" {
+    // The subject is the request line, not the response: `sendBodiless` used
+    // to assert on a PUT, so "a PUT left the process" is the behaviour.
+    var stub = Stub{ .response = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" };
+    _ = try sendToStub(&stub, .put, "");
+    try testing.expect(std.mem.startsWith(u8, stub.line(), "PUT "));
 }
 
 test "http transport: a non-HTTP response is NetworkFailed" {
-    try testing.expectError(error.NetworkFailed, statusFromStub(.get, "", "not http\r\n\r\n"));
+    var stub = Stub{ .response = "not http\r\n\r\n" };
+    const outcome = try sendToStub(&stub, .get, "");
+    try testing.expectEqual(transport.Error.NetworkFailed, outcome.err);
 }
 
 test "http transport: an unparseable URL is NetworkFailed" {
