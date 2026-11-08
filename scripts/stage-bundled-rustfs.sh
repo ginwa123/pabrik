@@ -48,9 +48,14 @@ archive_name() {
     echo "rustfs-$1-v${rustfs_version}.zip"
 }
 
-# The release asset id, not the `releases/download/<tag>/<name>` URL: that
-# redirect answers 504 for these assets (verified 2026-11-08, twice), while the
-# API asset endpoint 302s to a working signed URL.
+# The canonical release URL. Preferred over the API: the API asset endpoint is
+# capped at 60 requests/hour per IP, and CI runners share an IP.
+archive_url() {
+    echo "https://github.com/rustfs/rustfs/releases/download/${rustfs_version}/$(archive_name "$1")"
+}
+
+# Fallback for when the release CDN answers 504 (observed 2026-11-08). The
+# asset id is pinned to the version above.
 asset_id() {
     case "$1" in
         linux-x86_64-gnu) echo "675522651" ;;
@@ -62,7 +67,7 @@ asset_id() {
     esac
 }
 
-archive_url() {
+api_url() {
     echo "https://api.github.com/repos/rustfs/rustfs/releases/assets/$(asset_id "$1")"
 }
 
@@ -101,6 +106,7 @@ if [[ "$print_only" -eq 1 ]]; then
     echo "triple=${triple}"
     echo "upstream=${target}"
     echo "url=${url}"
+    echo "fallback=$(api_url "$target")"
     echo "sha256=${want_sha}"
     exit 0
 fi
@@ -131,19 +137,35 @@ sha256_of() {
     fi
 }
 
+fetch() {
+    local url="$1" dest="$2" accept="${3:-}"
+    if command -v curl >/dev/null 2>&1; then
+        if [[ -n "$accept" ]]; then
+            curl -fsSL --connect-timeout 20 --max-time 900 --retry 3 \
+                -H "Accept: ${accept}" -o "$dest" "$url"
+        else
+            curl -fsSL --connect-timeout 20 --max-time 900 --retry 3 -o "$dest" "$url"
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if [[ -n "$accept" ]]; then
+            wget --timeout=20 --tries=3 --header="Accept: ${accept}" -qO "$dest" "$url"
+        else
+            wget --timeout=20 --tries=3 -qO "$dest" "$url"
+        fi
+    else
+        echo "need curl or wget to download ${url}" >&2
+        return 1
+    fi
+}
+
 if [[ -f "$archive" ]] && [[ "$(sha256_of "$archive")" == "$want_sha" ]]; then
     echo "reusing cached $(basename "$archive")"
 else
     rm -f "$archive"
     echo "downloading $(basename "$archive")"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --connect-timeout 20 --max-time 900 --retry 3 \
-            -H "Accept: application/octet-stream" -o "$archive" "$url"
-    elif command -v wget >/dev/null 2>&1; then
-        wget --timeout=20 --tries=3 --header="Accept: application/octet-stream" -qO "$archive" "$url"
-    else
-        echo "need curl or wget to download ${url}" >&2
-        exit 1
+    if ! fetch "$url" "$archive"; then
+        echo "release CDN failed; retrying through the API asset endpoint" >&2
+        fetch "$(api_url "$target")" "$archive" "application/octet-stream" || exit 1
     fi
 fi
 
@@ -159,6 +181,13 @@ echo "sha256 ok (${want_sha})"
 
 dest_dir="$(dirname "$dest")"
 mkdir -p "$dest_dir"
+
+# The member's uncompressed size, so a truncated write (a full disk, a quota)
+# is caught here instead of shipping a half-written binary.
+want_size=""
+if command -v unzip >/dev/null 2>&1; then
+    want_size="$(unzip -l "$archive" rustfs 2>/dev/null | awk '$NF == "rustfs" { print $1; exit }')"
+fi
 
 if command -v unzip >/dev/null 2>&1; then
     unzip -p "$archive" rustfs > "$dest"
@@ -177,6 +206,14 @@ PY
 else
     echo "need unzip or python3 to extract $(basename "$archive")" >&2
     exit 1
+fi
+
+if [[ -n "$want_size" ]]; then
+    got_size="$(wc -c < "$dest" | tr -d ' ')"
+    if [[ "$got_size" != "$want_size" ]]; then
+        echo "extracted rustfs is ${got_size} bytes, expected ${want_size} (truncated write?)" >&2
+        exit 1
+    fi
 fi
 
 chmod 0755 "$dest"

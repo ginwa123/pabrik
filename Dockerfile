@@ -16,12 +16,16 @@ RUN apt-get update \
 
 RUN set -eux; \
     case "$(uname -m)" in \
-      x86_64) rustfs_asset=675522651; rustfs_sha=4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b ;; \
-      aarch64 | arm64) rustfs_asset=675521975; rustfs_sha=5c2d4dad2685f41635441b685dc4dead225f84bce2a9a365d87f8151ec88a049 ;; \
+      x86_64) rustfs_arch=x86_64-gnu; rustfs_asset=675522651; rustfs_sha=4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b ;; \
+      aarch64 | arm64) rustfs_arch=aarch64-gnu; rustfs_asset=675521975; rustfs_sha=5c2d4dad2685f41635441b685dc4dead225f84bce2a9a365d87f8151ec88a049 ;; \
       *) echo "unsupported build architecture: $(uname -m)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL --retry 3 -H "Accept: application/octet-stream" \
-      "https://api.github.com/repos/rustfs/rustfs/releases/assets/${rustfs_asset}" -o /tmp/rustfs.zip; \
+    url="https://github.com/rustfs/rustfs/releases/download/${RUSTFS_VERSION}/rustfs-linux-${rustfs_arch}-v${RUSTFS_VERSION}.zip"; \
+    if ! curl -fsSL --retry 3 --connect-timeout 20 --max-time 900 -o /tmp/rustfs.zip "$url"; then \
+      echo "release CDN failed; retrying through the API asset endpoint"; \
+      curl -fsSL --retry 3 --connect-timeout 20 --max-time 900 -H "Accept: application/octet-stream" \
+        "https://api.github.com/repos/rustfs/rustfs/releases/assets/${rustfs_asset}" -o /tmp/rustfs.zip; \
+    fi; \
     echo "${rustfs_sha}  /tmp/rustfs.zip" | sha256sum -c -; \
     unzip -p /tmp/rustfs.zip rustfs > /usr/local/bin/pabrik-fs; \
     chmod 0755 /usr/local/bin/pabrik-fs; \

@@ -19,10 +19,11 @@ if (-not $Pinned.ContainsKey($Target)) {
 $Upstream = $Pinned[$Target].Upstream
 $WantSha = $Pinned[$Target].Sha256
 $ArchiveName = "rustfs-$Upstream-v$RustfsVersion.zip"
-# The release asset id, not the `releases/download/<tag>/<name>` URL: that
-# redirect answers 504 for these assets, while the API asset endpoint 302s to a
-# working signed URL.
-$Url = "https://api.github.com/repos/rustfs/rustfs/releases/assets/$($Pinned[$Target].AssetId)"
+# The canonical release URL. Preferred over the API: the API asset endpoint is
+# capped at 60 requests/hour per IP, and CI runners share an IP.
+$Url = "https://github.com/rustfs/rustfs/releases/download/$RustfsVersion/$ArchiveName"
+# Fallback for when the release CDN answers 504 (observed 2026-11-08).
+$ApiUrl = "https://api.github.com/repos/rustfs/rustfs/releases/assets/$($Pinned[$Target].AssetId)"
 
 $WorkDir = Join-Path ([System.IO.Path]::GetTempPath()) "pabrik-rustfs-$Upstream"
 $Archive = Join-Path $WorkDir $ArchiveName
@@ -40,7 +41,10 @@ if ($cached) {
 } else {
     if (Test-Path $Archive) { Remove-Item $Archive -Force }
     Write-Output "downloading $ArchiveName"
-    Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing -TimeoutSec 900 `
+    Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing -TimeoutSec 900
+} catch {
+    Write-Output "release CDN failed; retrying through the API asset endpoint"
+    Invoke-WebRequest -Uri $ApiUrl -OutFile $Archive -UseBasicParsing -TimeoutSec 900 `
         -Headers @{ "Accept" = "application/octet-stream" }
 }
 

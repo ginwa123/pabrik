@@ -242,17 +242,23 @@ jobs:
           $ErrorActionPreference = "Stop"
           $zip = Join-Path $env:RUNNER_TEMP "pabrik-windows.zip"
           $ctx = Join-Path $env:RUNNER_TEMP "pabrik-docker-context"
-          # Resolve the asset through the API instead of the
-          # `releases/download/<tag>/<name>` URL: that redirect answers 504 for
-          # these assets (observed 2026-11-08), while the API asset endpoint
-          # 302s to a working signed URL.
+          # The canonical release URL first; the API asset endpoint is only a
+          # fallback, because it is capped at 60 requests/hour per IP and a
+          # shared runner IP can already have spent that.
           $assetName = "pabrik-desktop-x86_64-windows-gnu.zip"
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ginwa123/pabrik/releases/tags/ci-latest" `
-            -Headers @{ "Accept" = "application/vnd.github+json" }
-          $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-          if (-not $asset) { throw "$assetName is not in the ci-latest release" }
-          Invoke-WebRequest -Uri $asset.url -OutFile $zip -UseBasicParsing -TimeoutSec 900 `
-            -Headers @{ "Accept" = "application/octet-stream" }
+          $directUrl = "https://github.com/ginwa123/pabrik/releases/download/ci-latest/$assetName"
+          try {
+            Invoke-WebRequest -Uri $directUrl -OutFile $zip -UseBasicParsing -TimeoutSec 900
+          } catch {
+            Write-Host "release CDN failed; retrying through the API asset endpoint"
+            $headers = @{ "Accept" = "application/vnd.github+json" }
+            if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)" }
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ginwa123/pabrik/releases/tags/ci-latest" -Headers $headers
+            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+            if (-not $asset) { throw "$assetName is not in the ci-latest release" }
+            Invoke-WebRequest -Uri $asset.url -OutFile $zip -UseBasicParsing -TimeoutSec 900 `
+              -Headers @{ "Accept" = "application/octet-stream" }
+          }
           if (-not (Test-Path $zip)) { throw "the ci-latest Windows zip was not downloaded" }
           New-Item -ItemType Directory -Force -Path $ctx | Out-Null
           Expand-Archive -Path $zip -DestinationPath $ctx -Force
