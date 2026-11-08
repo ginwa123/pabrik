@@ -49,6 +49,16 @@
 
   .row { position: relative; display: flex; align-items: center; height: 32px; padding: 0 12px; }
   .row .chev { width: 16px; flex: 0 0 16px; font-size: 9px; color: var(--fg-dim); }
+  .rail.redrawn .row .chev { font-size: 0; }
+  .rail.redrawn .row .chev::before { content: ""; font-size: 10px; line-height: 1; }
+  .rail.redrawn.mk-chev .row .chev::before { content: "\203A"; font-size: 15px; }
+  .rail.redrawn.mk-plus .row .chev::before { content: "+"; font-size: 12px; }
+  .rail.redrawn.mk-caret .row .chev::before { content: "\25BE"; font-size: 9px; }
+  .rail.redrawn.mk-none .row .chev { width: 0; flex: 0 0 0; }
+
+  .marks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  .mkbtn { height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--bg-panel); color: var(--fg-dim); font: inherit; font-size: 11px; cursor: pointer; }
+  .mkbtn.on { background: var(--bg-active); color: var(--fg); }
   .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .meta { padding-left: 8px; font-size: 10px; color: var(--fg-dim); opacity: .7; font-variant-numeric: tabular-nums; }
   .row .meta.run { color: var(--yellow); opacity: 1; }
@@ -169,8 +179,8 @@
     </figure>
 
     <figure data-ui="rail-redrawn">
-      <figcaption>Redrawn</figcaption>
-      <div class="rail redrawn">
+      <figcaption>Redrawn. Pick the mark under the rail.</figcaption>
+      <div class="rail redrawn mk-none" id="rail-redrawn">
         <div class="top">agentic coding <span class="caret">▾</span></div>
         <div class="newchat"><span class="mk">+</span> New Chat</div>
         <div class="search"><span>⌕</span><input id="q" type="text" placeholder="Search projects and documents" aria-label="Search projects and documents"></div>
@@ -214,6 +224,12 @@
           <p class="empty" id="dempty" hidden>No document matches.</p>
         </div>
       </div>
+      <div class="marks" id="marks">
+        <button class="mkbtn on" data-mk="none">No mark</button>
+        <button class="mkbtn" data-mk="chev">Thin chevron</button>
+        <button class="mkbtn" data-mk="plus">Plus / minus</button>
+        <button class="mkbtn" data-mk="caret">Caret</button>
+      </div>
     </figure>
 
   </div>
@@ -223,11 +239,11 @@
   <figure class="strip" data-ui="row-anatomy">
     <figcaption>The row, slot by slot. Drawn at 2×; the rail is resizable 72 to 480px, 280 by default.</figcaption>
     <div class="box">
-      <div class="anat-row"><i class="bar kanban"></i><span class="chev">▶</span><span class="name">kabelweb</span><span class="meta">5m 21s</span></div>
-      <div class="anat-row"><i class="bar routine"></i><span class="chev">▶</span><span class="name">Test routine</span></div>
+      <div class="anat-row"><i class="bar kanban"></i><span class="name">kabelweb</span><span class="meta">5m 21s</span></div>
+      <div class="anat-row"><i class="bar routine"></i><span class="name">Test routine</span></div>
       <dl class="slots">
         <div><dt>gutter</dt><dd>3px bar, one colour per kind</dd></div>
-        <div><dt>mark</dt><dd>16px chevron, unchanged</dd></div>
+        <div><dt>mark</dt><dd>empty; the bar carries the kind</dd></div>
         <div><dt>name</dt><dd>12px, truncates</dd></div>
         <div><dt>trailing</dt><dd>running and its time, or nothing</dd></div>
       </dl>
@@ -261,7 +277,7 @@
   </figure>
 
   <ol class="changes" id="changes">
-    <li><span class="k">1</span><div><h2>A bar in the gutter says what the row is</h2><p>Twelve boards, two agents, four routines and one design page render as the same chevron and name. A 3px bar flush to the rail's left edge, one colour per kind, costs nothing and is the only thing on the row that answers "what am I opening". The filter chips carry the same bar, so the legend teaches itself.</p></div></li>
+    <li><span class="k">1</span><div><h2>The arrow goes, and a bar in the gutter takes its place</h2><p>Twelve boards, two agents, four routines and one design page render as the same chevron and name. The chevron is identical on all nineteen rows and only says "this row opens", which every row does, so it earns nothing. A 3px bar flush to the rail's left edge, one colour per kind, answers the question the row actually raises: what am I opening. The filter chips carry the same bar, so the legend teaches itself. If you want a mark back, the switcher under the redrawn rail shows a thin chevron, a plus and a caret on the same nineteen rows.</p></div></li>
     <li><span class="k">2</span><div><h2>Search, because nineteen rows is past scanning</h2><p>There is no search in the rail today; it was removed on purpose and pinned by a spec. One field above the sections filters projects and documents together, so position stops mattering and the 608px to Documents stops being a problem.</p></div></li>
     <li><span class="k">3</span><div><h2>The trailing number becomes state, not a count</h2><p><code>item.tasks.length</code> counts the tasks the sidebar has paged in, not the project's total: <code>pabrik_saas</code> reads 20 because 20 were loaded. The slot keeps the one honest thing it can show, running and its elapsed time, and the count moves into the expanded block where it can be a real total.</p></div></li>
     <li><span class="k">4</span><div><h2>A new folder is named before it exists</h2><p>Three of the four folders in the database are called "New folder" with zero children, because the create writes that literal string and then opens a rename field you can click away from. Create it in rename mode, and an empty name deletes the row instead of keeping it.</p></div></li>
@@ -314,6 +330,17 @@
     })
   })
   apply()
+})()
+
+;(function () {
+  var rail = document.getElementById('rail-redrawn')
+  var btns = Array.prototype.slice.call(document.querySelectorAll('#marks .mkbtn'))
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      rail.className = 'rail redrawn mk-' + b.getAttribute('data-mk')
+      btns.forEach(function (x) { x.classList.toggle('on', x === b) })
+    })
+  })
 })()
 </script>
 
