@@ -111,15 +111,10 @@ if [[ "$print_only" -eq 1 ]]; then
     exit 0
 fi
 
-cache_dir="${PABRIK_RUSTFS_CACHE:-}"
-if [[ -n "$cache_dir" ]]; then
-    mkdir -p "$cache_dir"
-    work_dir="$cache_dir"
-    cleanup_work=0
-else
-    work_dir="$(mktemp -d)"
-    cleanup_work=1
-fi
+cache_dir="${PABRIK_RUSTFS_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/pabrik/rustfs}"
+mkdir -p "$cache_dir"
+work_dir="$cache_dir"
+cleanup_work=0
 cleanup() {
     if [[ "$cleanup_work" -eq 1 ]]; then
         rm -rf "$work_dir"

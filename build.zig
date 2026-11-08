@@ -1295,6 +1295,47 @@ fn prependVcpkgBinToPath(b: *std.Build, run: *std.Build.Step.Run) void {
     env_map.put("PATH", new_path) catch @panic("OOM");
 }
 
+/// Stage the bundled object store beside the binary, so `./zig-out/bin/pabrik`
+/// starts rustfs the same way an installed copy does. Best-effort: a triple
+/// upstream has no build for, or an offline box, keeps the filesystem store.
+fn stageBundledRustfs(b: *std.Build) ?*std.Build.Step {
+    const host = b.graph.host.result;
+    const triple = switch (host.os.tag) {
+        .linux => switch (host.cpu.arch) {
+            .x86_64 => "x86_64-linux-gnu",
+            .aarch64 => "aarch64-linux-gnu",
+            else => return null,
+        },
+        .macos => switch (host.cpu.arch) {
+            .aarch64 => "aarch64-macos",
+            else => return null,
+        },
+        .windows => "x86_64-windows-gnu",
+        else => return null,
+    };
+    const dest = if (host.os.tag == .windows) "zig-out/bin/pabrik-fs.exe" else "zig-out/bin/pabrik-fs";
+    const script = if (host.os.tag == .windows) "scripts/stage-bundled-rustfs.ps1" else "scripts/stage-bundled-rustfs.sh";
+    // Absolute paths: a Run step's cwd is not the build root.
+    const root = b.build_root.path orelse ".";
+    const dest_abs = b.fmt("{s}/{s}", .{ root, dest });
+    const script_abs = b.fmt("{s}/{s}", .{ root, script });
+    // The guard matters: the download is 115 MB, and a rebuild must not repeat
+    // it. The script's own cache makes the first one a one-off.
+    const cmd = if (host.os.tag == .windows)
+        b.fmt("if (-not (Test-Path '{s}')) {{ pwsh -NoProfile -File '{s}' -Target {s} -Dest '{s}' }}", .{ dest_abs, script_abs, triple, dest_abs })
+    else
+        b.fmt("[ -x '{s}' ] || bash '{s}' {s} '{s}' || echo 'warning: no bundled rustfs for {s}; documents use the filesystem store'", .{ dest_abs, script_abs, triple, dest_abs, triple });
+    const argv: []const []const u8 = if (host.os.tag == .windows)
+        &.{ "pwsh", "-NoProfile", "-Command", cmd }
+    else
+        &.{ "sh", "-c", cmd };
+    const run = b.addSystemCommand(argv);
+    // The guard is a filesystem probe, not a declared input, so the step must
+    // run every build: a cached "success" would never restore a deleted file.
+    run.has_side_effects = true;
+    return &run.step;
+}
+
 /// Bundle vcpkg runtime DLLs next to the exe so Explorer double-click works.
 /// WHY: `databases` + `kabelweb` link the vcpkg IMPORT `.lib` files
 /// (`sqlite3.lib`, `libcurl.lib`, `libssl.lib`, ...) on Windows.
@@ -3514,6 +3555,12 @@ pub fn build(b: *std.Build) void {
     // when missing. The fetch script is idempotent — re-running on a
     // populated vendor/ is a fast no-op.
 
+    // The object store rides beside the binary, so a checkout behaves like an
+    // install: `./zig-out/bin/pabrik` starts rustfs and stops it on shutdown.
+    if (stageBundledRustfs(b)) |step| {
+        build_all_step.dependOn(step);
+        b.getInstallStep().dependOn(step);
+    }
     // Default: same as `build:all`. Without this, `zig build` (no args) runs
     // the `install` step alone, which prints no summary on success.
     b.default_step = build_all_step;
