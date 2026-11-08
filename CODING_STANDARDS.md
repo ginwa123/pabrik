@@ -881,3 +881,146 @@ the ceiling both ways, a vacuous scan failing instead of passing, and the
 verdict table above — over-pin, at-pin, under-pin, unpinned file, and a
 baseline whose `max` disagrees with the run.
 
+
+---
+
+## 8. A Kotlin file is at most 1000 lines of code
+
+**Capped.** The Android app's file-size rule, and the fourth language this
+file covers. The rule is `scripts/lint-kt-file-lines.py`, wired into the
+`lint` job of `.github/workflows/ci.yml` and mirrored by
+`.husky/pre-commit`. The ceiling is **1000 code lines** per `.kt` file.
+
+```kotlin
+// WRONG — one file, 1,400 code lines: a ViewModel, its DTOs, its mappers
+// and its three screens' worth of state, all in one place.
+
+// RIGHT — the same code split by what it is: the state in one file, the
+// effects in another, the DTOs in a third. Each is a unit a reader can
+// hold in their head, and each has a name that says which.
+```
+
+### The rule
+
+- A **code line** is a line that is neither blank nor comment-only. A line
+  with code and a trailing comment is a code line; a line inside a raw
+  string literal is a code line.
+- A file at or under 1000 code lines passes. A file over 1000 fails, and
+  the finding names the count.
+- The ceiling is a CLI option: `--max N`.
+- Every `.kt` file git keeps under `src/apps/android_mobile/` is scanned —
+  `main`, `test` and `androidTest` alike. There is no test exemption.
+
+### What is NOT banned
+
+- **Comments and blank lines.** They are free, deliberately. §7 already
+  governs how long a comment block may be, and a total-lines cap would
+  make deleting an explanation the cheapest way to satisfy this gate. The
+  rule measures how much *logic* sits in one file.
+- **A long file that is mostly prose.** A 1,500-line file with 900 code
+  lines passes. That is the intended shape: the ceiling is on code.
+- **A large test file that is a table.** A parameterised test with 200
+  cases is one behaviour and one file; the ceiling is 1000 code lines, not
+  1000 assertions.
+- **Generated code.** Nothing under `build/` is scanned, because the file
+  set is git's and Gradle's output is ignored.
+
+### Why
+
+The desktop app has had this cap since it was written — ESLint's
+`max-lines` at 600 for source, 1000 for tests, 800 for `.d.ts` (§5's
+neighbour). The Android app had none, so a Kotlin file could grow until
+the reader had to scroll to find the class it declares. Measured
+2026-11-08, the largest files were `HomeViewModel.kt` at 1,717 total lines
+and `CreateTaskTest.kt` at 1,571.
+
+A file is a unit of reading. Past a thousand lines of logic, "where does
+this live?" stops having an answer, and every change means scrolling
+through code that is not the code you are changing. The number is not
+sacred; it is small enough that nobody argues with it and large enough
+that a real ViewModel fits.
+
+### Why code lines and not total lines
+
+Because this repo's comments are dense and §7 asks for them. A
+total-lines cap would put the comment policy and the size policy in
+direct conflict: the cheapest way to get a 1,200-line file under 1,000
+would be to delete the two-line comment explaining the invariant. The
+rule counts what actually costs a reader — the logic — and leaves the
+prose to §7, which already has an opinion about it.
+
+The trade is that a file can be 1,500 lines long and pass. That is
+correct: it is 900 lines of code with 600 lines of explanation, and the
+explanation is the part this repo wants.
+
+### The baseline, and how it goes away
+
+One file is over the ceiling today: `CreateTaskTest.kt` at **1,057** code
+lines. Splitting a 1,571-line test file is a real refactor, not a
+mechanical one, so the rule ships the way §2, §5 and §7 shipped — with a
+counted ceiling in `src/apps/android_mobile/file-lines-baseline.json`,
+one pin per file. This is the fourth documented exception to §3's rule 5.
+
+| | |
+|---|---|
+| a file over its pin | **FAIL** |
+| a file over the ceiling that is not pinned | **FAIL** (a new file cannot sneak in) |
+| a count below its pin | PASS, with a notice naming the value to re-pin |
+| a pinned file now under the ceiling | PASS, with a notice to drop the pin |
+| a baseline pinned at a different `--max` | **FAIL** (a looser ceiling needs a deliberate re-pin) |
+| the baseline file missing or unreadable | **FAIL** (exit 2) |
+
+The count may only fall. `--pin` rewrites the baseline and is for **after
+fixing debt, never for silencing a new violation**. The honest weakness of
+a count-based ratchet is that swapping one long file for another keeps the
+count — §5 and §7 have the same hole, and it is the price of not shipping
+a 1,571-line rewrite.
+
+**The finish line is `--strict`**, which ignores the baseline and asks for
+zero. It is wired and tested today, so turning it on is a one-word change
+to the CI step once the pin is empty.
+
+### How a finding is fixed
+
+Split the file, in this order of preference:
+
+1. **By responsibility.** A ViewModel's state and its effects; a screen's
+   sections; a test file's behaviours. The split should be nameable — if
+   you cannot say what the new file is, the split is arbitrary.
+2. **By type.** DTOs, mappers and constants out of the file that uses
+   them. This is the mechanical half and it is usually enough.
+3. **By feature.** A `ToolCards.kt` holding six unrelated cards becomes
+   six files, one per card.
+
+Then re-pin the file down to its new count — `--pin` is what makes the
+ratchet fall, and a notice from the gate names the exact number.
+
+There is no inline exemption and no suppression comment. A rule with an
+escape hatch is a rule nobody follows, which is why §4 deleted the Zig
+baseline instead of grandfathering it forever.
+
+### Running it
+
+```bash
+python3 scripts/lint-kt-file-lines.py --selftest   # counter + verdict, on fixtures
+python3 scripts/lint-kt-file-lines.py              # the gate: check against the pin
+python3 scripts/lint-kt-file-lines.py --strict     # the finish line: zero findings
+python3 scripts/lint-kt-file-lines.py --pin        # re-pin after fixing debt
+```
+
+Exit codes: `0` clean, `1` findings, `2` a usage error, a ceiling that
+disagrees with the pin, or a file set that could not be enumerated. The
+script covers every `.kt` file git keeps under `src/apps/android_mobile/`
+via `git ls-files --cached --others --exclude-standard`, so a new file is
+scanned before it is committed and Gradle's `build/` is not.
+
+The `--selftest` mode runs **25 fixtures**: the ceiling boundary in both
+directions, blank and whitespace-only lines, comment-only lines, KDoc, a
+nested block comment, a trailing comment after code, a marker inside a
+string literal, a raw string, a char literal, a block comment opened after
+code and closed before it, two unterminated constructs (neither may crash
+the counter), a vacuous scan failing instead of passing, and the verdict
+table above — at-pin, over-pin, under-pin, a pinned file that dropped
+under the ceiling, an unpinned file over the ceiling, an unpinned file at
+it, a pin whose file vanished, and a baseline whose `max` disagrees with
+the run.

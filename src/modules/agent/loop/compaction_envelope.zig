@@ -236,8 +236,9 @@ fn buildWorkingDirectory(
 
 fn buildUserHistory(arena: std.mem.Allocator, turns: []const UserTurn) ![]const Turn {
     const shown = @min(turns.len, MAX_USER_TURNS);
+    const start = turns.len - shown;
     const out = try arena.alloc(Turn, shown);
-    for (turns[0..shown], 0..) |turn, index| {
+    for (turns[start..], 0..) |turn, index| {
         out[index] = .{
             .created_at = try safe(arena, turn.created_at),
             .content = try safe(arena, truncate(turn.content, MAX_USER_CONTENT_CHARS)),
@@ -535,7 +536,7 @@ test "working_directory falls back to the session cwd and reports no repository 
     try testing.expect(wd.get("branch").? == .null);
 }
 
-test "user_history keeps the oldest turns first, up to the turn cap" {
+test "user_history keeps the newest turns when the session has more than the cap" {
     const alloc = testing.allocator;
     const turns = try alloc.alloc(UserTurn, MAX_USER_TURNS + 3);
     defer alloc.free(turns);
@@ -563,8 +564,35 @@ test "user_history keeps the oldest turns first, up to the turn cap" {
 
     const history = parsed.payload().object.get("user_history").?.array;
     try testing.expectEqual(MAX_USER_TURNS, history.items.len);
-    try testing.expectEqualStrings("turn 0", history.items[0].object.get("content").?.string);
-    try testing.expectEqualStrings("turn 99", history.items[MAX_USER_TURNS - 1].object.get("content").?.string);
+    try testing.expectEqualStrings("turn 3", history.items[0].object.get("content").?.string);
+    try testing.expectEqualStrings("turn 102", history.items[MAX_USER_TURNS - 1].object.get("content").?.string);
+}
+
+test "user_history keeps every turn in chronological order while the session fits the cap" {
+    const alloc = testing.allocator;
+    const turns = [_]UserTurn{
+        .{ .content = "first ask", .created_at = "2026-01-01 00:00:01" },
+        .{ .content = "second ask", .created_at = "2026-01-01 00:00:02" },
+        .{ .content = "third ask", .created_at = "2026-01-01 00:00:03" },
+    };
+
+    const dropped = [_]AgentMessage{message(.user, "go")};
+    var parsed = try buildParsed(.{
+        .allocator = alloc,
+        .io = testing.io,
+        .session_id = "sess_short",
+        .model = "m",
+        .dropped_messages = &dropped,
+        .original_count = 2,
+        .user_turns = &turns,
+    });
+    defer parsed.deinit();
+
+    const history = parsed.payload().object.get("user_history").?.array;
+    try testing.expectEqual(@as(usize, 3), history.items.len);
+    try testing.expectEqualStrings("first ask", history.items[0].object.get("content").?.string);
+    try testing.expectEqualStrings("second ask", history.items[1].object.get("content").?.string);
+    try testing.expectEqualStrings("third ask", history.items[2].object.get("content").?.string);
 }
 
 test "user_history truncates an over-long turn to the character cap" {

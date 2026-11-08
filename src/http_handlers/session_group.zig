@@ -108,11 +108,26 @@ pub fn removeMemberUseCase(
     session_group.removeMember(allocator, db, session_id, agent_name) catch return error.OutOfMemory;
 
     const remaining = session_group.listMembers(allocator, db, session_id) catch return error.OutOfMemory;
-    const empty = remaining.len == 0;
-    session_group.freeMembers(allocator, remaining);
-    if (empty) {
-        session_group.setLead(allocator, db, session_id, "") catch return error.OutOfMemory;
-    }
+    defer session_group.freeMembers(allocator, remaining);
+
+    const current_lead_owned = session_group.groupLead(allocator, db, session_id) catch return error.OutOfMemory;
+    defer if (current_lead_owned) |l| allocator.free(l);
+    const current_lead: []const u8 = current_lead_owned orelse "";
+
+    const lead_still_here = blk: {
+        for (remaining) |m| {
+            if (std.mem.eql(u8, m.name, current_lead)) break :blk true;
+        }
+        break :blk false;
+    };
+    const next_lead: []const u8 = if (lead_still_here)
+        current_lead
+    else if (remaining.len == 0)
+        ""
+    else
+        remaining[0].name;
+
+    session_group.setLead(allocator, db, session_id, next_lead) catch return error.OutOfMemory;
 
     return rosterUseCase(allocator, db, session_id);
 }
@@ -454,4 +469,56 @@ test "the roster encodes to the wire shape the app reads" {
         "{\"session_id\":\"s_1\",\"group\":true,\"lead\":\"BEAM\",\"members\":[{\"name\":\"BEAM\",\"role\":\"lead\"},{\"name\":\"deepseek auto\",\"role\":\"worker\"}]}",
         json,
     );
+}
+
+test "a member that joins after the lead was chosen carries the lead role" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const first = try addMemberUseCase(testing.allocator, &ctx.db, "s_1", "BEAM", "");
+    freeRoster(testing.allocator, first);
+    try ctx.db.exec(testing.allocator, "UPDATE sessions SET group_lead = 'deepseek auto' WHERE id = 's_1'", &.{});
+
+    const roster = try addMemberUseCase(testing.allocator, &ctx.db, "s_1", "deepseek auto", "");
+    defer freeRoster(testing.allocator, roster);
+
+    try testing.expectEqualStrings("deepseek auto", roster.lead);
+    try testing.expectEqual(session_group.Role.lead, roster.members[1].role);
+    try testing.expectEqual(session_group.Role.worker, roster.members[0].role);
+}
+
+test "removing the lead hands the room to the first remaining member" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const first = try addMemberUseCase(testing.allocator, &ctx.db, "s_1", "BEAM", "");
+    freeRoster(testing.allocator, first);
+    const second = try addMemberUseCase(testing.allocator, &ctx.db, "s_1", "deepseek auto", "");
+    freeRoster(testing.allocator, second);
+
+    const roster = try removeMemberUseCase(testing.allocator, &ctx.db, "s_1", "BEAM");
+    defer freeRoster(testing.allocator, roster);
+
+    try testing.expect(roster.group);
+    try testing.expectEqualStrings("deepseek auto", roster.lead);
+    try testing.expectEqual(session_group.Role.lead, roster.members[0].role);
+}
+
+test "removing a worker leaves the lead where it was" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const first = try addMemberUseCase(testing.allocator, &ctx.db, "s_1", "BEAM", "");
+    freeRoster(testing.allocator, first);
+    const second = try addMemberUseCase(testing.allocator, &ctx.db, "s_1", "deepseek auto", "");
+    freeRoster(testing.allocator, second);
+
+    const roster = try removeMemberUseCase(testing.allocator, &ctx.db, "s_1", "deepseek auto");
+    defer freeRoster(testing.allocator, roster);
+
+    try testing.expectEqualStrings("BEAM", roster.lead);
+    try testing.expectEqual(session_group.Role.lead, roster.members[0].role);
 }

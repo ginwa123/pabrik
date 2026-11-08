@@ -142,4 +142,12 @@ describe('the badge markup reads the presenter’s decision', () => {
     expect(template).toMatch(/v-if="group\.role === 'assistant' && group\.author"/)
     expect(template).toMatch(/class="msg-author"/)
   })
+
+  it('styles the badge in the component that renders it', () => {
+    // `chatView.css` is `<style scoped>` in ChatView.vue, and a parent's scope id
+    // never reaches a child's inner elements — rules there render as bare text.
+    expect(template).toMatch(/\.msg-author-avatar\s*\{/)
+    const shared = readFileSync(path.join(CHAT_VIEW, 'chatView.css'), 'utf8')
+    expect(shared).not.toMatch(/\.msg-author-avatar\s*\{/)
+  })
 })

@@ -136,6 +136,74 @@ object PabrikRoutes {
 
     fun chats(workspaceId: String): String =
         "chats/${UriEncoding.encode(workspaceId)}"
+
+    const val SETTINGS = "settings"
+    const val WORKSPACE_SETTINGS = "workspace/{workspaceId}/settings"
+    const val KANBAN_SETTINGS = "kanban/{workspaceId}/{itemId}/settings"
+    const val DOCUMENTS = "documents/{workspaceId}"
+    const val DOCUMENT = "documents/{workspaceId}/{documentId}"
+    const val ARG_DOCUMENT_ID = "documentId"
+    const val AGENT = "agent/{workspaceId}/{itemId}"
+    const val DESIGN = "design/{workspaceId}/{itemId}"
+    const val ROUTINE = "routine/{workspaceId}/{itemId}"
+    const val GIT = "git/{workspaceId}/{itemId}"
+    const val MEMORY = "memory/{workspaceId}"
+    const val SECRETS = "secrets/{workspaceId}"
+    const val MEMBERS = "members/{workspaceId}"
+    const val SKILLS = "skills/{workspaceId}"
+    const val MCP = "mcp/{workspaceId}"
+    const val LLM_CONFIG = "llm-config/{workspaceId}"
+    const val TOOLS = "tools/{workspaceId}"
+    const val NOTIFICATIONS = "notifications"
+
+    fun settings(): String = SETTINGS
+
+    fun workspaceSettings(workspaceId: String): String =
+        "workspace/${UriEncoding.encode(workspaceId)}/settings"
+
+    fun kanbanSettings(workspaceId: String, itemId: String): String =
+        "kanban/${UriEncoding.encode(workspaceId)}/${UriEncoding.encode(itemId)}/settings"
+
+    fun documents(workspaceId: String): String =
+        "documents/${UriEncoding.encode(workspaceId)}"
+
+    fun document(workspaceId: String, documentId: String): String =
+        "documents/${UriEncoding.encode(workspaceId)}/${UriEncoding.encode(documentId)}"
+
+    fun agent(workspaceId: String, itemId: String): String =
+        "agent/${UriEncoding.encode(workspaceId)}/${UriEncoding.encode(itemId)}"
+
+    fun design(workspaceId: String, itemId: String): String =
+        "design/${UriEncoding.encode(workspaceId)}/${UriEncoding.encode(itemId)}"
+
+    fun routine(workspaceId: String, itemId: String): String =
+        "routine/${UriEncoding.encode(workspaceId)}/${UriEncoding.encode(itemId)}"
+
+    fun git(workspaceId: String, itemId: String): String =
+        "git/${UriEncoding.encode(workspaceId)}/${UriEncoding.encode(itemId)}"
+
+    fun memory(workspaceId: String): String =
+        "memory/${UriEncoding.encode(workspaceId)}"
+
+    fun secrets(workspaceId: String): String =
+        "secrets/${UriEncoding.encode(workspaceId)}"
+
+    fun members(workspaceId: String): String =
+        "members/${UriEncoding.encode(workspaceId)}"
+
+    fun skills(workspaceId: String): String =
+        "skills/${UriEncoding.encode(workspaceId)}"
+
+    fun mcp(workspaceId: String): String =
+        "mcp/${UriEncoding.encode(workspaceId)}"
+
+    fun llmConfig(workspaceId: String): String =
+        "llm-config/${UriEncoding.encode(workspaceId)}"
+
+    fun tools(workspaceId: String): String =
+        "tools/${UriEncoding.encode(workspaceId)}"
+
+    fun notifications(): String = NOTIFICATIONS
 }
 
 /**
