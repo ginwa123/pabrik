@@ -936,13 +936,14 @@ fn setupDb() !TestCtx {
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
 fn seedDocument(alloc: std.mem.Allocator, db: *database.Db, id: []const u8, workspace_id: []const u8, updated_at: []const u8) !void {
     try db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, updated_at)
-        \\VALUES (?, ?, ?, 'body', ?)
+        \\INSERT INTO documents (id, workspace_id, title, updated_at)
+        \\VALUES (?, ?, ?, ?)
     , &[_][]const u8{ id, workspace_id, id, updated_at });
 }
 

@@ -154,10 +154,9 @@ pub fn seedDocuments(allocator: std.mem.Allocator, db: *pabrikcore.database.Db, 
         var position_buf: [16]u8 = undefined;
         const position = try std.fmt.bufPrint(&position_buf, "{d}", .{n - 1});
 
-        try db.exec(
-            allocator,
-            \\INSERT INTO documents (id, workspace_id, title, content, format, created_at, updated_at, position)
-            \\VALUES (?, ?, ?, '', 'markdown', ?, ?, ?)
+        try db.exec(allocator,
+            \\INSERT INTO documents (id, workspace_id, title, format, created_at, updated_at, position)
+            \\VALUES (?, ?, ?, 'markdown', ?, ?, ?)
         , &.{ id, documents_workspace_id, title, created, updated, position });
     }
 }
@@ -314,11 +313,14 @@ fn setupDocumentsDb() !SeedCtx {
         \\  id TEXT PRIMARY KEY,
         \\  workspace_id TEXT NOT NULL,
         \\  title TEXT NOT NULL DEFAULT '',
-        \\  content TEXT NOT NULL DEFAULT '',
         \\  format TEXT NOT NULL DEFAULT 'markdown',
         \\  created_at TIMESTAMP DEFAULT NULL,
         \\  updated_at TIMESTAMP DEFAULT NULL,
-        \\  position INTEGER NOT NULL DEFAULT 0
+        \\  position INTEGER NOT NULL DEFAULT 0,
+        \\  content_key TEXT DEFAULT NULL,
+        \\  content_sha256 TEXT DEFAULT NULL,
+        \\  content_bytes INTEGER NOT NULL DEFAULT 0,
+        \\  preview TEXT NOT NULL DEFAULT ''
         \\)
     , &.{});
     return .{ .db = db, .threaded = threaded };

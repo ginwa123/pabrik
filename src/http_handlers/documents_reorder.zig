@@ -123,11 +123,12 @@ fn setupDb() !TestCtx {
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     try db.exec(testing.allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content, updated_at) VALUES
-        \\  ('doc_a', 'ws_1', 'A', 'body a', '2026-09-01 10:00:00'),
-        \\  ('doc_b', 'ws_1', 'B', 'body b', '2026-09-02 10:00:00'),
-        \\  ('doc_x', 'ws_2', 'X', 'body x', '2026-09-01 10:00:00')
+        \\INSERT INTO documents (id, workspace_id, title, updated_at) VALUES
+        \\  ('doc_a', 'ws_1', 'A', '2026-09-01 10:00:00'),
+        \\  ('doc_b', 'ws_1', 'B', '2026-09-02 10:00:00'),
+        \\  ('doc_x', 'ws_2', 'X', '2026-09-01 10:00:00')
     , &.{});
     return .{ .db = db, .threaded = threaded };
 }

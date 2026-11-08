@@ -457,6 +457,7 @@ fn setupDb() !TestCtx {
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
 
     // ws_1 owns item i1; ws_2 owns item i2. s1 is task-linked to i1, s2
     // to i2 — the exact-task-link branch of resolveWorkspaceId.
@@ -1277,6 +1278,7 @@ fn exec_setupDb() !exec_TestCtx {
     try exec_migration.Migration122AddDocumentPosition.up(&db, exec_testing.allocator);
     try exec_migration.Migration140AddDocumentFolders.up(&db, exec_testing.allocator);
     try exec_migration.Migration143AddDocumentContentKey.up(&db, exec_testing.allocator);
+    try exec_migration.Migration144DropDocumentContent.up(&db, exec_testing.allocator);
 
     try db.exec(exec_testing.allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES

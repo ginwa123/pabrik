@@ -474,13 +474,14 @@ fn setupDb() !TestCtx {
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
 fn seedDocument(alloc: std.mem.Allocator, db: *database.Db, id: []const u8, folder_id: ?[]const u8) !void {
     try db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, folder_id)
-        \\VALUES (?, 'ws_1', ?, 'body', NULLIF(?, ''))
+        \\INSERT INTO documents (id, workspace_id, title, folder_id)
+        \\VALUES (?, 'ws_1', ?, NULLIF(?, ''))
     , &[_][]const u8{ id, id, folder_id orelse "" });
 }
 

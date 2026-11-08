@@ -288,7 +288,11 @@ test "headless storage: resolveRoot prefers the flag, then the environment, then
 
     const from_home = try resolveRoot(alloc, &env, null);
     defer alloc.free(from_home);
-    try testing.expectEqualStrings("/home/tester/" ++ DEFAULT_ROOT_SUFFIX, from_home);
+    // Built with the same join the implementation uses: the separator is
+    // platform-specific, so a hardcoded '/' fails on Windows.
+    const expected_home = try std.fs.path.join(alloc, &.{ "/home/tester", DEFAULT_ROOT_SUFFIX });
+    defer alloc.free(expected_home);
+    try testing.expectEqualStrings(expected_home, from_home);
 
     try env.put("PABRIK_STORAGE_ROOT", "/srv/objects");
     const from_env = try resolveRoot(alloc, &env, null);

@@ -235,6 +235,7 @@ fn setupDb() !TestCtx {
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -308,9 +309,9 @@ test "headless documents: search returns only the matching documents" {
     defer ctx.db.deinit();
 
     try ctx.db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, preview)
-        \\VALUES ('doc_hit', 'ws_1', 'Release plan', '', 'ship the zephyrword turbine'),
-        \\       ('doc_miss', 'ws_1', 'Notes', 'nothing relevant', 'nothing relevant')
+        \\INSERT INTO documents (id, workspace_id, title, preview)
+        \\VALUES ('doc_hit', 'ws_1', 'Release plan', 'ship the zephyrword turbine'),
+        \\       ('doc_miss', 'ws_1', 'Notes', 'nothing relevant')
     , &[_][]const u8{});
 
     const json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
