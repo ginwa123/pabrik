@@ -10,9 +10,36 @@ const args = @import("args.zig");
 const storage_mod = pabrikcore.storage;
 const storage = storage_mod.storage;
 const fs_backend = storage_mod.fs;
+const s3_backend = storage_mod.s3;
+const http_transport = storage_mod.http_transport;
 
 /// Where objects live when neither `--root` nor `PABRIK_STORAGE_ROOT` says.
 pub const DEFAULT_ROOT_SUFFIX = ".local/share/pabrik/objects";
+
+pub const Backend = enum { fs, s3 };
+
+/// Resolve the backend: the flag, then `PABRIK_STORAGE_BACKEND`, then `fs`.
+pub fn resolveBackend(
+    environment: *const std.process.Environ.Map,
+    flag: ?[]const u8,
+) !Backend {
+    const name = flag orelse environment.get("PABRIK_STORAGE_BACKEND") orelse return .fs;
+    if (std.mem.eql(u8, name, "fs")) return .fs;
+    if (std.mem.eql(u8, name, "s3")) return .s3;
+    return error.UnknownBackend;
+}
+
+/// S3 settings from the environment. Every slice borrows from `environment`,
+/// which outlives the store.
+pub fn resolveS3Config(environment: *const std.process.Environ.Map) !s3_backend.Config {
+    return .{
+        .endpoint = environment.get("PABRIK_S3_ENDPOINT") orelse return error.S3EndpointRequired,
+        .bucket = environment.get("PABRIK_S3_BUCKET") orelse return error.S3BucketRequired,
+        .region = environment.get("PABRIK_S3_REGION") orelse "us-east-1",
+        .access_key = environment.get("PABRIK_S3_ACCESS_KEY") orelse return error.S3AccessKeyRequired,
+        .secret_key = environment.get("PABRIK_S3_SECRET_KEY") orelse return error.S3SecretKeyRequired,
+    };
+}
 
 /// Resolve the store root: the flag, then the environment, then `$HOME`.
 pub fn resolveRoot(
@@ -60,13 +87,26 @@ pub fn run(
     environment: *const std.process.Environ.Map,
     a: args.StorageArgs,
 ) ![]u8 {
-    const root = try resolveRoot(allocator, environment, a.root);
-    defer allocator.free(root);
+    switch (try resolveBackend(environment, a.backend)) {
+        .fs => {
+            const root = try resolveRoot(allocator, environment, a.root);
+            defer allocator.free(root);
 
-    var backend = try fs_backend.FsStorage.open(io, root);
-    defer backend.deinit();
+            var backend = try fs_backend.FsStorage.open(io, root);
+            defer backend.deinit();
 
-    return runWith(allocator, io, backend.asStorage(), a);
+            return runWith(allocator, io, backend.asStorage(), a);
+        },
+        .s3 => {
+            const config = try resolveS3Config(environment);
+
+            var http = http_transport.HttpTransport.init(allocator, io);
+            defer http.deinit();
+
+            var backend = s3_backend.S3Storage.init(allocator, io, config, http.asTransport());
+            return runWith(allocator, io, backend.asStorage(), a);
+        },
+    }
 }
 
 /// The op table, over a plain `Storage` so a test can drive it against the
@@ -295,4 +335,56 @@ test "headless storage: resolveRoot refuses when there is no root and no HOME" {
     defer env.deinit();
     try testing.expectError(error.RootRequired, resolveRoot(alloc, &env, null));
     try testing.expectError(error.RootRequired, resolveRoot(alloc, &env, ""));
+}
+
+test "headless storage: resolveBackend prefers the flag, then the environment, then fs" {
+    const alloc = testing.allocator;
+    var env = std.process.Environ.Map.init(alloc);
+    defer env.deinit();
+
+    try testing.expectEqual(Backend.fs, try resolveBackend(&env, null));
+
+    try env.put("PABRIK_STORAGE_BACKEND", "s3");
+    try testing.expectEqual(Backend.s3, try resolveBackend(&env, null));
+    try testing.expectEqual(Backend.fs, try resolveBackend(&env, "fs"));
+
+    try env.put("PABRIK_STORAGE_BACKEND", "nonsense");
+    try testing.expectError(error.UnknownBackend, resolveBackend(&env, null));
+}
+
+test "headless storage: resolveS3Config reads every setting and defaults the region" {
+    const alloc = testing.allocator;
+    var env = std.process.Environ.Map.init(alloc);
+    defer env.deinit();
+    try env.put("PABRIK_S3_ENDPOINT", "http://127.0.0.1:9000");
+    try env.put("PABRIK_S3_BUCKET", "pabrik");
+    try env.put("PABRIK_S3_ACCESS_KEY", "AKIA");
+    try env.put("PABRIK_S3_SECRET_KEY", "secret");
+
+    const config = try resolveS3Config(&env);
+    try testing.expectEqualStrings("http://127.0.0.1:9000", config.endpoint);
+    try testing.expectEqualStrings("pabrik", config.bucket);
+    try testing.expectEqualStrings("us-east-1", config.region);
+    try testing.expectEqualStrings("AKIA", config.access_key);
+    try testing.expectEqualStrings("secret", config.secret_key);
+}
+
+test "headless storage: resolveS3Config names the setting that is missing" {
+    const alloc = testing.allocator;
+    var env = std.process.Environ.Map.init(alloc);
+    defer env.deinit();
+
+    try testing.expectError(error.S3EndpointRequired, resolveS3Config(&env));
+
+    try env.put("PABRIK_S3_ENDPOINT", "http://h:9000");
+    try testing.expectError(error.S3BucketRequired, resolveS3Config(&env));
+
+    try env.put("PABRIK_S3_BUCKET", "b");
+    try testing.expectError(error.S3AccessKeyRequired, resolveS3Config(&env));
+
+    try env.put("PABRIK_S3_ACCESS_KEY", "a");
+    try testing.expectError(error.S3SecretKeyRequired, resolveS3Config(&env));
+
+    try env.put("PABRIK_S3_SECRET_KEY", "s");
+    _ = try resolveS3Config(&env);
 }

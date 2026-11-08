@@ -128,6 +128,8 @@ pub const StorageArgs = struct {
     body_file: ?[]const u8 = null,
     /// Store root. Null falls back to `PABRIK_STORAGE_ROOT`, then `$HOME`.
     root: ?[]const u8 = null,
+    /// `fs` or `s3`. Null falls back to `PABRIK_STORAGE_BACKEND`, then `fs`.
+    backend: ?[]const u8 = null,
     /// Whether `--body` was passed at all. An empty body is a legitimate
     /// document, so "absent" and "empty" must stay distinguishable.
     body_given: bool = false,
@@ -190,7 +192,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
     "  pabrik headless storage <op> [flags]      Read or write the object store\n" ++
     "      ops: put | get | stat | delete\n" ++
-    "      flags: --key <k> --body <text> --body-file <path> --root <dir>\n" ++
+    "      flags: --key <k> --body <text> --body-file <path> --root <dir> --backend fs|s3\n" ++
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
@@ -429,6 +431,10 @@ fn parseStorage(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.root = argv[i];
+        } else if (std.mem.eql(u8, flag, "--backend")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.backend = argv[i];
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
@@ -868,6 +874,16 @@ test "parse: storage refuses an unknown op by name" {
 
 test "parse: storage refuses a flag it does not own" {
     try expectFailure(&.{ "storage", "get", "--key", "k.md", "--workspace", "ws_1" }, .unknown_subcommand);
+}
+
+test "parse: storage reads the backend override" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md", "--backend", "s3" });
+    try testing.expectEqualStrings("s3", a.storage.backend.?);
+}
+
+test "parse: storage defaults the backend to null so the environment decides" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md" });
+    try testing.expect(a.storage.backend == null);
 }
 
 test "the help text lists every flag the table gives this scope" {
