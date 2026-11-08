@@ -169,6 +169,53 @@ fi
 
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+# `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>` →
+# `<owner>/<repo> <tag> <asset>`. Prints nothing for any other URL.
+release_parts() {
+    local url="$1" rest
+    case "$url" in
+        https://github.com/*/releases/download/*) ;;
+        *) return 1 ;;
+    esac
+    rest="${url#https://github.com/}"
+    local repo="${rest%%/releases/download/*}"
+    rest="${rest#*/releases/download/}"
+    local tag="${rest%%/*}"
+    local asset="${rest#*/}"
+    [[ -n "$repo" && -n "$tag" && -n "$asset" && "$asset" != "$rest" ]] || return 1
+    echo "$repo $tag $asset"
+}
+
+# The release asset id for <repo> <tag> <asset>, or nothing. The
+# `releases/download` redirect answers 504 for large assets often enough that
+# the installer needs a second path; the API asset endpoint 302s to a working
+# signed URL. The API returns pretty-printed JSON with `"url"` before
+# `"name"` inside each asset object, which is what the awk state machine
+# relies on.
+release_asset_id() {
+    local repo="$1" tag="$2" asset="$3"
+    have_cmd curl || return 1
+    local auth=()
+    # CI sets GITHUB_TOKEN; unauthenticated API calls are capped at 60/hour
+    # per IP, which a shared runner IP can already have spent.
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    fi
+    # `${auth[@]+...}`: macOS ships bash 3.2, where an empty array under
+    # `set -u` is an unbound-variable error.
+    curl -fsSL --connect-timeout 20 --max-time 60 \
+        -H "Accept: application/vnd.github+json" ${auth[@]+"${auth[@]}"} \
+        "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null |
+        awk -v want="\"name\": \"${asset}\"" '
+            /"url": "https:\/\/api\.github\.com\/repos\/.*\/releases\/assets\// {
+                id = $0
+                sub(/.*assets\//, "", id)
+                sub(/".*/, "", id)
+            }
+            $0 ~ want { print id; exit }
+        '
+}
+
 download() {
     local url="$1" dest="$2"
     local name rc
@@ -197,6 +244,27 @@ download() {
     else
         echo "Need curl or wget to download ${url}" >&2
         return 1
+    fi
+    # The release CDN 504s often enough that a second path is worth it: ask
+    # the API for the asset id and fetch it from there.
+    if [[ "$rc" -ne 0 ]]; then
+        local parts repo tag asset id
+        if parts="$(release_parts "$url")"; then
+            read -r repo tag asset <<<"$parts"
+            if id="$(release_asset_id "$repo" "$tag" "$asset")" && [[ -n "$id" ]]; then
+                echo "  retrying ${name} through the API asset endpoint ..."
+                rc=0
+                if [[ -t 2 ]]; then
+                    curl -fSL --progress-bar --connect-timeout 20 --max-time 900 \
+                        --retry 3 -H "Accept: application/octet-stream" \
+                        -o "$dest" "https://api.github.com/repos/${repo}/releases/assets/${id}" || rc=$?
+                else
+                    curl -fsSL --connect-timeout 20 --max-time 900 \
+                        --retry 3 -H "Accept: application/octet-stream" \
+                        -o "$dest" "https://api.github.com/repos/${repo}/releases/assets/${id}" || rc=$?
+                fi
+            fi
+        fi
     fi
     # Propagate fetch failures: callers gate on our exit status (e.g.
     # the shipped-UI download is best-effort). The size echo below must

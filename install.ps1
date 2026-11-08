@@ -85,7 +85,20 @@ try {
     $zipPath = Join-Path $tmp $ZipName
     $url = "$BaseUrl/$ZipName"
     Write-Output "Downloading $url ..."
-    Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -TimeoutSec 600
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -TimeoutSec 600
+    } catch {
+        # The `releases/download` redirect 504s often enough that a second
+        # path is worth it: ask the API for the asset id and fetch it there.
+        Write-Output "  direct download failed; retrying through the API asset endpoint ..."
+        $headers = @{ "Accept" = "application/vnd.github+json" }
+        if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)" }
+        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers
+        $asset = $release.assets | Where-Object { $_.name -eq $ZipName } | Select-Object -First 1
+        if (-not $asset) { throw "$ZipName is not in the $Tag release" }
+        Invoke-WebRequest -Uri $asset.url -OutFile $zipPath -UseBasicParsing -TimeoutSec 900 `
+            -Headers @{ "Accept" = "application/octet-stream" }
+    }
     $extract = Join-Path $tmp "pkg"
     New-Item -ItemType Directory -Force -Path $extract | Out-Null
     Expand-Archive -Path $zipPath -DestinationPath $extract -Force
