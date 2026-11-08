@@ -16,6 +16,8 @@
 #   run: python3 scripts/check-app-path-deps.py
 #   run: python3 scripts/lint-kt-comment-lines.py --selftest
 #        python3 scripts/lint-kt-comment-lines.py
+#   run: python3 scripts/lint-kt-file-lines.py --selftest
+#        python3 scripts/lint-kt-file-lines.py
 #
 # That first step used to live at ci.yml lines 1485-1491 and the CI job
 # was deleted in PR #398 ("drop frontend job"), which left this hook
@@ -54,6 +56,10 @@ python3 scripts/check-app-path-deps.py
 echo "→ Kotlin comment blocks are at most two lines"
 python3 scripts/lint-kt-comment-lines.py --selftest
 python3 scripts/lint-kt-comment-lines.py
+
+echo "→ Kotlin files are at most 1000 code lines"
+python3 scripts/lint-kt-file-lines.py --selftest
+python3 scripts/lint-kt-file-lines.py
 
 echo "→ zginlint (comment-block ceiling, zero findings)"
 zig build zginlint:check

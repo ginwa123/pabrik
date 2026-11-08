@@ -404,6 +404,36 @@ jobs:
           python3 scripts/lint-kt-comment-lines.py --selftest
           python3 scripts/lint-kt-comment-lines.py
 
+      - name: Kotlin files are at most 1000 code lines
+        # CODING_STANDARDS.md §8: the Android app's file-size rule, and the
+        # fourth language this file covers. The desktop half is ESLint's
+        # `max-lines` (600 source / 1000 tests / 800 `.d.ts`); this is the
+        # Kotlin half, at a flat 1000 code lines.
+        #
+        # "Code lines" is non-blank, non-comment-only — comments are free,
+        # because §7 already governs their length and a total-lines cap
+        # would make deleting an explanation the cheapest way to pass.
+        #
+        # One file is over the ceiling today (`CreateTaskTest.kt`, 1057),
+        # so the rule ships with a counted per-file pin
+        # (`file-lines-baseline.json`) exactly as §5 and §7 shipped. The
+        # count may only fall: a file over its pin fails, and so does a
+        # file over the ceiling that is not pinned. `--strict` asks for
+        # zero and is the finish line.
+        #
+        # The selftest covers both halves — the counter AND the verdict —
+        # for the same reason as the three scans above: a gate that has
+        # quietly stopped failing is a silent outage.
+        shell: bash
+        run: |-
+          set -euo pipefail
+          command -v python3 >/dev/null 2>&1 || {
+            echo "x python3 not found on PATH -- the Kotlin file-size scan cannot run" >&2
+            exit 1
+          }
+          python3 scripts/lint-kt-file-lines.py --selftest
+          python3 scripts/lint-kt-file-lines.py
+
   # ── 1a. desktop tests ───────────────────────────────────────────────
   # The webapp's vitest suite. Until now NOTHING ran it: `lint` runs the
   # linters and vue-tsc rides inside `pnpm run build` in the backend
