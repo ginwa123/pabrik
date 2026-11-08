@@ -5,7 +5,7 @@ import { installSseBus, __resetSseBus } from '../helpers/sseBus'
 import { createTabChannel } from '../helpers/sseTabChannel'
 import type { SseClient, SseState, SseStateInfo } from '../helpers/sseClient'
 import * as api from '../api'
-import { FakeTabChannelHub, fakeForeignLeader, settle } from './fakes/fakeTabChannel'
+import { FakeTabChannelHub, fakeForeignLeader, settle, waitFor } from './fakes/fakeTabChannel'
 
 const NAME = 'resync-test-bus'
 
@@ -75,7 +75,9 @@ describe('sseTabChannel resync — a window that may have missed events refreshe
     a.onResync.mockClear()
 
     foreign.stop()
-    await settle(120) // heartbeat timeout + jitter
+    // Poll instead of a fixed sleep: the leader timeout is 60ms, and a loaded
+    // CI runner drifts past a 120ms budget (observed twice on 2026-11-08).
+    await waitFor(() => a.tab.isLeader())
 
     expect(a.tab.isLeader()).toBe(true)
     expect(a.onResync).toHaveBeenCalledTimes(1)
@@ -96,7 +98,7 @@ describe('sseTabChannel resync — a window that may have missed events refreshe
     await settle(50) // longer than resyncAfterHiddenMs (30)
     visible = true
     fireVisibilityChange()
-    await settle(10)
+    await waitFor(() => a.onResync.mock.calls.length >= 1)
 
     expect(a.onResync).toHaveBeenCalledTimes(1)
     expect(String(a.onResync.mock.calls[0]![0])).toMatch(/hidden/)
@@ -197,7 +199,12 @@ describe('sseBus resync plumbing', () => {
     const bus = installSseBus(createApp({}), {
       tabSharing: 'on',
       channelFactory: hub.create,
-      tabChannelOptions: { channelName: NAME, heartbeatMs: 20, leaderTimeoutMs: 60, electionJitterMs: 5 },
+      tabChannelOptions: {
+        channelName: NAME,
+        heartbeatMs: 20,
+        leaderTimeoutMs: 60,
+        electionJitterMs: 5,
+      },
     })
     const cb = vi.fn()
     const off = bus.onResync?.(cb)
