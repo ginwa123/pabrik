@@ -151,6 +151,9 @@ pub fn startRustfs(
     const data_dir = try std.fs.path.join(allocator, &.{ data_root, "rustfs" });
     defer allocator.free(data_dir);
 
+    const pid_file = try std.fs.path.join(allocator, &.{ data_root, rustfs_mod.PID_FILE });
+    defer allocator.free(pid_file);
+
     const port = try pickPort(io, environment);
 
     const creds = try resolveRustfsCredentials(allocator, io, environment, data_root);
@@ -160,6 +163,7 @@ pub fn startRustfs(
     return rustfs_mod.Supervisor.start(allocator, io, .{
         .binary = found.path,
         .data_dir = data_dir,
+        .pid_file = pid_file,
         .port = port,
         .access_key = creds.access_key,
         .secret_key = creds.secret_key,

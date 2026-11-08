@@ -9,6 +9,11 @@ const builtin = @import("builtin");
 pub const READY_TIMEOUT_MS: u32 = 15_000;
 /// How often to retry while waiting.
 pub const READY_POLL_MS: u32 = 100;
+/// How long a stale instance gets to honour SIGTERM before SIGKILL.
+pub const STALE_GRACE_MS: u32 = 2_000;
+
+/// Written after a successful spawn, removed on a clean shutdown.
+pub const PID_FILE = "pabrik-fs.pid";
 
 pub const StartError = error{
     DataDirFailed,
@@ -22,6 +27,8 @@ pub const Options = struct {
     binary: []const u8,
     /// Directory rustfs keeps its objects in.
     data_dir: []const u8,
+    /// Where the child pid is recorded, so a hard-killed run can be reaped.
+    pid_file: []const u8,
     /// Loopback port the S3 API listens on.
     port: u16,
     access_key: []const u8,
@@ -39,6 +46,7 @@ pub const Supervisor = struct {
     access_key: []u8,
     secret_key: []u8,
     data_dir: []u8,
+    pid_file: []u8,
 
     /// Start rustfs and wait until its S3 port answers.
     pub fn start(
@@ -48,6 +56,11 @@ pub const Supervisor = struct {
     ) StartError!*Supervisor {
         if (opts.data_dir.len == 0) return error.DataDirFailed;
         std.Io.Dir.cwd().createDirPath(io, opts.data_dir) catch return error.DataDirFailed;
+
+        // A previous run killed hard (SIGKILL, a crash, the OOM killer) left
+        // rustfs behind, and a second instance on the same volume is a
+        // corruption risk. Reap it before starting a new one.
+        stopStale(io, allocator, opts.pid_file);
 
         const self = allocator.create(Supervisor) catch return error.OutOfMemory;
         errdefer allocator.destroy(self);
@@ -62,6 +75,8 @@ pub const Supervisor = struct {
         errdefer allocator.free(secret_key);
         const data_dir = allocator.dupe(u8, opts.data_dir) catch return error.OutOfMemory;
         errdefer allocator.free(data_dir);
+        const pid_file = allocator.dupe(u8, opts.pid_file) catch return error.OutOfMemory;
+        errdefer allocator.free(pid_file);
 
         var address_buf: [64]u8 = undefined;
         const address = std.fmt.bufPrint(&address_buf, "127.0.0.1:{d}", .{opts.port}) catch
@@ -98,7 +113,10 @@ pub const Supervisor = struct {
             .access_key = access_key,
             .secret_key = secret_key,
             .data_dir = data_dir,
+            .pid_file = pid_file,
         };
+
+        writePidFile(io, allocator, opts.pid_file, child.id orelse 0);
 
         if (!waitUntilReady(io, opts.port, READY_TIMEOUT_MS)) {
             self.deinit();
@@ -111,13 +129,84 @@ pub const Supervisor = struct {
     pub fn deinit(self: *Supervisor) void {
         // `kill` reaps the child itself; a following `wait` would assert.
         self.child.kill(self.io);
+        std.Io.Dir.cwd().deleteFile(self.io, self.pid_file) catch {};
         self.allocator.free(self.endpoint);
         self.allocator.free(self.access_key);
         self.allocator.free(self.secret_key);
         self.allocator.free(self.data_dir);
+        self.allocator.free(self.pid_file);
         self.allocator.destroy(self);
     }
 };
+
+fn writePidFile(io: std.Io, allocator: std.mem.Allocator, path: []const u8, pid: i32) void {
+    if (pid <= 0) return;
+    const body = std.fmt.allocPrint(allocator, "{d}\n", .{pid}) catch return;
+    defer allocator.free(body);
+    const file = std.Io.Dir.cwd().createFile(io, path, .{ .truncate = true }) catch return;
+    defer file.close(io);
+    file.writeStreamingAll(io, body) catch {};
+}
+
+/// Stop the process named by a pid file left behind by a hard-killed run.
+/// The name check is what makes this safe: a pid the OS has since reused
+/// belongs to something else, and is left alone.
+fn stopStale(io: std.Io, allocator: std.mem.Allocator, pid_file: []const u8) void {
+    const text = std.Io.Dir.cwd().readFileAlloc(io, pid_file, allocator, .limited(32)) catch return;
+    defer allocator.free(text);
+
+    const pid = std.fmt.parseInt(i32, std.mem.trim(u8, text, " \t\r\n"), 10) catch return;
+    if (pid <= 0 or pid == @as(i32, @intCast(std.c.getpid()))) return;
+    if (!isOurRustfs(io, pid)) return;
+
+    std.posix.kill(pid, .TERM) catch return;
+    var waited: u32 = 0;
+    while (waited < STALE_GRACE_MS) : (waited += READY_POLL_MS) {
+        if (!isOurRustfs(io, pid)) return;
+        sleepMillis(io, READY_POLL_MS);
+    }
+    std.posix.kill(pid, .KILL) catch {};
+}
+
+/// Whether `pid` is a rustfs/pabrik-fs process. False for a dead pid, and
+/// false for a live pid that is something else.
+fn isOurRustfs(io: std.Io, pid: i32) bool {
+    if (comptime builtin.os.tag == .linux) {
+        var path_buf: [64]u8 = undefined;
+        const path = std.fmt.bufPrint(&path_buf, "/proc/{d}/comm", .{pid}) catch return false;
+        // Not `readFileAlloc`: /proc reports size 0, and the alloc path then
+        // returns an empty slice without reading.
+        const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch return false;
+        defer file.close(io);
+        var read_buf: [64]u8 = undefined;
+        var out: [64]u8 = undefined;
+        var reader = file.reader(io, &read_buf);
+        const n = reader.interface.readSliceShort(&out) catch return false;
+        const name = std.mem.trimEnd(u8, out[0..n], "\n");
+        return std.mem.eql(u8, name, "pabrik-fs") or std.mem.eql(u8, name, "rustfs");
+    }
+    if (comptime builtin.os.tag == .macos) {
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const n = macos.proc_pidpath(pid, &buf, buf.len);
+        if (n <= 0) return false;
+        const path = buf[0..@intCast(n)];
+        const name = std.fs.path.basename(path);
+        return std.mem.eql(u8, name, "pabrik-fs") or std.mem.eql(u8, name, "rustfs");
+    }
+    return false;
+}
+
+const macos = if (builtin.os.tag == .macos) struct {
+    extern "c" fn proc_pidpath(pid: c_int, buffer: [*]u8, buffersize: u32) c_int;
+} else struct {};
+
+fn sleepMillis(io: std.Io, ms: u32) void {
+    const pause = std.Io.Timeout{ .duration = .{
+        .raw = std.Io.Duration.fromMilliseconds(ms),
+        .clock = .awake,
+    } };
+    pause.sleep(io) catch {};
+}
 
 /// Poll the loopback port until it answers HTTP, or the budget runs out. A
 /// bare TCP connect is not enough: rustfs binds the listener before it can
@@ -126,11 +215,7 @@ pub fn waitUntilReady(io: std.Io, port: u16, timeout_ms: u32) bool {
     var waited: u32 = 0;
     while (waited < timeout_ms) : (waited += READY_POLL_MS) {
         if (answersHttp(io, port)) return true;
-        const pause = std.Io.Timeout{ .duration = .{
-            .raw = std.Io.Duration.fromMilliseconds(READY_POLL_MS),
-            .clock = .awake,
-        } };
-        pause.sleep(io) catch return false;
+        sleepMillis(io, READY_POLL_MS);
     }
     return false;
 }
@@ -171,6 +256,7 @@ test "supervisor: an empty data dir is refused before anything is spawned" {
     try testing.expectError(error.DataDirFailed, Supervisor.start(testing.allocator, testing.io, .{
         .binary = "/nonexistent/rustfs",
         .data_dir = "",
+        .pid_file = "/tmp/pabrik/never.pid",
         .port = 1,
         .access_key = "a",
         .secret_key = "s",
@@ -190,9 +276,53 @@ test "supervisor: a binary that does not exist is SpawnFailed, not a hang" {
     try testing.expectError(error.SpawnFailed, Supervisor.start(testing.allocator, testing.io, .{
         .binary = "/nonexistent/rustfs",
         .data_dir = dir,
+        .pid_file = "/tmp/pabrik/never.pid",
         .port = 1,
         .access_key = "a",
         .secret_key = "s",
         .environment = &env,
     }));
+}
+
+test "stopStale: a pid file naming a process that is not rustfs is left alone" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(dir);
+
+    const pid_file = try std.fs.path.join(testing.allocator, &.{ dir, PID_FILE });
+    defer testing.allocator.free(pid_file);
+
+    // Our own pid: alive, but not a rustfs, so nothing may be signalled.
+    const body = try std.fmt.allocPrint(testing.allocator, "{d}\n", .{std.c.getpid()});
+    defer testing.allocator.free(body);
+    const file = try tmp.dir.createFile(testing.io, PID_FILE, .{});
+    try file.writeStreamingAll(testing.io, body);
+    file.close(testing.io);
+
+    stopStale(testing.io, testing.allocator, pid_file);
+    // Reaching here means the test process was not killed.
+    try testing.expect(true);
+}
+
+test "stopStale: a pid file naming a dead process is a no-op" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(dir);
+
+    const pid_file = try std.fs.path.join(testing.allocator, &.{ dir, PID_FILE });
+    defer testing.allocator.free(pid_file);
+
+    const file = try tmp.dir.createFile(testing.io, PID_FILE, .{});
+    try file.writeStreamingAll(testing.io, "999999\n");
+    file.close(testing.io);
+
+    stopStale(testing.io, testing.allocator, pid_file);
+    try testing.expect(true);
+}
+
+test "stopStale: a missing pid file is a no-op" {
+    stopStale(testing.io, testing.allocator, "/tmp/pabrik/definitely-not-here.pid");
+    try testing.expect(true);
 }
