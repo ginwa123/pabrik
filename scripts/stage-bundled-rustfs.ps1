@@ -41,11 +41,13 @@ if ($cached) {
 } else {
     if (Test-Path $Archive) { Remove-Item $Archive -Force }
     Write-Output "downloading $ArchiveName"
-    Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing -TimeoutSec 900
-} catch {
-    Write-Output "release CDN failed; retrying through the API asset endpoint"
-    Invoke-WebRequest -Uri $ApiUrl -OutFile $Archive -UseBasicParsing -TimeoutSec 900 `
-        -Headers @{ "Accept" = "application/octet-stream" }
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing -TimeoutSec 900
+    } catch {
+        Write-Output "release CDN failed; retrying through the API asset endpoint"
+        Invoke-WebRequest -Uri $ApiUrl -OutFile $Archive -UseBasicParsing -TimeoutSec 900 `
+            -Headers @{ "Accept" = "application/octet-stream" }
+    }
 }
 
 $GotSha = Get-HexDigest $Archive
