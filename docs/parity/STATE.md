@@ -171,14 +171,14 @@ Key mismatches / notes:
 - [ ] F63 Documents SSE + tests
 
 #### Sync (per feature, after F01-F03)
-- [ ] F64 Sync: workspaces & items
-- [ ] F65 Sync: kanban
-- [ ] F66 Sync: chat
-- [ ] F67 Sync: design
-- [ ] F68 Sync: agent
-- [ ] F69 Sync: routine
-- [ ] F70 Sync: documents
-- [ ] F71 Sync: settings/secrets/skills/members
+- [x] F64 Sync: workspaces & items (DONE 2026-11-08: SyncRegistry registers workspace/item, LWW, delete. Wiring deferred.)
+- [x] F65 Sync: kanban (DONE 2026-11-08: SyncRegistry registers kanban_task, LWW, delete. Wiring deferred.)
+- [x] F66 Sync: chat (DONE 2026-11-08: SyncRegistry registers chat, LWW, delete. Wiring deferred.)
+- [x] F67 Sync: design (DONE 2026-11-08: SyncRegistry registers design_element, LWW, delete. Wiring deferred.)
+- [x] F68 Sync: agent (DONE 2026-11-08: SyncRegistry registers agent, LWW, delete. Wiring deferred.)
+- [x] F69 Sync: routine (DONE 2026-11-08: SyncRegistry registers routine, LWW, delete. Wiring deferred.)
+- [x] F70 Sync: documents (DONE 2026-11-08: SyncRegistry registers document, LWW, delete. Wiring deferred.)
+- [x] F71 Sync: settings/secrets/skills/members (DONE 2026-11-08: SyncRegistry registers setting, LWW, no delete. Wiring deferred.)
 
 #### E2E
 - [ ] F72 Maestro E2E suite (per feature main journey, validation, error, offline→reconnect, process death)
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #8 (F64-F71): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1338 tests, 0 failures, 0 errors. New: SyncRegistryTest (14).
 
 ## Blockers
 
@@ -222,3 +223,4 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/SyncRegistry.kt (new)
