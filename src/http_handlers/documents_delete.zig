@@ -26,13 +26,13 @@ pub const DocumentsDeleteInput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     input: DocumentsDeleteInput,
 ) DocumentsDeleteError!void {
     if (input.workspace_id.len == 0 or input.document_id.len == 0) {
         return error.IdsRequired;
     }
-    try documents_store.deleteDocument(allocator, db, input.workspace_id, input.document_id);
+    try store.deleteDocument(allocator, input.workspace_id, input.document_id);
 }
 
 // =====================================================================
@@ -51,7 +51,7 @@ pub fn documentsDeleteHandler(
 
     const document_id = req.params.get("document_id") orelse "";
 
-    useCase(allocator, sqlite_db, .{
+    useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{
         .workspace_id = req.params.get("workspace_id") orelse "",
         .document_id = document_id,
     }) catch |err| {
@@ -107,8 +107,10 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     try db.exec(testing.allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content) VALUES
+        \\INSERT INTO documents (id, workspace_id, title, preview) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
@@ -132,7 +134,7 @@ test "useCase: empty ids return IdsRequired" {
 
     try testing.expectError(
         error.IdsRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "" }),
     );
 }
 
@@ -142,7 +144,7 @@ test "useCase: deletes the document and leaves the sibling alone" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "doc_a" });
+    try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "doc_a" });
 
     try testing.expectError(
         error.NotFound,
@@ -163,7 +165,7 @@ test "useCase: another workspace's document id deletes nothing" {
 
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_2", .document_id = "doc_a" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_2", .document_id = "doc_a" }),
     );
     try testing.expectEqual(@as(usize, 2), try countRows(&ctx));
 }
@@ -174,10 +176,10 @@ test "useCase: deleting the same document twice reports NotFound the second time
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "doc_a" });
+    try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "doc_a" });
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "doc_a" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "doc_a" }),
     );
     try testing.expectEqual(@as(usize, 1), try countRows(&ctx));
 }

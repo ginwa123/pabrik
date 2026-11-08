@@ -91,6 +91,10 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ inputs.target_zig }}
+          # install.sh falls back to the API asset endpoint when the
+          # `releases/download` redirect 504s; the token lifts the 60/hour
+          # unauthenticated cap that a shared runner IP can already have spent.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           echo "→ install (${{ inputs.label }}): running install.sh from this SHA"

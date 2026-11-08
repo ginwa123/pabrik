@@ -77,6 +77,7 @@ pub fn dispatchHeadless(
         .usage => |a| try runUsage(allocator, io, environment, a, log_file, db_request),
         .message => |a| try runMessage(allocator, io, environment, a, log_file, db_request),
         .group => |a| try runGroup(allocator, io, environment, a, log_file, db_request),
+        .storage => |a| try runStorage(allocator, io, environment, a),
         .memories => |a| try runMemories(allocator, io, environment, a, log_file, db_request),
     }
     return true;
@@ -270,6 +271,30 @@ fn runDocuments(
     try w.interface.flush();
 
     backend.finish(0);
+}
+
+/// Run one object-store op and print its JSON. Deliberately does NOT boot the
+/// backend: the storage layer must work with no database, so a broken
+/// `agent.db` cannot stop an operator from inspecting the store.
+fn runStorage(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.StorageArgs,
+) !void {
+    const json = headless.storage.run(allocator, io, environment, a) catch |err| {
+        std.log.err("headless: storage {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
+        std.process.exit(1);
+    };
+    defer allocator.free(json);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.Io.File.stdout().writer(io, &buf);
+    try w.interface.writeAll(json);
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+
+    std.process.exit(0);
 }
 
 fn runUsage(

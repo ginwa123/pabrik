@@ -27,14 +27,14 @@ pub const DocumentsReorderOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     input: DocumentsReorderInput,
 ) (documents_store.ReorderDocumentsError || documents_store.ListDocumentsError)!DocumentsReorderOutput {
     if (input.workspace_id.len == 0) return error.WorkspaceIdRequired;
-    try documents_store.reorderDocuments(allocator, db, input.workspace_id, input.folder_id, input.ordered_ids);
+    try documents_store.reorderDocuments(allocator, store.db, input.workspace_id, input.folder_id, input.ordered_ids);
     return .{
-        .documents = try documents_store.listDocuments(allocator, db, input.workspace_id),
-        .folders = try folders_store.listFolders(allocator, db, input.workspace_id),
+        .documents = try store.listDocuments(allocator, input.workspace_id),
+        .folders = try folders_store.listFolders(allocator, store.db, input.workspace_id),
     };
 }
 
@@ -62,7 +62,7 @@ pub fn documentsReorderHandler(
         });
     };
 
-    const output = useCase(allocator, sqlite_db, .{
+    const output = useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{
         .workspace_id = req.params.get("workspace_id") orelse "",
         .folder_id = body.folder_id,
         .ordered_ids = body.ordered_ids,
@@ -99,7 +99,7 @@ pub fn documentsReorderHandler(
         "",
     );
 
-    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders);
+    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders, false);
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 
@@ -122,11 +122,13 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     try db.exec(testing.allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content, updated_at) VALUES
-        \\  ('doc_a', 'ws_1', 'A', 'body a', '2026-09-01 10:00:00'),
-        \\  ('doc_b', 'ws_1', 'B', 'body b', '2026-09-02 10:00:00'),
-        \\  ('doc_x', 'ws_2', 'X', 'body x', '2026-09-01 10:00:00')
+        \\INSERT INTO documents (id, workspace_id, title, updated_at) VALUES
+        \\  ('doc_a', 'ws_1', 'A', '2026-09-01 10:00:00'),
+        \\  ('doc_b', 'ws_1', 'B', '2026-09-02 10:00:00'),
+        \\  ('doc_x', 'ws_2', 'X', '2026-09-01 10:00:00')
     , &.{});
     return .{ .db = db, .threaded = threaded };
 }
@@ -147,7 +149,7 @@ test "useCase: a reorder persists and the response lists the documents in the ne
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .ordered_ids = &[_][]const u8{ "doc_a", "doc_b" },
     });
@@ -165,7 +167,7 @@ test "useCase: a reorder never returns another workspace's documents" {
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .ordered_ids = &[_][]const u8{ "doc_b", "doc_a" },
     });
@@ -184,13 +186,13 @@ test "useCase: another workspace's id is refused and the stored order is unchang
 
     try testing.expectError(
         error.DocumentNotFound,
-        useCase(alloc, &ctx.db, .{
+        useCase(alloc, .{ .db = &ctx.db }, .{
             .workspace_id = "ws_1",
             .ordered_ids = &[_][]const u8{ "doc_x", "doc_a" },
         }),
     );
 
-    const after = try useCase(alloc, &ctx.db, .{
+    const after = try useCase(alloc, .{ .db = &ctx.db }, .{
         .workspace_id = "ws_1",
         .ordered_ids = &[_][]const u8{ "doc_b", "doc_a" },
     });
@@ -207,11 +209,11 @@ test "useCase: an empty ordered_ids and an empty workspace are refused" {
 
     try testing.expectError(
         error.EmptyOrder,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .ordered_ids = &[_][]const u8{} }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .ordered_ids = &[_][]const u8{} }),
     );
     try testing.expectError(
         error.WorkspaceIdRequired,
-        useCase(alloc, &ctx.db, .{
+        useCase(alloc, .{ .db = &ctx.db }, .{
             .workspace_id = "",
             .ordered_ids = &[_][]const u8{"doc_a"},
         }),

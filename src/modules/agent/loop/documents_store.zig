@@ -5,6 +5,7 @@ const sqlite = @import("pabrikcore").sqlite;
 const database = @import("pabrikcore").database;
 const helpers = @import("helpers");
 const folders_store = @import("document_folders_store.zig");
+const object_store = @import("pabrikcore").storage.storage;
 
 /// The only document format MVP writes. The column exists so the table is
 /// not markdown-shaped by accident; a future pdf/plain-text writer fills
@@ -20,6 +21,19 @@ const ROOT_LEVEL = "#root";
 /// note and stops a runaway agent from filling the disk. The agent tool
 /// surfaces it as a tool error; the HTTP handler as 413.
 pub const MAX_CONTENT_BYTES: usize = 4 << 20; // 4 MiB
+
+/// How much of the body the `preview` column keeps. Bounded so a 4 MiB note
+/// costs 512 bytes in every list read, and so the sidebar never needs the
+/// object store.
+pub const PREVIEW_MAX_BYTES: usize = 512;
+
+/// The first `PREVIEW_MAX_BYTES` of `body`, cut on a UTF-8 boundary.
+pub fn previewOf(body: []const u8) []const u8 {
+    if (body.len <= PREVIEW_MAX_BYTES) return body;
+    var end = PREVIEW_MAX_BYTES;
+    while (end > 0 and (body[end] & 0xC0) == 0x80) end -= 1;
+    return body[0..end];
+}
 
 /// Process-local monotonic counter for `document_id` generation. The wall
 /// clock alone is not a source of uniqueness here.
@@ -42,6 +56,14 @@ pub const DocumentRow = struct {
     position: i64,
     /// The folder this document sits in, or `null` at the root.
     folder_id: ?[]const u8,
+    /// Object-store key for the body. Null means the body is only in `content`.
+    content_key: ?[]const u8 = null,
+    /// Lowercase hex SHA-256 of the body, when the body is in the object store.
+    content_sha256: ?[]const u8 = null,
+    /// Body length in bytes. 0 for a row written before Migration 143.
+    content_bytes: i64 = 0,
+    /// The first `PREVIEW_MAX_BYTES` of the body, kept in SQL for the sidebar.
+    preview: []const u8 = "",
 };
 
 /// Fields for a new document. `workspace_id` is required and has no
@@ -122,30 +144,85 @@ pub const ReorderDocumentsError = error{
     OutOfMemory,
 };
 
+pub const BackfillOptions = struct {
+    /// Only this workspace. Null means every workspace.
+    workspace_id: ?[]const u8 = null,
+    /// Stop after this many rows. 0 means no cap, so a run is resumable by
+    /// repeating it with a limit.
+    limit: usize = 0,
+    /// Report what would move without writing anything.
+    dry_run: bool = false,
+};
+
+pub const BackfillReport = struct {
+    /// Rows with `content_key IS NULL` that this run looked at.
+    scanned: usize = 0,
+    /// Bodies written to the object store and pointed at.
+    moved: usize = 0,
+    /// Rows whose body is empty, so there is nothing to move.
+    skipped_empty: usize = 0,
+    /// Rows the object store refused. The row is left untouched.
+    failed: usize = 0,
+};
+
+pub const BackfillError = error{
+    /// No object store is configured, so there is nowhere to move a body to.
+    NoStorage,
+    QueryFailed,
+    ObjectStoreFailed,
+    OutOfMemory,
+};
+
+/// One row the backfill is about to move. Owns its strings.
+const Candidate = struct {
+    id: []u8,
+    workspace_id: []u8,
+    body: []u8,
+};
+
+fn freeCandidates(allocator: std.mem.Allocator, candidates: []Candidate) void {
+    for (candidates) |c| {
+        allocator.free(c.id);
+        allocator.free(c.workspace_id);
+        allocator.free(c.body);
+    }
+    allocator.free(candidates);
+}
+
 /// The SELECT list, shared by every read so no call site can accidentally
 /// return a different shape.
 const SELECT_COLUMNS =
-    "SELECT id, workspace_id, title, content, format, " ++
+    "SELECT id, workspace_id, title, format, " ++
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
-    "COALESCE(CAST(position AS TEXT), '0'), COALESCE(folder_id, '') " ++
+    "COALESCE(CAST(position AS TEXT), '0'), COALESCE(folder_id, ''), " ++
+    "COALESCE(content_key, ''), COALESCE(content_sha256, ''), " ++
+    "COALESCE(CAST(content_bytes AS TEXT), '0'), COALESCE(preview, '') " ++
     "FROM documents";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !DocumentRow {
-    const folder: ?[]const u8 = if (values[8].len == 0) null else try allocator.dupe(u8, values[8]);
+    const folder: ?[]const u8 = if (values[7].len == 0) null else try allocator.dupe(u8, values[7]);
+    const content_key: ?[]const u8 = if (values[8].len == 0) null else try allocator.dupe(u8, values[8]);
+    const content_sha256: ?[]const u8 = if (values[9].len == 0) null else try allocator.dupe(u8, values[9]);
     return .{
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
         .title = try allocator.dupe(u8, values[2]),
-        .content = try allocator.dupe(u8, values[3]),
-        .format = try allocator.dupe(u8, values[4]),
-        .created_at = try allocator.dupe(u8, values[5]),
-        .updated_at = try allocator.dupe(u8, values[6]),
-        .position = std.fmt.parseInt(i64, values[7], 10) catch 0,
+        .format = try allocator.dupe(u8, values[3]),
+        .created_at = try allocator.dupe(u8, values[4]),
+        .updated_at = try allocator.dupe(u8, values[5]),
+        .position = std.fmt.parseInt(i64, values[6], 10) catch 0,
         .folder_id = folder,
+        .content_key = content_key,
+        .content_sha256 = content_sha256,
+        .content_bytes = std.fmt.parseInt(i64, values[10], 10) catch 0,
+        .preview = try allocator.dupe(u8, values[11]),
+        // The body is not a column any more: `getDocument` hydrates it from
+        // the object store, and a list or search read leaves it empty.
+        .content = "",
     };
 }
 
-pub fn listDocuments(
+fn listDocumentsRaw(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
@@ -190,10 +267,10 @@ fn likeContainsPattern(allocator: std.mem.Allocator, needle: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Documents in one workspace whose TITLE or CONTENT contains `needle`,
-/// case-insensitively — newest-updated first. `needle` is a LITERAL
-/// substring, never a pattern.
-pub fn searchDocuments(
+/// Documents in one workspace whose TITLE, PREVIEW or CONTENT contains
+/// `needle`, case-insensitively — newest-updated first. `preview` is in the
+/// predicate so search survives the body leaving the column.
+pub fn searchDocumentsRaw(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
@@ -211,7 +288,8 @@ pub fn searchDocuments(
     const sql = if (pattern != null)
         SELECT_COLUMNS ++
             " WHERE workspace_id = ?" ++
-            " AND (LOWER(title) LIKE LOWER(?) ESCAPE '\\' OR LOWER(content) LIKE LOWER(?) ESCAPE '\\')" ++
+            " AND (LOWER(title) LIKE LOWER(?) ESCAPE '\\'" ++
+            " OR LOWER(preview) LIKE LOWER(?) ESCAPE '\\')" ++
             " ORDER BY updated_at DESC, id DESC"
     else
         SELECT_COLUMNS ++ " WHERE workspace_id = ? ORDER BY updated_at DESC, id DESC";
@@ -236,83 +314,508 @@ pub fn searchDocuments(
     return list.toOwnedSlice(allocator);
 }
 
-/// One document, scoped to `workspace_id`.
+/// A document store: the database, plus the object store the bodies may live
+/// in. `storage = null` keeps every body in the `content` column, which is
+/// what the free functions below do.
+pub const Store = struct {
+    db: *database.Db,
+    storage: ?object_store.Storage = null,
+
+    /// One document, scoped to `workspace_id`, with its body hydrated from the
+    /// object store when the row points at one.
+    pub fn getDocument(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        document_id: []const u8,
+    ) GetDocumentError!DocumentRow {
+        var row = try self.readRow(allocator, workspace_id, document_id);
+        errdefer freeDocumentRow(allocator, row);
+        self.hydrate(allocator, &row);
+        return row;
+    }
+
+    /// Every document in one workspace, in saved sidebar order. Reads the
+    /// `content` column, so a list costs no object-store round-trip.
+    pub fn listDocuments(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+    ) ListDocumentsError![]DocumentRow {
+        return listDocumentsRaw(allocator, self.db, workspace_id);
+    }
+
+    /// Documents whose title or body contains `needle`. Reads the `content`
+    /// column for the same reason as `listDocuments`.
+    pub fn searchDocuments(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        needle: ?[]const u8,
+    ) SearchDocumentsError![]DocumentRow {
+        return searchDocumentsRaw(allocator, self.db, workspace_id, needle);
+    }
+
+    /// The row as SQL has it, without touching the object store. The write
+    /// paths use this because they already hold the body they are storing.
+    fn readRow(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        document_id: []const u8,
+    ) GetDocumentError!DocumentRow {
+        if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
+
+        var q = self.db.query(
+            allocator,
+            SELECT_COLUMNS ++ " WHERE id = ? AND workspace_id = ?",
+            &[_][]const u8{ document_id, workspace_id },
+        ) catch return error.QueryFailed;
+        defer q.deinit();
+
+        const r = (q.next() catch return error.QueryFailed) orelse return error.NotFound;
+        defer r.deinit(allocator);
+        return rowFromValues(allocator, r.values) catch return error.OutOfMemory;
+    }
+
+    /// Replace `row.content` with the object's bytes. A missing object leaves
+    /// the column's copy in place: during the transition the column is
+    /// authoritative, so a fallback is correct rather than an error.
+    fn hydrate(self: Store, allocator: std.mem.Allocator, row: *DocumentRow) void {
+        const key = row.content_key orelse return;
+        const s = self.storage orelse return;
+        const body = s.get(allocator, key) catch return;
+        allocator.free(row.content);
+        row.content = body;
+    }
+
+    /// Insert a document and return it with its canonical id + timestamps.
+    /// The body goes to the object FIRST, so a failed row write leaves a
+    /// harmless orphan rather than a row pointing at nothing.
+    pub fn createDocument(
+        self: Store,
+        allocator: std.mem.Allocator,
+        args: CreateDocumentArgs,
+    ) CreateDocumentError!DocumentRow {
+        if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
+
+        const title = std.mem.trim(u8, args.title, " \t\n\r");
+        if (title.len == 0) return error.TitleRequired;
+        if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
+
+        // A folder id from another workspace must not become a dangling pointer.
+        if (args.folder_id) |folder_id| {
+            if (folder_id.len > 0 and !folders_store.folderExists(allocator, self.db, args.workspace_id, folder_id)) {
+                return error.FolderNotFound;
+            }
+        }
+
+        // `doc_<nanos>_<pid>_<seq>` — the workspace_id scheme from
+        // `workspace_provisioning.zig`, for the same reason.
+        const document_id = try std.fmt.allocPrint(
+            allocator,
+            "doc_{d}_{d}_{d}",
+            .{
+                helpers.unixTimestampNanos(),
+                helpers.process.getCurrentProcessId(),
+                documentIdSeq(),
+            },
+        );
+        defer allocator.free(document_id);
+
+        const format = if (args.format.len == 0) FORMAT_MARKDOWN else args.format;
+
+        const placed = self.placeBody(allocator, args.workspace_id, document_id, args.content) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.ObjectStoreFailed => return error.InsertFailed,
+        };
+        defer placed.deinit(allocator);
+
+        // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
+        // `Backend.exec` binds a zero-length slice as SQL NULL, which would
+        // violate the constraint outright.
+        const folder = args.folder_id orelse "";
+        const level = if (folder.len == 0) ROOT_LEVEL else folder;
+        self.db.exec(allocator,
+            \\INSERT INTO documents (id, workspace_id, title, format, folder_id, position,
+            \\                       content_key, content_sha256, content_bytes, preview,
+            \\                       created_at, updated_at)
+            \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), NULLIF(?, ''),
+            \\        COALESCE((SELECT MIN(position) FROM documents WHERE workspace_id = ? AND COALESCE(folder_id, '#root') = ?), 0) - 1,
+            \\        NULLIF(?, ''), NULLIF(?, ''), ?, COALESCE(NULLIF(?, ''), ''),
+            \\        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        , &[_][]const u8{
+            document_id,
+            args.workspace_id,
+            title,
+            format,
+            folder,
+            args.workspace_id,
+            level,
+            placed.key orelse "",
+            placed.sha256 orelse "",
+            placed.bytesText(),
+            placed.preview,
+        }) catch
+            return error.InsertFailed;
+
+        // The re-read uses a wider error set than this function declares, so map
+        // it: a genuine "row is gone" is the consistency error, and anything else
+        // (query failure, OOM) is a failed insert from the caller's
+        return self.getDocument(allocator, args.workspace_id, document_id) catch |err| switch (err) {
+            error.NotFound, error.IdsRequired, error.QueryFailed => error.RowNotFoundAfterInsert,
+            error.OutOfMemory => error.InsertFailed,
+        };
+    }
+
+    /// Patch a document. Absent fields keep their current value and `updated_at`
+    /// always advances.
+    pub fn updateDocument(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        document_id: []const u8,
+        patch: UpdateDocumentArgs,
+    ) UpdateDocumentError!DocumentRow {
+        if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
+        if (patch.content) |c| {
+            if (c.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
+        }
+
+        // Load the current values so an absent field is a true no-op. This MUST
+        // hydrate: a title-only PATCH that read the row without its body would
+        // write an empty object and lose the document.
+        const existing = self.getDocument(allocator, workspace_id, document_id) catch
+            return error.NotFound;
+        defer freeDocumentRow(allocator, existing);
+
+        const title = if (patch.title) |t| blk: {
+            const trimmed = std.mem.trim(u8, t, " \t\n\r");
+            if (trimmed.len == 0) return error.NotFound;
+            break :blk trimmed;
+        } else existing.title;
+        const content = patch.content orelse existing.content;
+
+        // With no store and no new body there is nothing to place: reuse the
+        // row's own pointer and preview. Recomputing from an empty body would
+        // wipe the preview of a document whose body lives elsewhere.
+        const placed = if (self.storage == null and patch.content == null)
+            placedFromRow(allocator, existing) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.ObjectStoreFailed => return error.UpdateFailed,
+            }
+        else
+            self.placeBody(allocator, workspace_id, document_id, content) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.ObjectStoreFailed => return error.UpdateFailed,
+            };
+        defer placed.deinit(allocator);
+
+        if (patch.move_folder) {
+            const folder = patch.folder_id orelse "";
+            if (folder.len > 0 and !folders_store.folderExists(allocator, self.db, workspace_id, folder)) {
+                return error.FolderNotFound;
+            }
+            self.db.exec(allocator,
+                \\UPDATE documents
+                \\SET title = COALESCE(NULLIF(?, ''), ''), folder_id = NULLIF(?, ''),
+                \\    content_key = NULLIF(?, ''), content_sha256 = NULLIF(?, ''), content_bytes = ?, preview = COALESCE(NULLIF(?, ''), ''),
+                \\    updated_at = CURRENT_TIMESTAMP
+                \\WHERE id = ? AND workspace_id = ?
+            , &[_][]const u8{
+                title,
+                folder,
+                placed.key orelse "",
+                placed.sha256 orelse "",
+                placed.bytesText(),
+                placed.preview,
+                document_id,
+                workspace_id,
+            }) catch
+                return error.UpdateFailed;
+        } else {
+            self.db.exec(allocator,
+                \\UPDATE documents
+                \\SET title = COALESCE(NULLIF(?, ''), ''),
+                \\    content_key = NULLIF(?, ''), content_sha256 = NULLIF(?, ''), content_bytes = ?, preview = COALESCE(NULLIF(?, ''), ''),
+                \\    updated_at = CURRENT_TIMESTAMP
+                \\WHERE id = ? AND workspace_id = ?
+            , &[_][]const u8{
+                title,
+                placed.key orelse "",
+                placed.sha256 orelse "",
+                placed.bytesText(),
+                placed.preview,
+                document_id,
+                workspace_id,
+            }) catch
+                return error.UpdateFailed;
+        }
+
+        return self.getDocument(allocator, workspace_id, document_id) catch
+            return error.UpdateFailed;
+    }
+
+    /// Delete a document. Scoped like every other read: a foreign id reports
+    /// `error.NotFound` and deletes nothing. The object goes AFTER the row, so
+    /// a failure leaves an orphan rather than a row pointing at nothing.
+    pub fn deleteDocument(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        document_id: []const u8,
+    ) DeleteDocumentError!void {
+        if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
+
+        // Check-then-delete in one statement: a DELETE that affects 0 rows is the
+        // same "not found" the guard would have reported, so a second round-trip
+        // is only needed to distinguish the two cases.
+        var q = self.db.query(
+            allocator,
+            "SELECT id, COALESCE(content_key, '') FROM documents WHERE id = ? AND workspace_id = ?",
+            &[_][]const u8{ document_id, workspace_id },
+        ) catch return error.DeleteFailed;
+        defer q.deinit();
+        const r = (q.next() catch return error.DeleteFailed) orelse return error.NotFound;
+        const content_key = allocator.dupe(u8, r.values[1]) catch {
+            r.deinit(allocator);
+            return error.DeleteFailed;
+        };
+        defer allocator.free(content_key);
+        r.deinit(allocator);
+
+        self.db.exec(
+            allocator,
+            "DELETE FROM documents WHERE id = ? AND workspace_id = ?",
+            &[_][]const u8{ document_id, workspace_id },
+        ) catch return error.DeleteFailed;
+
+        if (content_key.len > 0) {
+            if (self.storage) |s| s.delete(content_key) catch {};
+        }
+    }
+
+    /// Move every body that is still only in the `content` column into the
+    /// object store. Idempotent: a second run finds nothing to move. The body
+    /// stays in the column — clearing it is a later phase.
+    pub fn backfill(
+        self: Store,
+        allocator: std.mem.Allocator,
+        opts: BackfillOptions,
+    ) BackfillError!BackfillReport {
+        const s = self.storage orelse return error.NoStorage;
+
+        const candidates = try self.backfillCandidates(allocator, opts);
+        defer freeCandidates(allocator, candidates);
+
+        var report = BackfillReport{ .scanned = candidates.len };
+        for (candidates) |candidate| {
+            if (candidate.body.len == 0) {
+                report.skipped_empty += 1;
+                continue;
+            }
+            if (opts.dry_run) {
+                report.moved += 1;
+                continue;
+            }
+            if (self.backfillOne(allocator, s, candidate)) |_| {
+                report.moved += 1;
+            } else |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => report.failed += 1,
+            }
+        }
+        return report;
+    }
+
+    /// Rows whose body is still only in the column, oldest id first so a
+    /// `--limit` run resumes where the last one stopped.
+    fn backfillCandidates(
+        self: Store,
+        allocator: std.mem.Allocator,
+        opts: BackfillOptions,
+    ) BackfillError![]Candidate {
+        // The body is not a column any more, so a row with no key has no body
+        // to move. The query still runs so the report is honest about what is
+        // left, and every candidate lands in `skipped_empty`.
+        const sql = if (opts.workspace_id != null)
+            "SELECT id, workspace_id, '' FROM documents WHERE content_key IS NULL AND workspace_id = ? ORDER BY id"
+        else
+            "SELECT id, workspace_id, '' FROM documents WHERE content_key IS NULL ORDER BY id";
+
+        var q = self.db.query(
+            allocator,
+            sql,
+            if (opts.workspace_id) |ws| &[_][]const u8{ws} else &[_][]const u8{},
+        ) catch return error.QueryFailed;
+        defer q.deinit();
+
+        var list: std.ArrayList(Candidate) = .empty;
+        errdefer freeCandidates(allocator, list.items);
+
+        while (q.next() catch return error.QueryFailed) |r| {
+            defer r.deinit(allocator);
+            if (opts.limit != 0 and list.items.len >= opts.limit) break;
+            try list.append(allocator, .{
+                .id = try allocator.dupe(u8, r.values[0]),
+                .workspace_id = try allocator.dupe(u8, r.values[1]),
+                .body = try allocator.dupe(u8, r.values[2]),
+            });
+        }
+        return list.toOwnedSlice(allocator);
+    }
+
+    /// Write one body and point its row at it. The object goes first, so a
+    /// failed row update leaves an orphan rather than a dangling pointer.
+    fn backfillOne(
+        self: Store,
+        allocator: std.mem.Allocator,
+        s: object_store.Storage,
+        candidate: Candidate,
+    ) BackfillError!void {
+        var digest: [object_store.SHA256_HEX_BYTES]u8 = undefined;
+        object_store.sha256Hex(candidate.body, &digest);
+
+        const key = object_store.documentKey(allocator, candidate.workspace_id, candidate.id, &digest) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.ObjectStoreFailed,
+        };
+        defer allocator.free(key);
+
+        s.put(key, candidate.body) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.ObjectStoreFailed,
+        };
+
+        var bytes_buf: [24]u8 = undefined;
+        const bytes_text = std.fmt.bufPrint(&bytes_buf, "{d}", .{candidate.body.len}) catch "0";
+
+        self.db.exec(allocator,
+            \\UPDATE documents
+            \\SET content_key = ?, content_sha256 = ?, content_bytes = ?, preview = ?
+            \\WHERE id = ? AND workspace_id = ?
+        , &[_][]const u8{
+            key,
+            &digest,
+            bytes_text,
+            previewOf(candidate.body),
+            candidate.id,
+            candidate.workspace_id,
+        }) catch return error.ObjectStoreFailed;
+    }
+
+    /// The object-store half of a write: the key, digest, byte count and
+    /// preview for `body`, with the object already stored when a store is
+    /// configured.
+    fn placeBody(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        document_id: []const u8,
+        body: []const u8,
+    ) PlaceError!Placed {
+        var placed = Placed{ .preview = previewOf(body) };
+        const text = std.fmt.bufPrint(&placed.bytes_buf, "{d}", .{body.len}) catch "0";
+        placed.bytes_len = text.len;
+
+        const s = self.storage orelse return placed;
+
+        var digest: [object_store.SHA256_HEX_BYTES]u8 = undefined;
+        object_store.sha256Hex(body, &digest);
+
+        const key = object_store.documentKey(allocator, workspace_id, document_id, &digest) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.ObjectStoreFailed,
+        };
+        errdefer allocator.free(key);
+
+        s.put(key, body) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.ObjectStoreFailed,
+        };
+
+        placed.key = key;
+        placed.sha256 = allocator.dupe(u8, &digest) catch return error.OutOfMemory;
+        return placed;
+    }
+};
+
+pub const PlaceError = error{ ObjectStoreFailed, OutOfMemory };
+
+/// A `Placed` that reuses an existing row's pointer and preview, for a patch
+/// that changes neither. The strings are duplicated so `Placed.deinit` stays
+/// the only owner.
+fn placedFromRow(allocator: std.mem.Allocator, row: DocumentRow) PlaceError!Placed {
+    var placed = Placed{ .preview = row.preview };
+    const text = std.fmt.bufPrint(&placed.bytes_buf, "{d}", .{row.content_bytes}) catch "0";
+    placed.bytes_len = text.len;
+    if (row.content_key) |key| {
+        placed.key = allocator.dupe(u8, key) catch return error.OutOfMemory;
+    }
+    if (row.content_sha256) |digest| {
+        placed.sha256 = allocator.dupe(u8, digest) catch return error.OutOfMemory;
+    }
+    return placed;
+}
+
+/// What `placeBody` produced. `key` and `sha256` are owned when non-null; the
+/// byte count lives in `bytes_buf` so the struct stays copyable.
+const Placed = struct {
+    key: ?[]const u8 = null,
+    sha256: ?[]const u8 = null,
+    preview: []const u8 = "",
+    bytes_buf: [24]u8 = undefined,
+    bytes_len: usize = 1,
+
+    fn bytesText(self: *const Placed) []const u8 {
+        return self.bytes_buf[0..self.bytes_len];
+    }
+
+    fn deinit(self: Placed, allocator: std.mem.Allocator) void {
+        if (self.key) |k| allocator.free(k);
+        if (self.sha256) |d| allocator.free(d);
+    }
+};
+
+/// One document, scoped to `workspace_id`, with no object store configured.
 pub fn getDocument(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
     document_id: []const u8,
 ) GetDocumentError!DocumentRow {
-    if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
-
-    var q = db.query(
-        allocator,
-        SELECT_COLUMNS ++ " WHERE id = ? AND workspace_id = ?",
-        &[_][]const u8{ document_id, workspace_id },
-    ) catch return error.QueryFailed;
-    defer q.deinit();
-
-    const r = (q.next() catch return error.QueryFailed) orelse return error.NotFound;
-    defer r.deinit(allocator);
-    return rowFromValues(allocator, r.values) catch return error.OutOfMemory;
+    return (Store{ .db = db }).getDocument(allocator, workspace_id, document_id);
 }
 
-/// Insert a document and return it with its canonical id + timestamps.
+/// Every document in one workspace, in saved sidebar order.
+pub fn listDocuments(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+) ListDocumentsError![]DocumentRow {
+    return (Store{ .db = db }).listDocuments(allocator, workspace_id);
+}
+
+/// Documents whose title or body contains `needle`.
+pub fn searchDocuments(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+    needle: ?[]const u8,
+) SearchDocumentsError![]DocumentRow {
+    return (Store{ .db = db }).searchDocuments(allocator, workspace_id, needle);
+}
+
+/// Insert a document with no object store configured.
 pub fn createDocument(
     allocator: std.mem.Allocator,
     db: *database.Db,
     args: CreateDocumentArgs,
 ) CreateDocumentError!DocumentRow {
-    if (args.workspace_id.len == 0) return error.WorkspaceIdRequired;
-
-    const title = std.mem.trim(u8, args.title, " \t\n\r");
-    if (title.len == 0) return error.TitleRequired;
-    if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
-
-    // A folder id from another workspace must not become a dangling pointer.
-    if (args.folder_id) |folder_id| {
-        if (folder_id.len > 0 and !folders_store.folderExists(allocator, db, args.workspace_id, folder_id)) {
-            return error.FolderNotFound;
-        }
-    }
-
-    // `doc_<nanos>_<pid>_<seq>` — the workspace_id scheme from
-    // `workspace_provisioning.zig`, for the same reason.
-    const document_id = try std.fmt.allocPrint(
-        allocator,
-        "doc_{d}_{d}_{d}",
-        .{
-            helpers.unixTimestampNanos(),
-            helpers.process.getCurrentProcessId(),
-            documentIdSeq(),
-        },
-    );
-    defer allocator.free(document_id);
-
-    const format = if (args.format.len == 0) FORMAT_MARKDOWN else args.format;
-
-    // COALESCE(NULLIF(?, ''), '') on every NOT NULL text column:
-    // `Backend.exec` binds a zero-length slice as SQL NULL, which would
-    // violate the constraint outright.
-    const folder = args.folder_id orelse "";
-    const level = if (folder.len == 0) ROOT_LEVEL else folder;
-    db.exec(allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content, format, folder_id, position, created_at, updated_at)
-        \\VALUES (?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), 'markdown'), NULLIF(?, ''), COALESCE((SELECT MIN(position) FROM documents WHERE workspace_id = ? AND COALESCE(folder_id, '#root') = ?), 0) - 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    , &[_][]const u8{ document_id, args.workspace_id, title, args.content, format, folder, args.workspace_id, level }) catch
-        return error.InsertFailed;
-
-    // The re-read uses a wider error set than this function declares, so map
-    // it: a genuine "row is gone" is the consistency error, and anything else
-    // (query failure, OOM) is a failed insert from the caller's point of
-    return getDocument(allocator, db, args.workspace_id, document_id) catch |err| switch (err) {
-        error.NotFound, error.IdsRequired, error.QueryFailed => error.RowNotFoundAfterInsert,
-        error.OutOfMemory => error.InsertFailed,
-    };
+    return (Store{ .db = db }).createDocument(allocator, args);
 }
 
-/// Patch a document. Absent fields keep their current value and `updated_at`
-/// always advances.
+/// Patch a document with no object store configured.
 pub fn updateDocument(
     allocator: std.mem.Allocator,
     db: *database.Db,
@@ -320,76 +823,17 @@ pub fn updateDocument(
     document_id: []const u8,
     patch: UpdateDocumentArgs,
 ) UpdateDocumentError!DocumentRow {
-    if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
-    if (patch.content) |c| {
-        if (c.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
-    }
-
-    // Load the current values so an absent field is a true no-op rather than
-    // a wipe. Without this a PATCH of `{title}` alone would blank the body —
-    // the exact class of bug the "effective_*" pattern exists to prevent.
-    const existing = getDocument(allocator, db, workspace_id, document_id) catch
-        return error.NotFound;
-    defer freeDocumentRow(allocator, existing);
-
-    const title = if (patch.title) |t| blk: {
-        const trimmed = std.mem.trim(u8, t, " \t\n\r");
-        if (trimmed.len == 0) return error.NotFound;
-        break :blk trimmed;
-    } else existing.title;
-    const content = patch.content orelse existing.content;
-
-    if (patch.move_folder) {
-        const folder = patch.folder_id orelse "";
-        if (folder.len > 0 and !folders_store.folderExists(allocator, db, workspace_id, folder)) {
-            return error.FolderNotFound;
-        }
-        db.exec(allocator,
-            \\UPDATE documents
-            \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), folder_id = NULLIF(?, ''), updated_at = CURRENT_TIMESTAMP
-            \\WHERE id = ? AND workspace_id = ?
-        , &[_][]const u8{ title, content, folder, document_id, workspace_id }) catch
-            return error.UpdateFailed;
-    } else {
-        db.exec(allocator,
-            \\UPDATE documents
-            \\SET title = COALESCE(NULLIF(?, ''), ''), content = COALESCE(NULLIF(?, ''), ''), updated_at = CURRENT_TIMESTAMP
-            \\WHERE id = ? AND workspace_id = ?
-        , &[_][]const u8{ title, content, document_id, workspace_id }) catch
-            return error.UpdateFailed;
-    }
-
-    return getDocument(allocator, db, workspace_id, document_id) catch
-        return error.UpdateFailed;
+    return (Store{ .db = db }).updateDocument(allocator, workspace_id, document_id, patch);
 }
 
-/// Delete a document. Scoped like every other read: a foreign id reports
-/// `error.NotFound` and deletes nothing.
+/// Delete a document with no object store configured.
 pub fn deleteDocument(
     allocator: std.mem.Allocator,
     db: *database.Db,
     workspace_id: []const u8,
     document_id: []const u8,
 ) DeleteDocumentError!void {
-    if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
-
-    // Check-then-delete in one statement: a DELETE that affects 0 rows is the
-    // same "not found" the guard would have reported, so a second round-trip
-    // is only needed to distinguish the two cases.
-    var q = db.query(
-        allocator,
-        "SELECT id FROM documents WHERE id = ? AND workspace_id = ?",
-        &[_][]const u8{ document_id, workspace_id },
-    ) catch return error.DeleteFailed;
-    defer q.deinit();
-    const r = (q.next() catch return error.DeleteFailed) orelse return error.NotFound;
-    defer r.deinit(allocator);
-
-    db.exec(
-        allocator,
-        "DELETE FROM documents WHERE id = ? AND workspace_id = ?",
-        &[_][]const u8{ document_id, workspace_id },
-    ) catch return error.DeleteFailed;
+    return (Store{ .db = db }).deleteDocument(allocator, workspace_id, document_id);
 }
 
 fn containsDocumentId(ids: []const []const u8, needle: []const u8) bool {
@@ -462,6 +906,9 @@ pub fn freeDocumentRow(allocator: std.mem.Allocator, row: DocumentRow) void {
     allocator.free(row.created_at);
     allocator.free(row.updated_at);
     if (row.folder_id) |folder| allocator.free(folder);
+    if (row.content_key) |key| allocator.free(key);
+    if (row.content_sha256) |digest| allocator.free(digest);
+    allocator.free(row.preview);
 }
 
 /// Free a slice of rows. The slice header is freed last.
@@ -488,13 +935,15 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
 fn seedDocument(alloc: std.mem.Allocator, db: *database.Db, id: []const u8, workspace_id: []const u8, updated_at: []const u8) !void {
     try db.exec(alloc,
-        \\INSERT INTO documents (id, workspace_id, title, content, updated_at)
-        \\VALUES (?, ?, ?, 'body', ?)
+        \\INSERT INTO documents (id, workspace_id, title, updated_at)
+        \\VALUES (?, ?, ?, ?)
     , &[_][]const u8{ id, workspace_id, id, updated_at });
 }
 
@@ -661,4 +1110,432 @@ test "createDocument: a new document lands above every existing one" {
     try testing.expectEqualStrings("Third", rows[0].title);
     try testing.expectEqualStrings("First", rows[1].title);
     try testing.expectEqualStrings("Second", rows[2].title);
+}
+
+// ─── Object store: the body lives there, not in a column ────────────────
+
+const memory_backend = @import("pabrikcore").storage.memory;
+
+/// A store whose every verb fails, so a test can prove the write path stops
+/// before it touches the row.
+const FailingStorage = struct {
+    fn put(_: *anyopaque, _: []const u8, _: []const u8) object_store.Error!void {
+        return error.IoFailed;
+    }
+    fn get(_: *anyopaque, _: std.mem.Allocator, _: []const u8) object_store.Error![]u8 {
+        return error.NotFound;
+    }
+    fn delete(_: *anyopaque, _: []const u8) object_store.Error!void {
+        return error.NotFound;
+    }
+    fn stat(_: *anyopaque, _: []const u8) object_store.Error!object_store.Stat {
+        return error.NotFound;
+    }
+    const vtable = object_store.Storage.VTable{
+        .put = put,
+        .get = get,
+        .delete = delete,
+        .stat = stat,
+    };
+};
+
+fn failingStorage(marker: *u8) object_store.Storage {
+    return .{ .ptr = marker, .vtable = &FailingStorage.vtable };
+}
+
+test "previewOf: a short body comes back whole" {
+    try testing.expectEqualStrings("# Plan", previewOf("# Plan"));
+    try testing.expectEqualStrings("", previewOf(""));
+}
+
+test "previewOf: a long body is cut at the cap" {
+    const body = "x" ** (PREVIEW_MAX_BYTES + 100);
+    const preview = previewOf(body);
+    try testing.expectEqual(PREVIEW_MAX_BYTES, preview.len);
+}
+
+test "previewOf: the cut never splits a multi-byte codepoint" {
+    // "é" is two bytes; repeat it so the cap lands mid-character.
+    var body: [PREVIEW_MAX_BYTES + 2]u8 = undefined;
+    for (0..(PREVIEW_MAX_BYTES + 2) / 2) |i| {
+        body[i * 2] = 0xC3;
+        body[i * 2 + 1] = 0xA9;
+    }
+    const preview = previewOf(&body);
+    try testing.expect(std.unicode.utf8ValidateSlice(preview));
+    try testing.expect(preview.len <= PREVIEW_MAX_BYTES);
+}
+
+test "createDocument with no store persists no body and no key" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const row = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "# Plan\n",
+    });
+    defer freeDocumentRow(alloc, row);
+
+    // There is nowhere to put the body, so it is not persisted at all. The
+    // metadata and the preview still are.
+    try testing.expectEqualStrings("", row.content);
+    try testing.expect(row.content_key == null);
+    try testing.expect(row.content_sha256 == null);
+    try testing.expectEqual(@as(i64, 7), row.content_bytes);
+    try testing.expectEqualStrings("# Plan\n", row.preview);
+}
+
+test "createDocument with a store writes the object and points the row at it" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "# Plan\n",
+    });
+    defer freeDocumentRow(alloc, row);
+
+    const key = row.content_key orelse return error.KeyMissing;
+    try testing.expect(std.mem.startsWith(u8, key, "ws/ws_1/documents/"));
+    try testing.expect(std.mem.endsWith(u8, key, ".md"));
+
+    var expected: [object_store.SHA256_HEX_BYTES]u8 = undefined;
+    object_store.sha256Hex("# Plan\n", &expected);
+    try testing.expectEqualStrings(&expected, row.content_sha256.?);
+    try testing.expectEqual(@as(i64, 7), row.content_bytes);
+
+    const stored = try objects.asStorage().get(alloc, key);
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("# Plan\n", stored);
+
+    // The returned row carries the body, hydrated from the object.
+    try testing.expectEqualStrings("# Plan\n", row.content);
+    try testing.expectEqualStrings("# Plan\n", row.preview);
+}
+
+test "getDocument reads the body from the object" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "original",
+    });
+    defer freeDocumentRow(alloc, created);
+
+    // Overwrite the object behind the row's back. A read that returns this
+    // text can only have come from the store.
+    try objects.asStorage().put(created.content_key.?, "object copy");
+
+    const row = try store.getDocument(alloc, "ws_1", created.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("object copy", row.content);
+}
+
+test "getDocument returns an empty body when the object is gone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    });
+    defer freeDocumentRow(alloc, created);
+
+    try objects.asStorage().delete(created.content_key.?);
+
+    // There is no column to fall back to any more. The row still reads, with
+    // an empty body and its preview — a missing object is a lost body, not a
+    // failed read.
+    const row = try store.getDocument(alloc, "ws_1", created.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("", row.content);
+    try testing.expectEqualStrings("body", row.preview);
+}
+
+test "updateDocument with a store points the row at the new body's key" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "first version",
+    });
+    defer freeDocumentRow(alloc, created);
+    const first_key = try alloc.dupe(u8, created.content_key.?);
+    defer alloc.free(first_key);
+
+    const updated = try store.updateDocument(alloc, "ws_1", created.id, .{ .content = "second version" });
+    defer freeDocumentRow(alloc, updated);
+
+    try testing.expect(!std.mem.eql(u8, first_key, updated.content_key.?));
+    try testing.expectEqual(@as(i64, 14), updated.content_bytes);
+
+    const stored = try objects.asStorage().get(alloc, updated.content_key.?);
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("second version", stored);
+
+    // The old object is an orphan, not a dangling pointer: the row moved on.
+    const old = try objects.asStorage().get(alloc, first_key);
+    defer alloc.free(old);
+    try testing.expectEqualStrings("first version", old);
+}
+
+test "updateDocument with a title-only patch keeps the body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "unchanged body",
+    });
+    defer freeDocumentRow(alloc, created);
+    const first_key = try alloc.dupe(u8, created.content_key.?);
+    defer alloc.free(first_key);
+
+    const updated = try store.updateDocument(alloc, "ws_1", created.id, .{ .title = "Renamed" });
+    defer freeDocumentRow(alloc, updated);
+
+    try testing.expectEqualStrings("Renamed", updated.title);
+    try testing.expectEqualStrings(first_key, updated.content_key.?);
+    // The body survived: a title-only PATCH must not write an empty object.
+    try testing.expectEqualStrings("unchanged body", updated.content);
+    const stored = try objects.asStorage().get(alloc, first_key);
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("unchanged body", stored);
+}
+
+test "deleteDocument with a store removes the object too" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    });
+    const key = try alloc.dupe(u8, created.content_key.?);
+    defer alloc.free(key);
+    const id = try alloc.dupe(u8, created.id);
+    defer alloc.free(id);
+    freeDocumentRow(alloc, created);
+
+    try store.deleteDocument(alloc, "ws_1", id);
+
+    try testing.expectError(error.NotFound, objects.asStorage().get(alloc, key));
+    try testing.expectError(error.NotFound, store.getDocument(alloc, "ws_1", id));
+}
+
+test "createDocument writes no row when the object store refuses the body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var marker: u8 = 0;
+    const store = Store{ .db = &ctx.db, .storage = failingStorage(&marker) };
+
+    try testing.expectError(error.InsertFailed, store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    }));
+
+    // Object-first ordering: a failed PUT must leave no row behind, because a
+    // row pointing at nothing is a broken read.
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "updateDocument leaves the row untouched when the object store refuses" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const good = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try good.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "original",
+    });
+    defer freeDocumentRow(alloc, created);
+
+    var marker: u8 = 0;
+    const broken = Store{ .db = &ctx.db, .storage = failingStorage(&marker) };
+
+    try testing.expectError(error.UpdateFailed, broken.updateDocument(alloc, "ws_1", created.id, .{
+        .content = "replacement",
+    }));
+
+    const row = try good.getDocument(alloc, "ws_1", created.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("original", row.content);
+}
+
+test "listDocuments never fetches a body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    });
+    defer freeDocumentRow(alloc, created);
+
+    // Remove the object: a list that needed it would now fail or blank out.
+    try objects.asStorage().delete(created.content_key.?);
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    // A list row carries metadata and the preview, never the body.
+    try testing.expectEqualStrings("", rows[0].content);
+    try testing.expectEqualStrings("body", rows[0].preview);
+}
+
+// ─── Backfill ───────────────────────────────────────────────────────────
+
+test "backfill reports nothing to move once the body is not a column" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // A row with no key: its body is gone with the column, so there is
+    // nothing to move. The report says so rather than inventing work.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, preview)
+        \\VALUES ('doc_orphan', 'ws_1', 'Plan', 'a preview')
+    , &[_][]const u8{});
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const report = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 1), report.scanned);
+    try testing.expectEqual(@as(usize, 0), report.moved);
+    try testing.expectEqual(@as(usize, 1), report.skipped_empty);
+    try testing.expectEqual(@as(usize, 0), objects.count());
+}
+
+test "backfill with no object store is refused" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(error.NoStorage, (Store{ .db = &ctx.db }).backfill(alloc, .{}));
+}
+
+// ─── Search without the body ────────────────────────────────────────────
+
+test "searchDocuments finds a document by a word in its preview" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, preview, content_bytes)
+        \\VALUES ('doc_moved', 'ws_1', 'Release plan', 'ship the zephyrword turbine', 4096)
+    , &[_][]const u8{});
+
+    const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "zephyrword");
+    defer freeDocumentRows(alloc, rows);
+
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    try testing.expectEqualStrings("doc_moved", rows[0].id);
+    try testing.expectEqualStrings("", rows[0].content);
+    try testing.expectEqualStrings("ship the zephyrword turbine", rows[0].preview);
+}
+
+test "searchDocuments does not search a body that is not a column" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // The preview is the first 512 bytes; this needle is past it, so search
+    // cannot see it. That is the documented bound.
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, preview, content_bytes)
+        \\VALUES ('doc_long', 'ws_1', 'Long', 'the first 512 bytes', 4096)
+    , &[_][]const u8{});
+
+    const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "quasarterm");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "searchDocuments does not match a word that is in neither the preview nor the title" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try ctx.db.exec(alloc,
+        \\INSERT INTO documents (id, workspace_id, title, preview)
+        \\VALUES ('doc_moved', 'ws_1', 'Release plan', 'ship it')
+    , &[_][]const u8{});
+
+    const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "hippopotamus");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }

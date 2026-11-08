@@ -30,15 +30,14 @@ pub const DocumentsGetOutput = struct {
 
 fn useCase(
     allocator: std.mem.Allocator,
-    db: *pabrikcore.database.Db,
+    store: documents_store.Store,
     input: DocumentsGetInput,
 ) DocumentsGetError!DocumentsGetOutput {
     if (input.workspace_id.len == 0 or input.document_id.len == 0) {
         return error.IdsRequired;
     }
-    return .{ .document = try documents_store.getDocument(
+    return .{ .document = try store.getDocument(
         allocator,
-        db,
         input.workspace_id,
         input.document_id,
     ) };
@@ -58,7 +57,7 @@ pub fn documentsGetHandler(
     const di = try pabrikcore.getSingleton();
     const sqlite_db = di.db;
 
-    const output = useCase(allocator, sqlite_db, .{
+    const output = useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{
         .workspace_id = req.params.get("workspace_id") orelse "",
         .document_id = req.params.get("document_id") orelse "",
     }) catch |err| {
@@ -111,8 +110,10 @@ fn setupDb() !TestCtx {
     try migration.Migration098CreateDocuments.up(&db, testing.allocator);
     try migration.Migration122AddDocumentPosition.up(&db, testing.allocator);
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
+    try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
+    try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
     try db.exec(testing.allocator,
-        \\INSERT INTO documents (id, workspace_id, title, content) VALUES
+        \\INSERT INTO documents (id, workspace_id, title, preview) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
@@ -127,26 +128,26 @@ test "useCase: empty ids return IdsRequired" {
 
     try testing.expectError(
         error.IdsRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "", .document_id = "doc_a" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "", .document_id = "doc_a" }),
     );
     try testing.expectError(
         error.IdsRequired,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "" }),
     );
 }
 
-test "useCase: happy path returns the document body" {
+test "useCase: happy path returns the document row" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const output = try useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "doc_a" });
+    const output = try useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "doc_a" });
     defer documents_store.freeDocumentRow(alloc, output.document);
 
     try testing.expectEqualStrings("doc_a", output.document.id);
     try testing.expectEqualStrings("A", output.document.title);
-    try testing.expectEqualStrings("body a", output.document.content);
+    try testing.expectEqualStrings("body a", output.document.preview);
     try testing.expectEqualStrings("markdown", output.document.format);
 }
 
@@ -158,10 +159,10 @@ test "useCase: another workspace's document id is NotFound, not forbidden" {
 
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_2", .document_id = "doc_a" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_2", .document_id = "doc_a" }),
     );
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, &ctx.db, .{ .workspace_id = "ws_1", .document_id = "nope" }),
+        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .document_id = "nope" }),
     );
 }

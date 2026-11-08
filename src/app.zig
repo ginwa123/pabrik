@@ -12,6 +12,7 @@ const mcp_stdio = @import("modules/agent/mcp/mcp/mcp_stdio.zig");
 const mcp_http = @import("modules/agent/mcp/mcp/mcp_http.zig");
 const ai_mod = @import("modules/agent/loop/mod.zig");
 const agentic_loop_mod = @import("modules/agent/loop/workflow.zig");
+const storage_mod = @import("modules/storage/mod.zig");
 
 var global_ctx: ?*App = null;
 
@@ -103,6 +104,16 @@ pub const App = struct {
     mcp_tools_cache: ?[]tool_models.AgentTool = null,
     mcp_tools_init: bool = false,
     mcp_tools_lock: std.atomic.Mutex = .unlocked,
+
+    /// The object store document bodies live in, when one is configured. Null
+    /// keeps every body in the `documents.content` column.
+    storage_runtime: ?*storage_mod.runtime.Runtime = null,
+
+    /// The object store as a `Storage` handle, or null when none is configured.
+    pub fn objectStore(self: *App) ?storage_mod.storage.Storage {
+        const runtime = self.storage_runtime orelse return null;
+        return runtime.asStorage();
+    }
 
     /// Schedule an async session-create task on the Io group.
     pub fn emit_run_agent(self: *App, obj: EmitRunAgentInput) !void {

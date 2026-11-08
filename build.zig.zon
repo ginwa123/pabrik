@@ -190,9 +190,12 @@
         //   - Squash-merging the same tree keeps the SAME `.hash` — the hash
         //     is over the file tree, not the commit — so only the `#<sha>`
         //     moves. Do not "re-derive" the hash just because the SHA changed.
+        // 60f9b07 = HEAD on the client's Method enum, so the S3 backend can
+        // ask for object metadata without downloading the object. It is the
+        // one verb the enum was missing; `perform` sets CURLOPT_NOBODY for it.
         .kabelweb = .{
-            .url = "git+https://github.com/ginwa123/kabelweb.git#5bd37c31d50446d2410d28c3c8a247c239281958",
-            .hash = "kabelweb-0.0.0-vhZam0qGHQCzi7tg9e4tnQucLRoFxnrkXSsTjV_rBxal",
+            .url = "git+https://github.com/ginwa123/kabelweb.git#60f9b07dc7d9341b871d21dc7fca0591e6e3c55a",
+            .hash = "kabelweb-0.0.0-vhZam6iIHQBkMqsaYIDTWhDqatJJpnmvYThtjIwWZWaY",
         },
         // The Zig linter (github.com/ginwa123/zglint), moved out of
         // `src/modules/zginlint/`. A std-only package with no dependencies of

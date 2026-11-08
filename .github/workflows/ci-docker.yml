@@ -242,7 +242,23 @@ jobs:
           $ErrorActionPreference = "Stop"
           $zip = Join-Path $env:RUNNER_TEMP "pabrik-windows.zip"
           $ctx = Join-Path $env:RUNNER_TEMP "pabrik-docker-context"
-          Invoke-WebRequest -Uri "https://github.com/ginwa123/pabrik/releases/download/ci-latest/pabrik-desktop-x86_64-windows-gnu.zip" -OutFile $zip
+          # The canonical release URL first; the API asset endpoint is only a
+          # fallback, because it is capped at 60 requests/hour per IP and a
+          # shared runner IP can already have spent that.
+          $assetName = "pabrik-desktop-x86_64-windows-gnu.zip"
+          $directUrl = "https://github.com/ginwa123/pabrik/releases/download/ci-latest/$assetName"
+          try {
+            Invoke-WebRequest -Uri $directUrl -OutFile $zip -UseBasicParsing -TimeoutSec 900
+          } catch {
+            Write-Host "release CDN failed; retrying through the API asset endpoint"
+            $headers = @{ "Accept" = "application/vnd.github+json" }
+            if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)" }
+            $release = Invoke-RestMethod -Uri "https://api.github.com/repos/ginwa123/pabrik/releases/tags/ci-latest" -Headers $headers
+            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+            if (-not $asset) { throw "$assetName is not in the ci-latest release" }
+            Invoke-WebRequest -Uri $asset.url -OutFile $zip -UseBasicParsing -TimeoutSec 900 `
+              -Headers @{ "Accept" = "application/octet-stream" }
+          }
           if (-not (Test-Path $zip)) { throw "the ci-latest Windows zip was not downloaded" }
           New-Item -ItemType Directory -Force -Path $ctx | Out-Null
           Expand-Archive -Path $zip -DestinationPath $ctx -Force
@@ -261,6 +277,16 @@ jobs:
             Write-Host "rg-pabrik.exe not in the release zip; staging the pinned ripgrep"
             ./scripts/stage-bundled-ripgrep.ps1 -Target "x86_64-windows-gnu" -Dest $rg
             if (-not (Test-Path $rg)) { throw "could not stage rg-pabrik.exe for the Windows image" }
+          }
+          # The object store, same deal: Dockerfile.windows COPYs
+          # pabrik-fs.exe, so the context must carry one. A zip published
+          # before the bundled rustfs existed is backfilled from the pinned
+          # upstream build instead of failing the image.
+          $fs = Join-Path $ctx "pabrik-fs.exe"
+          if (-not (Test-Path $fs)) {
+            Write-Host "pabrik-fs.exe not in the release zip; staging the pinned rustfs"
+            ./scripts/stage-bundled-rustfs.ps1 -Target "x86_64-windows-gnu" -Dest $fs
+            if (-not (Test-Path $fs)) { throw "could not stage pabrik-fs.exe for the Windows image" }
           }
           foreach ($name in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "concrt140.dll", "vcomp140.dll")) {
             $source = Join-Path $env:SystemRoot ("System32\" + $name)

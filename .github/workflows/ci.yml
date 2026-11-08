@@ -225,6 +225,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: PowerShell syntax (every .ps1)
+        # A broken .ps1 only surfaces on a Windows runner, minutes into a
+        # build. Parse them here instead: this is the same parser that would
+        # reject the file at run time, and it costs a second.
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($file in (git ls-files '*.ps1')) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file).Path, [ref]$null, [ref]$errors) | Out-Null
+            foreach ($e in $errors) {
+              Write-Host "::error file=$file,line=$($e.Extent.StartLineNumber)::$($e.Message)"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+          Write-Host "ok: every .ps1 parses"
+
       - name: Install Node.js 24
         # Pinned to 24 to match the dev box and the backend cells.
         uses: actions/setup-node@v4

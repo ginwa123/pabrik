@@ -80,6 +80,17 @@ if [[ -f "${SRC_DIR}/rg-pabrik" ]]; then
 else
     echo "warning: rg-pabrik missing in ${SRC_DIR} -- the bundle carries no bundled ripgrep (search needs rg on PATH)" >&2
 fi
+# The object store rides beside the binaries too: the runtime starts it on a
+# free loopback port and stops it on shutdown. `pabrik-fs`, never `rustfs`, so
+# it cannot collide with a Homebrew rustfs and Activity Monitor shows
+# `pabrik-fs`. Upstream publishes no x86_64 macOS build, so an Intel bundle
+# simply carries none and documents fall back to the filesystem store.
+if [[ -f "${SRC_DIR}/pabrik-fs" ]]; then
+    cp "${SRC_DIR}/pabrik-fs" "${DEST_APP}/Contents/MacOS/pabrik-fs"
+    chmod +x "${DEST_APP}/Contents/MacOS/pabrik-fs"
+else
+    echo "warning: pabrik-fs missing in ${SRC_DIR} -- documents fall back to the filesystem store" >&2
+fi
 cp "${PLIST_SRC}" "${DEST_APP}/Contents/Info.plist"
 if [[ -f "${SCRIPT_DIR}/Pabrik.icns" ]]; then
     cp "${SCRIPT_DIR}/Pabrik.icns" "${DEST_APP}/Contents/Resources/Pabrik.icns"
@@ -118,6 +129,10 @@ if [[ -f "${PLIST_BROWSER_SRC}" ]]; then
     if [[ -f "${SRC_DIR}/rg-pabrik" ]]; then
         cp "${SRC_DIR}/rg-pabrik" "${DEST_BROWSER_APP}/Contents/MacOS/rg-pabrik"
         chmod +x "${DEST_BROWSER_APP}/Contents/MacOS/rg-pabrik"
+    fi
+    if [[ -f "${SRC_DIR}/pabrik-fs" ]]; then
+        cp "${SRC_DIR}/pabrik-fs" "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-fs"
+        chmod +x "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-fs"
     fi
     cat > "${DEST_BROWSER_APP}/Contents/MacOS/pabrik-browser" <<'SHIM'
 #!/usr/bin/env bash

@@ -112,6 +112,17 @@ if (Test-Path $rgSrc) {
     Write-Warning "rg-pabrik.exe not found in $SourceDir -- the search tool will need ripgrep on PATH."
 }
 
+# Bundled object store: document bodies live in rustfs, and the runtime
+# starts it as a child process. It lands beside pabrik.exe, the resolver's
+# first candidate. Named pabrik-fs.exe so Task Manager shows `pabrik-fs` and
+# it can never collide with a rustfs the user installed.
+$fsSrc = Join-Path $SourceDir "pabrik-fs.exe"
+if (Test-Path $fsSrc) {
+    Copy-Item -Force $fsSrc (Join-Path $binDir "pabrik-fs.exe")
+} else {
+    Write-Warning "pabrik-fs.exe not found in $SourceDir -- documents fall back to the filesystem store."
+}
+
 # Persistent html (Windows-only shipped static dir). The desktop
 # prefers %LOCALAPPDATA%\pabrik\html\index.html and serves it via
 # --static-dir -- no per-run temp extraction, survives close/reopen

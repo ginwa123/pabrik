@@ -86,12 +86,14 @@ pub const MemoriesArgs = struct {
 /// so an agent can drive the whole feature with no server and no port.
 pub const DocumentsOp = enum {
     list,
+    search,
     folder_create,
     folder_move,
     folder_rename,
     folder_delete,
     doc_create,
     doc_move,
+    backfill,
 };
 
 pub const DocumentsArgs = struct {
@@ -107,6 +109,38 @@ pub const DocumentsArgs = struct {
     /// The document being moved.
     document_id: ?[]const u8 = null,
     title: []const u8 = "",
+    /// `backfill`: stop after this many rows. 0 means no cap.
+    limit: usize = 0,
+    /// `backfill`: report what would move without writing anything.
+    dry_run: bool = false,
+    /// `search`: the literal substring to look for.
+    query: []const u8 = "",
+};
+
+/// The object-store verbs. One per `Storage` method, so an agent can exercise
+/// the whole interface with no server and no bucket.
+pub const StorageOp = enum {
+    put,
+    get,
+    stat,
+    delete,
+};
+
+pub const StorageArgs = struct {
+    op: StorageOp,
+    /// The object key. Relative, no traversal segments.
+    key: []const u8 = "",
+    /// The body for `put`, inline.
+    body: []const u8 = "",
+    /// The body for `put`, read from this file. Wins over `--body`.
+    body_file: ?[]const u8 = null,
+    /// Store root. Null falls back to `PABRIK_STORAGE_ROOT`, then `$HOME`.
+    root: ?[]const u8 = null,
+    /// `fs` or `s3`. Null falls back to `PABRIK_STORAGE_BACKEND`, then `fs`.
+    backend: ?[]const u8 = null,
+    /// Whether `--body` was passed at all. An empty body is a legitimate
+    /// document, so "absent" and "empty" must stay distinguishable.
+    body_given: bool = false,
 };
 
 /// The single-message admin verbs. One op per write the HTTP API exposes, so
@@ -139,6 +173,8 @@ pub const FailureKind = enum {
     group_unknown_op,
     group_requires_flag,
     usage_requires_flag,
+    storage_unknown_op,
+    storage_requires_flag,
     message_unknown_op,
     message_requires_flag,
     memories_unknown_op,
@@ -175,8 +211,10 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
+    "      search flags: --query <text>\n" ++
+    "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next\n" ++
     "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n>\n" ++
@@ -184,6 +222,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      ops: delete <id> | restore --row-file <path> | feed <id> --feed 0|1\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
+    "  pabrik headless storage <op> [flags]      Read or write the object store\n" ++
+    "      ops: put | get | stat | delete\n" ++
+    "      flags: --key <k> --body <text> --body-file <path> --root <dir> --backend fs|s3|rustfs\n" ++
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
@@ -209,6 +250,7 @@ pub const Outcome = union(enum) {
     documents: DocumentsArgs,
     group: GroupArgs,
     usage: UsageArgs,
+    storage: StorageArgs,
     message: MessageArgs,
     memories: MemoriesArgs,
     help,
@@ -238,6 +280,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "documents")) return try parseDocuments(rest);
     if (std.mem.eql(u8, verb, "group")) return try parseGroup(rest);
     if (std.mem.eql(u8, verb, "usage")) return try parseUsage(rest);
+    if (std.mem.eql(u8, verb, "storage")) return try parseStorage(rest);
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
     if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
 
@@ -297,12 +340,14 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     const op: DocumentsOp = blk: {
         const word = argv[0];
         if (std.mem.eql(u8, word, "list")) break :blk .list;
+        if (std.mem.eql(u8, word, "search")) break :blk .search;
         if (std.mem.eql(u8, word, "folder-create")) break :blk .folder_create;
         if (std.mem.eql(u8, word, "folder-move")) break :blk .folder_move;
         if (std.mem.eql(u8, word, "folder-rename")) break :blk .folder_rename;
         if (std.mem.eql(u8, word, "folder-delete")) break :blk .folder_delete;
         if (std.mem.eql(u8, word, "doc-create")) break :blk .doc_create;
         if (std.mem.eql(u8, word, "doc-move")) break :blk .doc_move;
+        if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
         return fail(.{ .kind = .documents_unknown_op, .value = word });
     };
 
@@ -334,15 +379,31 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.title = argv[i];
+        } else if (std.mem.eql(u8, flag, "--limit")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.limit = std.fmt.parseInt(usize, argv[i], 10) catch
+                return fail(.{ .kind = .invalid_number, .value = argv[i] });
+        } else if (std.mem.eql(u8, flag, "--dry-run")) {
+            got.dry_run = true;
+        } else if (std.mem.eql(u8, flag, "--query")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.query = argv[i];
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
         i += 1;
     }
 
-    if (got.workspace_id.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
+    if (got.workspace_id.len == 0 and op != .backfill) {
+        return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
+    }
     switch (op) {
-        .list, .folder_delete => {},
+        .list, .folder_delete, .backfill => {},
+        .search => {
+            if (got.query.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--query" });
+        },
         .folder_create, .folder_rename => {
             if (got.name.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--name" });
             if (op == .folder_rename and got.folder_id == null) {
@@ -383,6 +444,61 @@ fn parseUsage(argv: []const []const u8) ParseError!Outcome {
     }
     if (got.workspace_id.len == 0) return fail(.{ .kind = .usage_requires_flag, .value = "--workspace" });
     return .{ .usage = got };
+}
+
+/// `storage` parses its own flag set for the same reason `documents` does: the
+/// shared table describes the server CLI, and these four flags exist only in
+/// this verb.
+fn parseStorage(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .storage_unknown_op });
+
+    const op: StorageOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "put")) break :blk .put;
+        if (std.mem.eql(u8, word, "get")) break :blk .get;
+        if (std.mem.eql(u8, word, "stat")) break :blk .stat;
+        if (std.mem.eql(u8, word, "delete")) break :blk .delete;
+        return fail(.{ .kind = .storage_unknown_op, .value = word });
+    };
+
+    var got = StorageArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--key")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.key = argv[i];
+        } else if (std.mem.eql(u8, flag, "--body")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.body = argv[i];
+            got.body_given = true;
+        } else if (std.mem.eql(u8, flag, "--body-file")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.body_file = argv[i];
+            got.body_given = true;
+        } else if (std.mem.eql(u8, flag, "--root")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.root = argv[i];
+        } else if (std.mem.eql(u8, flag, "--backend")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.backend = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    if (got.key.len == 0) return fail(.{ .kind = .storage_requires_flag, .value = "--key" });
+    if (op == .put and !got.body_given) {
+        return fail(.{ .kind = .storage_requires_flag, .value = "--body" });
+    }
+
+    return .{ .storage = got };
 }
 
 /// `message` parses its own flag set for the same reason `documents` does.
@@ -603,6 +719,8 @@ pub fn reportFailure(f: Failure) void {
         .group_unknown_op => std.log.err("headless: unknown group op '{s}'", .{f.value}),
         .group_requires_flag => std.log.err("headless: group needs {s}", .{f.value}),
         .usage_requires_flag => std.log.err("headless: usage needs {s}", .{f.value}),
+        .storage_unknown_op => std.log.err("headless: unknown storage op '{s}'", .{f.value}),
+        .storage_requires_flag => std.log.err("headless: storage needs {s}", .{f.value}),
         .message_unknown_op => std.log.err("headless: unknown message op '{s}'", .{f.value}),
         .message_requires_flag => std.log.err("headless: message needs {s}", .{f.value}),
         .memories_unknown_op => std.log.err("headless: unknown memories op '{s}'", .{f.value}),
@@ -850,6 +968,101 @@ test "parse: group reads the hop budget" {
     const a = try parse(&.{ "group", "next", "--session", "s_1", "--budget", "3" });
     try testing.expectEqual(@as(u32, 3), a.group.budget);
     try expectFailure(&.{ "group", "next", "--session", "s_1", "--budget", "lots" }, .invalid_number);
+}
+
+test "parse: storage put reads the key and the inline body" {
+    const a = try parse(&.{ "storage", "put", "--key", "ws/ws_1/documents/doc_a/abc.md", "--body", "# Plan" });
+    try testing.expectEqual(StorageOp.put, a.storage.op);
+    try testing.expectEqualStrings("ws/ws_1/documents/doc_a/abc.md", a.storage.key);
+    try testing.expectEqualStrings("# Plan", a.storage.body);
+    try testing.expect(a.storage.body_given);
+}
+
+test "parse: storage put accepts an empty body, which is a legitimate document" {
+    const a = try parse(&.{ "storage", "put", "--key", "k.md", "--body", "" });
+    try testing.expectEqualStrings("", a.storage.body);
+    try testing.expect(a.storage.body_given);
+}
+
+test "parse: storage put refuses to run with no body at all" {
+    try expectFailure(&.{ "storage", "put", "--key", "k.md" }, .storage_requires_flag);
+}
+
+test "parse: storage put reads a body file and marks the body as given" {
+    const a = try parse(&.{ "storage", "put", "--key", "k.md", "--body-file", "/tmp/body.md" });
+    try testing.expectEqualStrings("/tmp/body.md", a.storage.body_file.?);
+    try testing.expect(a.storage.body_given);
+}
+
+test "parse: storage get, stat and delete need only a key" {
+    inline for (.{ "get", "stat", "delete" }) |op| {
+        const a = try parse(&.{ "storage", op, "--key", "k.md" });
+        try testing.expectEqualStrings("k.md", a.storage.key);
+        try testing.expect(!a.storage.body_given);
+    }
+}
+
+test "parse: storage reads the root override" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md", "--root", "/srv/objects" });
+    try testing.expectEqualStrings("/srv/objects", a.storage.root.?);
+}
+
+test "parse: storage defaults the root to null so the environment decides" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md" });
+    try testing.expect(a.storage.root == null);
+}
+
+test "parse: storage refuses a write with no key" {
+    try expectFailure(&.{ "storage", "put", "--body", "x" }, .storage_requires_flag);
+    try expectFailure(&.{ "storage", "get" }, .storage_requires_flag);
+}
+
+test "parse: storage refuses an unknown op by name" {
+    try expectFailure(&.{ "storage", "explode", "--key", "k.md" }, .storage_unknown_op);
+    try expectFailure(&.{"storage"}, .storage_unknown_op);
+}
+
+test "parse: storage refuses a flag it does not own" {
+    try expectFailure(&.{ "storage", "get", "--key", "k.md", "--workspace", "ws_1" }, .unknown_subcommand);
+}
+
+test "parse: storage reads the backend override" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md", "--backend", "s3" });
+    try testing.expectEqualStrings("s3", a.storage.backend.?);
+}
+
+test "parse: storage defaults the backend to null so the environment decides" {
+    const a = try parse(&.{ "storage", "get", "--key", "k.md" });
+    try testing.expect(a.storage.backend == null);
+}
+
+test "parse: documents backfill needs no workspace, so it can sweep every one" {
+    const a = try parse(&.{ "documents", "backfill" });
+    try testing.expectEqual(DocumentsOp.backfill, a.documents.op);
+    try testing.expectEqualStrings("", a.documents.workspace_id);
+    try testing.expectEqual(@as(usize, 0), a.documents.limit);
+    try testing.expect(!a.documents.dry_run);
+}
+
+test "parse: documents backfill reads the limit, the dry run and the workspace" {
+    const a = try parse(&.{ "documents", "backfill", "--workspace", "ws_1", "--limit", "50", "--dry-run" });
+    try testing.expectEqualStrings("ws_1", a.documents.workspace_id);
+    try testing.expectEqual(@as(usize, 50), a.documents.limit);
+    try testing.expect(a.documents.dry_run);
+}
+
+test "parse: documents backfill refuses a non-numeric limit" {
+    try expectFailure(&.{ "documents", "backfill", "--limit", "lots" }, .invalid_number);
+}
+
+test "parse: documents search reads the query and needs a workspace" {
+    const a = try parse(&.{ "documents", "search", "--workspace", "ws_1", "--query", "zephyr" });
+    try testing.expectEqual(DocumentsOp.search, a.documents.op);
+    try testing.expectEqualStrings("zephyr", a.documents.query);
+}
+
+test "parse: documents search refuses to run with no query" {
+    try expectFailure(&.{ "documents", "search", "--workspace", "ws_1" }, .documents_requires_flag);
 }
 
 test "the help text lists every flag the table gives this scope" {

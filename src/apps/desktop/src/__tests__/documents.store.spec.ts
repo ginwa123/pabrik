@@ -238,6 +238,43 @@ describe('documents store — single-document load', () => {
     expect(getDocument).not.toHaveBeenCalled()
   })
 
+  it('fetches the body for a list row, which carries metadata only', async () => {
+    // A list row has no `content` — the sidebar read stopped carrying bodies.
+    listDocuments.mockResolvedValue({
+      documents: [doc('doc_1', { content: undefined, preview: 'a snippet' })],
+      count: 1,
+    })
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+    getDocument.mockClear()
+    getDocument.mockResolvedValue({ document: doc('doc_1', { content: 'the real body' }) })
+
+    const loaded = await store.loadDocument('ws_1', 'doc_1')
+
+    expect(getDocument).toHaveBeenCalledWith('ws_1', 'doc_1')
+    expect(loaded?.content).toBe('the real body')
+  })
+
+  it('writes the fetched body back into the list row', async () => {
+    listDocuments.mockResolvedValue({
+      documents: [doc('doc_1', { content: undefined, preview: 'a snippet' })],
+      count: 1,
+    })
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+    getDocument.mockResolvedValue({ document: doc('doc_1', { content: 'body' }) })
+
+    await store.loadDocument('ws_1', 'doc_1')
+
+    // The row stays in the list (the sidebar keeps it) and now carries the
+    // body, so a second open is free.
+    expect(store.documents).toHaveLength(1)
+    expect(store.findById('doc_1')?.content).toBe('body')
+    getDocument.mockClear()
+    await store.loadDocument('ws_1', 'doc_1')
+    expect(getDocument).not.toHaveBeenCalled()
+  })
+
   it('falls through to the API for a deep-linked id not in the list', async () => {
     getDocument.mockResolvedValue({ document: doc('doc_9', { content: 'deep link' }) })
     const store = useDocumentsStore()
@@ -322,9 +359,7 @@ describe('documents store — reorder', () => {
   it('the new order is on screen before the save answers', async () => {
     listDocuments.mockResolvedValue({ documents: three(), count: 3 })
     let release: (v: unknown) => void = () => {}
-    reorderDocuments.mockImplementation(
-      () => new Promise((resolve) => (release = resolve)),
-    )
+    reorderDocuments.mockImplementation(() => new Promise((resolve) => (release = resolve)))
     const store = useDocumentsStore()
     await store.fetchDocuments('ws_1')
 

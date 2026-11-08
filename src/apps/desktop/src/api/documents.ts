@@ -7,9 +7,15 @@ export interface Document {
   id: string
   workspace_id: string
   title: string
-  /** The markdown body. Always a string — the backend flattens SQL NULL to
-   * `''`, so there is no null case to handle here. */
-  content: string
+  /** The markdown body. Present on a single-document read (`getDocument`,
+   * `createDocument`, `updateDocument`); ABSENT on a list row, which carries
+   * `preview` instead so a list costs no object-store round-trip. */
+  content?: string
+  /** The first ~512 bytes of the body. Always present, so the sidebar can show
+   * a snippet without the body. */
+  preview?: string
+  /** Body length in bytes, so a row can be sized without reading it. */
+  content_bytes?: number
   /** `'markdown'` in v1. Reserved for future formats. */
   format: string
   created_at: string
@@ -32,9 +38,11 @@ export interface DocumentFolder {
 }
 
 /**  * GET /api/workspaces/:workspaceId/documents All documents in one workspace in the saved sidebar
- * order. Backs the sidebar's Documents section, so it runs on every sidebar load. */
+ * order. A row carries metadata and `preview`, never the body — this runs on every sidebar load.
+ * `includeContent` restores the pre-Migration 143 shape; it is a deprecation window, not a default. */
 export async function listDocuments(
   workspaceId: string,
+  opts: { includeContent?: boolean } = {},
 ): Promise<{
   documents: Document[]
   /** Absent against a server older than Migration 140; the store then paints
@@ -43,12 +51,13 @@ export async function listDocuments(
   count: number
   folder_count?: number
 }> {
+  const query = opts.includeContent ? '?include=content' : ''
   return await apiFetch<{
     documents: Document[]
     folders?: DocumentFolder[]
     count: number
     folder_count?: number
-  }>(`/workspaces/${encodeURIComponent(workspaceId)}/documents`, { track: false })
+  }>(`/workspaces/${encodeURIComponent(workspaceId)}/documents${query}`, { track: false })
 }
 
 /**  * GET /api/workspaces/:workspaceId/documents/:documentId Returns 404 for an id that does not exist
