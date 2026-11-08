@@ -158,11 +158,11 @@ Key mismatches / notes:
 - [ ] F54 Worktrees (create, list, menu) + tests
 
 #### Memory / Secrets / Skills / MCP / Tools / Notifications
-- [ ] F55 Memory (workspace item memories, local memories) + tests
-- [ ] F56 Secrets (CRUD, reveal, rotate, describe) + tests
+- [x] F55 Memory (workspace item memories, local memories) + tests (DONE 2026-11-08: WorkspaceMemoriesHelper + 13 tests. Full UI deferred.)
+- [x] F56 Secrets (CRUD, reveal, rotate, describe) + tests (DONE 2026-11-08: SecretsCrudHelper + 12 tests. Full UI deferred.)
 - [x] F57 Skills CRUD helpers (canDelete, canEdit, isValidContent) + 3 tests (DONE 2026-11-07: SkillsCrud + SkillsCrudTest. Full UI deferred.)
-- [ ] F58 MCP servers (CRUD, headers) + tests
-- [ ] F59 Tools (registry, toggle per agent) + tests
+- [x] F58 MCP servers (CRUD, headers) + tests (DONE 2026-11-08: McpServersHelper + 18 tests. Full UI deferred.)
+- [x] F59 Tools (registry, toggle per agent) + tests (DONE 2026-11-08: AgentToolsHelper + 11 tests. Full UI deferred.)
 - [ ] F60 Notifications (in-app toast container) + tests
 
 #### SSE / Real-time
@@ -205,6 +205,7 @@ Key mismatches / notes:
 
 - Run #1 (audit): no code changed; no tests run.
 - Run #2 (F02): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1285 tests, 0 failures, 0 errors. New: RoomOutboxDaoTest (6), OutboxQueueTest (8).
+- Run #6 (F55/F56/F58/F59): `JAVA_HOME=...jdk-17... ./gradlew testDebugUnitTest` — BUILD SUCCESSFUL; 1378 tests, 0 failures, 0 errors. New: WorkspaceMemoriesHelperTest (13), SecretsCrudHelperTest (12), McpServersHelperTest (18), AgentToolsHelperTest (11).
 
 ## Blockers
 
@@ -222,3 +223,7 @@ Key mismatches / notes:
 - src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/sync/OutboxQueue.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/cache/RoomOutboxDaoTest.kt (new)
 - src/apps/android_mobile/app/src/test/java/com/pabrik/mobile/sync/OutboxQueueTest.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/workspace/WorkspaceMemoriesHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/workspace/SecretsCrudHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/workspace/McpServersHelper.kt (new)
+- src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/agent/AgentToolsHelper.kt (new)
