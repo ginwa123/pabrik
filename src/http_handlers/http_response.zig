@@ -1307,9 +1307,15 @@ pub const DocumentResponse = struct {
     id: []const u8,
     workspace_id: []const u8,
     title: []const u8,
-    /// The markdown body. Always a string — `documents_store` flattens
-    /// SQL NULL to "" so the frontend never has to null-check it.
-    content: []const u8,
+    /// The markdown body. Present on a single-document read; `null` on a list
+    /// row, which carries `preview` instead so a list costs no object-store
+    /// round-trip.
+    content: ?[]const u8,
+    /// The first `documents_store.PREVIEW_MAX_BYTES` of the body. Always
+    /// present, so the sidebar can show a snippet without the body.
+    preview: []const u8,
+    /// Body length in bytes, so a client can size a document without reading it.
+    content_bytes: i64,
     format: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
@@ -1319,19 +1325,29 @@ pub const DocumentResponse = struct {
 };
 
 /// Map a `documents_store.DocumentRow` (or any struct with the same fields)
-/// into the wire shape.
+/// into the wire shape, body included.
 pub fn makeDocumentResponse(doc: anytype) DocumentResponse {
     return .{
         .id = doc.id,
         .workspace_id = doc.workspace_id,
         .title = doc.title,
         .content = doc.content,
+        .preview = doc.preview,
+        .content_bytes = doc.content_bytes,
         .format = doc.format,
         .created_at = doc.created_at,
         .updated_at = doc.updated_at,
         .position = doc.position,
         .folder_id = doc.folder_id,
     };
+}
+
+/// The same row WITHOUT the body. A list of 100 documents would otherwise
+/// carry 100 bodies — and with an object store behind them, 100 round-trips.
+pub fn makeDocumentSummaryResponse(doc: anytype) DocumentResponse {
+    var summary = makeDocumentResponse(doc);
+    summary.content = null;
+    return summary;
 }
 
 /// One folder on the wire. `parent_id` null is a root folder.
@@ -1362,15 +1378,21 @@ pub const DocumentListResponse = struct {
 
 /// Build the `{"documents":[…], "folders":[…], "count": N}` envelope. One read
 /// returns the whole tree: a per-folder fetch would be an N+1 in the sidebar's
-/// cache-first first paint.
+/// cache-first first paint. `include_content` is the deprecation window.
 pub fn makeDocumentListResponse(
     allocator: std.mem.Allocator,
     documents: anytype,
     folders: anytype,
+    include_content: bool,
 ) ![]u8 {
     const mapped_docs = try allocator.alloc(DocumentResponse, documents.len);
     defer allocator.free(mapped_docs);
-    for (documents, 0..) |d, i| mapped_docs[i] = makeDocumentResponse(d);
+    for (documents, 0..) |d, i| {
+        mapped_docs[i] = if (include_content)
+            makeDocumentResponse(d)
+        else
+            makeDocumentSummaryResponse(d);
+    }
 
     const mapped_folders = try allocator.alloc(FolderResponse, folders.len);
     defer allocator.free(mapped_folders);
@@ -1607,4 +1629,75 @@ pub fn makeWorkspaceInvitationListResponse(allocator: std.mem.Allocator, invitat
         },
         .{},
     );
+}
+
+// ─── Document wire shape ────────────────────────────────────────────────
+
+const testing = std.testing;
+
+const test_doc = struct {
+    id: []const u8 = "doc_a",
+    workspace_id: []const u8 = "ws_1",
+    title: []const u8 = "Release plan",
+    content: []const u8 = "# Release plan\n- ship it\n",
+    preview: []const u8 = "# Release plan\n- ship it\n",
+    content_bytes: i64 = 25,
+    format: []const u8 = "markdown",
+    created_at: []const u8 = "2026-09-01 10:00:00",
+    updated_at: []const u8 = "2026-09-02 10:00:00",
+    position: i64 = 0,
+    folder_id: ?[]const u8 = null,
+};
+
+test "makeDocumentResponse carries the body" {
+    const doc = makeDocumentResponse(test_doc{});
+    try testing.expectEqualStrings("# Release plan\n- ship it\n", doc.content.?);
+    try testing.expectEqualStrings("# Release plan\n- ship it\n", doc.preview);
+    try testing.expectEqual(@as(i64, 25), doc.content_bytes);
+}
+
+test "makeDocumentSummaryResponse drops the body but keeps the preview" {
+    const doc = makeDocumentSummaryResponse(test_doc{});
+    try testing.expect(doc.content == null);
+    try testing.expectEqualStrings("# Release plan\n- ship it\n", doc.preview);
+    try testing.expectEqual(@as(i64, 25), doc.content_bytes);
+    // Everything else is unchanged, so a client can paint the row.
+    try testing.expectEqualStrings("doc_a", doc.id);
+    try testing.expectEqualStrings("Release plan", doc.title);
+}
+
+test "makeDocumentListResponse omits every body by default" {
+    const alloc = testing.allocator;
+    const docs = [_]test_doc{ .{}, .{ .id = "doc_b", .title = "Notes" } };
+    const folders = [_]FolderResponse{};
+
+    const json = try makeDocumentListResponse(alloc, &docs, &folders, false);
+    defer alloc.free(json);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, json, .{});
+    defer parsed.deinit();
+
+    const rows = parsed.value.object.get("documents").?.array.items;
+    try testing.expectEqual(@as(usize, 2), rows.len);
+    for (rows) |row| {
+        // `content` is present as an explicit null, never a missing key: a
+        // client that reads `row.content` gets null, not undefined.
+        try testing.expect(row.object.get("content").? == .null);
+        try testing.expect(row.object.get("preview").?.string.len > 0);
+    }
+}
+
+test "makeDocumentListResponse includes every body when asked" {
+    const alloc = testing.allocator;
+    const docs = [_]test_doc{.{}};
+    const folders = [_]FolderResponse{};
+
+    const json = try makeDocumentListResponse(alloc, &docs, &folders, true);
+    defer alloc.free(json);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, json, .{});
+    defer parsed.deinit();
+
+    const row = parsed.value.object.get("documents").?.array.items[0];
+    try testing.expectEqualStrings("# Release plan\n- ship it\n", row.object.get("content").?.string);
 }

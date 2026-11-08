@@ -392,17 +392,24 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
-  /**    * Fetch a single document for the editor. The list response already carries every body, so this
-   * is a no-op when the row is cached and only reaches the network for a deep link opened before
-   * the sidebar list loaded. */
+  /**    * Fetch a single document for the editor, body included. A list row carries metadata and
+   * `preview` only, so a cached row is usable only when it already holds a body — otherwise this
+   * reaches the network and merges the body into the row, keeping the sidebar's placement. */
   async function loadDocument(workspaceId: string, documentId: string): Promise<Document | null> {
     if (!workspaceId || !documentId) return null
     error.value = null
     const cached = findById(documentId)
-    if (cached) return cached
+    if (cached && typeof cached.content === 'string') return cached
     try {
       const { document } = await api.getDocument(workspaceId, documentId)
-      return document
+      // Merge rather than replace: the list row may carry a newer position or
+      // folder than the single read, and the sidebar must not jump.
+      const merged: Document = cached ? { ...cached, ...document } : document
+      documents.value = documents.value.map((d) => (d.id === merged.id ? merged : d))
+      // Write through so an offline reload of an OPENED document still has its
+      // body. A document never opened has no cached body, and that is fine.
+      await runSyncVoid(documentEngineDb.putDocument(workspaceId, merged), 'documents.put')
+      return merged
     } catch (e) {
       error.value = toMessage(e)
       return null

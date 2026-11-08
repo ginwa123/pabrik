@@ -80,8 +80,21 @@ pub fn documentsListHandler(
     defer documents_store.freeDocumentRows(allocator, output.documents);
     defer folders_store.freeFolderRows(allocator, output.folders);
 
-    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders);
+    const data = try http_response.makeDocumentListResponse(
+        allocator,
+        output.documents,
+        output.folders,
+        includeContent(req),
+    );
     return res.jsonResponse(.{ .status_code = 200, .data = data });
+}
+
+/// `?include=content` restores the pre-Migration-143 shape, where every list
+/// row carried its body. It exists as a deprecation window for a client that
+/// has not moved to fetching the body on open; the default is metadata only.
+fn includeContent(req: gserverz.HttpRequest) bool {
+    const value = req.query.get("include") orelse return false;
+    return std.mem.eql(u8, value, "content");
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────

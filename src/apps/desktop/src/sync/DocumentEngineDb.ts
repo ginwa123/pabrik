@@ -112,16 +112,30 @@ export class DocumentEngineDb extends BaseSyncEngine<DocumentRow, DocumentCtx> {
   }
 
   /** Background refresh for a cached paint: fetch the whole workspace, replace the cached rows for
-   * this ctx, hand back the delta. */
+   * this ctx, hand back the delta. A body already cached for an opened document is carried forward,
+   * so a revalidate never quietly strips offline access. */
   loadDelta(ctx: DocumentCtx): Effect.Effect<DocumentDelta, SyncError> {
     // A generator's `this` is its own, so capture the engine outside.
     // oxlint-disable-next-line typescript-eslint/no-this-alias -- see SyncEngine.syncOnMount
     const engine = this
     return Effect.gen(function* () {
       const delta = yield* engine.fetchDeltaPage(ctx)
+      const previous = yield* engine
+        .primeFromCache(ctx, Number.MAX_SAFE_INTEGER)
+        .pipe(Effect.catchAll(() => Effect.succeed<DocumentRow[]>([])))
+      const bodies = new Map(
+        previous
+          .filter((r) => typeof r.raw.content === 'string')
+          .map((r) => [r.id, r.raw.content as string]),
+      )
+      const merged = delta.items.map((r) =>
+        typeof r.raw.content === 'string' || !bodies.has(r.id)
+          ? r
+          : { ...r, raw: { ...r.raw, content: bodies.get(r.id) } },
+      )
       yield* engine.clear(ctx)
-      yield* engine.putLocal(ctx, delta.items)
-      return delta
+      yield* engine.putLocal(ctx, merged)
+      return { ...delta, items: merged }
     })
   }
 

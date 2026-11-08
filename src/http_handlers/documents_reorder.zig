@@ -99,7 +99,7 @@ pub fn documentsReorderHandler(
         "",
     );
 
-    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders);
+    const data = try http_response.makeDocumentListResponse(allocator, output.documents, output.folders, false);
     return res.jsonResponse(.{ .status_code = 200, .data = data });
 }
 

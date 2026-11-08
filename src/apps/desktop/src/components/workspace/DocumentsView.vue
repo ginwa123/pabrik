@@ -44,10 +44,12 @@ async function loadForDocument(id: string) {
   if (!id || !workspaceId.value) return
   const doc = await documentsStore.loadDocument(workspaceId.value, id)
   if (!doc) return
+  // `loadDocument` guarantees a body; the `?? ''` is for the type, not a case.
+  const body = doc.content ?? ''
   draftTitle.value = doc.title
-  draftContent.value = doc.content
+  draftContent.value = body
   savedTitle.value = doc.title
-  savedContent.value = doc.content
+  savedContent.value = body
   editing.value = false
 }
 
@@ -74,13 +76,22 @@ function syncFromStore() {
     return
   }
   hadDocumentRow = true
-  if (row.title === savedTitle.value && row.content === savedContent.value) return
+  // A list refresh replaces the row with a body-less one. The title still
+  // tracks the server; the body is left alone, because the open document's
+  // body is the editor's, not the sidebar's.
+  const rowContent = typeof row.content === 'string' ? row.content : null
+  if (
+    row.title === savedTitle.value &&
+    (rowContent === null || rowContent === savedContent.value)
+  ) {
+    return
+  }
   const dirty = isDirty.value
   savedTitle.value = row.title
-  savedContent.value = row.content
+  if (rowContent !== null) savedContent.value = rowContent
   if (dirty) return
   draftTitle.value = row.title
-  draftContent.value = row.content
+  if (rowContent !== null) draftContent.value = rowContent
 }
 
 onMounted(() => {
@@ -121,7 +132,8 @@ const save = async () => {
   const updated = await documentsStore.updateDocument(workspaceId.value, props.documentId, patch)
   if (updated) {
     savedTitle.value = updated.title
-    savedContent.value = updated.content
+    // A PATCH response carries the body; the `?? ''` is for the type only.
+    savedContent.value = updated.content ?? ''
     editing.value = false
   }
 }

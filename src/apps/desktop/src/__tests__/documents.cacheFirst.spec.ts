@@ -47,6 +47,31 @@ describe('DocumentEngineDb — cache contents', () => {
     expect(cached[0]!.raw.content).toBe('# heading')
   })
 
+  it('a revalidate that carries no body keeps the body already cached', async () => {
+    // One store, two engines: the first load carries a body (the document was
+    // opened), the second is a list revalidate that carries metadata only.
+    const store = makeMemorySyncStore()
+    const first = new DocumentEngineDb(
+      (async () => ({ documents: [doc()], count: 1 })) as never,
+      'documents',
+      store,
+    )
+    await run(first.loadDelta(WS))
+
+    const second = new DocumentEngineDb(
+      (async () => ({ documents: [doc({ content: undefined })], count: 1 })) as never,
+      'documents',
+      store,
+    )
+    const delta = await run(second.loadDelta(WS))
+
+    // The body survived the revalidate, so an offline reload still has it.
+    expect(delta.items[0]!.raw.content).toBe('# heading')
+    expect((await run(second.primeFromCache(WS, 50)))[0]!.raw.content).toBe('# heading')
+    // And the metadata is the server's, not the stale cache's.
+    expect(delta.items[0]!.raw.title).toBe('Release plan')
+  })
+
   it('a cached paint keeps the dragged order instead of falling back to newest-updated', async () => {
     const saved = [
       doc({ id: 'doc_old', position: 0, updated_at: '2026-09-01 10:00:00' }),
