@@ -92,6 +92,7 @@ pub const DocumentsOp = enum {
     folder_delete,
     doc_create,
     doc_move,
+    backfill,
 };
 
 pub const DocumentsArgs = struct {
@@ -107,6 +108,10 @@ pub const DocumentsArgs = struct {
     /// The document being moved.
     document_id: ?[]const u8 = null,
     title: []const u8 = "",
+    /// `backfill`: stop after this many rows. 0 means no cap.
+    limit: usize = 0,
+    /// `backfill`: report what would move without writing anything.
+    dry_run: bool = false,
 };
 
 /// The object-store verbs. One per `Storage` method, so an agent can exercise
@@ -183,8 +188,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move\n" ++
+    "      ops: list | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
+    "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next\n" ++
     "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n>\n" ++
@@ -312,6 +318,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "folder-delete")) break :blk .folder_delete;
         if (std.mem.eql(u8, word, "doc-create")) break :blk .doc_create;
         if (std.mem.eql(u8, word, "doc-move")) break :blk .doc_move;
+        if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
         return fail(.{ .kind = .documents_unknown_op, .value = word });
     };
 
@@ -343,15 +350,24 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.title = argv[i];
+        } else if (std.mem.eql(u8, flag, "--limit")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.limit = std.fmt.parseInt(usize, argv[i], 10) catch
+                return fail(.{ .kind = .invalid_number, .value = argv[i] });
+        } else if (std.mem.eql(u8, flag, "--dry-run")) {
+            got.dry_run = true;
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
         i += 1;
     }
 
-    if (got.workspace_id.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
+    if (got.workspace_id.len == 0 and op != .backfill) {
+        return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
+    }
     switch (op) {
-        .list, .folder_delete => {},
+        .list, .folder_delete, .backfill => {},
         .folder_create, .folder_rename => {
             if (got.name.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--name" });
             if (op == .folder_rename and got.folder_id == null) {
@@ -884,6 +900,25 @@ test "parse: storage reads the backend override" {
 test "parse: storage defaults the backend to null so the environment decides" {
     const a = try parse(&.{ "storage", "get", "--key", "k.md" });
     try testing.expect(a.storage.backend == null);
+}
+
+test "parse: documents backfill needs no workspace, so it can sweep every one" {
+    const a = try parse(&.{ "documents", "backfill" });
+    try testing.expectEqual(DocumentsOp.backfill, a.documents.op);
+    try testing.expectEqualStrings("", a.documents.workspace_id);
+    try testing.expectEqual(@as(usize, 0), a.documents.limit);
+    try testing.expect(!a.documents.dry_run);
+}
+
+test "parse: documents backfill reads the limit, the dry run and the workspace" {
+    const a = try parse(&.{ "documents", "backfill", "--workspace", "ws_1", "--limit", "50", "--dry-run" });
+    try testing.expectEqualStrings("ws_1", a.documents.workspace_id);
+    try testing.expectEqual(@as(usize, 50), a.documents.limit);
+    try testing.expect(a.documents.dry_run);
+}
+
+test "parse: documents backfill refuses a non-numeric limit" {
+    try expectFailure(&.{ "documents", "backfill", "--limit", "lots" }, .invalid_number);
 }
 
 test "the help text lists every flag the table gives this scope" {

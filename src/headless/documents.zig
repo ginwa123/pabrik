@@ -33,6 +33,16 @@ const ListDto = struct {
     document_count: usize,
 };
 
+/// What a `backfill` run did. `moved` counts bodies written to the object
+/// store; a second run reports `moved = 0`, which is the idempotency check.
+const BackfillDto = struct {
+    scanned: usize,
+    moved: usize,
+    skipped_empty: usize,
+    failed: usize,
+    dry_run: bool,
+};
+
 fn folderDto(row: folders_store.FolderRow) FolderDto {
     return .{ .id = row.id, .parent_id = row.parent_id, .name = row.name, .position = row.position };
 }
@@ -153,6 +163,21 @@ pub fn runWithDb(
             );
             defer documents_store.freeDocumentRow(allocator, row);
             return documentJson(allocator, row);
+        },
+
+        .backfill => {
+            const report = try store.backfill(allocator, .{
+                .workspace_id = if (a.workspace_id.len == 0) null else a.workspace_id,
+                .limit = a.limit,
+                .dry_run = a.dry_run,
+            });
+            return std.json.Stringify.valueAlloc(allocator, BackfillDto{
+                .scanned = report.scanned,
+                .moved = report.moved,
+                .skipped_empty = report.skipped_empty,
+                .failed = report.failed,
+                .dry_run = a.dry_run,
+            }, .{});
         },
     }
 }

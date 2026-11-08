@@ -144,6 +144,51 @@ pub const ReorderDocumentsError = error{
     OutOfMemory,
 };
 
+pub const BackfillOptions = struct {
+    /// Only this workspace. Null means every workspace.
+    workspace_id: ?[]const u8 = null,
+    /// Stop after this many rows. 0 means no cap, so a run is resumable by
+    /// repeating it with a limit.
+    limit: usize = 0,
+    /// Report what would move without writing anything.
+    dry_run: bool = false,
+};
+
+pub const BackfillReport = struct {
+    /// Rows with `content_key IS NULL` that this run looked at.
+    scanned: usize = 0,
+    /// Bodies written to the object store and pointed at.
+    moved: usize = 0,
+    /// Rows whose body is empty, so there is nothing to move.
+    skipped_empty: usize = 0,
+    /// Rows the object store refused. The row is left untouched.
+    failed: usize = 0,
+};
+
+pub const BackfillError = error{
+    /// No object store is configured, so there is nowhere to move a body to.
+    NoStorage,
+    QueryFailed,
+    ObjectStoreFailed,
+    OutOfMemory,
+};
+
+/// One row the backfill is about to move. Owns its strings.
+const Candidate = struct {
+    id: []u8,
+    workspace_id: []u8,
+    body: []u8,
+};
+
+fn freeCandidates(allocator: std.mem.Allocator, candidates: []Candidate) void {
+    for (candidates) |c| {
+        allocator.free(c.id);
+        allocator.free(c.workspace_id);
+        allocator.free(c.body);
+    }
+    allocator.free(candidates);
+}
+
 /// The SELECT list, shared by every read so no call site can accidentally
 /// return a different shape.
 const SELECT_COLUMNS =
@@ -539,6 +584,112 @@ pub const Store = struct {
         if (content_key.len > 0) {
             if (self.storage) |s| s.delete(content_key) catch {};
         }
+    }
+
+    /// Move every body that is still only in the `content` column into the
+    /// object store. Idempotent: a second run finds nothing to move. The body
+    /// stays in the column — clearing it is a later phase.
+    pub fn backfill(
+        self: Store,
+        allocator: std.mem.Allocator,
+        opts: BackfillOptions,
+    ) BackfillError!BackfillReport {
+        const s = self.storage orelse return error.NoStorage;
+
+        const candidates = try self.backfillCandidates(allocator, opts);
+        defer freeCandidates(allocator, candidates);
+
+        var report = BackfillReport{ .scanned = candidates.len };
+        for (candidates) |candidate| {
+            if (candidate.body.len == 0) {
+                report.skipped_empty += 1;
+                continue;
+            }
+            if (opts.dry_run) {
+                report.moved += 1;
+                continue;
+            }
+            if (self.backfillOne(allocator, s, candidate)) |_| {
+                report.moved += 1;
+            } else |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                else => report.failed += 1,
+            }
+        }
+        return report;
+    }
+
+    /// Rows whose body is still only in the column, oldest id first so a
+    /// `--limit` run resumes where the last one stopped.
+    fn backfillCandidates(
+        self: Store,
+        allocator: std.mem.Allocator,
+        opts: BackfillOptions,
+    ) BackfillError![]Candidate {
+        const sql = if (opts.workspace_id != null)
+            "SELECT id, workspace_id, content FROM documents WHERE content_key IS NULL AND workspace_id = ? ORDER BY id"
+        else
+            "SELECT id, workspace_id, content FROM documents WHERE content_key IS NULL ORDER BY id";
+
+        var q = self.db.query(
+            allocator,
+            sql,
+            if (opts.workspace_id) |ws| &[_][]const u8{ws} else &[_][]const u8{},
+        ) catch return error.QueryFailed;
+        defer q.deinit();
+
+        var list: std.ArrayList(Candidate) = .empty;
+        errdefer freeCandidates(allocator, list.items);
+
+        while (q.next() catch return error.QueryFailed) |r| {
+            defer r.deinit(allocator);
+            if (opts.limit != 0 and list.items.len >= opts.limit) break;
+            try list.append(allocator, .{
+                .id = try allocator.dupe(u8, r.values[0]),
+                .workspace_id = try allocator.dupe(u8, r.values[1]),
+                .body = try allocator.dupe(u8, r.values[2]),
+            });
+        }
+        return list.toOwnedSlice(allocator);
+    }
+
+    /// Write one body and point its row at it. The object goes first, so a
+    /// failed row update leaves an orphan rather than a dangling pointer.
+    fn backfillOne(
+        self: Store,
+        allocator: std.mem.Allocator,
+        s: object_store.Storage,
+        candidate: Candidate,
+    ) BackfillError!void {
+        var digest: [object_store.SHA256_HEX_BYTES]u8 = undefined;
+        object_store.sha256Hex(candidate.body, &digest);
+
+        const key = object_store.documentKey(allocator, candidate.workspace_id, candidate.id, &digest) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.ObjectStoreFailed,
+        };
+        defer allocator.free(key);
+
+        s.put(key, candidate.body) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.ObjectStoreFailed,
+        };
+
+        var bytes_buf: [24]u8 = undefined;
+        const bytes_text = std.fmt.bufPrint(&bytes_buf, "{d}", .{candidate.body.len}) catch "0";
+
+        self.db.exec(allocator,
+            \\UPDATE documents
+            \\SET content_key = ?, content_sha256 = ?, content_bytes = ?, preview = ?
+            \\WHERE id = ? AND workspace_id = ?
+        , &[_][]const u8{
+            key,
+            &digest,
+            bytes_text,
+            previewOf(candidate.body),
+            candidate.id,
+            candidate.workspace_id,
+        }) catch return error.ObjectStoreFailed;
     }
 
     /// The object-store half of a write: the key, digest, byte count and
@@ -1277,4 +1428,222 @@ test "listDocuments still reads the column, so a list needs no object round-trip
     try testing.expectEqual(@as(usize, 1), rows.len);
     try testing.expectEqualStrings("body", rows[0].content);
     try testing.expectEqualStrings("body", rows[0].preview);
+}
+
+// ─── Backfill ───────────────────────────────────────────────────────────
+
+test "backfill moves a column-only body into the object store" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // Written with no store, so the body is only in the column.
+    const seeded = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "# Plan\n- ship it\n",
+    });
+    defer freeDocumentRow(alloc, seeded);
+    try testing.expect(seeded.content_key == null);
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const report = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 1), report.scanned);
+    try testing.expectEqual(@as(usize, 1), report.moved);
+    try testing.expectEqual(@as(usize, 0), report.failed);
+
+    const row = try store.getDocument(alloc, "ws_1", seeded.id);
+    defer freeDocumentRow(alloc, row);
+
+    const key = row.content_key orelse return error.KeyMissing;
+    try testing.expect(std.mem.startsWith(u8, key, "ws/ws_1/documents/"));
+
+    var expected: [object_store.SHA256_HEX_BYTES]u8 = undefined;
+    object_store.sha256Hex("# Plan\n- ship it\n", &expected);
+    try testing.expectEqualStrings(&expected, row.content_sha256.?);
+    try testing.expectEqual(@as(i64, 17), row.content_bytes);
+    try testing.expectEqualStrings("# Plan\n- ship it\n", row.preview);
+
+    // The object holds the body, and the column still does too.
+    const stored = try objects.asStorage().get(alloc, key);
+    defer alloc.free(stored);
+    try testing.expectEqualStrings("# Plan\n- ship it\n", stored);
+    try testing.expectEqualStrings("# Plan\n- ship it\n", row.content);
+}
+
+test "backfill is idempotent: a second run moves nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const seeded = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    });
+    defer freeDocumentRow(alloc, seeded);
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const first = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 1), first.moved);
+
+    const second = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 0), second.scanned);
+    try testing.expectEqual(@as(usize, 0), second.moved);
+
+    // And the object count did not grow.
+    try testing.expectEqual(@as(usize, 1), objects.count());
+}
+
+test "backfill skips an empty body and leaves its key null" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const seeded = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Blank",
+        .content = "",
+    });
+    defer freeDocumentRow(alloc, seeded);
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const report = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 1), report.scanned);
+    try testing.expectEqual(@as(usize, 0), report.moved);
+    try testing.expectEqual(@as(usize, 1), report.skipped_empty);
+    try testing.expectEqual(@as(usize, 0), objects.count());
+
+    const row = try store.getDocument(alloc, "ws_1", seeded.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expect(row.content_key == null);
+}
+
+test "backfill dry run reports what would move and writes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const seeded = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    });
+    defer freeDocumentRow(alloc, seeded);
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const report = try store.backfill(alloc, .{ .dry_run = true });
+    try testing.expectEqual(@as(usize, 1), report.moved);
+    try testing.expectEqual(@as(usize, 0), objects.count());
+
+    const row = try store.getDocument(alloc, "ws_1", seeded.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expect(row.content_key == null);
+}
+
+test "backfill with a limit is resumable: the next run picks up the rest" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    for (0..3) |i| {
+        const title = try std.fmt.allocPrint(alloc, "Doc {d}", .{i});
+        defer alloc.free(title);
+        const row = try createDocument(alloc, &ctx.db, .{
+            .workspace_id = "ws_1",
+            .title = title,
+            .content = "body",
+        });
+        freeDocumentRow(alloc, row);
+    }
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const first = try store.backfill(alloc, .{ .limit = 2 });
+    try testing.expectEqual(@as(usize, 2), first.moved);
+
+    const second = try store.backfill(alloc, .{ .limit = 2 });
+    try testing.expectEqual(@as(usize, 1), second.moved);
+
+    const third = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 0), third.scanned);
+    try testing.expectEqual(@as(usize, 3), objects.count());
+}
+
+test "backfill scoped to one workspace leaves the other alone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const mine = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_1", .title = "Mine", .content = "a" });
+    defer freeDocumentRow(alloc, mine);
+    const theirs = try createDocument(alloc, &ctx.db, .{ .workspace_id = "ws_2", .title = "Theirs", .content = "b" });
+    defer freeDocumentRow(alloc, theirs);
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const report = try store.backfill(alloc, .{ .workspace_id = "ws_1" });
+    try testing.expectEqual(@as(usize, 1), report.moved);
+
+    const untouched = try store.getDocument(alloc, "ws_2", theirs.id);
+    defer freeDocumentRow(alloc, untouched);
+    try testing.expect(untouched.content_key == null);
+}
+
+test "backfill with no object store is refused" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(error.NoStorage, (Store{ .db = &ctx.db }).backfill(alloc, .{}));
+}
+
+test "backfill counts a refused body as failed and leaves the row alone" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const seeded = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "body",
+    });
+    defer freeDocumentRow(alloc, seeded);
+
+    var marker: u8 = 0;
+    const store = Store{ .db = &ctx.db, .storage = failingStorage(&marker) };
+
+    const report = try store.backfill(alloc, .{});
+    try testing.expectEqual(@as(usize, 1), report.scanned);
+    try testing.expectEqual(@as(usize, 0), report.moved);
+    try testing.expectEqual(@as(usize, 1), report.failed);
+
+    const row = try getDocument(alloc, &ctx.db, "ws_1", seeded.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expect(row.content_key == null);
+    try testing.expectEqualStrings("body", row.content);
 }
