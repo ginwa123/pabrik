@@ -293,9 +293,7 @@ fn stripToolEnvelopeImpl(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
 
 // ─── Chat content envelopes (user + assistant) ────────────────────────────
 // / / Option A: `llm_history.response_content` holds a JSON object string for
-// / `role=user` (`{"user","name","msg"}`) and for non-empty `role=assistant`
-// / (`{"agent","msg"}`). The assistant field names the AGENT that wrote the
-// / row; rows written before the rename carry it as `model`.
+// / `role=user` (`{"user","name","msg"}`) and `role=assistant` (`{"agent","msg"}`).
 pub const UserEnvelope = struct {
     user: []const u8,
     name: []const u8,
@@ -315,10 +313,9 @@ pub fn encodeAssistantContent(allocator: std.mem.Allocator, agent_name: []const 
     return try std.json.Stringify.valueAlloc(allocator, AssistantEnvelope{ .agent = agent_name, .msg = msg }, .{});
 }
 
-/// The agent that wrote an assistant row, read from its content envelope.
-/// Rows written before the field was renamed carry `model`; both spellings
-/// name the agent, never a model id. Null when `raw` is not an assistant
-/// envelope. Caller frees a non-null result.
+/// The agent that wrote an assistant row, from its content envelope. Rows
+/// written before the rename carry `model`; both name the agent. Null when
+/// `raw` is not an assistant envelope. Caller frees a non-null result.
 pub fn assistantAuthor(allocator: std.mem.Allocator, raw: []const u8) !?[]u8 {
     const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
     if (trimmed.len == 0 or trimmed[0] != '{') return null;

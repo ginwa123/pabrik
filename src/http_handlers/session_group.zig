@@ -1,7 +1,6 @@
-//! The roster of a multi-agent chat: `GET|POST|DELETE
-//! /api/llm/session/:session_id/group...`. A session is a group when
-//! `sessions.group_lead` names somebody; the loop then takes each turn's
-//! speaker from `session_group_members` instead of the session's own agent.
+//! The roster of a multi-agent chat: `GET|POST|DELETE /api/llm/session/:id/group...`.
+//! A session is a group when `sessions.group_lead` names somebody; the loop then
+//! takes each turn's speaker from `session_group_members`.
 
 const std = @import("std");
 const http_response = @import("http_response.zig");
