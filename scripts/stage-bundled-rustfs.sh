@@ -213,6 +213,7 @@ fi
 
 chmod 0755 "$dest"
 
-version_out=""
-if version_out="$("$dest" --version 2>/dev/null | head -n 1)"; then :; fi
-echo "staged bundled rustfs -> ${dest}${version_out:+ (${version_out})}"
+# Do NOT execute the staged binary to print its version: on Windows it leaves a
+# process behind that locks the file, and the next staging run cannot replace
+# it. The sha256 above is the integrity proof; the version is the pinned one.
+echo "staged bundled rustfs -> ${dest} (rustfs ${rustfs_version})"

@@ -77,19 +77,8 @@ if ($DestDir -ne "" -and -not (Test-Path $DestDir)) {
 }
 Copy-Item -Force $Member $Dest
 
-# Capture the WHOLE output, then take the first line: piping a native command
-# into `Select-Object -First 1` stops the pipeline early and leaves the process
-# running, holding a lock on pabrik-fs.exe that breaks the next staging run.
-$VersionOut = ""
-try {
-    $raw = & $Dest --version 2>&1
-    if ($raw) {
-        $text = ($raw | Out-String).Trim()
-        $VersionOut = ($text -split "`r?`n")[0].Trim()
-    }
-} catch { $VersionOut = "" }
-if ($VersionOut) {
-    Write-Output "staged bundled rustfs -> $Dest ($VersionOut)"
-} else {
-    Write-Output "staged bundled rustfs -> $Dest"
-}
+# Do NOT execute the staged binary to print its version. On Windows
+# `pabrik-fs.exe --version` leaves a process behind that holds a lock on the
+# file, so the next staging run fails with "being used by another process".
+# The sha256 above is the integrity proof; the version is the pinned constant.
+Write-Output "staged bundled rustfs -> $Dest (rustfs $RustfsVersion)"
