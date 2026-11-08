@@ -116,7 +116,12 @@ pub const Supervisor = struct {
             .pid_file = pid_file,
         };
 
-        writePidFile(io, allocator, opts.pid_file, child.id orelse 0);
+        // POSIX only: `child.id` is a HANDLE on Windows, and the sweep below
+        // is the POSIX half of the hard-kill story (Windows needs a Job
+        // Object, which is a separate change).
+        if (comptime builtin.os.tag != .windows) {
+            writePidFile(io, allocator, opts.pid_file, child.id orelse 0);
+        }
 
         if (!waitUntilReady(io, opts.port, READY_TIMEOUT_MS)) {
             self.deinit();
@@ -139,6 +144,14 @@ pub const Supervisor = struct {
     }
 };
 
+/// This process's id, as an i32 on every host.
+fn currentPid() i32 {
+    if (comptime builtin.os.tag == .windows) {
+        return @intCast(std.os.windows.GetCurrentProcessId());
+    }
+    return @intCast(std.c.getpid());
+}
+
 fn writePidFile(io: std.Io, allocator: std.mem.Allocator, path: []const u8, pid: i32) void {
     if (pid <= 0) return;
     const body = std.fmt.allocPrint(allocator, "{d}\n", .{pid}) catch return;
@@ -149,14 +162,22 @@ fn writePidFile(io: std.Io, allocator: std.mem.Allocator, path: []const u8, pid:
 }
 
 /// Stop the process named by a pid file left behind by a hard-killed run.
-/// The name check is what makes this safe: a pid the OS has since reused
-/// belongs to something else, and is left alone.
-fn stopStale(io: std.Io, allocator: std.mem.Allocator, pid_file: []const u8) void {
+/// The name check is what makes this safe: a reused pid belongs to something
+/// else and is left alone. Windows has no pid file, so the sweep is a no-op.
+const stopStale = if (builtin.os.tag == .windows) stopStaleNoop else stopStalePosix;
+
+fn stopStaleNoop(io: std.Io, allocator: std.mem.Allocator, pid_file: []const u8) void {
+    _ = io;
+    _ = allocator;
+    _ = pid_file;
+}
+
+fn stopStalePosix(io: std.Io, allocator: std.mem.Allocator, pid_file: []const u8) void {
     const text = std.Io.Dir.cwd().readFileAlloc(io, pid_file, allocator, .limited(32)) catch return;
     defer allocator.free(text);
 
     const pid = std.fmt.parseInt(i32, std.mem.trim(u8, text, " \t\r\n"), 10) catch return;
-    if (pid <= 0 or pid == @as(i32, @intCast(std.c.getpid()))) return;
+    if (pid <= 0 or pid == currentPid()) return;
     if (!isOurRustfs(io, pid)) return;
 
     std.posix.kill(pid, .TERM) catch return;
@@ -294,7 +315,7 @@ test "stopStale: a pid file naming a process that is not rustfs is left alone" {
     defer testing.allocator.free(pid_file);
 
     // Our own pid: alive, but not a rustfs, so nothing may be signalled.
-    const body = try std.fmt.allocPrint(testing.allocator, "{d}\n", .{std.c.getpid()});
+    const body = try std.fmt.allocPrint(testing.allocator, "{d}\n", .{currentPid()});
     defer testing.allocator.free(body);
     const file = try tmp.dir.createFile(testing.io, PID_FILE, .{});
     try file.writeStreamingAll(testing.io, body);
