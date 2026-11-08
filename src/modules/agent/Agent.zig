@@ -1343,8 +1343,9 @@ pub const AgentCall = struct {
 
 pub const HttpOptions = struct {
     /// Overall deadline for the entire streaming read (response head + body).
-    /// Triggers `error.StreamTimeout` if exceeded. Default 5 minutes.
-    read_timeout_ms: u32 = 300_000,
+    /// Triggers `error.StreamTimeout` if exceeded. Default 15 minutes: a
+    /// 100k-token prompt plus a 7k-token answer needs more than 5.
+    read_timeout_ms: u32 = 900_000,
     /// Idle window: if no new bytes arrive for this long after readSliceShort
     /// returns, the stream is considered hung.
     idle_timeout_ms: u32 = 180_000,
@@ -2949,6 +2950,7 @@ pub const Agent = struct {
                     if (self.last_error_message) |prev| self.allocator.free(prev);
                     self.last_error_message = d;
                 }
+                if (err == error.OperationTimedOut) return error.StreamTimeout;
                 return error.StreamInterrupted;
             };
             if (next_result) |line| {
@@ -4402,9 +4404,9 @@ fn runStreamingWithTimeout(
     return .{ .result = result, .elapsed_ms = elapsed_ms };
 }
 
-// These tests assert error.StreamInterrupted, not StreamIdleTimeout: the
-// transport exposes only CURLOPT_TIMEOUT_MS (fed from read_timeout_ms) and
-// StreamIdleTimeout has no producer left anywhere in the tree.
+// These tests assert error.StreamTimeout: the transport exposes only
+// CURLOPT_TIMEOUT_MS (fed from read_timeout_ms), so a stall that outlives the
+// deadline is a deadline expiry, not a transient interruption.
 
 test "callStreaming bounds a server that stalls after the head by read_timeout_ms" {
     const server = try FakeServer.start(testing_allocatorCallStreaming, .head_only_then_stall);
@@ -4422,7 +4424,7 @@ test "callStreaming bounds a server that stalls after the head by read_timeout_m
     // of slack — a hang would never reach the next line.
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
-    try expectErrorCallStreaming(error.StreamInterrupted, outcome.result);
+    try expectErrorCallStreaming(error.StreamTimeout, outcome.result);
 }
 
 test "callStreaming bounds a server that stalls after one chunk by read_timeout_ms" {
@@ -4440,7 +4442,7 @@ test "callStreaming bounds a server that stalls after one chunk by read_timeout_
     try expectEqualCallStreaming(1, chunks.seen);
     try expectCallStreaming(outcome.elapsed_ms >= @as(i64, @intCast(idle_ms)) - 50);
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
-    try expectErrorCallStreaming(error.StreamInterrupted, outcome.result);
+    try expectErrorCallStreaming(error.StreamTimeout, outcome.result);
 }
 
 test "callStreaming bounds a silent server by read_timeout_ms, not by the idle window" {
@@ -4458,7 +4460,7 @@ test "callStreaming bounds a silent server by read_timeout_ms, not by the idle w
 
     try expectEqualCallStreaming(0, chunks.seen);
     try expectCallStreaming(outcome.elapsed_ms <= @as(i64, @intCast(read_ms)) + 2_500);
-    try expectErrorCallStreaming(error.StreamInterrupted, outcome.result);
+    try expectErrorCallStreaming(error.StreamTimeout, outcome.result);
 }
 /// Portable fixture for the cancellation test: a listener that accepts ONE
 /// connection, answers with an HTTP/1.1 SSE head plus a single `data:` chunk,

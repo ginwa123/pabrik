@@ -305,7 +305,10 @@ const generalSettings = ref<PabrikGeneralSettings>({
 })
 
 // The Runtime tab (workspace scope).
-const runtimeSettings = ref<PabrikRuntimeSettings>({ retry_delay_ms: 0 })
+const runtimeSettings = ref<PabrikRuntimeSettings>({
+  retry_delay_ms: 0,
+  llm_read_timeout_ms: 900_000,
+})
 
 // Skill Evals tab. Only `enabled` is editable in the UI; the budget
 // knobs ride along untouched (see skillEvalsRaw below) so flipping the
@@ -369,7 +372,10 @@ function syncFromConfig() {
   }
   // Treat `undefined` (missing key) and explicit 0 the same way so
   // hydrating an absent field is not read as an edit.
-  runtimeSettings.value = { retry_delay_ms: c.retry_delay_ms ?? 0 }
+  runtimeSettings.value = {
+    retry_delay_ms: c.retry_delay_ms ?? 0,
+    llm_read_timeout_ms: c.llm_read_timeout_ms ?? 900_000,
+  }
   // Remember the persisted flag so the autosave can detect the OFF→ON
   // transition for the one-time browser auto-open.
   prevWebLaunch.value = generalSettings.value.web_launch_enabled
@@ -469,6 +475,7 @@ function syncToConfig() {
     notify_on_complete: generalSettings.value.notify_on_complete,
     notify_on_error: generalSettings.value.notify_on_error,
     retry_delay_ms: runtimeSettings.value.retry_delay_ms,
+    llm_read_timeout_ms: runtimeSettings.value.llm_read_timeout_ms,
     // Plan 2026-09-10-web-launch-toggle: 4th operational setting,
     // always written through like its siblings.
     web_launch_enabled: generalSettings.value.web_launch_enabled,

@@ -1293,7 +1293,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // Make this turn cancellable.
         llm_cancel_thunk.register(.{ .db = db, .session_id = copy_session_id, .io = io });
         defer llm_cancel_thunk.unregister();
-        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, merged_tools, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
+        const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, merged_tools, config.llm_read_timeout_ms, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
             if (err == error.Cancelled) {
                 logger.infoFmt("WORKFLOW CANCELLED during streaming: session_id={s}", .{copy_session_id});
                 // Keep the partial text and settle the transcript — without
@@ -2064,6 +2064,9 @@ fn callDynamicAgentNew(
     opencode_cwd: []const u8,
     session_id: []const u8,
     equip_tools: []const agent.AgentTool,
+    /// Overall deadline for this one streaming call, from
+    /// `LlmConfig.llm_read_timeout_ms` (workspace-overridable).
+    read_timeout_ms: u32,
     /// Polled by the agent's SSE chunk-read loop between chunks so a
     /// user-initiated Stop aborts the in-flight turn immediately instead of
     /// waiting for the response to finish (see `Agent.callStreaming`).
@@ -2097,7 +2100,7 @@ fn callDynamicAgentNew(
     dynamic_agent.thinkingBudgetTokens = thinking_budget_tokens;
     dynamic_agent.thinkingAdaptive = thinking_adaptive;
     dynamic_agent.reasoningEffort = reasoning_effort;
-    dynamic_agent.httpOptions.read_timeout_ms = 300_000; // 10 minutes
+    dynamic_agent.httpOptions.read_timeout_ms = read_timeout_ms;
 
     var stream_ctx = StreamingContext{
         .allocator = allocator,

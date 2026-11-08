@@ -118,6 +118,10 @@ pub const LlmConfig = struct {
     /// failed `callDynamicAgentNew` call. 0 = no delay (current behavior, the
     /// retry fires immediately on the next loop iteration).
     retry_delay_ms: u32 = 0,
+    /// Overall deadline in milliseconds for ONE streaming LLM call (response
+    /// head + body). A design turn's 100k-token prompt plus a 7k-token answer
+    /// needs more than the 5 minutes this used to be hard-coded to.
+    llm_read_timeout_ms: u32 = 900_000,
     /// Optional top-level override for the context window (in tokens).
     max_capacity_token_model: ?u32 = null,
     /// Optional top-level compaction threshold as a percentage (0-100) of the
@@ -347,6 +351,9 @@ pub const LlmConfig = struct {
         /// See `LlmConfig.retry_delay_ms` for semantics. Plan
         /// 2026-07-15-retry-delay.
         retry_delay_ms: u32 = 0,
+        /// Overall deadline in milliseconds for one streaming LLM call.
+        /// See `LlmConfig.llm_read_timeout_ms`.
+        llm_read_timeout_ms: u32 = 900_000,
         /// Optional top-level override for the context window (in tokens).
         /// Null = fall through to the per-profile override, then built-in.
         max_capacity_token_model: ?u32 = null,
@@ -685,6 +692,7 @@ pub const LlmConfig = struct {
             .chat_view = parseChatViewMode(config_json.chat_view),
             .skill_evals = skillEvalsFromJson(config_json.skill_evals),
             .retry_delay_ms = config_json.retry_delay_ms,
+            .llm_read_timeout_ms = config_json.llm_read_timeout_ms,
             // Top-level compaction defaults — restored in plan
             // 2026-07-07-compaction-inline.
             .max_capacity_token_model = config_json.max_capacity_token_model,
@@ -2623,6 +2631,7 @@ pub const LlmConfig = struct {
         \\  "notify_on_complete": false,
         \\  "web_launch_enabled": false,
         \\  "retry_delay_ms": 0,
+        \\  "llm_read_timeout_ms": 900000,
         \\  "skill_evals": {
         \\    "enabled": false,
         \\    "max_skills_per_run": 8,
@@ -3691,6 +3700,38 @@ test "LlmConfig: retry_delay_ms reads from JSON when present" {
     defer cfg.deinit();
 
     try std.testing.expectEqual(@as(u32, 5000), cfg.retry_delay_ms);
+}
+
+// ---------------------------------------------------------------------------
+// llm_read_timeout_ms: the deadline for ONE streaming LLM call.
+
+test "LlmConfig: llm_read_timeout_ms defaults to 15 minutes when missing from JSON" {
+    const allocator = std.testing.allocator;
+
+    const json_body =
+        \\{ "api_key": "k", "model": "m", "base_url": "b" }
+    ;
+
+    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
+    defer cfg.deinit();
+
+    try std.testing.expectEqual(@as(u32, 900_000), cfg.llm_read_timeout_ms);
+}
+
+test "LlmConfig: llm_read_timeout_ms reads from JSON when present" {
+    const allocator = std.testing.allocator;
+
+    const json_body =
+        \\{
+        \\  "api_key": "k", "model": "m", "base_url": "b",
+        \\  "llm_read_timeout_ms": 1800000
+        \\}
+    ;
+
+    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
+    defer cfg.deinit();
+
+    try std.testing.expectEqual(@as(u32, 1_800_000), cfg.llm_read_timeout_ms);
 }
 
 // ---------------------------------------------------------------------------

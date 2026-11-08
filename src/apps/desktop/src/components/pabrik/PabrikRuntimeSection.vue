@@ -8,6 +8,9 @@ export interface PabrikRuntimeSettings {
   /** Workflow retry backoff in milliseconds (0–60 000). Mirrors
    * `PabrikConfig.retry_delay_ms`. Default 0 = no delay. */
   retry_delay_ms: number
+  /** Deadline in milliseconds for ONE streaming LLM call (1 000–1 800 000).
+   * Mirrors `PabrikConfig.llm_read_timeout_ms`. Default 900 000 = 15 minutes. */
+  llm_read_timeout_ms: number
 }
 
 const model = defineModel<PabrikRuntimeSettings>({ required: true })
@@ -16,6 +19,8 @@ const model = defineModel<PabrikRuntimeSettings>({ required: true })
 // (`workspace_config.zig` ScopedKey.max).
 const RETRY_DELAY_MIN = 0
 const RETRY_DELAY_MAX = 60_000
+const READ_TIMEOUT_MIN = 1_000
+const READ_TIMEOUT_MAX = 1_800_000
 
 const retryDelaySeconds = computed<number>({
   get() {
@@ -46,6 +51,31 @@ function onRetryDelayInput(event: Event) {
 // (which fires `change` by default) and the user's manual entry both reach the handler.
 function onRetryDelayChange(event: Event) {
   onRetryDelayInput(event)
+}
+
+const readTimeoutSeconds = computed<number>({
+  get() {
+    return Math.round((model.value.llm_read_timeout_ms ?? 900_000) / 1000)
+  },
+  set(seconds: number) {
+    const clamped = Math.min(
+      READ_TIMEOUT_MAX,
+      Math.max(READ_TIMEOUT_MIN, Math.round(seconds * 1000)),
+    )
+    model.value = { ...model.value, llm_read_timeout_ms: clamped }
+  },
+})
+
+function onReadTimeoutChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const raw = target.value.trim()
+  if (raw === '') {
+    model.value = { ...model.value, llm_read_timeout_ms: 900_000 }
+    return
+  }
+  const seconds = Number.parseInt(raw, 10)
+  if (!Number.isFinite(seconds)) return
+  readTimeoutSeconds.value = seconds
 }
 </script>
 
@@ -106,6 +136,58 @@ function onRetryDelayChange(event: Event) {
         style="color: var(--semantic-text-dim)"
       >
         <span data-testid="retry-delay-ms-readout"> {{ model.retry_delay_ms }} ms </span>
+      </div>
+    </div>
+
+    <!-- Streaming timeout card -->
+    <div
+      class="rounded-lg p-5 space-y-3"
+      style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border)"
+    >
+      <div class="flex items-center gap-2">
+        <UiIcon name="stopwatch" size-class="w-4 h-4" />
+        <h3 class="text-body font-semibold" style="color: var(--semantic-text)">
+          Streaming timeout
+        </h3>
+      </div>
+
+      <label class="flex items-start gap-3" data-testid="row-read-timeout">
+        <div class="flex-1 min-w-0">
+          <div class="text-body font-medium" style="color: var(--semantic-text)">
+            One model call may take (seconds)
+          </div>
+          <div class="text-dense mt-0.5" style="color: var(--semantic-text-muted)">
+            Hard deadline for a single streaming LLM call, response head to last chunk. A design or
+            wireframe turn sends a 100k-token prompt and asks for a 20 kB file, so it needs more
+            than a chat turn. Max 1800 seconds (clamped server-side to 1 800 000 ms).
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <input
+            type="number"
+            min="1"
+            max="1800"
+            step="1"
+            inputmode="numeric"
+            data-testid="input-read-timeout-seconds"
+            :value="readTimeoutSeconds"
+            @change="onReadTimeoutChange($event)"
+            class="w-20 h-8 px-2 rounded-md text-body font-mono text-right"
+            style="
+              background-color: var(--semantic-sidebar-bg);
+              border: 1px solid var(--color-border);
+              color: var(--semantic-text);
+            "
+          />
+          <span class="text-dense font-mono" style="color: var(--semantic-text-muted)">sec</span>
+        </div>
+      </label>
+
+      <div
+        class="flex items-center justify-end gap-1 text-micro font-mono"
+        style="color: var(--semantic-text-dim)"
+      >
+        <span data-testid="read-timeout-ms-readout"> {{ model.llm_read_timeout_ms }} ms </span>
       </div>
     </div>
   </div>
