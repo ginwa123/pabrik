@@ -64,6 +64,24 @@ pub const UsageArgs = struct {
     range: []const u8 = "",
 };
 
+pub const MemoriesOp = enum {
+    list,
+    get,
+    save,
+    delete,
+};
+
+pub const MemoriesArgs = struct {
+    op: MemoriesOp,
+    workspace_id: []const u8 = "",
+    id: []const u8 = "",
+    content: []const u8 = "",
+    tags: []const u8 = "",
+    query: []const u8 = "",
+    limit: []const u8 = "",
+    offset: []const u8 = "",
+};
+
 /// The document-folder verbs. One subcommand per write the HTTP API exposes,
 /// so an agent can drive the whole feature with no server and no port.
 pub const DocumentsOp = enum {
@@ -123,6 +141,8 @@ pub const FailureKind = enum {
     usage_requires_flag,
     message_unknown_op,
     message_requires_flag,
+    memories_unknown_op,
+    memories_requires_flag,
 };
 
 pub const Failure = struct {
@@ -164,6 +184,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      ops: delete <id> | restore --row-file <path> | feed <id> --feed 0|1\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
     "      flags: --workspace <id> --range 1d|7d|30d|90d\n" ++
+    "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
+    "      ops: list | get | save | delete\n" ++
+    "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -187,6 +210,7 @@ pub const Outcome = union(enum) {
     group: GroupArgs,
     usage: UsageArgs,
     message: MessageArgs,
+    memories: MemoriesArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -215,6 +239,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "group")) return try parseGroup(rest);
     if (std.mem.eql(u8, verb, "usage")) return try parseUsage(rest);
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
+    if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
 }
@@ -414,6 +439,70 @@ fn parseMessage(argv: []const []const u8) ParseError!Outcome {
     return .{ .message = got };
 }
 
+fn parseMemories(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .memories_unknown_op });
+
+    const op: MemoriesOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "list")) break :blk .list;
+        if (std.mem.eql(u8, word, "get")) break :blk .get;
+        if (std.mem.eql(u8, word, "save")) break :blk .save;
+        if (std.mem.eql(u8, word, "delete")) break :blk .delete;
+        return fail(.{ .kind = .memories_unknown_op, .value = word });
+    };
+
+    var got = MemoriesArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--workspace")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.workspace_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--id")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--content")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.content = argv[i];
+        } else if (std.mem.eql(u8, flag, "--tags")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.tags = argv[i];
+        } else if (std.mem.eql(u8, flag, "--query")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.query = argv[i];
+        } else if (std.mem.eql(u8, flag, "--limit")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.limit = argv[i];
+        } else if (std.mem.eql(u8, flag, "--offset")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.offset = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    if (got.workspace_id.len == 0) return fail(.{ .kind = .memories_requires_flag, .value = "--workspace" });
+    switch (op) {
+        .list => {},
+        .get, .delete => {
+            if (got.id.len == 0) return fail(.{ .kind = .memories_requires_flag, .value = "--id" });
+        },
+        .save => {
+            if (got.content.len == 0) return fail(.{ .kind = .memories_requires_flag, .value = "--content" });
+        },
+    }
+
+    return .{ .memories = got };
+}
+
 /// `group` parses its own flag set for the same reason `documents` does: the
 /// shared table describes the server CLI, and these five flags exist only in
 /// this verb.
@@ -516,6 +605,8 @@ pub fn reportFailure(f: Failure) void {
         .usage_requires_flag => std.log.err("headless: usage needs {s}", .{f.value}),
         .message_unknown_op => std.log.err("headless: unknown message op '{s}'", .{f.value}),
         .message_requires_flag => std.log.err("headless: message needs {s}", .{f.value}),
+        .memories_unknown_op => std.log.err("headless: unknown memories op '{s}'", .{f.value}),
+        .memories_requires_flag => std.log.err("headless: memories needs {s}", .{f.value}),
     }
 }
 

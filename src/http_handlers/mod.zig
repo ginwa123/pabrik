@@ -278,6 +278,11 @@ pub const localMemoryDetailHandler = @import("local_memories_detail.zig").localM
 pub const localMemoryCreateHandler = @import("local_memories_create.zig").localMemoryCreateHandler;
 pub const localMemoryUpdateHandler = @import("local_memories_update.zig").localMemoryUpdateHandler;
 pub const localMemoryDeleteHandler = @import("local_memories_delete.zig").localMemoryDeleteHandler;
+pub const workspaceMemoriesListHandler = @import("workspace_memories.zig").workspaceMemoriesListHandler;
+pub const workspaceMemoryGetHandler = @import("workspace_memories.zig").workspaceMemoryGetHandler;
+pub const workspaceMemoryCreateHandler = @import("workspace_memories.zig").workspaceMemoryCreateHandler;
+pub const workspaceMemoryDeleteHandler = @import("workspace_memories.zig").workspaceMemoryDeleteHandler;
+pub const workspace_memories = @import("workspace_memories.zig");
 
 // Git API handlers
 pub const gitStatusHandler = @import("git_status.zig").gitStatusHandler;

@@ -1,0 +1,17 @@
+.{
+    .name = .logger,
+    .version = "0.0.0",
+    .fingerprint = 0x987e13f34c196326,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "root.zig",
+        "test_runner.zig",
+        "Logger.zig",
+        "Formatter.zig",
+        "RequestId.zig",
+        "Timing.zig",
+    },
+}

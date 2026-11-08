@@ -20,9 +20,8 @@
        - Columns tab: add-column inline form + columns list with
          per-row edit/delete + copy-spec footer.
        - Agent tab: AgentView with Tools on left + Knowledge/System Prompt on right
-         (Knowledge moved from left to right per arrow), Local Memories
-         in left sidebar alongside Tools (moved from bottom bar per arrow)
-         via left-extra slot (WorkspaceItemMemoriesView when item.path is truthy).
+         (Knowledge moved from left to right per arrow), Memories in the
+         right-extra slot (WorkspaceMemoriesPanel, workspace-scoped).
 
   Empty / not-found states render centered hints with friendly
   messages instead of the columns UI.
@@ -33,7 +32,7 @@ import { computed, onMounted, onUpdated, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import KanbanColumnEditor from '../kanban/KanbanColumnEditor.vue'
 import InlineEditableText from '../preview/InlineEditableText.vue'
-import WorkspaceItemMemoriesView from './WorkspaceItemMemoriesView.vue'
+import WorkspaceMemoriesPanel from '../workspace/WorkspaceMemoriesPanel.vue'
 import AgentView from './AgentView.vue'
 import type { AgnosticKnowledgeRow, AgnosticSystemPromptRow } from './AgentView.vue'
 import AgentKnowledgeDialog from '../dialogs/AgentKnowledgeDialog.vue'
@@ -882,7 +881,6 @@ function sortedColumns() {
           @edit-system-prompt="handleKanbanEditSystemPrompt"
           @remove-system-prompt="handleKanbanRemoveSystemPrompt"
         >
-          <!-- Local Memories moved from bottom bar to main panel per arrow (both arrows point to center) -->
           <template #right-extra>
             <div
               class="shrink-0 rounded-xl p-4"
@@ -892,22 +890,8 @@ function sortedColumns() {
               "
               data-testid="kanban-settings-page-agent-memories-section"
             >
-              <div v-if="item.path" data-testid="kanban-settings-page-agent-memories">
-                <WorkspaceItemMemoriesView :cwd="item.path" :item-name="item.name" />
-              </div>
-              <div
-                v-else
-                class="text-dense text-center py-6 px-4 rounded-lg"
-                style="
-                  color: var(--semantic-text-dim);
-                  background-color: var(--semantic-sidebar-bg);
-                  border: 1px dashed var(--color-border);
-                "
-                data-testid="kanban-settings-page-agent-memories-no-path"
-              >
-                <UiIcon name="folder" class="w-5 h-5 mb-1" />
-                <div>No directory is set on this kanban.</div>
-                <div class="mt-1">Pick one when creating the kanban to enable local memories.</div>
+              <div data-testid="kanban-settings-page-agent-memories">
+                <WorkspaceMemoriesPanel :workspace-id="workspaceId" :item-name="item.name" />
               </div>
             </div>
           </template>

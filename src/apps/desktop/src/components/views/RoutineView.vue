@@ -35,13 +35,17 @@ import { useWorkspacesStore } from '../../stores/workspaces'
 import { buildToggle } from '../../stores/agentToolToggle'
 import AgentView from './AgentView.vue'
 import type { AgnosticKnowledgeRow, AgnosticSystemPromptRow } from './AgentView.vue'
-import WorkspaceItemMemoriesView from './WorkspaceItemMemoriesView.vue'
+import WorkspaceMemoriesPanel from '../workspace/WorkspaceMemoriesPanel.vue'
 import AgentKnowledgeDialog from '../dialogs/AgentKnowledgeDialog.vue'
 import AgentKnowledgeDetailDialog from '../dialogs/AgentKnowledgeDetailDialog.vue'
 import AgentSystemPromptDialog from '../dialogs/AgentSystemPromptDialog.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import FilePickerDialog from '../FilePickerDialog.vue'
-import { ROUTINE_PRESETS, ROUTINE_CRON_FIELDS, routinePresetFor } from '../../helpers/routinePresets'
+import {
+  ROUTINE_PRESETS,
+  ROUTINE_CRON_FIELDS,
+  routinePresetFor,
+} from '../../helpers/routinePresets'
 import { buildAppUrl } from '../../helpers/appUrl'
 
 const props = defineProps<{
@@ -260,11 +264,23 @@ const statusLabel = computed(() => {
 
 const statusMeta = computed(() => {
   if (lastStatus.value === 'running')
-    return { fg: 'var(--color-yellow)', bg: 'rgba(196, 178, 138, 0.12)', bd: 'rgba(196, 178, 138, 0.4)' }
+    return {
+      fg: 'var(--color-yellow)',
+      bg: 'rgba(196, 178, 138, 0.12)',
+      bd: 'rgba(196, 178, 138, 0.4)',
+    }
   if (lastStatus.value === 'success')
-    return { fg: 'var(--color-green)', bg: 'rgba(135, 169, 135, 0.12)', bd: 'rgba(135, 169, 135, 0.4)' }
+    return {
+      fg: 'var(--color-green)',
+      bg: 'rgba(135, 169, 135, 0.12)',
+      bd: 'rgba(135, 169, 135, 0.4)',
+    }
   if (lastStatus.value === 'failed')
-    return { fg: 'var(--color-red)', bg: 'rgba(196, 116, 110, 0.12)', bd: 'rgba(196, 116, 110, 0.4)' }
+    return {
+      fg: 'var(--color-red)',
+      bg: 'rgba(196, 116, 110, 0.12)',
+      bd: 'rgba(196, 116, 110, 0.4)',
+    }
   return { fg: 'var(--semantic-text-muted)', bg: 'transparent', bd: 'var(--color-border)' }
 })
 
@@ -617,7 +633,14 @@ onUpdated(() => {
       style="border-bottom: 1px solid var(--color-border)"
     >
       <UiIcon name="stopwatch" size-class="w-4.5 h-4.5" style="color: var(--semantic-text-dim)" />
-      <input v-model="title" type="text" placeholder="Routine" data-testid="routine-title" class="text-lead font-semibold truncate bg-transparent outline-none border-b border-transparent focus:border-[var(--color-border)] px-1" style="color: var(--semantic-text)" />
+      <input
+        v-model="title"
+        type="text"
+        placeholder="Routine"
+        data-testid="routine-title"
+        class="text-lead font-semibold truncate bg-transparent outline-none border-b border-transparent focus:border-[var(--color-border)] px-1"
+        style="color: var(--semantic-text)"
+      />
 
       <span
         class="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full text-dense font-medium shrink-0"
@@ -726,14 +749,42 @@ onUpdated(() => {
             <h2 class="text-dense font-semibold mb-3" style="color: var(--semantic-text-dim)">
               What it does
             </h2>
-            <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)">Folder (cwd) — base project folder</label>
-            <button type="button" data-testid="routine-cwd-picker" class="w-full px-3 py-2 rounded-lg text-body flex items-center justify-between gap-2 mb-3" :style="{ backgroundColor: cwd ? 'var(--semantic-active-bg)' : 'var(--semantic-sidebar-bg)', border: '1px solid var(--color-border)', color: cwd ? 'var(--semantic-text)' : 'var(--semantic-text-dim)' }" @click="showCwdPicker = true">
-              <span class="truncate flex-1 text-left font-mono" :title="cwd">{{ cwd || 'Use routine folder (item path)…' }}</span>
-              <span v-if="cwd" class="text-dense shrink-0" style="color: var(--semantic-text-dim)">Browse</span>
-              <UiIcon v-else name="folder-open" class="w-4 h-4 shrink-0" style="color: var(--semantic-text-dim)" />
+            <label
+              class="block text-dense font-medium mb-1.5"
+              style="color: var(--semantic-text-dim)"
+              >Folder (cwd) — base project folder</label
+            >
+            <button
+              type="button"
+              data-testid="routine-cwd-picker"
+              class="w-full px-3 py-2 rounded-lg text-body flex items-center justify-between gap-2 mb-3"
+              :style="{
+                backgroundColor: cwd ? 'var(--semantic-active-bg)' : 'var(--semantic-sidebar-bg)',
+                border: '1px solid var(--color-border)',
+                color: cwd ? 'var(--semantic-text)' : 'var(--semantic-text-dim)',
+              }"
+              @click="showCwdPicker = true"
+            >
+              <span class="truncate flex-1 text-left font-mono" :title="cwd">{{
+                cwd || 'Use routine folder (item path)…'
+              }}</span>
+              <span v-if="cwd" class="text-dense shrink-0" style="color: var(--semantic-text-dim)"
+                >Browse</span
+              >
+              <UiIcon
+                v-else
+                name="folder-open"
+                class="w-4 h-4 shrink-0"
+                style="color: var(--semantic-text-dim)"
+              />
             </button>
-            <p class="text-micro mb-3" style="color: var(--semantic-text-dim)">Empty = use the routine's folder. Set a folder to run this routine in a different project.</p>
-            <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)"
+            <p class="text-micro mb-3" style="color: var(--semantic-text-dim)">
+              Empty = use the routine's folder. Set a folder to run this routine in a different
+              project.
+            </p>
+            <label
+              class="block text-dense font-medium mb-1.5"
+              style="color: var(--semantic-text-dim)"
               >Description</label
             >
             <input
@@ -748,7 +799,9 @@ onUpdated(() => {
                 color: 'var(--semantic-text)',
               }"
             />
-            <label class="block text-dense font-medium mb-1.5" style="color: var(--semantic-text-dim)"
+            <label
+              class="block text-dense font-medium mb-1.5"
+              style="color: var(--semantic-text-dim)"
               >Instruction — sent on every fire</label
             >
             <textarea
@@ -1035,49 +1088,38 @@ onUpdated(() => {
         class="flex-1 min-h-0 overflow-hidden flex flex-col"
         data-testid="routine-agent-panel"
       >
-      <AgentView
-        :item="item"
-        :workspace-id="workspaceId"
-        :item-id="itemId"
-        :knowledge="routineKnowledge"
-        :tools="routineTools"
-        :system-prompts="routineSystemPrompts"
-        :parent-loading="routineAgentLoading"
-        @add-knowledge="handleRoutineAddKnowledge"
-        @remove-knowledge="handleRoutineRemoveKnowledge"
-        @edit-knowledge="handleRoutineEditKnowledge"
-        @toggle-tool="handleRoutineToggleTool"
-        @toggle-tools-bulk="handleRoutineToggleToolsBulk"
-        @add-system-prompt="handleRoutineAddSystemPrompt"
-        @edit-system-prompt="handleRoutineEditSystemPrompt"
-        @remove-system-prompt="handleRoutineRemoveSystemPrompt"
-      >
-        <template #right-extra>
-          <div
-            class="shrink-0 rounded-xl p-4"
-            style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
-            data-testid="routine-agent-memories-section"
-          >
-            <div v-if="item.path" data-testid="routine-agent-memories">
-              <WorkspaceItemMemoriesView :cwd="item.path" :item-name="item.name" />
-            </div>
+        <AgentView
+          :item="item"
+          :workspace-id="workspaceId"
+          :item-id="itemId"
+          :knowledge="routineKnowledge"
+          :tools="routineTools"
+          :system-prompts="routineSystemPrompts"
+          :parent-loading="routineAgentLoading"
+          @add-knowledge="handleRoutineAddKnowledge"
+          @remove-knowledge="handleRoutineRemoveKnowledge"
+          @edit-knowledge="handleRoutineEditKnowledge"
+          @toggle-tool="handleRoutineToggleTool"
+          @toggle-tools-bulk="handleRoutineToggleToolsBulk"
+          @add-system-prompt="handleRoutineAddSystemPrompt"
+          @edit-system-prompt="handleRoutineEditSystemPrompt"
+          @remove-system-prompt="handleRoutineRemoveSystemPrompt"
+        >
+          <template #right-extra>
             <div
-              v-else
-              class="text-dense text-center py-6 px-4 rounded-lg"
+              class="shrink-0 rounded-xl p-4"
               style="
-                color: var(--semantic-text-dim);
-                background-color: var(--semantic-sidebar-bg);
-                border: 1px dashed var(--color-border);
+                background-color: var(--semantic-card-bg);
+                border: 1px solid var(--color-border);
               "
-              data-testid="routine-agent-memories-no-path"
+              data-testid="routine-agent-memories-section"
             >
-              <UiIcon name="folder" size-class="w-4.5 h-4.5" class="mb-1" />
-              <div>No directory is set on this routine.</div>
-              <div class="mt-1">Pick one when creating the routine to enable local memories.</div>
+              <div data-testid="routine-agent-memories">
+                <WorkspaceMemoriesPanel :workspace-id="workspaceId" :item-name="item.name" />
+              </div>
             </div>
-          </div>
-        </template>
-      </AgentView>
+          </template>
+        </AgentView>
       </div>
     </div>
 
@@ -1120,6 +1162,17 @@ onUpdated(() => {
       @create="handleRoutineSystemPromptCreate"
       @save="handleRoutineSystemPromptSave"
     />
-    <FilePickerDialog v-model="showCwdPicker" mode="folder" :load-items="loadItemsForPicker" :key-for="(e: any) => e.path as string" :path-for="(e: any) => e.path as string" :is-expandable="(e: any) => e.is_directory as boolean" :label-for="(e: any) => e.name as string" :close-on-select="true" title="Select Routine Cwd" @select="handleCwdSelected" />
+    <FilePickerDialog
+      v-model="showCwdPicker"
+      mode="folder"
+      :load-items="loadItemsForPicker"
+      :key-for="(e: any) => e.path as string"
+      :path-for="(e: any) => e.path as string"
+      :is-expandable="(e: any) => e.is_directory as boolean"
+      :label-for="(e: any) => e.name as string"
+      :close-on-select="true"
+      title="Select Routine Cwd"
+      @select="handleCwdSelected"
+    />
   </div>
 </template>
