@@ -22,6 +22,8 @@ zig-pkg/
 /src/apps/mcp_hello_world/dist
 /src/apps/mcp_http_hello_world/node_modules
 /src/apps/mcp_http_hello_world/dist
+/src/apps/mcp_oauth_hello_world/node_modules
+/src/apps/mcp_oauth_hello_world/dist
 /src/apps/desktop_app/embedded          # codegen webapp_assets.zig output
 
 # === Vendored third-party sources (regenerate via scripts) ===
