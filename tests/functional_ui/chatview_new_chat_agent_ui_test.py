@@ -148,6 +148,32 @@ def test_new_chat_without_an_active_agent_says_default(
     assert "top-level" in page.locator(_AGENT_CHIP).get_attribute("title").lower()
 
 
+def test_new_chat_roster_panel_names_the_chat_own_agent(
+    page, ui_harness: UIHarness
+) -> None:
+    """The panel's copy says "beside the chat's own agent" — so it has to name
+    it, or the reader is left asking who that agent is."""
+    h = ui_harness
+    workspace_id = create_workspace(h, "ui-new-chat-roster-ws")
+    _seed_agents(h, workspace_id, active=DEFAULT_AGENT)
+
+    _goto_fresh_boot(page, h)
+    _click_new_chat(page)
+
+    page.locator('[data-testid="chat-group-roster-toggle"]').click()
+    page.locator('[data-testid="chat-group-roster-panel"]').wait_for(
+        timeout=10000, state="visible"
+    )
+
+    own = page.locator('[data-testid="chat-group-own-agent"]')
+    assert own.inner_text().strip().startswith(DEFAULT_AGENT), (
+        f"the roster panel does not name the chat's own agent: {own.inner_text()!r}"
+    )
+    assert page.locator('[data-testid="chat-group-own-agent-badge"]').inner_text().strip() == (
+        "this chat"
+    )
+
+
 def test_a_chat_whose_stored_agent_is_gone_names_the_active_one(
     page, ui_harness: UIHarness
 ) -> None:

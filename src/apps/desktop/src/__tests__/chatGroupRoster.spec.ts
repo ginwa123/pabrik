@@ -180,6 +180,7 @@ describe('ChatGroupRoster', () => {
         isBusy: false,
         error: null,
         agents,
+        ownAgent: 'BEAM',
         ...overrides,
       },
     })
@@ -188,6 +189,15 @@ describe('ChatGroupRoster', () => {
     const wrapper = mountRoster()
 
     expect(wrapper.get('[data-testid="chat-group-roster-count"]').text()).toBe('1')
+  })
+
+  it('the panel names the chat\'s own agent, not just the added ones', async () => {
+    const wrapper = mountRoster({ members: [], lead: '', isGroup: false, ownAgent: 'deepseek auto' })
+
+    await wrapper.get('[data-testid="chat-group-roster-toggle"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="chat-group-own-agent"]').text()).toContain('deepseek auto')
+    expect(wrapper.get('[data-testid="chat-group-own-agent-badge"]').text()).toBe('this chat')
   })
 
   it('opening the panel lists the members and marks the lead', async () => {

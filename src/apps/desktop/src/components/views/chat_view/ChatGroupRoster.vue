@@ -9,6 +9,9 @@ const props = defineProps<{
   isBusy: boolean
   error: string | null
   agents: Array<{ name: string }>
+  /** The agent this chat answers as when no member is routed: the composer's
+   * cascade. The panel's own copy promises it, so it has to be named. */
+  ownAgent: string
 }>()
 
 const emit = defineEmits<{
@@ -64,6 +67,22 @@ onMounted(() => document.addEventListener('click', closeOnOutsideClick))
       <p class="px-2 py-1 text-dense font-semibold" style="color: var(--semantic-text)">
         Agents in this chat
       </p>
+
+      <div
+        class="px-2 py-1 rounded flex items-center gap-2"
+        data-testid="chat-group-own-agent"
+      >
+        <span class="truncate text-dense font-mono" style="color: var(--semantic-text)">
+          {{ ownAgent }}
+        </span>
+        <span
+          class="text-micro px-1 rounded"
+          style="color: var(--color-bg); background-color: var(--color-violet)"
+          data-testid="chat-group-own-agent-badge"
+        >
+          this chat
+        </span>
+      </div>
 
       <p
         v-if="members.length === 0"
