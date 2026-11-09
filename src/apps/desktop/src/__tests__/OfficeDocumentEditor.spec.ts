@@ -123,6 +123,32 @@ describe('OfficeDocumentEditor — edits and teardown', () => {
     wrapper.unmount()
   })
 
+  it('reports the kind it mounted, so Save can label the snapshot', async () => {
+    const editor = fakeEditor()
+    mountOfficeEditor.mockResolvedValue(editor)
+
+    const wrapper = mount(OfficeDocumentEditor, {
+      props: { body: JSON.stringify({ kind: 'doc', snapshot: {} }) },
+    })
+    await flushPromises()
+
+    // The view stores the snapshot under this kind. If it re-parsed the body
+    // instead, a body that changed underneath the editor could label a
+    // workbook as a document.
+    expect(wrapper.vm.kind()).toBe('doc')
+    wrapper.unmount()
+  })
+
+  it('reports no kind before the editor is ready', async () => {
+    mountOfficeEditor.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = mount(OfficeDocumentEditor, { props: { body: '' } })
+    await flushPromises()
+
+    expect(wrapper.vm.kind()).toBeNull()
+    wrapper.unmount()
+  })
+
   it('unmounting disposes the editor and stops listening', async () => {
     const editor = fakeEditor()
     mountOfficeEditor.mockResolvedValue(editor)
