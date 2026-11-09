@@ -21,7 +21,7 @@ pub const Migration146AddMcpOAuth = struct {
             \\    token_endpoint TEXT NOT NULL DEFAULT '',
             \\    token_type TEXT NOT NULL DEFAULT 'Bearer',
             \\    scope TEXT NOT NULL DEFAULT '',
-            \\    expires_at INTEGER DEFAULT NULL,
+            \\    expires_at BIGINT DEFAULT NULL,
             \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             \\    UNIQUE (workspace_id, server_name),

@@ -293,7 +293,7 @@ pub fn saveToken(allocator: std.mem.Allocator, db: *database.Db, rec: TokenRecor
         \\VALUES (?, ?, ?, COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
         \\        COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
         \\        COALESCE(NULLIF(?, ''), ''), COALESCE(NULLIF(?, ''), ''),
-        \\        NULLIF(?, ''), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        \\        CAST(NULLIF(?, '') AS BIGINT), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         \\ON CONFLICT (workspace_id, server_name) DO UPDATE SET
         \\  resource = excluded.resource,
         \\  issuer = excluded.issuer,
