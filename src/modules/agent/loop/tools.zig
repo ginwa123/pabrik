@@ -27,10 +27,7 @@ pub const execViewSession = @import("../tools/view_session.zig").execViewSession
 // Workspace credential DISCOVERY. The value never leaves the store — this
 // adapter lists names only (see list_secrets.zig).
 pub const execListSecrets = @import("../tools/list_secrets.zig").execListSecrets;
-pub const execAddDocument = @import("../tools/document.zig").execAddDocument;
-pub const execEditDocument = @import("../tools/document.zig").execEditDocument;
-pub const execDeleteDocument = @import("../tools/document.zig").execDeleteDocument;
-pub const execSearchDocuments = @import("../tools/document.zig").execSearchDocuments;
+pub const execDocumentMarkdown = @import("../tools/document.zig").execDocumentMarkdown;
 pub const execUseSkill = @import("../tools/skill_tools.zig").execUseSkill;
 pub const execRemoveSkill = @import("../tools/skill_tools.zig").execRemoveSkill;
 pub const execAddSkill = @import("../tools/skill_tools.zig").execAddSkill;

@@ -1,4 +1,4 @@
-//! Matching + rendering for the `search_documents` agent tool.
+//! Matching + rendering for the `search` action of `document_markdown`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -299,7 +299,7 @@ const DocumentRowJson = struct {
     content: ?[]const u8,
 };
 
-/// `search_documents` result: `{"query","pattern_mode","pattern_warning",
+/// `search` result: `{"query","pattern_mode","pattern_warning",
 /// "count","total","offset","limit","documents","truncated","next_offset",
 /// "hint"}`.
 pub fn renderSearchResult(
@@ -350,7 +350,7 @@ pub fn renderSearchResult(
             .{ params.offset, params.offset + shown, params.total, params.offset + shown },
         )
     else
-        try allocator.dupe(u8, "Pass a row's exact `id` to edit_document (which replaces the whole body) or delete_document. Widen `query` if you expected more matches.");
+        try allocator.dupe(u8, "Pass a row's exact `id` to `action: \"edit\"` (which replaces the whole body) or `action: \"delete\"`. Widen `query` if you expected more matches.");
     defer allocator.free(hint);
 
     const warning: ?[]const u8 = if (params.warning.len > 0) params.warning else null;
@@ -761,8 +761,8 @@ test "renderSearchResult on the last page is not truncated and points at the wri
     defer parsed.deinit();
     try testing.expect(!parsed.value.truncated);
     try testing.expect(parsed.value.next_offset == null);
-    try testing.expect(std.mem.indexOf(u8, parsed.value.hint, "edit_document") != null);
-    try testing.expect(std.mem.indexOf(u8, parsed.value.hint, "delete_document") != null);
+    try testing.expect(std.mem.indexOf(u8, parsed.value.hint, "action: \"edit\"") != null);
+    try testing.expect(std.mem.indexOf(u8, parsed.value.hint, "action: \"delete\"") != null);
 }
 
 test "renderSearchResult surfaces a pattern_warning verbatim" {

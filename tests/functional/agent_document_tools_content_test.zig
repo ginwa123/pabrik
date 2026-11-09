@@ -1,4 +1,4 @@
-//! The agent's `add_document` / `edit_document` must persist the BODY, which
+//! The agent's `document_markdown` create / edit must persist the BODY, which
 //! lives in the object store (Migration 144 dropped the column). Drives the
 //! real binary through the agent loop's own dispatch, then reads back over HTTP.
 
@@ -193,7 +193,7 @@ fn httpBody(h: *Harness, workspace_id: []const u8, document_id: []const u8) ![]u
 // Tests
 // ============================================================================
 
-test "agent add_document persists the body and every read path returns it" {
+test "agent document_markdown create persists the body and every read path returns it" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});
@@ -218,7 +218,7 @@ test "agent add_document persists the body and every read path returns it" {
     defer gpa.free(doc_id);
     try testing.expect(doc_id.len > 0);
     try testing.expectEqualStrings(ws, try stringField(&added, "workspace_id"));
-    try expectBody(try stringField(&added, "content"), BODY_V1, "add_document echo");
+    try expectBody(try stringField(&added, "content"), BODY_V1, "create echo");
 
     // 2. Read back through the store, body included.
     var got = try documents(&h, &.{ "doc-get", "--session", session, "--document", doc_id }, true);
@@ -236,7 +236,7 @@ test "agent add_document persists the body and every read path returns it" {
     try expectBody(over_http, BODY_V1, "GET /documents/:id");
 }
 
-test "agent edit_document replaces the body and the new body is what reads back" {
+test "agent document_markdown edit replaces the body and the new body is what reads back" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});
@@ -264,7 +264,7 @@ test "agent edit_document replaces the body and the new body is what reads back"
     }, true);
     defer edit.deinit();
     const edited = try toolData(&edit);
-    try expectBody(try stringField(&edited, "content"), BODY_V2, "edit_document echo");
+    try expectBody(try stringField(&edited, "content"), BODY_V2, "edit echo");
     // The title was omitted, so it must have survived the patch.
     try testing.expectEqualStrings("Plan", try stringField(&edited, "title"));
 
@@ -277,7 +277,7 @@ test "agent edit_document replaces the body and the new body is what reads back"
     try expectBody(over_http, BODY_V2, "GET /documents/:id after edit");
 }
 
-test "agent add_document refuses a body it cannot store instead of writing an empty document" {
+test "agent document_markdown create refuses a body it cannot store instead of writing an empty document" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});

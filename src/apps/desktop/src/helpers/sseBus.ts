@@ -237,8 +237,8 @@ export function installSseBus(_app?: App, options?: SseBusInstallOptions): SseBu
         // frontend filters by `event.cwd` in the bridge that invalidates the shared PR-status cache
         // (helpers/prStatusCache.ts), so a merge in ANOTHER tab still recolours this one's badges.
         gitPrState: (e) => forward('gitPrState', e),
-        // Document mutations — the AGENT TOOLS only (`add_document` / `edit_document` /
-        // `delete_document`). The `documentsSse` store filters by `event.workspace_id` and refreshes
+        // Document mutations — the AGENT TOOL only (`document_markdown`). The `documentsSse`
+        // store filters by `event.workspace_id` and refreshes
         // the sidebar list (and an open editor) from it.
         documents: (e) => forward('documents', e),
       },

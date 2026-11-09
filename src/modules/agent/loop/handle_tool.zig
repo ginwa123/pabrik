@@ -505,7 +505,7 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         // A host without one (unit tests) leaves it null and the emit no-ops.
         .event_bus = if (pabrik.getSingleton()) |di| di.event_bus else |_| null,
         // Document bodies live in the object store, not in a column. Without
-        // this handle `add_document` / `edit_document` write a row with no
+        // this handle `document_markdown` writes a row with no
         // body and the document reads back empty.
         .storage = documentStorage(),
         // Only a tool that blocks needs it, and only `command` reads it.

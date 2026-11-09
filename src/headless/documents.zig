@@ -13,6 +13,7 @@ const folders_store = pabrikcore.document_folders_store;
 const documents_store = pabrikcore.documents_store;
 const workspace_scope = pabrikcore.workspace_scope;
 const agent = pabrikcore.agent;
+const document_tool = pabrikcore.document_tool;
 
 const FolderDto = struct {
     id: []const u8,
@@ -128,7 +129,7 @@ pub fn run(
     a: args.DocumentsArgs,
 ) ![]u8 {
     switch (a.op) {
-        .doc_add, .doc_edit => return runToolOp(allocator, backend, a),
+        .doc_add, .doc_edit, .doc_delete, .doc_search => return runToolOp(allocator, backend, a),
         .doc_get => return documentBodyJson(allocator, backend, a),
         else => {},
     }
@@ -146,14 +147,35 @@ fn runToolOp(
     backend: *boot_mod.Backend,
     a: args.DocumentsArgs,
 ) ![]u8 {
-    const tool_name = if (a.op == .doc_add) "add_document" else "edit_document";
-    const arguments = if (a.op == .doc_add)
-        try std.json.Stringify.valueAlloc(allocator, .{ .title = a.title, .content = a.content }, .{})
-    else
-        try std.json.Stringify.valueAlloc(allocator, .{
+    const action: []const u8 = switch (a.op) {
+        .doc_add => "create",
+        .doc_edit => "edit",
+        .doc_delete => "delete",
+        .doc_search => "search",
+        else => unreachable,
+    };
+    const arguments = switch (a.op) {
+        .doc_add => try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
+            .title = a.title,
+            .content = a.content,
+        }, .{}),
+        .doc_edit => try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
             .document_id = a.document_id.?,
             .content = a.content,
-        }, .{});
+        }, .{}),
+        .doc_delete => try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
+            .document_id = a.document_id.?,
+        }, .{}),
+        .doc_search => try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
+            .query = a.query,
+            .limit = if (a.limit == 0) null else @as(i64, @intCast(a.limit)),
+        }, .{ .emit_null_optional_fields = false }),
+        else => unreachable,
+    };
     defer allocator.free(arguments);
 
     var temperature: f32 = 0;
@@ -177,7 +199,7 @@ fn runToolOp(
     const output = try handle_tool.runToolDirect(ctx, .{
         .id = "headless_documents",
         .type = "function",
-        .function = .{ .name = tool_name, .arguments = arguments },
+        .function = .{ .name = document_tool.TOOL_NAME, .arguments = arguments },
     });
     defer allocator.free(output);
 
@@ -239,9 +261,9 @@ pub fn runWithDb(
     switch (a.op) {
         .list => return listJson(allocator, store, a.workspace_id),
 
-        // These three need the process singleton (the tool dispatch resolves
-        // the object store from it), so they only run through `run`.
-        .doc_add, .doc_edit, .doc_get => return error.RequiresBackend,
+        // These need the process singleton (the tool dispatch resolves the
+        // object store from it), so they only run through `run`.
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get => return error.RequiresBackend,
 
         .search => {
             const rows = try store.searchDocuments(allocator, a.workspace_id, a.query);

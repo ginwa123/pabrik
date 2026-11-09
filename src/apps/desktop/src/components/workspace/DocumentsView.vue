@@ -81,14 +81,14 @@ let prevDocumentId = props.documentId
 // "the list has not loaded yet".
 let hadDocumentRow = false
 
-/** Adopt a row that changed underneath us — an agent `edit_document` reaches this view as an SSE
+/** Adopt a row that changed underneath us — an agent `document_markdown` edit reaches this view as an SSE
  * refresh. Unsaved edits win: the draft is kept and only the saved baseline moves, so Save still
  * sends just the user's own fields. */
 function syncFromStore() {
   const row = document_.value
   if (!row) {
     if (!hadDocumentRow || !documentsStore.loaded) return
-    // The open document is gone from a fully-loaded list — an agent `delete_document` removed it.
+    // The open document is gone from a fully-loaded list — an agent `document_markdown` delete removed it.
     // Staying would render "Loading document…" forever.
     hadDocumentRow = false
     router.replace(buildAppUrl({ workspaceId: workspaceId.value ?? '' })).catch(() => {
@@ -145,13 +145,13 @@ const save = async () => {
     return
   }
   // Send ONLY the fields the user actually changed. Sending both is safe when the draft is fresh,
-  // but this view can sit open for a long time and the agent's `edit_document` may have rewritten
+  // but this view can sit open for a long time and the agent's `document_markdown` edit may have rewritten
   // the body in the meantime — a whole-body PATCH would then silently revert that edit.
   const patch: { title?: string; content?: string } = {}
   if (draftTitle.value !== savedTitle.value) patch.title = draftTitle.value
   if (isOffice.value) {
     // Only when the editor reported an edit: a rename must not rewrite the
-    // body, or it would revert an agent `edit_document` that landed meanwhile.
+    // body, or it would revert an agent `document_markdown` edit that landed meanwhile.
     if (officeDirty.value) {
       const snapshot = officeEditor.value?.snapshot()
       if (snapshot !== null && snapshot !== undefined) {

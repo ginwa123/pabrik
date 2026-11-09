@@ -24,20 +24,16 @@ A stale entry here is a red build that names the one file to edit.
 
 from __future__ import annotations
 
-# Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the
+# Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
 # wire order of `GET /api/agents/:agent_id/tools`.
 #
-# `delete_document` is deliberately ABSENT. It is irreversible, so it is
-# registered (and therefore one tick away in the Settings → Tools
-# checklist, which reads the same registry) but never seeded. Registered
-# and handed-out are two different decisions; see the static contract test
-# `search_documents is seeded by default but delete_document is NOT` in
-# `src/modules/agent/loop/tools_exec_document.zig`.
+# `document_markdown` is ONE tool with four actions (`create` / `edit` /
+# `search` / `delete`); the four per-action names it replaced are gone from
+# the registry entirely.
 DEFAULT_AGENT_TOOLS: list[str] = [
-    "add_document",
     "add_skill",
     "command",
-    "edit_document",
+    "document_markdown",
     "edit_skill",
     "get_plan",
     "glob",
@@ -55,7 +51,6 @@ DEFAULT_AGENT_TOOLS: list[str] = [
     "run_session",
     "save_memory",
     "search",
-    "search_documents",
     "search_skills",
     "search_tool",
     "set_skill_metadata",

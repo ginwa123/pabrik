@@ -1,5 +1,5 @@
-// Functional coverage for the `delete_document` / `search_documents` agent
-// tools.
+// Functional coverage for the `document_markdown` agent tool — one tool with
+// four actions (`create` / `edit` / `search` / `delete`).
 
 const std = @import("std");
 const testing = std.testing;
@@ -8,20 +8,18 @@ const Harness = harness.Harness;
 const gpa = testing.allocator;
 const io = testing.io;
 
-const DELETE_DOCUMENT = "delete_document";
-const SEARCH_DOCUMENTS = "search_documents";
+const DOCUMENT_MARKDOWN = "document_markdown";
 
 // ============================================================================
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
 /// order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
-    "add_document",
     "add_skill",
     "command",
-    "edit_document",
+    "document_markdown",
     "edit_skill",
     "get_plan",
     "glob",
@@ -39,7 +37,6 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "run_session",
     "save_memory",
     "search",
-    "search_documents",
     "search_skills",
     "search_tool",
     "set_skill_metadata",
@@ -55,15 +52,20 @@ const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "write_file",
 };
 
-/// `sorted(DEFAULT_AGENT_TOOLS + ["delete_document"])` — what the wire
-/// must carry once the user opts in. `delete_document` sorts between
-/// `command` and `edit_document`.
-const AGENT_TOOLS_WITH_DELETE = [_][]const u8{
+/// The four per-action names `document_markdown` replaced. None of them may
+/// survive in the registry or the seeded set.
+const RETIRED_DOCUMENT_TOOLS = [_][]const u8{
     "add_document",
+    "edit_document",
+    "search_documents",
+    "delete_document",
+};
+
+/// `DEFAULT_AGENT_TOOLS` minus `document_markdown` — the post-DELETE
+/// expectation, so the assertion is about the SET and not a re-derivation.
+const DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS = [_][]const u8{
     "add_skill",
     "command",
-    "delete_document",
-    "edit_document",
     "edit_skill",
     "get_plan",
     "glob",
@@ -81,7 +83,6 @@ const AGENT_TOOLS_WITH_DELETE = [_][]const u8{
     "run_session",
     "save_memory",
     "search",
-    "search_documents",
     "search_skills",
     "search_tool",
     "set_skill_metadata",
@@ -287,8 +288,8 @@ fn expectExactSet(names: []const []u8, want: []const []const u8) !void {
 // Tests
 // ============================================================================
 
-// REGISTRY — the tools exist, are dispatchable, and describe themselves.
-test "registry_lists_both_new_document_tools" {
+// REGISTRY — the tool exists, is dispatchable, and describes itself.
+test "registry_lists_document_markdown" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});
@@ -307,80 +308,54 @@ test "registry_lists_both_new_document_tools" {
         return error.TestUnexpectedResult;
     };
 
-    // Both must be registered. A registry entry is what makes a tool
-    // dispatchable AND what puts a checkbox in Settings → Tools — if
-    // either is missing the user has no way to reach the tool at all.
-    var search_desc: ?[]const u8 = null;
-    var delete_desc: ?[]const u8 = null;
+    var desc: ?[]const u8 = null;
     for (tools.items) |row| {
         const obj = switch (row) {
             .object => |o| o,
             else => continue,
         };
         const name = switch (obj.get("name") orelse continue) {
-            .string => |s| s,
+            .string => |v| v,
             else => continue,
         };
-        const desc = switch (obj.get("description") orelse continue) {
-            .string => |s| s,
+        const d = switch (obj.get("description") orelse continue) {
+            .string => |v| v,
             else => continue,
         };
-        if (std.mem.eql(u8, name, SEARCH_DOCUMENTS)) search_desc = desc;
-        if (std.mem.eql(u8, name, DELETE_DOCUMENT)) delete_desc = desc;
+        if (std.mem.eql(u8, name, DOCUMENT_MARKDOWN)) desc = d;
     }
-    if (search_desc == null) {
-        std.debug.print("{s} missing from registry\n", .{SEARCH_DOCUMENTS});
-        return error.TestUnexpectedResult;
-    }
-    if (delete_desc == null) {
-        std.debug.print("{s} missing from registry\n", .{DELETE_DOCUMENT});
+    if (desc == null) {
+        std.debug.print("{s} missing from registry\n", .{DOCUMENT_MARKDOWN});
         return error.TestUnexpectedResult;
     }
 
     // A non-empty description is the floor: the registry feeds the
     // `search_tool` catalog too, and an entry with no description is a
     // row the model cannot choose on.
-    if (std.mem.trim(u8, search_desc.?, " \t\r\n").len == 0) {
-        std.debug.print("{s} has an empty description — nothing for the model to read\n", .{SEARCH_DOCUMENTS});
-        return error.TestUnexpectedResult;
-    }
-    if (std.mem.trim(u8, delete_desc.?, " \t\r\n").len == 0) {
-        std.debug.print("{s} has an empty description — nothing for the model to read\n", .{DELETE_DOCUMENT});
+    if (std.mem.trim(u8, desc.?, " \t\r\n").len == 0) {
+        std.debug.print("{s} has an empty description — nothing for the model to read\n", .{DOCUMENT_MARKDOWN});
         return error.TestUnexpectedResult;
     }
 
-    // `search_documents` is only useful if the model knows what to DO with a
-    // row: the description has to name the tools that consume the id.
-    if (std.mem.indexOf(u8, search_desc.?, "document_id") == null) {
-        std.debug.print("{s} must tell the model what a row carries; got \"{s}\"\n", .{ SEARCH_DOCUMENTS, search_desc.? });
-        return error.TestUnexpectedResult;
-    }
-    if (std.mem.indexOf(u8, search_desc.?, "edit_document") == null) {
-        std.debug.print("{s} must point at the tool that consumes its id; got \"{s}\"\n", .{ SEARCH_DOCUMENTS, search_desc.? });
-        return error.TestUnexpectedResult;
+    // One tool covers four operations, so the description has to name all
+    // four — otherwise the model never discovers `search` or `delete`.
+    for ([_][]const u8{ "create", "edit", "search", "delete" }) |action| {
+        if (std.mem.indexOf(u8, desc.?, action) == null) {
+            std.debug.print("{s} must name the `{s}` action; got \"{s}\"\n", .{ DOCUMENT_MARKDOWN, action, desc.? });
+            return error.TestUnexpectedResult;
+        }
     }
 
-    // `delete_document` must state that it is irreversible AND point at
-    // `edit_document` as the reversible alternative — otherwise the model
-    // reaches for delete whenever the user says "fix this note".
-    if (std.mem.indexOf(u8, delete_desc.?, "IRREVERSIBLE") == null) {
-        std.debug.print("{s} must lead with the irreversibility; got \"{s}\"\n", .{ DELETE_DOCUMENT, delete_desc.? });
-        return error.TestUnexpectedResult;
-    }
-    if (std.mem.indexOf(u8, delete_desc.?, "edit_document") == null) {
-        std.debug.print("{s} must name the reversible alternative; got \"{s}\"\n", .{ DELETE_DOCUMENT, delete_desc.? });
-        return error.TestUnexpectedResult;
-    }
-
-    // `delete_document` takes exactly one argument.
-    if (containsIgnoreCase(delete_desc.?, "force")) {
-        std.debug.print("{s} grew a confirmation knob; got \"{s}\"\n", .{ DELETE_DOCUMENT, delete_desc.? });
+    // `delete` is irreversible, and the description is the only place the
+    // model can learn that before it calls.
+    if (std.mem.indexOf(u8, desc.?, "IRREVERSIBLE") == null) {
+        std.debug.print("{s} must lead with the irreversibility of `delete`; got \"{s}\"\n", .{ DOCUMENT_MARKDOWN, desc.? });
         return error.TestUnexpectedResult;
     }
 }
 
-// SEEDED — read-only default-on, irreversible default-off.
-test "fresh_agent_is_seeded_with_search_documents_but_not_delete" {
+// SEEDED — one tool, seeded into every new agent.
+test "fresh_agent_is_seeded_with_document_markdown" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});
@@ -396,30 +371,29 @@ test "fresh_agent_is_seeded_with_search_documents_but_not_delete" {
     const tools = try agentToolNames(&h, agent_id);
     defer freeNames(tools);
 
-    if (!namesContain(tools, SEARCH_DOCUMENTS)) {
+    if (!namesContain(tools, DOCUMENT_MARKDOWN)) {
         const rendered = try std.mem.join(gpa, ", ", tools);
         defer gpa.free(rendered);
-        std.debug.print("{s} should be seeded like add/edit_document; got {s}\n", .{ SEARCH_DOCUMENTS, rendered });
+        std.debug.print("{s} should be seeded; got {s}\n", .{ DOCUMENT_MARKDOWN, rendered });
         return error.TestUnexpectedResult;
     }
-    if (namesContain(tools, DELETE_DOCUMENT)) {
-        const rendered = try std.mem.join(gpa, ", ", tools);
-        defer gpa.free(rendered);
-        std.debug.print(
-            "{s} irreversibly deletes the user's documents and must NOT be seeded into every new agent; got {s}\n",
-            .{ DELETE_DOCUMENT, rendered },
-        );
-        return error.TestUnexpectedResult;
+    for (RETIRED_DOCUMENT_TOOLS) |retired| {
+        if (namesContain(tools, retired)) {
+            const rendered = try std.mem.join(gpa, ", ", tools);
+            defer gpa.free(rendered);
+            std.debug.print("{s} was folded into {s} and must not be seeded; got {s}\n", .{ retired, DOCUMENT_MARKDOWN, rendered });
+            return error.TestUnexpectedResult;
+        }
     }
     // The whole seeded set still matches the shared transcription, so this
     // test doubles as the "you forgot default_tools.py" alarm.
     try expectExactSet(tools, &DEFAULT_AGENT_TOOLS);
 }
 
-// Registered is not the same as seeded — the user can still tick it. `POST
-// /api/agents/:id/tools` validates `tool_name` against
+// Registered is not the same as enabled — the user can still tick it off.
+// `POST /api/agents/:id/tools` validates `tool_name` against
 // `UNIFIED_TOOL_REGISTRY` and 400s on anything unknown.
-test "delete_document_can_be_enabled_explicitly" {
+test "document_markdown_can_be_disabled_and_reenabled" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});
@@ -433,45 +407,32 @@ test "delete_document_can_be_enabled_explicitly" {
     defer gpa.free(agent_id);
 
     {
-        const before = try agentToolNames(&h, agent_id);
-        defer freeNames(before);
-        if (namesContain(before, DELETE_DOCUMENT)) {
-            std.debug.print("the fresh agent should not start with {s}\n", .{DELETE_DOCUMENT});
-            return error.TestUnexpectedResult;
-        }
-    }
-
-    // 201, not 400 — a 400 would mean the name is not in the registry.
-    {
-        const body = try std.json.Stringify.valueAlloc(gpa, .{ .tool_name = DELETE_DOCUMENT }, .{});
-        defer gpa.free(body);
-
-        const path = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
+        const path = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools/{s}", .{ agent_id, DOCUMENT_MARKDOWN });
         defer gpa.free(path);
 
-        var r = try h.http(io, .POST, path, .{ .json_body = body, .expect = &.{201} });
+        var r = try h.http(io, .DELETE, path, .{ .expect = &.{200} });
         r.deinit();
     }
 
     {
         const after = try agentToolNames(&h, agent_id);
         defer freeNames(after);
-        if (!namesContain(after, DELETE_DOCUMENT)) {
-            const rendered = try std.mem.join(gpa, ", ", after);
-            defer gpa.free(rendered);
-            std.debug.print("opt-in did not persist; got {s}\n", .{rendered});
+        if (namesContain(after, DOCUMENT_MARKDOWN)) {
+            std.debug.print("disabling {s} did not persist\n", .{DOCUMENT_MARKDOWN});
             return error.TestUnexpectedResult;
         }
-        // And nothing else moved.
-        try expectSortedSet(after, &AGENT_TOOLS_WITH_DELETE);
+        try expectSortedSet(after, &DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS);
     }
 
-    // Ticking it off again is a clean DELETE, not a 500.
+    // 201, not 400 — a 400 would mean the name is not in the registry.
     {
-        const path = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools/{s}", .{ agent_id, DELETE_DOCUMENT });
+        const body = try std.json.Stringify.valueAlloc(gpa, .{ .tool_name = DOCUMENT_MARKDOWN }, .{});
+        defer gpa.free(body);
+
+        const path = try std.fmt.allocPrint(gpa, "/api/agents/{s}/tools", .{agent_id});
         defer gpa.free(path);
 
-        var r = try h.http(io, .DELETE, path, .{ .expect = &.{200} });
+        var r = try h.http(io, .POST, path, .{ .json_body = body, .expect = &.{201} });
         r.deinit();
     }
 
@@ -508,7 +469,7 @@ test "an_unknown_tool_name_is_still_rejected" {
     r.deinit();
 }
 
-// `search_documents` reads the `documents` table; prove it is populated.
+// `document_markdown`'s `search` action reads the `documents` table; prove it is populated.
 test "documents_crud_round_trip_the_search_tool_reads" {
     try harness.requirePabrikBin(io, gpa);
 
@@ -573,7 +534,7 @@ test "documents_crud_round_trip_the_search_tool_reads" {
 
     // A second document with the same title in a DIFFERENT workspace must
     // not appear in the first workspace's list — the same `workspace_id`
-    // guard `search_documents` relies on, exercised over the wire.
+    // guard the `search` action relies on, exercised over the wire.
     {
         const other_ws = try createWorkspace(&h, "doc-tools-crud-other");
         defer gpa.free(other_ws);
@@ -631,7 +592,7 @@ test "documents_crud_round_trip_the_search_tool_reads" {
     }
 
     // A deleted document is gone for the tools too — 404, not a 200 with
-    // an empty body, so `delete_document`'s "already gone" case and this
+    // an empty body, so the `delete` action's "already gone" case and this
     // one agree.
     {
         const path = try std.fmt.allocPrint(gpa, "/api/workspaces/{s}/documents/{s}", .{ ws_id, doc_id });
@@ -642,7 +603,7 @@ test "documents_crud_round_trip_the_search_tool_reads" {
     }
 }
 
-// `search_documents` has to match an empty body without erroring.
+// The `search` action has to match an empty body without erroring.
 // `SqliteBackend.exec` binds a zero-length slice as SQL NULL, so an empty
 // body is the one input that has historically broken writes.
 test "documents_body_empty_round_trips_as_empty_string" {
@@ -710,15 +671,6 @@ fn nameSlicesEqual(a: []const []const u8, b: []const []const u8) bool {
     return true;
 }
 
-fn containsIgnoreCase(haystack: []const u8, needle_lower: []const u8) bool {
-    if (needle_lower.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle_lower.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i..][0..needle_lower.len], needle_lower)) return true;
-    }
-    return false;
-}
-
 comptime {
     // Body-analysis barrier — an unreferenced helper is never
     // type-checked, so a stdlib rename inside one stays invisible.
@@ -734,10 +686,9 @@ comptime {
     _ = expectSortedSet;
     _ = expectExactSet;
     _ = expectFieldStr;
-    _ = containsIgnoreCase;
     _ = nameSlicesEqual;
     _ = DEFAULT_AGENT_TOOLS;
-    _ = AGENT_TOOLS_WITH_DELETE;
-    _ = DELETE_DOCUMENT;
-    _ = SEARCH_DOCUMENTS;
+    _ = DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS;
+    _ = DOCUMENT_MARKDOWN;
+    _ = RETIRED_DOCUMENT_TOOLS;
 }

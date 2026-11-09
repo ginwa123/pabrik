@@ -1,6 +1,6 @@
-//! `add_document` / `edit_document` / `delete_document` / `search_documents`
-//! — the agent tools that let a model read and write its own workspace's
-//! document store (Migration 098).
+//! `document_markdown` — the agent tool that reads and writes its own
+//! workspace's document store (Migration 098). One tool, four actions:
+//! `create`, `edit`, `search`, `delete`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -17,33 +17,23 @@ const sanitizeControlChars = helpers.sanitize_control_chars;
 const testing = std.testing;
 const migration = @import("../../../migrations/migration.zig");
 
+pub const TOOL_NAME = "document_markdown";
+
 // =====================================================================
-// Inputs
+// Input
 // =====================================================================
 
-/// Args for `add_document`.
-pub const AddDocumentInput = struct {
-    title: []const u8 = "",
-    content: []const u8 = "",
-    /// `markdown` (the default) or `office`. An office body is a Univer
-    /// snapshot: one JSON object holding the workbook's sheets and cells.
-    format: []const u8 = "",
-};
-
-/// Args for `edit_document`.
-pub const EditDocumentInput = struct {
+/// Args for `document_markdown`. `action` selects which fields matter:
+/// `create` reads title/content/format, `edit` reads document_id/title/
+/// content, `search` reads query/literal/limit/offset/include_content.
+pub const DocumentMarkdownInput = struct {
+    action: []const u8 = "",
     document_id: []const u8 = "",
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
-};
-
-/// Args for `delete_document`. Deliberately ONE field.
-pub const DeleteDocumentInput = struct {
-    document_id: []const u8 = "",
-};
-
-/// Args for `search_documents`.
-pub const SearchDocumentsInput = struct {
+    /// `markdown` (the default) or `office`. An office body is a Univer
+    /// snapshot: one JSON object holding the workbook's sheets and cells.
+    format: []const u8 = "",
     query: ?[]const u8 = null,
     literal: ?bool = null,
     limit: ?i64 = null,
@@ -53,175 +43,102 @@ pub const SearchDocumentsInput = struct {
 };
 
 // =====================================================================
-// Tool schemas
+// Tool schema
 // =====================================================================
 
-pub const add_document_tool_system_prompt =
-    \\## Add Document Tool — Behavior
-    \\Use `add_document` to create a document in YOUR workspace.
-    \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. You can only write into the workspace your session belongs to.
-    \\- `title` is REQUIRED and must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug.
-    \\- `format` is `markdown` (the default) or `office`. Omit it for prose.
-    \\- For `markdown`, `content` is the markdown body and may be empty (you can create a heading-only stub and fill it in with `edit_document`).
-    \\- For `office`, `content` is a Univer snapshot: one JSON object with `sheets`, each sheet holding a `cellData` map of row index → column index → `{"v": value}`. A spreadsheet the user opens in the grid must be a valid snapshot, so build it from that shape rather than inventing keys.
-    \\- A human can also create and edit documents from the UI; both paths write the same table, so a document the agent writes appears in their sidebar immediately.
-    \\
-;
-
-pub const add_document_tool = AgentTool{
-    .type = "function",
-    .function = .{
-        .name = "add_document",
-        .description =
-        \\Create a document in YOUR workspace — a plan, a spec, meeting notes, a research summary, any artifact worth re-reading later. `format: "office"` creates a spreadsheet instead of prose.
-        \\
-        \\- The document is stored in SQLite and shown in the "Documents" section of the sidebar, where the user can open and edit it.
-        \\- SCOPE is automatic: your session's workspace is resolved before the write, so there is no `workspace_id` argument — one supplied is ignored.
-        ,
-        .parameters = .{
-            .type = "object",
-            .properties = &.{
-                .{ .name = "title", .type = "string", .description = "Human-readable document name, shown in the sidebar Documents list. Required, non-blank." },
-                .{ .name = "content", .type = "string", .description = "The body: markdown text, or a Univer snapshot JSON when `format` is 'office'. May be empty. Capped at 4 MiB." },
-                .{ .name = "format", .type = "string", .description = "'markdown' (default) or 'office'. An office body is a Univer snapshot: {\"sheets\": {<id>: {\"cellData\": {<row>: {<col>: {\"v\": value}}}}}}. Any other value is refused." },
-            },
-            .required = &.{"title"},
-        },
-        .system_prompt = add_document_tool_system_prompt,
-    },
-};
-
-pub const edit_document_tool_system_prompt =
-    \\## Edit Document Tool — Behavior
-    \\Use `edit_document` to change an existing document in YOUR workspace.
-    \\- `document_id` comes from the id returned by `add_document`, or from a `search_documents` row. If you still have no id, run `search_documents` — do NOT guess one and do NOT ask the user to paste an id you can look up yourself.
-    \\- Provide `title`, `content`, or both. An OMITTED field keeps its current value; `content: ""` genuinely clears the body. A patch with neither field is rejected.
-    \\- `content` is the WHOLE new body, not a diff. Read the existing body first — `search_documents` with `include_content: true` returns it — or you will silently discard what is there.
+pub const document_markdown_tool_system_prompt =
+    \\## Document Tool — Behavior
+    \\`document_markdown` is the ONE tool for documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `search`, `delete`.
+    \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. You can only read and write the workspace your session belongs to; a `document_id` from another workspace reports "not found", exactly as a nonexistent id does, so you cannot probe or enumerate another workspace.
+    \\- `search` first when you do not have an id. It is how you get a `document_id` — never invent one, and do not ask the user to paste an id you can look up yourself.
+    \\- `create` needs `title`, which must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug. `content` is the markdown body and may be empty, so you can create a heading-only stub and fill it in with `edit`.
+    \\- `format` is `markdown` (the default) or `office`. For `office`, `content` is a Univer snapshot: one JSON object with `sheets`, each sheet holding a `cellData` map of row index → column index → `{"v": value}`. A spreadsheet the user opens in the grid must be a valid snapshot, so build it from that shape rather than inventing keys.
+    \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` is rejected. `content` is the WHOLE new body, not a diff — read the existing body first (`search` with `include_content: true`) or you will silently discard what is there.
     \\- An `office` document's body is a Univer snapshot JSON. Replacing it with prose destroys the spreadsheet, so only write one when you can produce a valid snapshot; otherwise leave the document to the user's grid.
-    \\- Scope is automatic. A document belonging to another workspace reports "not found" — you cannot read it, edit it, or learn that it exists.
+    \\- `search` takes `query`, a case-insensitive REGEX matched against each document's TITLE AND CONTENT. One pattern reaches a phrase that several words would: `release|launch`, `^Q3`, `\bTODO\b`. Set `literal: true` when the query is literal text (e.g. `*.md`, `fn(`) — otherwise its metacharacters are interpreted. An invalid pattern is not a failure: it is matched as a literal substring and the result carries `pattern_warning`. Read it instead of retrying blindly. Omitting `query` lists your documents, newest-updated first — the right first call when you do not know what you are looking for.
+    \\- Results are PAGED: `limit` (default 20, max 100) caps how many rows you get back, `total` is the real match count, `offset` continues the listing, and `hint` names the exact next offset. Every row carries a short `excerpt` around the hit plus `content_length` (bytes) — enough to tell documents apart without dumping megabytes of markdown into your context. A document whose body lives in the object store is searched through its PREVIEW (the first 512 bytes); a row whose `content_length` is much larger than its excerpt may hold the match further in, so open it with `include_content: true`.
+    \\- `delete` is IRREVERSIBLE. There is no trash, no undo, and no archive. Once the row is gone the body is unrecoverable — not through this tool, and not from the sidebar. Delete only what the user asked you to delete: "find the doc about X" is not permission to remove X, and a document the user has since revised is still their work. To revise a document instead of removing it, use `action: "edit"`.
+    \\- A human can also create and edit documents from the UI; both paths write the same table, so a document you write appears in their sidebar immediately.
     \\
 ;
 
-pub const edit_document_tool = AgentTool{
+pub const document_markdown_tool = AgentTool{
     .type = "function",
     .function = .{
-        .name = "edit_document",
+        .name = TOOL_NAME,
         .description =
-        \\Edit an existing markdown document in YOUR workspace — append a section, correct a plan, expand a summary.
+        \\Read and write documents in YOUR workspace — a plan, a spec, meeting notes, a research summary, any artifact worth re-reading later. `action` selects the operation: `create` (title + content), `edit` (document_id + the fields to change), `search` (query, paged), `delete` (document_id, IRREVERSIBLE).
         \\
-        \\- SCOPE is automatic: a `document_id` in another workspace reports "not found", exactly as a nonexistent id does — you cannot probe or enumerate another workspace.
-        \\- PATCH: omitted fields keep their current value; `content` is the COMPLETE new body, not a diff (include everything the document should hold after the edit); `content: ""` clears the body, unlike omitting the field; supplying neither field is rejected.
-        ,
-        .parameters = .{
-            .type = "object",
-            .properties = &.{
-                .{ .name = "document_id", .type = "string", .description = "Document id from `add_document` or a `search_documents` row. A row in another workspace reports 'not found'." },
-                .{ .name = "title", .type = "string", .description = "New title. Omit to keep the current one. Must be non-blank." },
-                .{ .name = "content", .type = "string", .description = "The COMPLETE new body (not a diff). Omit to keep the current body; pass \"\" to clear it. Capped at 4 MiB." },
-            },
-            .required = &.{"document_id"},
-        },
-        .system_prompt = edit_document_tool_system_prompt,
-    },
-};
-
-pub const delete_document_tool_system_prompt =
-    \\## Delete Document Tool — Behavior
-    \\Use `delete_document` to permanently remove ONE document from YOUR workspace.
-    \\- This is IRREVERSIBLE. There is no trash, no undo, and no archive. Once the row is gone the body is unrecoverable — not through this tool, and not from the sidebar.
-    \\- `document_id` must be an id you actually looked up with `search_documents`. Never construct one, never reuse an id from a different workspace, never delete a document just because you wrote it earlier in this session — a document the user has since revised is still their work.
-    \\- Delete only what the user asked you to delete. "Find the doc about X" is not permission to remove X. If you are unsure which document they mean, ask instead of guessing.
-    \\- Scope is automatic. A `document_id` from another workspace reports "not found" — identical to an id that never existed, so you cannot delete across a workspace boundary even by accident.
-    \\- To revise a document instead of removing it, use `edit_document`.
-    \\
-;
-
-pub const delete_document_tool = AgentTool{
-    .type = "function",
-    .function = .{
-        .name = "delete_document",
-        .description =
-        \\Permanently delete ONE document from YOUR workspace by id. IRREVERSIBLE — the body is not moved to a trash and cannot be recovered.
-        \\
-        \\- SCOPE is automatic: a `document_id` in another workspace reports "not found", exactly as a nonexistent id does, so you cannot delete across a workspace boundary.
-        \\- Use only when the user asked for the document to be REMOVED; revise with `edit_document` instead.
-        ,
-        .parameters = .{
-            .type = "object",
-            .properties = &.{
-                .{ .name = "document_id", .type = "string", .description = "Document id from `add_document` or a `search_documents` row. A row in another workspace reports 'not found'." },
-            },
-            .required = &.{"document_id"},
-        },
-        .system_prompt = delete_document_tool_system_prompt,
-    },
-};
-
-pub const search_documents_tool_system_prompt =
-    \\## Search Documents Tool — Behavior
-    \\Use `search_documents` to find documents in YOUR workspace by title or body content. This is how you get a `document_id` — never invent one.
-    \\- `query` is a REGEX (case-insensitive, unanchored) matched against each document's TITLE AND CONTENT. One pattern reaches a phrase that several words would: `release|launch`, `^Q3`, `\\bTODO\\b`.
-    \\- Set `literal: true` when the query is literal text (e.g. `*.md`, `fn(`) — otherwise its metacharacters are interpreted.
-    \\- Results are PAGED: `limit` (default 20, max 100) caps how many rows you get back, `total` is the real match count, `offset` continues the listing, and `hint` names the exact next offset.
-    \\- An invalid pattern is not a failure: it is matched as a literal substring and the result carries `pattern_warning`. Read it instead of retrying blindly.
-    \\- Every row carries a short `excerpt` around the hit plus `content_length` (bytes) — enough to tell documents apart without dumping megabytes of markdown into your context.
-    \\- A document whose body lives in the object store is searched through its PREVIEW (the first 512 bytes). `content_length` still reports the real size, so a row whose `content_length` is much larger than its excerpt may hold the match further in — open it with `include_content: true` to read the whole body.
-    \\- Pass `include_content: true` when the NEXT action is `edit_document`, which replaces the WHOLE body and therefore needs the current one first. Leave it off otherwise.
-    \\- Omitting `query` lists your documents, newest-updated first — that is the right first call when you do not know what you are looking for.
-    \\
-;
-
-pub const search_documents_tool = AgentTool{
-    .type = "function",
-    .function = .{
-        .name = "search_documents",
-        .description =
-        \\Search YOUR workspace's documents by title OR body. This is how you get a `document_id` for `edit_document` / `delete_document` — never invent one. Omit `query` to list them newest-updated first.
-        \\
-        \\- `query` is a case-insensitive REGEX matched against title AND content. Pass `literal: true` for literal text.
-        \\- An invalid pattern is matched as a literal substring and reported in `pattern_warning`, not as a failure.
+        \\- SCOPE is automatic: your session's workspace is resolved before the call, so there is no `workspace_id` argument — one supplied is ignored. A `document_id` in another workspace reports "not found", exactly as a nonexistent id does.
+        \\- `search` is how you get a `document_id` — never invent one. Omit `query` to list the newest documents first.
+        \\- `edit` is a PATCH: omitted fields keep their current value, `content` is the COMPLETE new body (not a diff), and `content: ""` clears it.
+        \\- `delete` is irreversible; revise with `action: "edit"` instead.
         ,
         .parameters = .{
             .type = "object",
             .properties = &.{
                 .{
+                    .name = "action",
+                    .type = "string",
+                    .description = "'create', 'edit', 'search' or 'delete'. Any other value is refused.",
+                },
+                .{
+                    .name = "document_id",
+                    .type = "string",
+                    .description = "`edit` and `delete`: the id from a `create` result or a `search` row. A row in another workspace reports 'not found'.",
+                },
+                .{
+                    .name = "title",
+                    .type = "string",
+                    .description = "`create`: required, non-blank, human-readable — it is the sidebar label. `edit`: the new title; omit to keep the current one.",
+                },
+                .{
+                    .name = "content",
+                    .type = "string",
+                    .description = "`create`: the body, may be empty. `edit`: the COMPLETE new body (not a diff); omit to keep the current body, pass \"\" to clear it. Markdown text, or a Univer snapshot JSON when `format` is 'office'. Capped at 4 MiB.",
+                },
+                .{
+                    .name = "format",
+                    .type = "string",
+                    .description = "`create`: 'markdown' (default) or 'office'. An office body is a Univer snapshot: {\"sheets\": {<id>: {\"cellData\": {<row>: {<col>: {\"v\": value}}}}}}. Any other value is refused.",
+                },
+                .{
                     .name = "query",
                     .type = "string",
-                    .description = "Regex, matched case-insensitively against each document's title AND content. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is a plain substring search. An invalid pattern is matched as a literal substring and reported in `pattern_warning`. Omit to list the newest documents first.",
+                    .description = "`search`: regex, matched case-insensitively against each document's title AND content. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is a plain substring search. An invalid pattern is matched as a literal substring and reported in `pattern_warning`. Omit to list the newest documents first.",
                 },
                 .{
                     .name = "literal",
                     .type = "boolean",
-                    .description = "Treat `query` as a literal string — '.', '*', '[', '(' are matched verbatim. Set this for code- or glob-shaped queries ('*.md', 'fn('). Default false (regex mode).",
+                    .description = "`search`: treat `query` as a literal string — '.', '*', '[', '(' are matched verbatim. Set this for code- or glob-shaped queries ('*.md', 'fn('). Default false (regex mode).",
                 },
                 .{
                     .name = "limit",
                     .type = "number",
-                    .description = "Maximum matches in THIS response (default 20, max 100). The result always reports the true `total` — raise limit, or page with `offset`, only when you need more.",
+                    .description = "`search`: maximum matches in THIS response (default 20, max 100). The result always reports the true `total` — raise limit, or page with `offset`, only when you need more.",
                 },
                 .{
                     .name = "offset",
                     .type = "number",
-                    .description = "Skip the first N matches (default 0). The previous page's `hint` names the offset that continues it.",
+                    .description = "`search`: skip the first N matches (default 0). The previous page's `hint` names the offset that continues it.",
                 },
                 .{
                     .name = "include_content",
                     .type = "boolean",
-                    .description = "Include each match's FULL body as `content`. Off by default — rows carry a bounded `excerpt` instead. Turn it on only when the next action is `edit_document`, which replaces the whole body.",
+                    .description = "`search`: include each match's FULL body as `content`. Off by default — rows carry a bounded `excerpt` instead. Turn it on only when the next action is `edit`, which replaces the whole body.",
                 },
             },
-            .required = &.{},
+            .required = &.{"action"},
         },
-        .system_prompt = search_documents_tool_system_prompt,
+        .system_prompt = document_markdown_tool_system_prompt,
     },
 };
-
 // =====================================================================
 // Result payloads
 // =====================================================================
 
-/// Success payload for both tools. `content` is echoed because the model
-/// often needs to confirm what landed (and `edit_document` is a whole-body
+/// Success payload for `create` and `edit`. `content` is echoed because the
+/// model often needs to confirm what landed (and `edit` is a whole-body
 /// replace, so the echo is the only proof of what is now stored).
 pub const DocumentToolSuccess = struct {
     id: []const u8,
@@ -232,14 +149,12 @@ pub const DocumentToolSuccess = struct {
     updated_at: []const u8,
 };
 
-/// Error payload shared by `add_document` / `edit_document` /
-/// `delete_document` / `search_documents`.
+/// Error payload shared by every `document_markdown` action.
 pub const DocumentToolError = struct {
     @"error": []const u8,
 };
 
-/// Success payload for `delete_document`. The DELETED title is echoed, not
-/// the body.
+/// Success payload for `delete`. The DELETED title is echoed, not the body.
 pub const DeleteDocumentSuccess = struct {
     id: []const u8,
     workspace_id: []const u8,
@@ -298,13 +213,13 @@ fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u8) !
 // Executors
 // =====================================================================
 
-/// Execute `add_document`. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned slice and must free it.
+/// Execute the `create` action. Returns an inner JSON string the exec
+/// wrapper embeds. Caller owns the returned slice and must free it.
 pub fn executeAddDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
     caller_session_id: []const u8,
-    input: AddDocumentInput,
+    input: DocumentMarkdownInput,
 ) ![]const u8 {
     const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
         return scopeErrorJSON(allocator, caller_session_id);
@@ -312,8 +227,8 @@ pub fn executeAddDocument(
 
     const row = store.createDocument(allocator, .{
         .workspace_id = workspace_id,
-        .title = input.title,
-        .content = input.content,
+        .title = input.title orelse "",
+        .content = input.content orelse "",
         .format = input.format,
     }) catch |err| {
         const msg = switch (err) {
@@ -333,16 +248,16 @@ pub fn executeAddDocument(
     return successJSON(allocator, row);
 }
 
-/// Execute `edit_document`. Returns an inner JSON string the exec wrapper
+/// Execute the `edit` action. Returns an inner JSON string the exec wrapper
 /// embeds. Caller owns the returned slice and must free it.
 pub fn executeEditDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
     caller_session_id: []const u8,
-    input: EditDocumentInput,
+    input: DocumentMarkdownInput,
 ) ![]const u8 {
     if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
-        return errorJSON(allocator, "document_id is required. Use the id returned by add_document.");
+        return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action.");
     }
     if (input.title == null and input.content == null) {
         // Silently succeeding here would teach the model that an empty
@@ -378,16 +293,16 @@ pub fn executeEditDocument(
     return successJSON(allocator, row);
 }
 
-/// Execute `delete_document`. Returns an inner JSON string the exec wrapper
-/// embeds. Caller owns the returned slice and must free it.
+/// Execute the `delete` action. Returns an inner JSON string the exec
+/// wrapper embeds. Caller owns the returned slice and must free it.
 pub fn executeDeleteDocument(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
     caller_session_id: []const u8,
-    input: DeleteDocumentInput,
+    input: DocumentMarkdownInput,
 ) ![]const u8 {
     if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
-        return errorJSON(allocator, "document_id is required. Look the id up with search_documents.");
+        return errorJSON(allocator, "document_id is required. Look the id up with a `search` action.");
     }
 
     const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
@@ -398,7 +313,7 @@ pub fn executeDeleteDocument(
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
             // One message for "no such id" and "another workspace's id" —
-            // see the note on edit_document's NotFound arm.
+            // see the note on the edit action's NotFound arm.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
             error.QueryFailed => "Could not read the document (database error).",
             error.OutOfMemory => "Out of memory",
@@ -536,9 +451,9 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
     };
 }
 
-// ─── add_document ───────────────────────────────────────────────────────
+// ─── create ───────────────────────────────────────────────────────
 
-test "add_document: creates a markdown document in the caller's own workspace" {
+test "document_markdown create: creates a markdown document in the caller's own workspace" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -559,7 +474,7 @@ test "add_document: creates a markdown document in the caller's own workspace" {
     try testing.expectEqualStrings("markdown", p.format);
 }
 
-test "add_document: format office stores the envelope and echoes it back" {
+test "document_markdown create: format office stores the envelope and echoes it back" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -581,7 +496,7 @@ test "add_document: format office stores the envelope and echoes it back" {
     try testing.expectEqualStrings(body, p.content);
 }
 
-test "add_document: an unknown format is a tool error, not a stored row" {
+test "document_markdown create: an unknown format is a tool error, not a stored row" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -605,7 +520,7 @@ test "add_document: an unknown format is a tool error, not a stored row" {
     try testing.expectEqualStrings("0", row.values[0]);
 }
 
-test "edit_document: an office body keeps its format and re-previews from the cells" {
+test "document_markdown edit: an office body keeps its format and re-previews from the cells" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -630,7 +545,7 @@ test "edit_document: an office body keeps its format and re-previews from the ce
     defer e.deinit();
 
     try testing.expect(e.err == null);
-    // `edit_document` cannot change the format — it is immutable after create —
+    // `edit` cannot change the format — it is immutable after create —
     // so the row stays an office document and the preview follows the cells.
     try testing.expectEqualStrings("office", e.format);
     try testing.expectEqualStrings("Budget", e.title);
@@ -641,7 +556,7 @@ test "edit_document: an office body keeps its format and re-previews from the ce
     try testing.expectEqualStrings("new", row.preview);
 }
 
-test "add_document: a blank title is a tool error, not a Zig error" {
+test "document_markdown create: a blank title is a tool error, not a Zig error" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -654,7 +569,7 @@ test "add_document: a blank title is a tool error, not a Zig error" {
     try testing.expect(std.mem.indexOf(u8, p.err.?, "title") != null);
 }
 
-test "add_document: an empty body round-trips as \"\" rather than blowing up on NOT NULL" {
+test "document_markdown create: an empty body round-trips as \"\" rather than blowing up on NOT NULL" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -667,7 +582,7 @@ test "add_document: an empty body round-trips as \"\" rather than blowing up on 
     try testing.expectEqualStrings("", p.content);
 }
 
-test "add_document: an empty caller session fails closed instead of picking a workspace" {
+test "document_markdown create: an empty caller session fails closed instead of picking a workspace" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -687,7 +602,7 @@ test "add_document: an empty caller session fails closed instead of picking a wo
     try testing.expectEqualStrings("0", row.values[0]);
 }
 
-test "add_document: a session with no resolvable workspace fails closed" {
+test "document_markdown create: a session with no resolvable workspace fails closed" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -700,7 +615,7 @@ test "add_document: a session with no resolvable workspace fails closed" {
     try testing.expect(std.mem.indexOf(u8, p.err.?, "workspace") != null);
 }
 
-test "add_document: two workspaces writing the same title never collide or leak" {
+test "document_markdown create: two workspaces writing the same title never collide or leak" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -721,7 +636,7 @@ test "add_document: two workspaces writing the same title never collide or leak"
     try testing.expect(!std.mem.eql(u8, pa.id, pb.id));
 }
 
-// ─── edit_document ──────────────────────────────────────────────────────
+// ─── edit ──────────────────────────────────────────────────────
 
 /// Create a document in ws_1 and return its id (caller frees).
 fn seedDoc(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) ![]u8 {
@@ -733,7 +648,7 @@ fn seedDoc(alloc: std.mem.Allocator, store: documents_store.Store, title: []cons
     return alloc.dupe(u8, p.id);
 }
 
-test "edit_document: replaces the body and keeps the title when only content is given" {
+test "document_markdown edit: replaces the body and keeps the title when only content is given" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -750,7 +665,7 @@ test "edit_document: replaces the body and keeps the title when only content is 
     try testing.expectEqualStrings("new body", p.content);
 }
 
-test "edit_document: an omitted field is a no-op, an explicit empty string is a clear" {
+test "document_markdown edit: an omitted field is a no-op, an explicit empty string is a clear" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -775,7 +690,7 @@ test "edit_document: an omitted field is a no-op, an explicit empty string is a 
     try testing.expectEqualStrings("Renamed", pc.title);
 }
 
-test "edit_document: a patch with neither field is rejected, not silently accepted" {
+test "document_markdown edit: a patch with neither field is rejected, not silently accepted" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -791,7 +706,7 @@ test "edit_document: a patch with neither field is rejected, not silently accept
     try testing.expect(std.mem.indexOf(u8, p.err.?, "title") != null);
 }
 
-test "edit_document: a missing document_id is rejected before any DB work" {
+test "document_markdown edit: a missing document_id is rejected before any DB work" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -804,7 +719,7 @@ test "edit_document: a missing document_id is rejected before any DB work" {
     try testing.expect(std.mem.indexOf(u8, p.err.?, "document_id") != null);
 }
 
-test "edit_document: workspace B cannot edit workspace A's document, and the error is identical to a missing one" {
+test "document_markdown edit: workspace B cannot edit workspace A's document, and the error is identical to a missing one" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -835,7 +750,7 @@ test "edit_document: workspace B cannot edit workspace A's document, and the err
     try testing.expectEqualStrings("ws_1 only", read_back.content);
 }
 
-test "edit_document: no content leaks through the cross-workspace denial" {
+test "document_markdown edit: no content leaks through the cross-workspace denial" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -848,9 +763,9 @@ test "edit_document: no content leaks through the cross-workspace denial" {
     try testing.expect(std.mem.indexOf(u8, denied, "TOPSECRETBODY") == null);
 }
 
-// ─── delete_document ────────────────────────────────────────────────────
+// ─── delete ────────────────────────────────────────────────────
 
-test "delete_document: removes the row and names what it removed" {
+test "document_markdown delete: removes the row and names what it removed" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -873,7 +788,7 @@ test "delete_document: removes the row and names what it removed" {
     try testing.expectError(error.NotFound, after);
 }
 
-test "delete_document: an empty document_id is rejected before any DB work" {
+test "document_markdown delete: an empty document_id is rejected before any DB work" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -886,7 +801,7 @@ test "delete_document: an empty document_id is rejected before any DB work" {
     try testing.expect(std.mem.indexOf(u8, p.err.?, "document_id") != null);
 }
 
-test "delete_document: an unresolvable session deletes nothing" {
+test "document_markdown delete: an unresolvable session deletes nothing" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -905,7 +820,7 @@ test "delete_document: an unresolvable session deletes nothing" {
     try testing.expectEqualStrings("still here", still.content);
 }
 
-test "delete_document: workspace B cannot delete workspace A's document, and the error is identical to a missing one" {
+test "document_markdown delete: workspace B cannot delete workspace A's document, and the error is identical to a missing one" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -937,62 +852,33 @@ test "delete_document: workspace B cannot delete workspace A's document, and the
 
 // ─── Schema contracts ───────────────────────────────────────────────────
 
-test "schema contract: no tool the model sees takes a workspace_id" {
-    // The whole isolation argument rests on the model never being able to
-    // choose its own workspace.
-    for ([_]AgentTool{ add_document_tool, edit_document_tool, delete_document_tool, search_documents_tool }) |tool| {
-        for (tool.function.parameters.properties) |prop| {
-            try testing.expect(!std.mem.eql(u8, prop.name, "workspace_id"));
-        }
-        for (tool.function.parameters.required) |req| {
-            try testing.expect(!std.mem.eql(u8, req, "workspace_id"));
-        }
+test "schema contract: the tool the model sees takes no workspace_id" {
+    for (document_markdown_tool.function.parameters.properties) |prop| {
+        try testing.expect(!std.mem.eql(u8, prop.name, "workspace_id"));
+    }
+    for (document_markdown_tool.function.parameters.required) |req| {
+        try testing.expect(!std.mem.eql(u8, req, "workspace_id"));
     }
 }
 
-test "schema contract: no input struct has a workspace_id slot to fill" {
-    // Belt to the schema braces: even if the schema is left clean, a struct
-    // field would be a slot for `ignore_unknown_fields` to fill.
-    inline for (.{ AddDocumentInput, EditDocumentInput }) |T| {
-        const fields = @typeInfo(T).@"struct".fields;
-        try testing.expectEqual(@as(usize, 3), fields.len);
-        inline for (fields, 0..) |f, i| {
-            // `fields` values hold a `type`, so they must be indexed at
-            // comptime — hence inline for, not a runtime loop.
-            _ = i;
-            try testing.expect(!std.mem.eql(u8, f.name, "workspace_id"));
-        }
-    }
-
-    // `DeleteDocumentInput` and `SearchDocumentsInput` carry their own
-    // counts: one field, and five. An extra field on either is how a
-    // "just one knob more" scope or delete mode sneaks in.
-    try testing.expectEqual(@as(usize, 1), @typeInfo(DeleteDocumentInput).@"struct".fields.len);
-    const search_fields = @typeInfo(SearchDocumentsInput).@"struct".fields;
-    try testing.expectEqual(@as(usize, 5), search_fields.len);
-    inline for (search_fields) |f| {
+test "schema contract: the input struct has no workspace_id slot to fill" {
+    const fields = @typeInfo(DocumentMarkdownInput).@"struct".fields;
+    inline for (fields) |f| {
         try testing.expect(!std.mem.eql(u8, f.name, "workspace_id"));
     }
 }
 
-test "schema contract: all four tools ship a behavioral system prompt" {
-    // The aggregator in prompts_build_messages_for_agent_prompt.zig reads
-    // `system_prompt` straight off the schema.
-    try testing.expect(add_document_tool.function.system_prompt.len > 0);
-    try testing.expect(edit_document_tool.function.system_prompt.len > 0);
-    try testing.expect(delete_document_tool.function.system_prompt.len > 0);
-    try testing.expect(search_documents_tool.function.system_prompt.len > 0);
-    try testing.expectEqualStrings("add_document", add_document_tool.function.name);
-    try testing.expectEqualStrings("edit_document", edit_document_tool.function.name);
-    try testing.expectEqualStrings("delete_document", delete_document_tool.function.name);
-    try testing.expectEqualStrings("search_documents", search_documents_tool.function.name);
+test "schema contract: the tool ships a behavioral system prompt naming every action" {
+    try testing.expect(document_markdown_tool.function.system_prompt.len > 0);
+    try testing.expectEqualStrings(TOOL_NAME, document_markdown_tool.function.name);
+    for ([_][]const u8{ "create", "edit", "search", "delete" }) |action| {
+        try testing.expect(std.mem.indexOf(u8, document_markdown_tool.function.system_prompt, action) != null);
+    }
 }
 
-test "schema contract: no prompt tells the model a search tool does not exist" {
-    // The `edit_document` prompt once said "There is no list/search tool in
-    // v1" — and `search_documents` now exists.
-    try testing.expect(std.mem.indexOf(u8, edit_document_tool.function.system_prompt, "no list/search tool") == null);
-    try testing.expect(std.mem.indexOf(u8, edit_document_tool.function.system_prompt, "search_documents") != null);
+test "schema contract: action is the only required argument" {
+    try testing.expectEqual(@as(usize, 1), document_markdown_tool.function.parameters.required.len);
+    try testing.expectEqualStrings("action", document_markdown_tool.function.parameters.required[0]);
 }
 
 // Exec adapter — merged from `document.zig` (2026-10-14, task_1791993404141_2).
@@ -1020,202 +906,125 @@ const InnerResultProbe = struct {
     title: []const u8 = "",
 };
 
-pub fn execAddDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
+pub fn execDocumentMarkdown(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
-        document_mod.AddDocumentInput,
+        document_mod.DocumentMarkdownInput,
         ctx.allocator,
         tc.function.arguments,
         .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
     ) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "add_document", tc.function.arguments, false, err_msg, "");
+        const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, "");
         return ToolExecResult{ .output = output, .output_allocated = true };
     };
     defer parsed.deinit();
 
-    // Workspace scope is derived server-side from the calling session —
-    // the LLM never supplies (or spoofs) a workspace id.
+    const input = parsed.value;
+    if (std.mem.eql(u8, input.action, "create")) return runCreate(ctx, tc, input);
+    if (std.mem.eql(u8, input.action, "edit")) return runEdit(ctx, tc, input);
+    if (std.mem.eql(u8, input.action, "search")) return runSearch(ctx, tc, input);
+    if (std.mem.eql(u8, input.action, "delete")) return runDelete(ctx, tc, input);
+
+    const msg = try std.fmt.allocPrint(
+        ctx.allocator,
+        "action must be one of create, edit, search, delete (got \"{s}\")",
+        .{input.action},
+    );
+    defer ctx.allocator.free(msg);
+    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+fn runCreate(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
     const inner = document_mod.executeAddDocument(
         ctx.allocator,
         .{ .db = ctx.db, .storage = ctx.storage },
         ctx.session_id,
-        parsed.value,
-    ) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "add_document", tc.function.arguments, false, err_msg, "");
-        return ToolExecResult{ .output = output, .output_allocated = true };
-    };
-
-    // The tool module allocated `inner` from `ctx.allocator`, so the
-    // wrapper owns it. `defer` fires after `wrapToolOutput` has copied
-    // what it needs — the same ownership shape `execSaveMemory` uses.
+        input,
+    ) catch |err| return execFailure(ctx, tc, err);
     defer ctx.allocator.free(inner);
-
-    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
-        defer probe.deinit();
-        if (probe.value.@"error") |err_msg| {
-            const output = try wrapToolOutput(ctx.allocator, "add_document", tc.function.arguments, false, err_msg, inner);
-            return ToolExecResult{ .output = output, .output_allocated = true };
-        }
-        // Only a real write reaches here: every refusal above returned.
-        document_events.emitDocumentEvent(ctx.allocator, ctx.event_bus, .{
-            .action = "created",
-            .workspace_id = probe.value.workspace_id,
-            .document_id = probe.value.id,
-            .title = probe.value.title,
-        });
-    }
-
-    const output = try wrapToolOutput(ctx.allocator, "add_document", tc.function.arguments, true, null, inner);
-    return ToolExecResult{ .output = output, .output_allocated = true };
+    return finishMutation(ctx, tc, inner, "created");
 }
 
-pub fn execEditDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    const parsed = std.json.parseFromSlice(
-        document_mod.EditDocumentInput,
-        ctx.allocator,
-        tc.function.arguments,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    ) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "edit_document", tc.function.arguments, false, err_msg, "");
-        return ToolExecResult{ .output = output, .output_allocated = true };
-    };
-    defer parsed.deinit();
-
+fn runEdit(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
     const inner = document_mod.executeEditDocument(
         ctx.allocator,
         .{ .db = ctx.db, .storage = ctx.storage },
         ctx.session_id,
-        parsed.value,
-    ) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "edit_document", tc.function.arguments, false, err_msg, "");
-        return ToolExecResult{ .output = output, .output_allocated = true };
-    };
-
-    // The tool module allocated `inner` from `ctx.allocator`, so the
-    // wrapper owns it. `defer` fires after `wrapToolOutput` has copied
-    // what it needs — the same ownership shape `execSaveMemory` uses.
+        input,
+    ) catch |err| return execFailure(ctx, tc, err);
     defer ctx.allocator.free(inner);
-
-    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
-        defer probe.deinit();
-        if (probe.value.@"error") |err_msg| {
-            const output = try wrapToolOutput(ctx.allocator, "edit_document", tc.function.arguments, false, err_msg, inner);
-            return ToolExecResult{ .output = output, .output_allocated = true };
-        }
-        // Only a real write reaches here: every refusal above returned.
-        document_events.emitDocumentEvent(ctx.allocator, ctx.event_bus, .{
-            .action = "updated",
-            .workspace_id = probe.value.workspace_id,
-            .document_id = probe.value.id,
-            .title = probe.value.title,
-        });
-    }
-
-    const output = try wrapToolOutput(ctx.allocator, "edit_document", tc.function.arguments, true, null, inner);
-    return ToolExecResult{ .output = output, .output_allocated = true };
+    return finishMutation(ctx, tc, inner, "updated");
 }
 
-pub fn execDeleteDocument(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    const parsed = std.json.parseFromSlice(
-        document_mod.DeleteDocumentInput,
-        ctx.allocator,
-        tc.function.arguments,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    ) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "delete_document", tc.function.arguments, false, err_msg, "");
-        return ToolExecResult{ .output = output, .output_allocated = true };
-    };
-    defer parsed.deinit();
-
+fn runDelete(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
     const inner = document_mod.executeDeleteDocument(
         ctx.allocator,
         .{ .db = ctx.db, .storage = ctx.storage },
         ctx.session_id,
-        parsed.value,
-    ) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "delete_document", tc.function.arguments, false, err_msg, "");
-        return ToolExecResult{ .output = output, .output_allocated = true };
-    };
+        input,
+    ) catch |err| return execFailure(ctx, tc, err);
     defer ctx.allocator.free(inner);
+    return finishMutation(ctx, tc, inner, "deleted");
+}
 
+fn execFailure(ctx: ToolExecContext, tc: agent.ToolCall, err: anyerror) !ToolExecResult {
+    const err_msg = try error_explain.explain(ctx.allocator, err, null);
+    defer ctx.allocator.free(err_msg);
+    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, "");
+    return ToolExecResult{ .output = output, .output_allocated = true };
+}
+
+fn finishMutation(ctx: ToolExecContext, tc: agent.ToolCall, inner: []const u8, action: []const u8) !ToolExecResult {
     if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
         defer probe.deinit();
         if (probe.value.@"error") |err_msg| {
-            const output = try wrapToolOutput(ctx.allocator, "delete_document", tc.function.arguments, false, err_msg, inner);
+            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, inner);
             return ToolExecResult{ .output = output, .output_allocated = true };
         }
-        // Only a real removal reaches here: every refusal above returned.
         document_events.emitDocumentEvent(ctx.allocator, ctx.event_bus, .{
-            .action = "deleted",
+            .action = action,
             .workspace_id = probe.value.workspace_id,
             .document_id = probe.value.id,
             .title = probe.value.title,
         });
     }
 
-    const output = try wrapToolOutput(ctx.allocator, "delete_document", tc.function.arguments, true, null, inner);
+    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
-    const parsed = std.json.parseFromSlice(
-        document_mod.SearchDocumentsInput,
-        ctx.allocator,
-        tc.function.arguments,
-        .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
-    ) catch {
-        const output = try wrapToolOutput(
-            ctx.allocator,
-            "search_documents",
-            tc.function.arguments,
-            false,
-            "search_documents failed to parse input (expected {\"query\"?: string, \"literal\"?: bool, \"limit\"?: number, \"offset\"?: number, \"include_content\"?: bool})",
-            "",
-        );
-        return .{ .output = output, .output_allocated = true };
-    };
-    defer parsed.deinit();
-
-    // ── Paging bounds ── Rejected, never silently clamped, for the same
-    // reason `search_skills` rejects them: the model pages by offset from the
-    // `total` it was shown, so a quiet clamp makes its next call land on the
+fn runSearch(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
+    // Paging bounds are rejected, never silently clamped: the model pages by
+    // offset from the `total` it was shown, so a quiet clamp makes its next
+    // call land on the wrong page.
     const limit: usize = blk: {
-        const raw = parsed.value.limit orelse @as(i64, @intCast(documents_search.DEFAULT_SEARCH_LIMIT));
+        const raw = input.limit orelse @as(i64, @intCast(documents_search.DEFAULT_SEARCH_LIMIT));
         if (raw < 1) {
-            const msg = try std.fmt.allocPrint(ctx.allocator, "search_documents: limit must be at least 1 (got {d})", .{raw});
+            const msg = try std.fmt.allocPrint(ctx.allocator, document_mod.TOOL_NAME ++ ": limit must be at least 1 (got {d})", .{raw});
             defer ctx.allocator.free(msg);
-            const output = try wrapToolOutput(ctx.allocator, "search_documents", tc.function.arguments, false, msg, "");
+            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
             return .{ .output = output, .output_allocated = true };
         }
         if (raw > @as(i64, @intCast(documents_search.MAX_SEARCH_LIMIT))) {
             const msg = try std.fmt.allocPrint(
                 ctx.allocator,
-                "search_documents: limit must be at most {d} (got {d})",
+                document_mod.TOOL_NAME ++ ": limit must be at most {d} (got {d})",
                 .{ documents_search.MAX_SEARCH_LIMIT, raw },
             );
             defer ctx.allocator.free(msg);
-            const output = try wrapToolOutput(ctx.allocator, "search_documents", tc.function.arguments, false, msg, "");
+            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
             return .{ .output = output, .output_allocated = true };
         }
         break :blk @intCast(raw);
     };
     const offset: usize = blk: {
-        const raw = parsed.value.offset orelse 0;
+        const raw = input.offset orelse 0;
         if (raw < 0) {
-            const msg = try std.fmt.allocPrint(ctx.allocator, "search_documents: offset must not be negative (got {d})", .{raw});
+            const msg = try std.fmt.allocPrint(ctx.allocator, document_mod.TOOL_NAME ++ ": offset must not be negative (got {d})", .{raw});
             defer ctx.allocator.free(msg);
-            const output = try wrapToolOutput(ctx.allocator, "search_documents", tc.function.arguments, false, msg, "");
+            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
             return .{ .output = output, .output_allocated = true };
         }
         break :blk @intCast(raw);
@@ -1225,7 +1034,7 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     if (ctx.session_id.len == 0) {
         const output = try wrapToolOutput(
             ctx.allocator,
-            "search_documents",
+            document_mod.TOOL_NAME,
             tc.function.arguments,
             false,
             "Missing caller session — cannot resolve which workspace to search.",
@@ -1237,7 +1046,7 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     if (workspace_id == null) {
         const output = try wrapToolOutput(
             ctx.allocator,
-            "search_documents",
+            document_mod.TOOL_NAME,
             tc.function.arguments,
             false,
             "This session is not linked to any workspace, so there are no documents to search. " ++
@@ -1248,8 +1057,8 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     }
     defer ctx.allocator.free(workspace_id.?);
 
-    const query = parsed.value.query orelse "";
-    const literal = parsed.value.literal orelse false;
+    const query = input.query orelse "";
+    const literal = input.literal orelse false;
 
     // The SQL narrowing runs FIRST and only when it is provably a superset of
     // the regex's matches — see `documents_search.literalPrefilter`.
@@ -1261,7 +1070,7 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     ) catch |err| {
         const err_msg = try error_explain.explain(ctx.allocator, err, null);
         defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, "search_documents", tc.function.arguments, false, err_msg, "");
+        const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, "");
         return .{ .output = output, .output_allocated = true };
     };
     defer exec_documents_store.freeDocumentRows(ctx.allocator, rows);
@@ -1270,7 +1079,7 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     defer ctx.allocator.free(outcome.hits);
 
     const page = documents_search.pageSlice(outcome.hits, offset, limit);
-    const include_content = parsed.value.include_content orelse false;
+    const include_content = input.include_content orelse false;
 
     // `include_content` is the "I am about to edit" path. The body is not a
     // column any more, so fetch it for the PAGE only — never for every match.
@@ -1314,7 +1123,7 @@ pub fn execSearchDocuments(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     });
     defer ctx.allocator.free(inner);
 
-    const output = try wrapToolOutput(ctx.allocator, "search_documents", tc.function.arguments, true, null, inner);
+    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, true, null, inner);
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
@@ -1423,6 +1232,22 @@ fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
     };
 }
 
+/// Drive `document_markdown` the way the model would: `action` is prepended
+/// to `body`, whose surrounding braces are optional.
+fn callTool(ctx: ToolExecContext, action: []const u8, body: []const u8) !ToolExecResult {
+    const trimmed = std.mem.trim(u8, body, " \t\n\r");
+    const inner = if (trimmed.len >= 2 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}')
+        trimmed[1 .. trimmed.len - 1]
+    else
+        trimmed;
+    const args = if (inner.len == 0)
+        try std.fmt.allocPrint(ctx.allocator, "{{\"action\":\"{s}\"}}", .{action})
+    else
+        try std.fmt.allocPrint(ctx.allocator, "{{\"action\":\"{s}\",{s}}}", .{ action, inner });
+    defer ctx.allocator.free(args);
+    return execDocumentMarkdown(ctx, fakeToolCall(TOOL_NAME, args));
+}
+
 /// Flattened, OWNED view of a tool envelope. Two things this deliberately
 /// does not do: - Return `p.value` after `deinit()`.
 const Envelope = struct {
@@ -1436,7 +1261,7 @@ const Envelope = struct {
     title: []const u8 = "",
     content: []const u8 = "",
 
-    // search_documents envelope.
+    // search envelope.
     pattern_mode: []const u8 = "",
     pattern_warning: ?[]const u8 = null,
     count: usize = 0,
@@ -1497,7 +1322,7 @@ fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
         workspace_id: []const u8 = "",
         title: []const u8 = "",
         content: []const u8 = "",
-        // search_documents
+        // search
         pattern_mode: []const u8 = "",
         pattern_warning: ?[]const u8 = null,
         count: usize = 0,
@@ -1584,18 +1409,18 @@ fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
     };
 }
 
-test "execAddDocument: success envelope carries the created document" {
+test "document_markdown create: success envelope carries the created document" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
-    const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
+    const result = try callTool(tc, "create", "{\"title\":\"Notes\",\"content\":\"# hi\"}");
     defer alloc.free(result.output);
 
     var env = try parseEnvelope(alloc, result.output);
     defer env.deinit();
-    try exec_testing.expectEqualStrings("add_document", env.tool);
+    try exec_testing.expectEqualStrings(TOOL_NAME, env.tool);
     try exec_testing.expect(env.success);
     try exec_testing.expect(env.err == null);
     try exec_testing.expectEqualStrings("ws_1", env.workspace_id);
@@ -1608,7 +1433,7 @@ test "execAddDocument: success envelope carries the created document" {
     try exec_testing.expectEqualStrings("# hi", stored.content);
 }
 
-test "execAddDocument: no object store is a tool error, not a document with an empty body" {
+test "document_markdown create: no object store is a tool error, not a document with an empty body" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -1617,7 +1442,7 @@ test "execAddDocument: no object store is a tool error, not a document with an e
     // store, so every agent-written document lost its body and read back
     // empty. A missing store must now be a refusal the model can see.
     const tc = makeTestCtx(alloc, &ctx.db, null, "s1");
-    const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
+    const result = try callTool(tc, "create", "{\"title\":\"Notes\",\"content\":\"# hi\"}");
     defer alloc.free(result.output);
 
     var env = try parseEnvelope(alloc, result.output);
@@ -1632,12 +1457,12 @@ test "execAddDocument: no object store is a tool error, not a document with an e
     try exec_testing.expectEqual(@as(usize, 0), rows.len);
 }
 
-test "execEditDocument: no object store is a tool error, not a blanked document" {
+test "document_markdown edit: no object store is a tool error, not a blanked document" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Plan\",\"content\":\"v1\"}"));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "create", "{\"title\":\"Plan\",\"content\":\"v1\"}");
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1645,7 +1470,7 @@ test "execEditDocument: no object store is a tool error, not a blanked document"
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"content\":\"v2\"}}", .{created.id});
     defer alloc.free(args);
-    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, null, "s1"), fakeToolCall("edit_document", args));
+    const edit = try callTool(makeTestCtx(alloc, &ctx.db, null, "s1"), "edit", args);
     defer alloc.free(edit.output);
 
     var env = try parseEnvelope(alloc, edit.output);
@@ -1659,7 +1484,7 @@ test "execEditDocument: no object store is a tool error, not a blanked document"
     try exec_testing.expectEqualStrings("v1", row.content);
 }
 
-test "execAddDocument: a tool-level refusal surfaces as success=false" {
+test "document_markdown create: a tool-level refusal surfaces as success=false" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -1668,7 +1493,7 @@ test "execAddDocument: a tool-level refusal surfaces as success=false" {
     // InnerErrorProbe re-parse this would be wrapped as success=true and
     // the model would read a refusal as a written document.
     const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "");
-    const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Nowhere\"}"));
+    const result = try callTool(tc, "create", "{\"title\":\"Nowhere\"}");
     defer alloc.free(result.output);
 
     var env = try parseEnvelope(alloc, result.output);
@@ -1678,13 +1503,13 @@ test "execAddDocument: a tool-level refusal surfaces as success=false" {
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "session") != null);
 }
 
-test "execAddDocument: malformed JSON arguments become a parse failure, not a crash" {
+test "document_markdown create: malformed JSON arguments become a parse failure, not a crash" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
-    const result = try execAddDocument(tc, fakeToolCall("add_document", "{not json"));
+    const result = try callTool(tc, "create", "{not json");
     defer alloc.free(result.output);
 
     var env = try parseEnvelope(alloc, result.output);
@@ -1697,7 +1522,7 @@ test "execAddDocument: malformed JSON arguments become a parse failure, not a cr
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
 }
 
-test "execAddDocument: a hallucinated workspace_id is ignored, not honoured" {
+test "document_markdown create: a hallucinated workspace_id is ignored, not honoured" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -1706,7 +1531,7 @@ test "execAddDocument: a hallucinated workspace_id is ignored, not honoured" {
     // ignore_unknown_fields, the field is dropped, and the write lands in
     // ws_1 — the session's own workspace, never the requested one.
     const tc = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
-    const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Spoof attempt\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}"));
+    const result = try callTool(tc, "create", "{\"title\":\"Spoof attempt\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}");
     defer alloc.free(result.output);
 
     var env = try parseEnvelope(alloc, result.output);
@@ -1715,12 +1540,12 @@ test "execAddDocument: a hallucinated workspace_id is ignored, not honoured" {
     try exec_testing.expectEqualStrings("ws_1", env.workspace_id);
 }
 
-test "execEditDocument: a cross-workspace edit is refused and the row is untouched" {
+test "document_markdown edit: a cross-workspace edit is refused and the row is untouched" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Private\",\"content\":\"TOPSECRET\"}"));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "create", "{\"title\":\"Private\",\"content\":\"TOPSECRET\"}");
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1728,10 +1553,7 @@ test "execEditDocument: a cross-workspace edit is refused and the row is untouch
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"content\":\"hijacked\"}}", .{id});
     defer alloc.free(args);
-    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall(
-        "edit_document",
-        args,
-    ));
+    const edit = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), "edit", args);
     defer alloc.free(edit.output);
 
     var env = try parseEnvelope(alloc, edit.output);
@@ -1741,12 +1563,12 @@ test "execEditDocument: a cross-workspace edit is refused and the row is untouch
     try exec_testing.expect(std.mem.indexOf(u8, edit.output, "TOPSECRET") == null);
 }
 
-test "execEditDocument: success envelope echoes the new body" {
+test "document_markdown edit: success envelope echoes the new body" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Plan\",\"content\":\"v1\"}"));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "create", "{\"title\":\"Plan\",\"content\":\"v1\"}");
     defer alloc.free(create.output);
     var created2 = try parseEnvelope(alloc, create.output);
     defer created2.deinit();
@@ -1754,7 +1576,7 @@ test "execEditDocument: success envelope echoes the new body" {
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"content\":\"v2\"}}", .{id});
     defer alloc.free(args);
-    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("edit_document", args));
+    const edit = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "edit", args);
     defer alloc.free(edit.output);
 
     var env = try parseEnvelope(alloc, edit.output);
@@ -1765,26 +1587,26 @@ test "execEditDocument: success envelope echoes the new body" {
     try exec_testing.expectEqualStrings("Plan", env.title);
 }
 
-// ─── delete_document ────────────────────────────────────────────────────
+// ─── delete ────────────────────────────────────────────────────
 
-test "execDeleteDocument: success envelope names the document it removed" {
+test "document_markdown delete: success envelope names the document it removed" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Obsolete\",\"content\":\"gone soon\"}"));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "create", "{\"title\":\"Obsolete\",\"content\":\"gone soon\"}");
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{created.id});
     defer alloc.free(args);
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", args));
+    const del = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "delete", args);
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
     defer env.deinit();
-    try exec_testing.expectEqualStrings("delete_document", env.tool);
+    try exec_testing.expectEqualStrings(TOOL_NAME, env.tool);
     try exec_testing.expect(env.success);
     try exec_testing.expect(env.err == null);
     try exec_testing.expectEqualStrings(created.id, env.id);
@@ -1795,12 +1617,12 @@ test "execDeleteDocument: success envelope names the document it removed" {
     try exec_testing.expectError(error.NotFound, (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", created.id));
 }
 
-test "execDeleteDocument: malformed JSON arguments become a parse failure, not a crash" {
+test "document_markdown delete: malformed JSON arguments become a parse failure, not a crash" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", "{not json"));
+    const del = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "delete", "{not json");
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
@@ -1813,12 +1635,12 @@ test "execDeleteDocument: malformed JSON arguments become a parse failure, not a
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
 }
 
-test "execDeleteDocument: a hallucinated workspace_id is ignored, so the owner still deletes" {
+test "document_markdown delete: a hallucinated workspace_id is ignored, so the owner still deletes" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Mine\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}"));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "create", "{\"title\":\"Mine\",\"content\":\"x\",\"workspace_id\":\"ws_2\"}");
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1830,7 +1652,7 @@ test "execDeleteDocument: a hallucinated workspace_id is ignored, so the owner s
         .{created.id},
     );
     defer alloc.free(args);
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", args));
+    const del = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "delete", args);
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
@@ -1839,12 +1661,12 @@ test "execDeleteDocument: a hallucinated workspace_id is ignored, so the owner s
     try exec_testing.expectError(error.NotFound, (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", created.id));
 }
 
-test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing" {
+test "document_markdown delete: a cross-workspace delete is refused and leaks nothing" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Private\",\"content\":\"TOPSECRETBODY\"}"));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "create", "{\"title\":\"Private\",\"content\":\"TOPSECRETBODY\"}");
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -1852,14 +1674,14 @@ test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing"
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{created.id});
     defer alloc.free(args);
 
-    const denied = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall("delete_document", args));
+    const denied = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), "delete", args);
     defer alloc.free(denied.output);
     var d = try parseEnvelope(alloc, denied.output);
     defer d.deinit();
 
     const missing_args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{"doc_nope"});
     defer alloc.free(missing_args);
-    const missing = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall("delete_document", missing_args));
+    const missing = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), "delete", missing_args);
     defer alloc.free(missing.output);
     var m = try parseEnvelope(alloc, missing.output);
     defer m.deinit();
@@ -1875,15 +1697,12 @@ test "execDeleteDocument: a cross-workspace delete is refused and leaks nothing"
     try exec_testing.expectEqualStrings("TOPSECRETBODY", survivor.content);
 }
 
-test "execDeleteDocument: an unresolvable session surfaces success=false" {
+test "document_markdown delete: an unresolvable session surfaces success=false" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const del = try execDeleteDocument(
-        makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s_orphan"),
-        fakeToolCall("delete_document", "{\"document_id\":\"doc_anything\"}"),
-    );
+    const del = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s_orphan"), "delete", "{\"document_id\":\"doc_anything\"}");
     defer alloc.free(del.output);
 
     var env = try parseEnvelope(alloc, del.output);
@@ -1892,13 +1711,13 @@ test "execDeleteDocument: an unresolvable session surfaces success=false" {
     try exec_testing.expect(env.err != null);
 }
 
-// ─── search_documents ───────────────────────────────────────────────────
+// ─── search ───────────────────────────────────────────────────
 
 /// Create a document in ws_1 through the real tool path and return its id.
 fn exec_seedDoc(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) ![]u8 {
     const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = title, .content = content }, .{});
     defer alloc.free(args);
-    const create = try execAddDocument(makeTestCtx(alloc, store.db, store.storage, "s1"), fakeToolCall("add_document", args));
+    const create = try callTool(makeTestCtx(alloc, store.db, store.storage, "s1"), "create", args);
     defer alloc.free(create.output);
     var env = try parseEnvelope(alloc, create.output);
     defer env.deinit();
@@ -1912,14 +1731,14 @@ fn seedAnon(alloc: std.mem.Allocator, store: documents_store.Store, title: []con
     alloc.free(id);
 }
 
-fn runSearch(alloc: std.mem.Allocator, store: documents_store.Store, session: []const u8, args: []const u8) !Envelope {
-    const res = try execSearchDocuments(makeTestCtx(alloc, store.db, store.storage, session), fakeToolCall("search_documents", args));
+fn searchTool(alloc: std.mem.Allocator, store: documents_store.Store, session: []const u8, args: []const u8) !Envelope {
+    const res = try callTool(makeTestCtx(alloc, store.db, store.storage, session), "search", args);
     // `parseEnvelope` dupes everything it needs, so the raw output can go.
     defer alloc.free(res.output);
     return parseEnvelope(alloc, res.output);
 }
 
-test "execSearchDocuments: no arguments lists the workspace newest-first in mode=all" {
+test "document_markdown search: no arguments lists the workspace newest-first in mode=all" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -1929,10 +1748,10 @@ test "execSearchDocuments: no arguments lists the workspace newest-first in mode
     const b = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Beta", "second body");
     defer alloc.free(b);
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
     defer env.deinit();
 
-    try exec_testing.expectEqualStrings("search_documents", env.tool);
+    try exec_testing.expectEqualStrings(TOOL_NAME, env.tool);
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 2), env.total);
     try exec_testing.expectEqual(@as(usize, 2), env.count);
@@ -1945,7 +1764,7 @@ test "execSearchDocuments: no arguments lists the workspace newest-first in mode
     try exec_testing.expect(std.mem.indexOf(u8, env.excerpts[0], "second body") != null);
 }
 
-test "execSearchDocuments: a regex query reaches title OR body" {
+test "document_markdown search: a regex query reaches title OR body" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -1954,14 +1773,14 @@ test "execSearchDocuments: a regex query reaches title OR body" {
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Meeting notes", "We agreed to LAUNCH in October.\n");
 
     // Title hit only.
-    var by_title = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release\"}");
+    var by_title = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release\"}");
     defer by_title.deinit();
     try exec_testing.expectEqual(@as(usize, 1), by_title.total);
     try exec_testing.expectEqualStrings("Release plan v2", by_title.titles[0]);
     try exec_testing.expectEqualStrings("regex", by_title.pattern_mode);
 
     // Body hit, different case on both sides.
-    var by_body = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"LAUNCH\"}");
+    var by_body = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"LAUNCH\"}");
     defer by_body.deinit();
     try exec_testing.expectEqual(@as(usize, 1), by_body.total);
     try exec_testing.expectEqualStrings("Meeting notes", by_body.titles[0]);
@@ -1969,12 +1788,12 @@ test "execSearchDocuments: a regex query reaches title OR body" {
     try exec_testing.expect(std.mem.indexOf(u8, by_body.excerpts[0], "LAUNCH") != null);
 
     // One alternation reaches both.
-    var alt = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release|launch\"}");
+    var alt = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release|launch\"}");
     defer alt.deinit();
     try exec_testing.expectEqual(@as(usize, 2), alt.total);
 }
 
-test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL prefilter" {
+test "document_markdown search: a metacharacter query is NOT narrowed by the SQL prefilter" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -1983,7 +1802,7 @@ test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL pref
     // matches while the literal substring "release." does not occur.
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Zebra", "releaseX the thing\n");
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\"}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\"}");
     defer env.deinit();
 
     try exec_testing.expectEqual(@as(usize, 1), env.total);
@@ -1991,13 +1810,13 @@ test "execSearchDocuments: a metacharacter query is NOT narrowed by the SQL pref
 
     // And the same query with literal:true genuinely matches nothing — the
     // flag, not the prefilter, is what makes the two answers differ.
-    var lit = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\",\"literal\":true}");
+    var lit = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\",\"literal\":true}");
     defer lit.deinit();
     try exec_testing.expectEqualStrings("literal", lit.pattern_mode);
     try exec_testing.expectEqual(@as(usize, 0), lit.total);
 }
 
-test "execSearchDocuments: an anchored query still matches, so ^ is not prefiltered either" {
+test "document_markdown search: an anchored query still matches, so ^ is not prefiltered either" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2005,13 +1824,13 @@ test "execSearchDocuments: an anchored query still matches, so ^ is not prefilte
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Q3 plan", "later");
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Backlog Q3 items", "earlier");
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"^Q3\"}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"^Q3\"}");
     defer env.deinit();
     try exec_testing.expectEqual(@as(usize, 1), env.total);
     try exec_testing.expectEqualStrings("Q3 plan", env.titles[0]);
 }
 
-test "execSearchDocuments: a LIKE prefilter needle containing % or _ is matched verbatim" {
+test "document_markdown search: a LIKE prefilter needle containing % or _ is matched verbatim" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2021,25 +1840,25 @@ test "execSearchDocuments: a LIKE prefilter needle containing % or _ is matched 
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Underscore test", "snake_case naming\n");
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Decoy", "nothing special\n");
 
-    var pct = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"%\",\"literal\":true}");
+    var pct = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"%\",\"literal\":true}");
     defer pct.deinit();
     try exec_testing.expectEqual(@as(usize, 1), pct.total);
     try exec_testing.expectEqualStrings("Percent test", pct.titles[0]);
 
-    var us = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"_\",\"literal\":true}");
+    var us = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"_\",\"literal\":true}");
     defer us.deinit();
     try exec_testing.expectEqual(@as(usize, 1), us.total);
     try exec_testing.expectEqualStrings("Underscore test", us.titles[0]);
 }
 
-test "execSearchDocuments: an invalid pattern is a warning, not a failed tool call" {
+test "document_markdown search: an invalid pattern is a warning, not a failed tool call" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Notes", "release checklist\n");
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"releas(\"}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"releas(\"}");
     defer env.deinit();
 
     // success=true: the search RAN. It just ran in fallback mode, and said
@@ -2051,14 +1870,14 @@ test "execSearchDocuments: an invalid pattern is a warning, not a failed tool ca
     try exec_testing.expect(std.mem.indexOf(u8, env.pattern_warning.?, "literal:true") != null);
 }
 
-test "execSearchDocuments: include_content is opt-in and off by default" {
+test "document_markdown search: include_content is opt-in and off by default" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "the FULLBODY marker text\n");
 
-    var without = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\"}");
+    var without = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\"}");
     defer without.deinit();
     try exec_testing.expectEqual(@as(usize, 1), without.total);
     try exec_testing.expect(without.contents[0] == null);
@@ -2066,13 +1885,13 @@ test "execSearchDocuments: include_content is opt-in and off by default" {
     // The excerpt still shows the hit.
     try exec_testing.expect(std.mem.indexOf(u8, without.excerpts[0], "FULLBODY") != null);
 
-    var with = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\",\"include_content\":true}");
+    var with = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\",\"include_content\":true}");
     defer with.deinit();
     try exec_testing.expectEqualStrings("the FULLBODY marker text\n", with.contents[0].?);
     try exec_testing.expectEqual(@as(usize, 25), with.content_lengths[0]);
 }
 
-test "execSearchDocuments: paging reports total, truncated, next_offset and the offset in the hint" {
+test "document_markdown search: paging reports total, truncated, next_offset and the offset in the hint" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2081,7 +1900,7 @@ test "execSearchDocuments: paging reports total, truncated, next_offset and the 
         try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, t, "shared body");
     }
 
-    var page1 = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2}");
+    var page1 = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2}");
     defer page1.deinit();
     try exec_testing.expectEqual(@as(usize, 5), page1.total);
     try exec_testing.expectEqual(@as(usize, 2), page1.count);
@@ -2089,7 +1908,7 @@ test "execSearchDocuments: paging reports total, truncated, next_offset and the 
     try exec_testing.expectEqual(@as(usize, 2), page1.next_offset.?);
     try exec_testing.expect(std.mem.indexOf(u8, page1.hint, "offset=2") != null);
 
-    var page2 = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":2}");
+    var page2 = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":2}");
     defer page2.deinit();
     try exec_testing.expectEqual(@as(usize, 2), page2.count);
     // next_offset is offset + count, i.e. where page 3 STARTS — not the
@@ -2100,65 +1919,62 @@ test "execSearchDocuments: paging reports total, truncated, next_offset and the 
         for (page2.ids) |id2| try exec_testing.expect(!std.mem.eql(u8, id, id2));
     }
 
-    var last = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":4}");
+    var last = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":4}");
     defer last.deinit();
     try exec_testing.expectEqual(@as(usize, 1), last.count);
     try exec_testing.expect(!last.truncated);
     try exec_testing.expect(last.next_offset == null);
-    try exec_testing.expect(std.mem.indexOf(u8, last.hint, "edit_document") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, last.hint, "action: \"edit\"") != null);
 }
 
-test "execSearchDocuments: an offset past the end is an empty page, not an error" {
+test "document_markdown search: an offset past the end is an empty page, not an error" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Only one", "body");
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":500}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":500}");
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 0), env.count);
     try exec_testing.expectEqual(@as(usize, 1), env.total);
 }
 
-test "execSearchDocuments: out-of-range paging is rejected, never silently clamped" {
+test "document_markdown search: out-of-range paging is rejected, never silently clamped" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    var zero = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":0}");
+    var zero = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":0}");
     defer zero.deinit();
     try exec_testing.expect(!zero.success);
     try exec_testing.expect(std.mem.indexOf(u8, zero.err.?, "at least 1") != null);
 
-    var huge = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":100000}");
+    var huge = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":100000}");
     defer huge.deinit();
     try exec_testing.expect(!huge.success);
     try exec_testing.expect(std.mem.indexOf(u8, huge.err.?, "at most 100") != null);
 
-    var negative = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":-1}");
+    var negative = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":-1}");
     defer negative.deinit();
     try exec_testing.expect(!negative.success);
     try exec_testing.expect(std.mem.indexOf(u8, negative.err.?, "negative") != null);
 }
 
-test "execSearchDocuments: malformed JSON arguments become a parse failure, not a crash" {
+test "document_markdown search: malformed JSON arguments become a parse failure, not a crash" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{not json");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{not json");
     defer env.deinit();
     try exec_testing.expect(!env.success);
-    // `search_documents` keeps its own hand-written schema hint (it names
-    // every field and its type, which the generic message cannot).
-    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "expected") != null);
-    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "query") != null);
+    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "JSON") != null);
     try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
 }
 
-test "execSearchDocuments: a workspace never sees another workspace's documents" {
+test "document_markdown search: a workspace never sees another workspace's documents" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2167,7 +1983,7 @@ test "execSearchDocuments: a workspace never sees another workspace's documents"
 
     const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = "WS2 note", .content = "sharedword in ws_2" }, .{});
     defer alloc.free(args);
-    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), fakeToolCall("add_document", args));
+    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), "create", args);
     defer alloc.free(create.output);
     var created = try parseEnvelope(alloc, create.output);
     defer created.deinit();
@@ -2175,7 +1991,7 @@ test "execSearchDocuments: a workspace never sees another workspace's documents"
 
     // The shared query matches exactly one row per workspace, and each
     // search returns only its own — no ids, no titles, no excerpts leaking.
-    var mine = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"sharedword\"}");
+    var mine = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"sharedword\"}");
     defer mine.deinit();
     try exec_testing.expectEqual(@as(usize, 1), mine.total);
     try exec_testing.expectEqualStrings("WS1 secret", mine.titles[0]);
@@ -2183,14 +1999,14 @@ test "execSearchDocuments: a workspace never sees another workspace's documents"
     try exec_testing.expect(std.mem.indexOf(u8, mine.raw, created.id) == null);
     try exec_testing.expect(std.mem.indexOf(u8, mine.raw, "ws_2") == null);
 
-    var theirs = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", "{\"query\":\"sharedword\"}");
+    var theirs = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", "{\"query\":\"sharedword\"}");
     defer theirs.deinit();
     try exec_testing.expectEqual(@as(usize, 1), theirs.total);
     try exec_testing.expectEqualStrings("WS2 note", theirs.titles[0]);
     try exec_testing.expect(std.mem.indexOf(u8, theirs.raw, "WS1 secret") == null);
 }
 
-test "execSearchDocuments: an unresolvable session is a refusal, NOT an empty result set" {
+test "document_markdown search: an unresolvable session is a refusal, NOT an empty result set" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2198,41 +2014,41 @@ test "execSearchDocuments: an unresolvable session is a refusal, NOT an empty re
     // "no documents matched" and "you have no workspace" are different facts
     // and the model has to be able to tell them apart — a silent empty
     // page would read as "your notes are gone".
-    var orphan = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", "{}");
+    var orphan = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", "{}");
     defer orphan.deinit();
     try exec_testing.expect(!orphan.success);
     try exec_testing.expect(orphan.err != null);
     try exec_testing.expect(std.mem.indexOf(u8, orphan.err.?, "workspace") != null);
 
-    var empty = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
+    var empty = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
     defer empty.deinit();
     try exec_testing.expect(empty.success);
     try exec_testing.expectEqual(@as(usize, 0), empty.total);
     try exec_testing.expectEqualStrings("all", empty.pattern_mode);
 }
 
-test "execSearchDocuments: a hallucinated workspace_id is ignored, not honoured" {
+test "document_markdown search: a hallucinated workspace_id is ignored, not honoured" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Mine", "findme\n");
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\",\"workspace_id\":\"ws_2\"}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\",\"workspace_id\":\"ws_2\"}");
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 1), env.total);
     try exec_testing.expectEqualStrings("Mine", env.titles[0]);
 }
 
-test "execSearchDocuments: an empty document body is searchable by title, not by content" {
+test "document_markdown search: an empty document body is searchable by title, not by content" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Stub", "");
 
-    var by_title = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"Stub\"}");
+    var by_title = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"Stub\"}");
     defer by_title.deinit();
     try exec_testing.expectEqual(@as(usize, 1), by_title.total);
     try exec_testing.expectEqual(@as(usize, 0), by_title.content_lengths[0]);
@@ -2240,12 +2056,12 @@ test "execSearchDocuments: an empty document body is searchable by title, not by
     // silently standing in for it.
     try exec_testing.expectEqualStrings("Stub", by_title.excerpts[0]);
 
-    var none = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"hippopotamus\"}");
+    var none = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"hippopotamus\"}");
     defer none.deinit();
     try exec_testing.expectEqual(@as(usize, 0), none.total);
 }
 
-test "execSearchDocuments: a body hit in a large document yields a bounded excerpt" {
+test "document_markdown search: a body hit in a large document yields a bounded excerpt" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2258,7 +2074,7 @@ test "execSearchDocuments: a body hit in a large document yields a bounded excer
     defer alloc.free(body);
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Huge", body);
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"NEEDLE\"}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"NEEDLE\"}");
     defer env.deinit();
     try exec_testing.expectEqual(@as(usize, 1), env.total);
     try exec_testing.expectEqual(@as(usize, 8192 + 6), env.content_lengths[0]);
@@ -2266,7 +2082,7 @@ test "execSearchDocuments: a body hit in a large document yields a bounded excer
     try exec_testing.expect(env.excerpts[0].len <= documents_search.EXCERPT_MAX_BYTES + 8);
 }
 
-test "execSearchDocuments: a multi-byte body still produces valid JSON" {
+test "document_markdown search: a multi-byte body still produces valid JSON" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2277,7 +2093,7 @@ test "execSearchDocuments: a multi-byte body still produces valid JSON" {
     const body = "日本語のテキスト" ** 400;
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Ünïcödé", body);
 
-    var env = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"テキスト\"}");
+    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"テキスト\"}");
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqual(@as(usize, 1), env.total);
@@ -2285,7 +2101,7 @@ test "execSearchDocuments: a multi-byte body still produces valid JSON" {
     try exec_testing.expect(std.mem.indexOf(u8, env.excerpts[0], "テキスト") != null);
 }
 
-test "execSearchDocuments: deleting what a search returned makes the next search stop finding it" {
+test "document_markdown search: deleting what a search returned makes the next search stop finding it" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2294,21 +2110,21 @@ test "execSearchDocuments: deleting what a search returned makes the next search
     defer alloc.free(id);
     try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Keep", "unrelated\n");
 
-    var before = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
+    var before = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
     defer before.deinit();
     try exec_testing.expectEqual(@as(usize, 1), before.total);
 
     // The round trip the tool is actually for: search → take the id → delete.
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{before.ids[0]});
     defer alloc.free(args);
-    const del = try execDeleteDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("delete_document", args));
+    const del = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "delete", args);
     defer alloc.free(del.output);
     var env = try parseEnvelope(alloc, del.output);
     defer env.deinit();
     try exec_testing.expect(env.success);
     try exec_testing.expectEqualStrings(id, env.id);
 
-    var after = try runSearch(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
+    var after = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
     defer after.deinit();
     try exec_testing.expect(after.success);
     try exec_testing.expectEqual(@as(usize, 0), after.total);
@@ -2328,75 +2144,47 @@ fn seededFor(db: *database.Db, agent_id: []const u8, name: []const u8) !bool {
     return false;
 }
 
-test "document tools are offered to the model and resolve to dispatchable registry entries" {
+test "document_markdown is offered to the model and resolves to one dispatchable registry entry" {
     const tools_equipped = @import("tools_equipped.zig");
-    const names = [_][]const u8{ "add_document", "edit_document", "delete_document", "search_documents" };
 
-    // `equips()` is the list the workflow hands the LLM and
-    // UNIFIED_TOOL_REGISTRY() is the dispatcher's table.
     const equip = tools_equipped.equips(exec_testing.allocator);
     defer exec_testing.allocator.free(equip);
 
-    for (names) |name| {
-        var in_equips = false;
-        for (equip) |t| {
-            if (std.mem.eql(u8, t.function.name, name)) in_equips = true;
-        }
-        try exec_testing.expect(in_equips);
-
-        // Exactly one dispatch entry, carrying the SAME tool def the model
-        // was shown — a duplicate name would make the first match win and the
-        // second unreachable.
-        var entries: usize = 0;
-        for (tools_equipped.UNIFIED_TOOL_REGISTRY()) |entry| {
-            if (!std.mem.eql(u8, entry.name, name)) continue;
-            entries += 1;
-            try exec_testing.expectEqualStrings(name, entry.tool_def.function.name);
-        }
-        try exec_testing.expectEqual(@as(usize, 1), entries);
-        try exec_testing.expect(tools_equipped.isDispatchableToolName(name));
+    var in_equips = false;
+    for (equip) |t| {
+        if (std.mem.eql(u8, t.function.name, TOOL_NAME)) in_equips = true;
     }
+    try exec_testing.expect(in_equips);
+
+    var entries: usize = 0;
+    for (tools_equipped.UNIFIED_TOOL_REGISTRY()) |entry| {
+        if (!std.mem.eql(u8, entry.name, TOOL_NAME)) continue;
+        entries += 1;
+        try exec_testing.expectEqualStrings(TOOL_NAME, entry.tool_def.function.name);
+    }
+    try exec_testing.expectEqual(@as(usize, 1), entries);
+    try exec_testing.expect(tools_equipped.isDispatchableToolName(TOOL_NAME));
 }
 
-test "search_documents is seeded by default but delete_document is not" {
+test "document_markdown is seeded into every new agent and the retired names are gone" {
     const tools_equipped = @import("tools_equipped.zig");
 
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    // The creation-time seed writes `agent_tools`, which `exec_setupDb` does not
-    // build (it only stands up the document schema). Same table shape the
-    // registry's own seed tests use.
     try ctx.db.exec(alloc,
         \\CREATE TABLE agent_config_tools (id TEXT PRIMARY KEY, config_id TEXT NOT NULL, tool_name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(config_id, tool_name))
     , &.{});
 
-    // `null` config is the legacy path a freshly created agent item takes.
     try tools_equipped.seedDefaultAgentTools(alloc, .{ .db = &ctx.db }, "ag_doc_seed", null);
 
-    // Read-only, and a prerequisite for every edit (edit_document replaces the
-    // whole body, so finding the row comes first) — an agent that cannot
-    // search is crippled.
-    try exec_testing.expect(try seededFor(&ctx.db, "ag_doc_seed", "add_document"));
-    try exec_testing.expect(try seededFor(&ctx.db, "ag_doc_seed", "edit_document"));
-    try exec_testing.expect(try seededFor(&ctx.db, "ag_doc_seed", "search_documents"));
+    try exec_testing.expect(try seededFor(&ctx.db, "ag_doc_seed", TOOL_NAME));
 
-    // Irreversible, so handing every new agent a delete of the user's
-    // documents is a separate decision that must be made out loud.
-    try exec_testing.expect(!try seededFor(&ctx.db, "ag_doc_seed", "delete_document"));
-
-    // …and it stays reachable: registered means the Settings → Tools
-    // checklist lists it and `search_tool` → `use_tool` can equip it for a
-    // session. Registered is not the same as handed-out.
-    try exec_testing.expect(tools_equipped.isDispatchableToolName("delete_document"));
-    const equip = tools_equipped.equips(alloc);
-    defer alloc.free(equip);
-    var delete_in_equips = false;
-    for (equip) |t| {
-        if (std.mem.eql(u8, t.function.name, "delete_document")) delete_in_equips = true;
+    for ([_][]const u8{ "add_document", "edit_document", "search_documents", "delete_document" }) |retired| {
+        try exec_testing.expect(!try seededFor(&ctx.db, "ag_doc_seed", retired));
+        try exec_testing.expect(!tools_equipped.isDispatchableToolName(retired));
     }
-    try exec_testing.expect(delete_in_equips);
 }
 
 // ─── documents SSE channel ───────────────────────────────────────────────
@@ -2430,7 +2218,7 @@ fn capturedField(field: []const u8) ![]u8 {
     return exec_testing.allocator.dupe(u8, parsed.value.object.get(field).?.string);
 }
 
-test "a successful add_document announces document_created with the new row" {
+test "a successful create announces document_created with the new row" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2444,7 +2232,7 @@ test "a successful add_document announces document_created with the new row" {
 
     var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
-    const result = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
+    const result = try callTool(tc_ctx, "create", "{\"title\":\"Notes\",\"content\":\"# hi\"}");
     defer alloc.free(result.output);
 
     try exec_testing.expect(sse_captured != null);
@@ -2467,7 +2255,7 @@ test "a successful add_document announces document_created with the new row" {
     releaseDocumentSse();
 }
 
-test "a successful edit_document announces document_updated with the new title" {
+test "a successful edit announces document_updated with the new title" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2480,7 +2268,7 @@ test "a successful edit_document announces document_updated with the new title" 
     var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
 
-    const created = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Draft\"}"));
+    const created = try callTool(tc_ctx, "create", "{\"title\":\"Draft\"}");
     defer alloc.free(created.output);
     var created_env = try parseEnvelope(alloc, created.output);
     defer created_env.deinit();
@@ -2490,7 +2278,7 @@ test "a successful edit_document announces document_updated with the new title" 
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"title\":\"Renamed\"}}", .{created_env.id});
     defer alloc.free(args);
-    const edited = try execEditDocument(tc_ctx, fakeToolCall("edit_document", args));
+    const edited = try callTool(tc_ctx, "edit", args);
     defer alloc.free(edited.output);
     var edited_env = try parseEnvelope(alloc, edited.output);
     defer edited_env.deinit();
@@ -2513,7 +2301,7 @@ test "a successful edit_document announces document_updated with the new title" 
     releaseDocumentSse();
 }
 
-test "a successful delete_document announces document_deleted for the removed id" {
+test "a successful delete announces document_deleted for the removed id" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
@@ -2526,7 +2314,7 @@ test "a successful delete_document announces document_deleted for the removed id
     var tc_ctx = makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1");
     tc_ctx.event_bus = &bus;
 
-    const created = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"Doomed\"}"));
+    const created = try callTool(tc_ctx, "create", "{\"title\":\"Doomed\"}");
     defer alloc.free(created.output);
     var created_env = try parseEnvelope(alloc, created.output);
     defer created_env.deinit();
@@ -2536,7 +2324,7 @@ test "a successful delete_document announces document_deleted for the removed id
 
     const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{created_env.id});
     defer alloc.free(args);
-    const removed = try execDeleteDocument(tc_ctx, fakeToolCall("delete_document", args));
+    const removed = try callTool(tc_ctx, "delete", args);
     defer alloc.free(removed.output);
     var removed_env = try parseEnvelope(alloc, removed.output);
     defer removed_env.deinit();
@@ -2579,17 +2367,17 @@ test "a refused document mutation announces nothing" {
 
     // A blank title is refused by the store, so nothing may be announced — a listener acting on
     // `action: "created"` would invent a document that was never written.
-    const blank = try execAddDocument(tc_ctx, fakeToolCall("add_document", "{\"title\":\"   \"}"));
+    const blank = try callTool(tc_ctx, "create", "{\"title\":\"   \"}");
     defer alloc.free(blank.output);
     try exec_testing.expect(sse_captured == null);
 
     // An id that is not in this workspace reaches neither the update nor the
     // delete, so neither may be announced.
-    const edit_miss = try execEditDocument(tc_ctx, fakeToolCall("edit_document", "{\"document_id\":\"doc_missing\",\"title\":\"Renamed\"}"));
+    const edit_miss = try callTool(tc_ctx, "edit", "{\"document_id\":\"doc_missing\",\"title\":\"Renamed\"}");
     defer alloc.free(edit_miss.output);
     try exec_testing.expect(sse_captured == null);
 
-    const delete_miss = try execDeleteDocument(tc_ctx, fakeToolCall("delete_document", "{\"document_id\":\"doc_missing\"}"));
+    const delete_miss = try callTool(tc_ctx, "delete", "{\"document_id\":\"doc_missing\"}");
     defer alloc.free(delete_miss.output);
     try exec_testing.expect(sse_captured == null);
 

@@ -117,11 +117,16 @@ pub const DocumentsOp = enum {
     folder_delete,
     doc_create,
     doc_move,
-    /// `add_document` through the real agent tool dispatch, so the body's
-    /// round trip through the object store is exercised with no server.
+    /// `document_markdown` with `action: "create"`, through the real agent
+    /// tool dispatch, so the body's round trip through the object store is
+    /// exercised with no server.
     doc_add,
-    /// `edit_document` through the same dispatch.
+    /// `document_markdown` with `action: "edit"`, through the same dispatch.
     doc_edit,
+    /// `document_markdown` with `action: "delete"`, through the same dispatch.
+    doc_delete,
+    /// `document_markdown` with `action: "search"`, through the same dispatch.
+    doc_search,
     /// Read one document back, body included.
     doc_get,
     backfill,
@@ -250,11 +255,11 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-get | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-get | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      doc-create flags: --content <body> --format markdown|office\n" ++
     "      search flags: --query <text>\n" ++
-    "      agent-tool flags: --session <id> --title <t> --content <markdown> (doc-add, doc-edit, doc-get)\n" ++
+    "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
@@ -467,6 +472,8 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-move")) break :blk .doc_move;
         if (std.mem.eql(u8, word, "doc-add")) break :blk .doc_add;
         if (std.mem.eql(u8, word, "doc-edit")) break :blk .doc_edit;
+        if (std.mem.eql(u8, word, "doc-delete")) break :blk .doc_delete;
+        if (std.mem.eql(u8, word, "doc-search")) break :blk .doc_search;
         if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
         if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
         return fail(.{ .kind = .documents_unknown_op, .value = word });
@@ -529,7 +536,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         i += 1;
     }
 
-    const tool_op = op == .doc_add or op == .doc_edit or op == .doc_get;
+    const tool_op = op == .doc_add or op == .doc_edit or op == .doc_delete or op == .doc_search or op == .doc_get;
     if (tool_op) {
         if (got.session.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--session" });
     } else if (got.workspace_id.len == 0 and op != .backfill) {
@@ -552,9 +559,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         .doc_create, .doc_add => {
             if (got.title.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--title" });
         },
-        .doc_move, .doc_edit, .doc_get => {
+        .doc_move, .doc_edit, .doc_delete, .doc_get => {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
+        .doc_search => {},
     }
 
     return .{ .documents = got };
@@ -1056,6 +1064,24 @@ test "parse: documents doc-get needs a session and a document id" {
     const a = try parse(&.{ "documents", "doc-get", "--session", "task_1", "--document", "doc_a" });
     try testing.expectEqual(DocumentsOp.doc_get, a.documents.op);
     try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
+}
+
+test "parse: documents doc-delete needs a session and a document id" {
+    try expectFailure(&.{ "documents", "doc-delete", "--document", "doc_a" }, .documents_requires_flag);
+    try expectFailure(&.{ "documents", "doc-delete", "--session", "task_1" }, .documents_requires_flag);
+
+    const a = try parse(&.{ "documents", "doc-delete", "--session", "task_1", "--document", "doc_a" });
+    try testing.expectEqual(DocumentsOp.doc_delete, a.documents.op);
+    try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
+}
+
+test "parse: documents doc-search takes a session and an optional query" {
+    try expectFailure(&.{ "documents", "doc-search", "--query", "plan" }, .documents_requires_flag);
+
+    const a = try parse(&.{ "documents", "doc-search", "--session", "task_1", "--query", "plan", "--limit", "5" });
+    try testing.expectEqual(DocumentsOp.doc_search, a.documents.op);
+    try testing.expectEqualStrings("plan", a.documents.query);
+    try testing.expectEqual(@as(usize, 5), a.documents.limit);
 }
 
 test "parse: usage reads the workspace and the range" {
