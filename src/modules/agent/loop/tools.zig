@@ -67,6 +67,7 @@ pub const execProcess = @import("../tools/process.zig").execProcess;
 // 2026-08-14 — list_directory agent tool (Task 5 of ban-absolute-paths plan).
 pub const execListDirectory = @import("../tools/list_directory.zig").execListDirectory;
 pub const execSpawnSubAgent = @import("../tools/spawn_sub_agent.zig").execSpawnSubAgent;
+pub const execDelegateAgent = @import("../tools/delegate_agent.zig").execDelegateAgent;
 
 // 2026-08-19 — session_plan agent tools (Task 4 of 2026-08-19-session-plan-agent-tool.md).
 // update_plan (UPSERT) + get_plan (fetch) — the markdown task plan that

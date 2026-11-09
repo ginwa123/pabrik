@@ -35,7 +35,19 @@ pub fn runWithDb(
         .lead => return roster(allocator, db, .lead, a.session_id, a.agent, ""),
         .members => return roster(allocator, db, .members, a.session_id, "", ""),
         .next => return next(allocator, db, a),
+        .delegate => return delegate(allocator, db, a),
     }
+}
+
+/// The `delegate_agent` tool's own use case, so the CLI and the tool cannot
+/// drift. A refusal is an error here: stdout carries only a real delegation.
+fn delegate(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8 {
+    const outcome = try pabrikcore.delegate_agent.delegateToAgent(allocator, db, a.session_id, a.agent, a.message);
+    if (!outcome.ok) {
+        allocator.free(outcome.json);
+        return error.DelegationRefused;
+    }
+    return outcome.json;
 }
 
 /// The roster the HTTP endpoints answer with. Every op but `next` runs the
@@ -137,7 +149,7 @@ fn setupDb() !TestCtx {
     var db: database.Db = .{};
     errdefer db.deinit();
     try test_db.openMemory(&db, threaded.io());
-    try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', group_lead TEXT)", &.{});
+    try db.exec(alloc, "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', group_lead TEXT, pending_delegate TEXT)", &.{});
     try db.exec(alloc,
         \\CREATE TABLE session_group_members (
         \\    session_id TEXT NOT NULL,
@@ -318,4 +330,62 @@ test "group lead hands the turn to a different member" {
     const decided = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1" });
     defer testing.allocator.free(decided);
     try testing.expect(std.mem.indexOf(u8, decided, "\"agent\":\"Security Engineerr\"") != null);
+}
+
+test "group delegate hands the next turn to the named member" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const joined = try join(&ctx, "BEAM", "lead", 0);
+    testing.allocator.free(joined);
+    const joined2 = try join(&ctx, "deepseek auto", "worker", 1);
+    testing.allocator.free(joined2);
+
+    const json = try runWithDb(testing.allocator, &ctx.db, .{
+        .op = .delegate,
+        .session_id = "s_1",
+        .agent = "deepseek auto",
+        .message = "What is the retry policy?",
+    });
+    defer testing.allocator.free(json);
+    try testing.expect(std.mem.indexOf(u8, json, "\"delegated_to\":\"deepseek auto\"") != null);
+
+    const decided = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1" });
+    defer testing.allocator.free(decided);
+    try testing.expect(std.mem.indexOf(u8, decided, "\"agent\":\"deepseek auto\"") != null);
+}
+
+test "group delegate honours a name outside the roster" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const joined = try join(&ctx, "BEAM", "lead", 0);
+    testing.allocator.free(joined);
+
+    const json = try runWithDb(testing.allocator, &ctx.db, .{
+        .op = .delegate,
+        .session_id = "s_1",
+        .agent = "ghost",
+        .message = "hello?",
+    });
+    defer testing.allocator.free(json);
+    try testing.expect(std.mem.indexOf(u8, json, "\"delegated_to\":\"ghost\"") != null);
+}
+
+test "group delegate refuses an empty agent name" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const joined = try join(&ctx, "BEAM", "lead", 0);
+    testing.allocator.free(joined);
+
+    try testing.expectError(error.DelegationRefused, runWithDb(testing.allocator, &ctx.db, .{
+        .op = .delegate,
+        .session_id = "s_1",
+        .agent = "",
+        .message = "hello?",
+    }));
 }

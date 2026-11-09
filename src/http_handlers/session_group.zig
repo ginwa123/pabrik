@@ -278,7 +278,8 @@ fn setupDb() !TestCtx {
         \\    pr_provider TEXT NOT NULL DEFAULT '',
         \\    sub_agent_name TEXT NOT NULL DEFAULT '',
         \\    parent_session_id TEXT NOT NULL DEFAULT '',
-        \\    group_lead TEXT
+        \\    group_lead TEXT,
+        \\    pending_delegate TEXT
         \\)
     , &.{});
     try db.exec(alloc,

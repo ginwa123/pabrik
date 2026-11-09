@@ -127,7 +127,7 @@ describe('sseTabChannel resync — a window that may have missed events refreshe
     a.tab.start()
     await settle(60)
     foreign.stop()
-    await settle(120) // takeover → resync #1
+    await waitFor(() => a.onResync.mock.calls.length >= 1) // takeover → resync #1
     visible = false
     fireVisibilityChange()
     await settle(50) // > resyncAfterHiddenMs
@@ -144,7 +144,7 @@ describe('sseTabChannel resync — a window that may have missed events refreshe
     })
     const a = makeTab({ onResync })
     a.tab.start()
-    await settle(40)
+    await waitFor(() => a.tab.isLeader())
 
     expect(onResync).toHaveBeenCalled()
     expect(a.tab.isLeader()).toBe(true) // still running
@@ -185,7 +185,7 @@ describe('sseBus resync plumbing', () => {
     const off = bus.onResync?.((reason) => seen.push(reason))
 
     foreign.stop()
-    await settle(140)
+    await waitFor(() => seen.length >= 1)
 
     expect(seen.length).toBeGreaterThanOrEqual(1)
     expect(seen[0]).toMatch(/leader/)

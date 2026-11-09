@@ -44,6 +44,7 @@ pub const GroupOp = enum {
     lead,
     members,
     next,
+    delegate,
 };
 
 pub const GroupArgs = struct {
@@ -57,6 +58,8 @@ pub const GroupArgs = struct {
     position: ?u32 = null,
     /// Turns one human message may trigger. 0 = the built-in budget.
     budget: u32 = 0,
+    /// What a `delegate` asks the named agent.
+    message: []const u8 = "",
 };
 
 pub const UsageArgs = struct {
@@ -216,8 +219,8 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      search flags: --query <text>\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
-    "      ops: create | join | leave | lead | members | next\n" ++
-    "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n>\n" ++
+    "      ops: create | join | leave | lead | members | next | delegate\n" ++
+    "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n> --message <text>\n" ++
     "  pabrik headless message <op> [flags]      Delete, restore or drop ONE llm_history row\n" ++
     "      ops: delete <id> | restore --row-file <path> | feed <id> --feed 0|1\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
@@ -633,6 +636,7 @@ fn parseGroup(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "lead")) break :blk .lead;
         if (std.mem.eql(u8, word, "members")) break :blk .members;
         if (std.mem.eql(u8, word, "next")) break :blk .next;
+        if (std.mem.eql(u8, word, "delegate")) break :blk .delegate;
         return fail(.{ .kind = .group_unknown_op, .value = word });
     };
 
@@ -662,6 +666,10 @@ fn parseGroup(argv: []const []const u8) ParseError!Outcome {
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.budget = std.fmt.parseInt(u32, argv[i], 10) catch
                 return fail(.{ .kind = .invalid_number, .value = argv[i] });
+        } else if (std.mem.eql(u8, flag, "--message")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.message = argv[i];
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
@@ -675,6 +683,10 @@ fn parseGroup(argv: []const []const u8) ParseError!Outcome {
         .members, .next => {},
         .create, .join, .leave, .lead => {
             if (got.agent.len == 0) return fail(.{ .kind = .group_requires_flag, .value = "--agent" });
+        },
+        .delegate => {
+            if (got.agent.len == 0) return fail(.{ .kind = .group_requires_flag, .value = "--agent" });
+            if (got.message.len == 0) return fail(.{ .kind = .group_requires_flag, .value = "--message" });
         },
     }
 
@@ -954,6 +966,22 @@ test "parse: group members needs only a session" {
 
 test "parse: group join without an agent is refused by name" {
     try expectFailure(&.{ "group", "join", "--session", "s_1" }, .group_requires_flag);
+}
+
+test "parse: group delegate reads the session, the agent and the message" {
+    const a = try parse(&.{ "group", "delegate", "--session", "s_1", "--agent", "deepseek auto", "--message", "What is the retry policy?" });
+    try testing.expectEqual(GroupOp.delegate, a.group.op);
+    try testing.expectEqualStrings("s_1", a.group.session_id);
+    try testing.expectEqualStrings("deepseek auto", a.group.agent);
+    try testing.expectEqualStrings("What is the retry policy?", a.group.message);
+}
+
+test "parse: group delegate without a message is refused by name" {
+    try expectFailure(&.{ "group", "delegate", "--session", "s_1", "--agent", "deepseek auto" }, .group_requires_flag);
+}
+
+test "parse: group delegate without an agent is refused by name" {
+    try expectFailure(&.{ "group", "delegate", "--session", "s_1", "--message", "hi" }, .group_requires_flag);
 }
 
 test "parse: group without a session is refused by name" {
