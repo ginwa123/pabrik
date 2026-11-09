@@ -148,8 +148,14 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
       resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
     applyChatViewMode: (config) => chatView.setMode(chatViewModeFrom(config)),
   })
-  const { selectedAgent, loadAgents, effectiveAgent, effectiveProfileUrlStyle, closeOnOutsideClick } =
-    agents
+  const {
+    selectedAgent,
+    loadAgents,
+    effectiveAgent,
+    namesConfiguredAgent,
+    effectiveProfileUrlStyle,
+    closeOnOutsideClick,
+  } = agents
 
   const worktree = useChatWorktree({
     sessionId,
@@ -171,6 +177,7 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     sessionId,
     messages,
     authorLabel,
+    isKnownAgent: namesConfiguredAgent,
     isPendingSession,
     isRemoteLoadPending,
     isLoading,
