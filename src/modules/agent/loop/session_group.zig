@@ -282,27 +282,49 @@ pub fn nextSpeaker(
     session_id: []const u8,
     hop_budget: u32,
 ) !?NextSpeaker {
-    const lead = (try groupLead(allocator, db, session_id)) orelse return null;
-    errdefer allocator.free(lead);
+    const pending = try takePendingDelegate(allocator, db, session_id);
+    defer if (pending) |p| allocator.free(p);
 
-    const members = try listMembers(allocator, db, session_id);
+    const lead_owned = try groupLead(allocator, db, session_id);
+    // A pending delegation names the next speaker even when the room has no lead
+    // yet: the tool that set it already decided who answers.
+    if (lead_owned == null and pending == null) return null;
+    const lead: []const u8 = lead_owned orelse "";
+    errdefer if (lead_owned) |l| allocator.free(l);
+
+    var members = try listMembers(allocator, db, session_id);
     errdefer freeMembers(allocator, members);
 
     const hops = try hopsSinceHuman(allocator, db, session_id);
-
-    const pending = try takePendingDelegate(allocator, db, session_id);
-    defer if (pending) |p| allocator.free(p);
 
     if (hops >= hop_budget) {
         return .{ .decision = .{ .close = .hop_budget }, .members = members, .lead = lead, .hops = hops };
     }
 
     if (pending) |target| {
+        // The roster supplies the spelling when it has one. A name outside it is
+        // still honoured — the caller asked for that agent by name — and joins
+        // the returned members so the decision's slice outlives this call.
+        var name: []const u8 = target;
+        var found = false;
         for (members) |m| {
-            if (std.mem.eql(u8, m.name, target)) {
-                return .{ .decision = .{ .speak = m.name }, .members = members, .lead = lead, .hops = hops };
+            if (std.ascii.eqlIgnoreCase(m.name, target)) {
+                name = m.name;
+                found = true;
+                break;
             }
         }
+        if (!found) {
+            const owned = try allocator.dupe(u8, target);
+            errdefer allocator.free(owned);
+            const grown = try allocator.alloc(Member, members.len + 1);
+            @memcpy(grown[0..members.len], members);
+            grown[members.len] = .{ .name = owned, .role = .worker };
+            allocator.free(members);
+            members = grown;
+            name = owned;
+        }
+        return .{ .decision = .{ .speak = name }, .members = members, .lead = lead, .hops = hops };
     }
 
     const last = try lastTurn(allocator, db, session_id);
@@ -394,6 +416,35 @@ test "a session that is not a group has no next speaker" {
     try ctx.db.exec(testing.allocator, "INSERT INTO sessions (id, name) VALUES ('s_1', 'plain')", &.{});
 
     try testing.expect((try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)) == null);
+}
+
+test "a pending delegation speaks even when the chat has no lead" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    try ctx.db.exec(testing.allocator, "INSERT INTO sessions (id, name) VALUES ('s_1', 'plain')", &.{});
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "deepseek auto");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer next.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("deepseek auto", next.decision.speak);
+    try testing.expectEqual(@as(usize, 1), next.members.len);
+}
+
+test "a pending delegation to a name outside the roster is honoured" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "deepseek auto");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer next.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("deepseek auto", next.decision.speak);
+    try testing.expectEqual(@as(usize, 4), next.members.len);
 }
 
 test "a group session with a human message speaks through its lead" {
@@ -614,7 +665,7 @@ test "a pending delegation is consumed by the turn it routes" {
     try testing.expectEqualStrings("Engineer", second.decision.speak);
 }
 
-test "a pending delegation naming a non-member is dropped and the router decides" {
+test "a pending delegation naming a non-member is honoured" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -624,7 +675,7 @@ test "a pending delegation naming a non-member is dropped and the router decides
 
     var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
     defer next.deinit(testing.allocator);
-    try testing.expectEqualStrings("Engineer", next.decision.speak);
+    try testing.expectEqualStrings("Ghost", next.decision.speak);
 
     try testing.expect((try takePendingDelegate(testing.allocator, &ctx.db, "s_1")) == null);
 }

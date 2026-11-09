@@ -47,12 +47,16 @@ const PAGE = {
   messages: ROWS,
 }
 
+/** The rows the transcript reads; a test may swap them before mounting. */
+const ctl = { rows: ROWS as Array<Record<string, unknown>> }
+
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
+  const page = () => ({ ...PAGE, messages: ctl.rows })
   return {
     ...actual,
-    getChatHistory: () => Promise.resolve(PAGE),
-    fetchChatHistoryEffect: () => Effect.succeed(PAGE),
+    getChatHistory: () => Promise.resolve(page()),
+    fetchChatHistoryEffect: () => Effect.succeed(page()),
   }
 })
 
@@ -73,7 +77,10 @@ const CONFIG = {
   active_profile: 'alpha',
 }
 
-function installMocks(storedProfile: string | null): void {
+/** A workspace that configures no agent at all. */
+const NO_PROFILES = { profiles: {}, active_profile: null }
+
+function installMocks(storedProfile: string | null, config: unknown = CONFIG): void {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   vi.spyOn(api, 'getQueuedMessages').mockResolvedValue({ messages: [] } as any)
   vi.spyOn(api, 'getSession').mockResolvedValue({
@@ -90,8 +97,8 @@ function installMocks(storedProfile: string | null): void {
     status: 'clean',
     is_clean: true,
   } as any)
-  vi.spyOn(api, 'getPabrikConfig').mockResolvedValue(CONFIG as any)
-  vi.spyOn(api, 'getWorkspaceConfig').mockResolvedValue(CONFIG as any)
+  vi.spyOn(api, 'getPabrikConfig').mockResolvedValue(config as any)
+  vi.spyOn(api, 'getWorkspaceConfig').mockResolvedValue(config as any)
   vi.spyOn(api, 'getStreamSnapshot').mockResolvedValue({ active: false, content: '' } as any)
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
@@ -125,6 +132,7 @@ describe('ChatView — the chat names the agent that answers', () => {
     }
     setActivePinia(createPinia())
     useChatViewStore().setMode('dev')
+    ctl.rows = ROWS
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -139,8 +147,11 @@ describe('ChatView — the chat names the agent that answers', () => {
     vi.restoreAllMocks()
   })
 
-  async function mountChat(storedProfile: string | null): Promise<VueWrapper> {
-    installMocks(storedProfile)
+  async function mountChat(
+    storedProfile: string | null,
+    config: unknown = CONFIG,
+  ): Promise<VueWrapper> {
+    installMocks(storedProfile, config)
     wrapper = mount(ChatView, {
       props: { chatId: SESSION_ID, chatName: 'Agent identity' },
       attachTo: document.body,
@@ -176,5 +187,37 @@ describe('ChatView — the chat names the agent that answers', () => {
 
     expect(w.find('[data-testid="composer-agent-chip"]').text()).toBe('alpha')
     expect(w.find('.msg-author-name').text()).toBe('alpha')
+  })
+
+  it('ignores a row that credits a profile the workspace no longer has', async () => {
+    ctl.rows = [
+      { id: 'u1', role: 'user', content: 'hai', created_at: 1_700_000_001 },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'Halo!',
+        agent: 'space',
+        created_at: 1_700_000_002,
+      },
+    ]
+    const w = await mountChat(null)
+
+    expect(w.find('.msg-author-name').text()).toBe('alpha')
+  })
+
+  it('credits a row when the workspace configures no agent to contradict it', async () => {
+    ctl.rows = [
+      { id: 'u1', role: 'user', content: 'hai', created_at: 1_700_000_001 },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'Halo!',
+        agent: 'BEAM',
+        created_at: 1_700_000_002,
+      },
+    ]
+    const w = await mountChat(null, NO_PROFILES)
+
+    expect(w.find('.msg-author-name').text()).toBe('BEAM')
   })
 })
