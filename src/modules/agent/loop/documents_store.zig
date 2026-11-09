@@ -7,10 +7,26 @@ const helpers = @import("helpers");
 const folders_store = @import("document_folders_store.zig");
 const object_store = @import("pabrikcore").storage.storage;
 
-/// The only document format MVP writes. The column exists so the table is
-/// not markdown-shaped by accident; a future pdf/plain-text writer fills
-/// this in without a table rewrite.
+/// A prose document. The body is markdown text.
 pub const FORMAT_MARKDOWN = "markdown";
+
+/// A spreadsheet. The body is a Univer snapshot: one JSON object holding the
+/// workbook's sheets, cells and styles.
+pub const FORMAT_OFFICE = "office";
+
+/// Every format a document may be created with. A format outside this list is
+/// refused at create time rather than stored and rendered as a blank page.
+pub const SUPPORTED_FORMATS = [_][]const u8{ FORMAT_MARKDOWN, FORMAT_OFFICE };
+
+/// The canonical format for `raw`, or null when it is not one we can render.
+/// An empty value means "the caller did not choose", which is markdown.
+pub fn normalizeFormat(raw: []const u8) ?[]const u8 {
+    if (raw.len == 0) return FORMAT_MARKDOWN;
+    for (SUPPORTED_FORMATS) |format| {
+        if (std.mem.eql(u8, raw, format)) return format;
+    }
+    return null;
+}
 
 /// Bound where a query compares "this level" and it can be the root. `#` is not
 /// a folder-id character, and "" is unusable: `Backend.exec` binds it as SQL
@@ -33,6 +49,174 @@ pub fn previewOf(body: []const u8) []const u8 {
     var end = PREVIEW_MAX_BYTES;
     while (end > 0 and (body[end] & 0xC0) == 0x80) end -= 1;
     return body[0..end];
+}
+
+/// The searchable text for a body of `format`. Owned by the caller.
+fn previewFor(allocator: std.mem.Allocator, body: []const u8, format: []const u8) ![]u8 {
+    if (std.mem.eql(u8, format, FORMAT_OFFICE)) return officePreview(allocator, body);
+    return allocator.dupe(u8, previewOf(body));
+}
+
+/// The readable text of an office document: cell text for a sheet, `dataStream`
+/// for a document, raw bytes for anything unreadable. A lost preview is not a
+/// lost document, so a malformed body never fails the write.
+fn officePreview(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, body, .{}) catch
+        return allocator.dupe(u8, previewOf(body));
+    defer parsed.deinit();
+
+    const root = switch (parsed.value) {
+        .object => |object| object,
+        else => return allocator.dupe(u8, previewOf(body)),
+    };
+    // A body written before the envelope existed is a bare snapshot; reading it
+    // as its own snapshot keeps those documents searchable.
+    const snapshot = switch (root.get("snapshot") orelse parsed.value) {
+        .object => |object| object,
+        else => return allocator.dupe(u8, previewOf(body)),
+    };
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    if (snapshot.get("sheets")) |sheets| {
+        try appendSheetText(allocator, &out, sheets);
+    } else if (snapshot.get("body")) |document_body| {
+        try appendDocumentText(allocator, &out, document_body);
+    }
+
+    if (out.items.len == 0) return allocator.dupe(u8, previewOf(body));
+
+    const text = try out.toOwnedSlice(allocator);
+    if (text.len <= PREVIEW_MAX_BYTES) return text;
+    defer allocator.free(text);
+    return allocator.dupe(u8, previewOf(text));
+}
+
+/// A spreadsheet's cells, in the order the snapshot lists its sheets, then rows,
+/// then columns.
+fn appendSheetText(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(u8),
+    sheets_value: std.json.Value,
+) !void {
+    const sheets = switch (sheets_value) {
+        .object => |object| object,
+        else => return,
+    };
+
+    var sheets_it = sheets.iterator();
+    while (sheets_it.next()) |sheet_entry| {
+        const sheet = switch (sheet_entry.value_ptr.*) {
+            .object => |object| object,
+            else => continue,
+        };
+        const cell_data = sheet.get("cellData") orelse continue;
+        try appendCellText(allocator, out, cell_data);
+        if (out.items.len >= PREVIEW_MAX_BYTES) return;
+    }
+}
+
+fn appendCellText(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(u8),
+    cell_data: std.json.Value,
+) !void {
+    const rows = switch (cell_data) {
+        .object => |object| object,
+        else => return,
+    };
+    const row_keys = try sortedCellKeys(allocator, rows);
+    defer allocator.free(row_keys);
+
+    for (row_keys) |row_key| {
+        const row = switch (rows.get(row_key) orelse continue) {
+            .object => |object| object,
+            else => continue,
+        };
+        const column_keys = try sortedCellKeys(allocator, row);
+        defer allocator.free(column_keys);
+
+        for (column_keys) |column_key| {
+            const cell = switch (row.get(column_key) orelse continue) {
+                .object => |object| object,
+                else => continue,
+            };
+            try appendValueText(allocator, out, cell.get("v") orelse continue);
+            if (out.items.len >= PREVIEW_MAX_BYTES) return;
+        }
+    }
+}
+
+/// A word-processor document's text: `body.dataStream`, with the paragraph
+/// breaks Univer stores as `\r`/`\n` turned into spaces.
+fn appendDocumentText(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(u8),
+    body_value: std.json.Value,
+) !void {
+    const document_body = switch (body_value) {
+        .object => |object| object,
+        else => return,
+    };
+    const stream = switch (document_body.get("dataStream") orelse return) {
+        .string => |text| text,
+        else => return,
+    };
+
+    var pending_space = false;
+    for (stream) |byte| {
+        if (byte == '\r' or byte == '\n' or byte == '\t' or byte == ' ') {
+            pending_space = out.items.len > 0;
+            continue;
+        }
+        if (pending_space) {
+            try out.append(allocator, ' ');
+            pending_space = false;
+        }
+        try out.append(allocator, byte);
+        if (out.items.len >= PREVIEW_MAX_BYTES) return;
+    }
+}
+
+/// An object's keys ordered by numeric value, so a preview reads top-down and
+/// left-to-right. A non-numeric key sorts after every number, by bytes, which
+/// keeps the order total and stable.
+fn sortedCellKeys(allocator: std.mem.Allocator, object: std.json.ObjectMap) ![]const []const u8 {
+    const keys = try allocator.alloc([]const u8, object.count());
+    errdefer allocator.free(keys);
+    var i: usize = 0;
+    var it = object.iterator();
+    while (it.next()) |entry| : (i += 1) keys[i] = entry.key_ptr.*;
+    std.mem.sort([]const u8, keys, {}, lessCellKey);
+    return keys;
+}
+
+fn lessCellKey(_: void, a: []const u8, b: []const u8) bool {
+    const a_number = std.fmt.parseInt(i64, a, 10) catch null;
+    const b_number = std.fmt.parseInt(i64, b, 10) catch null;
+    if (a_number != null and b_number != null) return a_number.? < b_number.?;
+    if (a_number != null) return true;
+    if (b_number != null) return false;
+    return std.mem.lessThan(u8, a, b);
+}
+
+fn appendValueText(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(u8),
+    value: std.json.Value,
+) !void {
+    var buffer: [64]u8 = undefined;
+    const text: []const u8 = switch (value) {
+        .string => |text| text,
+        .number_string => |text| text,
+        .integer => |number| std.fmt.bufPrint(&buffer, "{d}", .{number}) catch return,
+        .float => |number| std.fmt.bufPrint(&buffer, "{d}", .{number}) catch return,
+        else => return,
+    };
+    if (text.len == 0) return;
+    if (out.items.len > 0) try out.append(allocator, ' ');
+    try out.appendSlice(allocator, text);
 }
 
 /// Process-local monotonic counter for `document_id` generation. The wall
@@ -96,6 +280,7 @@ pub const CreateDocumentError = error{
     /// A non-empty body with no object store configured. The body has nowhere
     /// to live, so the write is refused rather than silently dropped.
     NoStorage,
+    UnsupportedFormat,
     FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
@@ -408,6 +593,9 @@ pub const Store = struct {
         const title = std.mem.trim(u8, args.title, " \t\n\r");
         if (title.len == 0) return error.TitleRequired;
         if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
+        // The request is validated before the server's capability: a bad format
+        // is the caller's mistake (400), not a missing object store (500).
+        const format = normalizeFormat(args.format) orelse return error.UnsupportedFormat;
         if (self.storage == null and args.content.len > 0) return error.NoStorage;
 
         // A folder id from another workspace must not become a dangling pointer.
@@ -430,9 +618,7 @@ pub const Store = struct {
         );
         defer allocator.free(document_id);
 
-        const format = if (args.format.len == 0) FORMAT_MARKDOWN else args.format;
-
-        const placed = self.placeBody(allocator, args.workspace_id, document_id, args.content) catch |err| switch (err) {
+        const placed = self.placeBody(allocator, args.workspace_id, document_id, args.content, format) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.ObjectStoreFailed => return error.InsertFailed,
         };
@@ -513,7 +699,7 @@ pub const Store = struct {
                 error.ObjectStoreFailed => return error.UpdateFailed,
             }
         else
-            self.placeBody(allocator, workspace_id, document_id, content) catch |err| switch (err) {
+            self.placeBody(allocator, workspace_id, document_id, content, existing.format) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.ObjectStoreFailed => return error.UpdateFailed,
             };
@@ -721,8 +907,10 @@ pub const Store = struct {
         workspace_id: []const u8,
         document_id: []const u8,
         body: []const u8,
+        format: []const u8,
     ) PlaceError!Placed {
-        var placed = Placed{ .preview = previewOf(body) };
+        var placed = Placed{ .preview = try previewFor(allocator, body, format) };
+        errdefer allocator.free(placed.preview);
         const text = std.fmt.bufPrint(&placed.bytes_buf, "{d}", .{body.len}) catch "0";
         placed.bytes_len = text.len;
 
@@ -754,7 +942,8 @@ pub const PlaceError = error{ ObjectStoreFailed, OutOfMemory };
 /// that changes neither. The strings are duplicated so `Placed.deinit` stays
 /// the only owner.
 fn placedFromRow(allocator: std.mem.Allocator, row: DocumentRow) PlaceError!Placed {
-    var placed = Placed{ .preview = row.preview };
+    var placed = Placed{ .preview = allocator.dupe(u8, row.preview) catch return error.OutOfMemory };
+    errdefer allocator.free(placed.preview);
     const text = std.fmt.bufPrint(&placed.bytes_buf, "{d}", .{row.content_bytes}) catch "0";
     placed.bytes_len = text.len;
     if (row.content_key) |key| {
@@ -766,8 +955,8 @@ fn placedFromRow(allocator: std.mem.Allocator, row: DocumentRow) PlaceError!Plac
     return placed;
 }
 
-/// What `placeBody` produced. `key` and `sha256` are owned when non-null; the
-/// byte count lives in `bytes_buf` so the struct stays copyable.
+/// What `placeBody` produced. `key`, `sha256` and `preview` are owned; the byte
+/// count lives in `bytes_buf` so the struct stays copyable.
 const Placed = struct {
     key: ?[]const u8 = null,
     sha256: ?[]const u8 = null,
@@ -782,6 +971,7 @@ const Placed = struct {
     fn deinit(self: Placed, allocator: std.mem.Allocator) void {
         if (self.key) |k| allocator.free(k);
         if (self.sha256) |d| allocator.free(d);
+        allocator.free(self.preview);
     }
 };
 
@@ -1590,4 +1780,231 @@ test "searchDocuments does not match a word that is in neither the preview nor t
     const rows = try searchDocuments(alloc, &ctx.db, "ws_1", "hippopotamus");
     defer freeDocumentRows(alloc, rows);
     try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+// ─── Formats ────────────────────────────────────────────────────────────
+
+test "normalizeFormat: an empty value is markdown, a known value is itself, anything else is null" {
+    try testing.expectEqualStrings(FORMAT_MARKDOWN, normalizeFormat("").?);
+    try testing.expectEqualStrings(FORMAT_MARKDOWN, normalizeFormat("markdown").?);
+    try testing.expectEqualStrings(FORMAT_OFFICE, normalizeFormat("office").?);
+    try testing.expect(normalizeFormat("pdf") == null);
+    try testing.expect(normalizeFormat("Office") == null);
+}
+
+test "createDocument: an office spreadsheet keeps its format and previews its cell text" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const body =
+        \\{"kind":"sheet","snapshot":{"sheets":{"s1":{"cellData":{
+        \\"0":{"0":{"v":"Q3 budget"},"1":{"v":1200}},
+        \\"1":{"0":{"v":"Rent"}}}}}}}
+    ;
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Budget",
+        .content = body,
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectEqualStrings(FORMAT_OFFICE, row.format);
+    // The preview is the cells, not the JSON: a preview of JSON keys would
+    // match every office document at once.
+    try testing.expectEqualStrings("Q3 budget 1200 Rent", row.preview);
+}
+
+test "createDocument: an office document previews its dataStream text" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const body =
+        \\{"kind":"doc","snapshot":{"id":"d1","body":{"dataStream":"Release notes\r\n\r\nShip it.\r\n"}}}
+    ;
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Notes",
+        .content = body,
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectEqualStrings("Release notes Ship it.", row.preview);
+}
+
+test "createDocument: an office preview reads rows and columns in numeric order" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    // Row 2 must come before row 10, and column 0 before column 2. A preview
+    // that sorted the keys as text would read "a c b" instead.
+    const body =
+        \\{"kind":"sheet","snapshot":{"sheets":{"s1":{"cellData":{"10":{"2":{"v":"c"},"0":{"v":"a"}},"2":{"0":{"v":"b"}}}}}}}
+    ;
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Order",
+        .content = body,
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectEqualStrings("b a c", row.preview);
+}
+
+test "createDocument: an office body that is not a snapshot still lands, previewed raw" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Broken",
+        .content = "not json at all",
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    // A malformed snapshot is a lost preview, not a lost document.
+    try testing.expectEqualStrings(FORMAT_OFFICE, row.format);
+    try testing.expectEqualStrings("not json at all", row.preview);
+}
+
+test "createDocument: an office workbook with no cells previews its raw bytes" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const body = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{}}}}}";
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Empty",
+        .content = body,
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectEqualStrings(body, row.preview);
+}
+
+test "createDocument: an unknown format is refused and writes no row" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    try testing.expectError(error.UnsupportedFormat, store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Slides",
+        .content = "{}",
+        .format = "slides",
+    }));
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "createDocument: a bad format is the caller's error even with no object store" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // The request is validated before the server's capability, so a client
+    // mistake is a 400 rather than a 500 about a missing store.
+    try testing.expectError(error.UnsupportedFormat, createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Slides",
+        .content = "{}",
+        .format = "slides",
+    }));
+}
+
+test "updateDocument: an office body is re-previewed from its cells" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Budget",
+        .content = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{\"0\":{\"0\":{\"v\":\"old\"}}}}}}}",
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, created);
+
+    const updated = try store.updateDocument(alloc, "ws_1", created.id, .{
+        .content = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{\"0\":{\"0\":{\"v\":\"new\"}}}}}}}",
+    });
+    defer freeDocumentRow(alloc, updated);
+
+    try testing.expectEqualStrings(FORMAT_OFFICE, updated.format);
+    try testing.expectEqualStrings("new", updated.preview);
+}
+
+test "updateDocument: a title-only patch keeps an office preview" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Budget",
+        .content = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{\"0\":{\"0\":{\"v\":\"kept\"}}}}}}}",
+        .format = FORMAT_OFFICE,
+    });
+    defer freeDocumentRow(alloc, created);
+
+    const renamed = try store.updateDocument(alloc, "ws_1", created.id, .{ .title = "Renamed" });
+    defer freeDocumentRow(alloc, renamed);
+
+    try testing.expectEqualStrings("Renamed", renamed.title);
+    try testing.expectEqualStrings("kept", renamed.preview);
 }

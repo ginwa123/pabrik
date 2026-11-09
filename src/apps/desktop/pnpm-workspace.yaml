@@ -1,0 +1,9 @@
+# pnpm 11+ reads the approved-builds allowlist from this file, not from
+# `.npmrc` and not from `package.json#pnpm.onlyBuiltDependencies`. Without an
+# entry here pnpm refuses the install with `[ERR_PNPM_IGNORED_BUILDS]` + exit 1.
+#
+# `protobufjs` arrives transitively through `@univerjs/presets` (the office
+# document editor). Its postinstall only prints a notice, but pnpm still has to
+# be told it may run, or every `pnpm install` in CI fails.
+allowBuilds:
+  protobufjs: true

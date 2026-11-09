@@ -1,4 +1,5 @@
 import { apiFetch } from './client'
+import { MARKDOWN_FORMAT } from '../helpers/officeDocument'
 
 // ─── Documents (Migration 095) ─────────────────────────────────────────── Workspace-scoped
 // markdown documents. A document belongs to a workspace directly — it is NOT a `workspace_items`
@@ -16,7 +17,8 @@ export interface Document {
   preview?: string
   /** Body length in bytes, so a row can be sized without reading it. */
   content_bytes?: number
-  /** `'markdown'` in v1. Reserved for future formats. */
+  /** `'markdown'` (a text body) or `'office'` (a Univer snapshot envelope).
+   * Immutable after create. */
   format: string
   created_at: string
   updated_at: string
@@ -73,23 +75,27 @@ export async function getDocument(
   )
 }
 
-/** POST /api/workspaces/:workspaceId/documents Body: `{ title, content?, format? }`. `title` is
- * required and must be non-blank; `content` may be empty (a blank note is a legitimate starting
- * state and round-trips as `''` rather than tripping the column's NOT NULL). */
+/** POST /api/workspaces/:workspaceId/documents Body: `{ title, content?, format?, folder_id? }`.
+ * `title` is required and non-blank; `content` may be empty. `format` is `markdown` (the default)
+ * or `office`, and is immutable after create. */
 export async function createDocument(
   workspaceId: string,
   title: string,
   content = '',
   folderId: string | null = null,
+  format: string = MARKDOWN_FORMAT,
 ): Promise<{ document: Document }> {
+  const body: Record<string, unknown> = { title, content }
+  // The default is omitted rather than sent: the server already defaults to
+  // markdown, and a body that names only what it changes is easier to read.
+  if (format !== MARKDOWN_FORMAT) body.format = format
+  // `folder_id` is omitted at the root: the column is nullable and an absent
+  // key is the documented "top level" body shape.
+  if (folderId) body.folder_id = folderId
+
   return await apiFetch<{ document: Document }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents`,
-    {
-      method: 'POST',
-      // `folder_id` is omitted at the root: the column is nullable and an
-      // absent key is the documented "top level" body shape.
-      body: folderId ? { title, content, folder_id: folderId } : { title, content },
-    },
+    { method: 'POST', body },
   )
 }
 

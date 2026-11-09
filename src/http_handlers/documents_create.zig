@@ -1,5 +1,5 @@
-//! `POST /api/workspaces/:workspace_id/documents`. Creates a markdown
-//! document owned by `workspace_id`.
+//! `POST /api/workspaces/:workspace_id/documents`. Creates a document owned by
+//! `workspace_id`, in one of `documents_store.SUPPORTED_FORMATS`.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");
@@ -23,6 +23,7 @@ pub const DocumentsCreateError = error{
     TitleRequired,
     ContentTooLarge,
     NoStorage,
+    UnsupportedFormat,
     FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
@@ -91,7 +92,7 @@ pub fn documentsCreateHandler(
         .body = body,
     }) catch |err| {
         const status: u16 = switch (err) {
-            error.WorkspaceIdRequired, error.TitleRequired => 400,
+            error.WorkspaceIdRequired, error.TitleRequired, error.UnsupportedFormat => 400,
             error.ContentTooLarge => 413,
             error.NoStorage => 500,
             error.FolderNotFound => 404,
@@ -100,6 +101,7 @@ pub fn documentsCreateHandler(
         const message: []const u8 = switch (err) {
             error.WorkspaceIdRequired => "workspace_id required",
             error.TitleRequired => "title is required",
+            error.UnsupportedFormat => "format must be one of: markdown, office",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
             error.NoStorage => "no object store configured: the body has nowhere to be stored",
             error.FolderNotFound => "folder not found in this workspace",
@@ -241,12 +243,12 @@ test "useCase: an explicit format is honoured, an empty one falls back to markdo
     var ctx = try setupDb();
     defer ctx.deinit();
 
-    const plain = try useCase(alloc, ctx.store(), .{
+    const sheet = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
-        .body = .{ .title = "Text", .content = "x", .format = "text" },
+        .body = .{ .title = "Budget", .content = "{\"sheets\":{}}", .format = "office" },
     });
-    defer documents_store.freeDocumentRow(alloc, plain.document);
-    try testing.expectEqualStrings("text", plain.document.format);
+    defer documents_store.freeDocumentRow(alloc, sheet.document);
+    try testing.expectEqualStrings("office", sheet.document.format);
 
     const fallback = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
@@ -254,6 +256,21 @@ test "useCase: an explicit format is honoured, an empty one falls back to markdo
     });
     defer documents_store.freeDocumentRow(alloc, fallback.document);
     try testing.expectEqualStrings("markdown", fallback.document.format);
+}
+
+test "useCase: an unknown format is refused and writes no row" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    try testing.expectError(error.UnsupportedFormat, useCase(alloc, ctx.store(), .{
+        .workspace_id = "ws_1",
+        .body = .{ .title = "Slides", .content = "{}", .format = "slides" },
+    }));
+
+    const rows = try documents_store.listDocuments(alloc, &ctx.db, "ws_1");
+    defer documents_store.freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }
 
 test "useCase: the new document is invisible from another workspace" {

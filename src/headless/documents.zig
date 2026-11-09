@@ -24,6 +24,7 @@ const FolderDto = struct {
 const DocumentDto = struct {
     id: []const u8,
     title: []const u8,
+    format: []const u8,
     folder_id: ?[]const u8,
     position: i64,
 };
@@ -58,7 +59,13 @@ fn folderDto(row: folders_store.FolderRow) FolderDto {
 }
 
 fn documentDto(row: documents_store.DocumentRow) DocumentDto {
-    return .{ .id = row.id, .title = row.title, .folder_id = row.folder_id, .position = row.position };
+    return .{
+        .id = row.id,
+        .title = row.title,
+        .format = row.format,
+        .folder_id = row.folder_id,
+        .position = row.position,
+    };
 }
 
 fn listJson(
@@ -282,6 +289,8 @@ pub fn runWithDb(
             const row = try store.createDocument(allocator, .{
                 .workspace_id = a.workspace_id,
                 .title = a.title,
+                .content = a.content,
+                .format = a.format,
                 .folder_id = a.folder_id orelse a.parent_id,
             });
             defer documents_store.freeDocumentRow(allocator, row);

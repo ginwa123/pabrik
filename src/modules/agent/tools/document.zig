@@ -25,8 +25,8 @@ const migration = @import("../../../migrations/migration.zig");
 pub const AddDocumentInput = struct {
     title: []const u8 = "",
     content: []const u8 = "",
-    /// Only 'markdown' is written in v1. Present so the schema is not
-    /// silently markdown-shaped if a second format lands.
+    /// `markdown` (the default) or `office`. An office body is a Univer
+    /// snapshot: one JSON object holding the workbook's sheets and cells.
     format: []const u8 = "",
 };
 
@@ -58,10 +58,12 @@ pub const SearchDocumentsInput = struct {
 
 pub const add_document_tool_system_prompt =
     \\## Add Document Tool — Behavior
-    \\Use `add_document` to create a markdown document in YOUR workspace.
+    \\Use `add_document` to create a document in YOUR workspace.
     \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. You can only write into the workspace your session belongs to.
     \\- `title` is REQUIRED and must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug.
-    \\- `content` is the markdown body and may be empty (you can create a heading-only stub and fill it in with `edit_document`).
+    \\- `format` is `markdown` (the default) or `office`. Omit it for prose.
+    \\- For `markdown`, `content` is the markdown body and may be empty (you can create a heading-only stub and fill it in with `edit_document`).
+    \\- For `office`, `content` is a Univer snapshot: one JSON object with `sheets`, each sheet holding a `cellData` map of row index → column index → `{"v": value}`. A spreadsheet the user opens in the grid must be a valid snapshot, so build it from that shape rather than inventing keys.
     \\- A human can also create and edit documents from the UI; both paths write the same table, so a document the agent writes appears in their sidebar immediately.
     \\
 ;
@@ -71,7 +73,7 @@ pub const add_document_tool = AgentTool{
     .function = .{
         .name = "add_document",
         .description =
-        \\Create a markdown document in YOUR workspace — a plan, a spec, meeting notes, a research summary, any prose artifact worth re-reading later.
+        \\Create a document in YOUR workspace — a plan, a spec, meeting notes, a research summary, any artifact worth re-reading later. `format: "office"` creates a spreadsheet instead of prose.
         \\
         \\- The document is stored in SQLite and shown in the "Documents" section of the sidebar, where the user can open and edit it.
         \\- SCOPE is automatic: your session's workspace is resolved before the write, so there is no `workspace_id` argument — one supplied is ignored.
@@ -80,8 +82,8 @@ pub const add_document_tool = AgentTool{
             .type = "object",
             .properties = &.{
                 .{ .name = "title", .type = "string", .description = "Human-readable document name, shown in the sidebar Documents list. Required, non-blank." },
-                .{ .name = "content", .type = "string", .description = "The markdown body. May be empty. Capped at 4 MiB." },
-                .{ .name = "format", .type = "string", .description = "Only 'markdown' is supported in this version; omit it." },
+                .{ .name = "content", .type = "string", .description = "The body: markdown text, or a Univer snapshot JSON when `format` is 'office'. May be empty. Capped at 4 MiB." },
+                .{ .name = "format", .type = "string", .description = "'markdown' (default) or 'office'. An office body is a Univer snapshot: {\"sheets\": {<id>: {\"cellData\": {<row>: {<col>: {\"v\": value}}}}}}. Any other value is refused." },
             },
             .required = &.{"title"},
         },
@@ -95,6 +97,7 @@ pub const edit_document_tool_system_prompt =
     \\- `document_id` comes from the id returned by `add_document`, or from a `search_documents` row. If you still have no id, run `search_documents` — do NOT guess one and do NOT ask the user to paste an id you can look up yourself.
     \\- Provide `title`, `content`, or both. An OMITTED field keeps its current value; `content: ""` genuinely clears the body. A patch with neither field is rejected.
     \\- `content` is the WHOLE new body, not a diff. Read the existing body first — `search_documents` with `include_content: true` returns it — or you will silently discard what is there.
+    \\- An `office` document's body is a Univer snapshot JSON. Replacing it with prose destroys the spreadsheet, so only write one when you can produce a valid snapshot; otherwise leave the document to the user's grid.
     \\- Scope is automatic. A document belonging to another workspace reports "not found" — you cannot read it, edit it, or learn that it exists.
     \\
 ;
@@ -318,6 +321,7 @@ pub fn executeAddDocument(
             error.TitleRequired => "title is required and must contain at least one non-whitespace character",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
             error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
+            error.UnsupportedFormat => "format must be 'markdown' or 'office'",
             error.FolderNotFound => "No such folder in this workspace.",
             error.InsertFailed => "Could not store the document (database error).",
             error.RowNotFoundAfterInsert => "The document was written but could not be read back — the row is inconsistent, please retry.",

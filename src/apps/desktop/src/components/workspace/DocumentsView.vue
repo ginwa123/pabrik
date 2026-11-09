@@ -1,13 +1,20 @@
 <script setup lang="ts">
-// The document page (Migration 095). Reached from the sidebar's Documents section, which writes
-// `/app/{ws}/doc/{id}` into the URL — a PAGE shape, so this view is the main content area and the
-// chat it was opened from is unmounted (not stacked underneath).
+// The document page (Migration 095), reached from the sidebar's Documents section, which writes
+// `/app/{ws}/doc/{id}` into the URL — a PAGE shape, so the chat it was opened from is unmounted.
+// Two formats share it: `markdown` (textarea + preview) and `office` (a Univer editor).
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDocumentsStore } from '../../stores/documents'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { renderMarkdownHtml } from '../../helpers/markdown'
 import { buildAppUrl } from '../../helpers/appUrl'
+import {
+  DEFAULT_OFFICE_KIND,
+  isOfficeFormat,
+  parseOfficeBody,
+  serializeOfficeBody,
+} from '../../helpers/officeDocument'
+import OfficeDocumentEditor from './OfficeDocumentEditor.vue'
 
 const props = defineProps<{
   documentId: string
@@ -25,14 +32,28 @@ const draftContent = ref('')
 const savedContent = ref('')
 const savedTitle = ref('')
 const showPreview = ref(true)
+/** An office document's edits live inside Univer, so the only signal that the
+ *  stored body is stale is the editor telling us a command ran. */
+const officeDirty = ref(false)
+const officeEditor = ref<InstanceType<typeof OfficeDocumentEditor> | null>(null)
 
 // The resolved workspace, not the raw `activeWorkspaceId` ref.
 const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 
 const document_ = computed(() => documentsStore.findById(props.documentId))
 
+const isOffice = computed(() => isOfficeFormat(document_.value?.format))
+
+/** Which Univer product renders this document. An unreadable body still needs a
+ *  kind for the header, and the editor reports the failure itself. */
+const officeKind = computed(
+  () => parseOfficeBody(savedContent.value)?.kind ?? DEFAULT_OFFICE_KIND,
+)
+
 const isDirty = computed(
-  () => draftTitle.value !== savedTitle.value || draftContent.value !== savedContent.value,
+  () =>
+    draftTitle.value !== savedTitle.value ||
+    (isOffice.value ? officeDirty.value : draftContent.value !== savedContent.value),
 )
 
 const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
@@ -50,6 +71,7 @@ async function loadForDocument(id: string) {
   draftContent.value = body
   savedTitle.value = doc.title
   savedContent.value = body
+  officeDirty.value = false
   editing.value = false
 }
 
@@ -127,13 +149,29 @@ const save = async () => {
   // the body in the meantime — a whole-body PATCH would then silently revert that edit.
   const patch: { title?: string; content?: string } = {}
   if (draftTitle.value !== savedTitle.value) patch.title = draftTitle.value
-  if (draftContent.value !== savedContent.value) patch.content = draftContent.value
+  if (isOffice.value) {
+    // Only when the editor reported an edit: a rename must not rewrite the
+    // body, or it would revert an agent `edit_document` that landed meanwhile.
+    if (officeDirty.value) {
+      const snapshot = officeEditor.value?.snapshot()
+      if (snapshot !== null && snapshot !== undefined) {
+        patch.content = serializeOfficeBody(officeKind.value, snapshot)
+      }
+    }
+  } else if (draftContent.value !== savedContent.value) {
+    patch.content = draftContent.value
+  }
+  if (Object.keys(patch).length === 0) {
+    editing.value = false
+    return
+  }
 
   const updated = await documentsStore.updateDocument(workspaceId.value, props.documentId, patch)
   if (updated) {
     savedTitle.value = updated.title
     // A PATCH response carries the body; the `?? ''` is for the type only.
     savedContent.value = updated.content ?? ''
+    officeDirty.value = false
     editing.value = false
   }
 }
@@ -206,23 +244,24 @@ const remove = async () => {
         </span>
 
         <div class="ml-auto flex items-center gap-2 shrink-0">
-          <button
-            v-if="editing"
-            class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
-            style="color: var(--semantic-text-dim)"
-            data-testid="documents-preview-toggle"
-            @click="showPreview = !showPreview"
-          >
-            {{ showPreview ? 'Hide preview' : 'Show preview' }}
-          </button>
-          <template v-if="editing">
+          <template v-if="isOffice">
             <button
+              v-if="editing"
               class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
               style="color: var(--semantic-text-dim)"
               data-testid="documents-cancel"
               @click="cancelEditing"
             >
               Cancel
+            </button>
+            <button
+              v-else
+              class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
+              style="color: var(--semantic-text-dim)"
+              data-testid="documents-edit"
+              @click="startEditing"
+            >
+              Rename
             </button>
             <button
               class="text-meta px-2 h-[var(--sb-hit)] font-medium transition-opacity hover:opacity-100 disabled:opacity-40"
@@ -233,16 +272,6 @@ const remove = async () => {
             >
               {{ documentsStore.saving ? 'Saving…' : 'Save' }}
             </button>
-          </template>
-          <template v-else>
-            <button
-              class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
-              style="color: var(--semantic-text-dim)"
-              data-testid="documents-edit"
-              @click="startEditing"
-            >
-              Edit
-            </button>
             <button
               class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
               style="color: var(--semantic-error)"
@@ -252,13 +281,73 @@ const remove = async () => {
               Delete
             </button>
           </template>
+
+          <template v-else>
+            <button
+              v-if="editing"
+              class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
+              style="color: var(--semantic-text-dim)"
+              data-testid="documents-preview-toggle"
+              @click="showPreview = !showPreview"
+            >
+              {{ showPreview ? 'Hide preview' : 'Show preview' }}
+            </button>
+            <template v-if="editing">
+              <button
+                class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
+                style="color: var(--semantic-text-dim)"
+                data-testid="documents-cancel"
+                @click="cancelEditing"
+              >
+                Cancel
+              </button>
+              <button
+                class="text-meta px-2 h-[var(--sb-hit)] font-medium transition-opacity hover:opacity-100 disabled:opacity-40"
+                style="color: var(--semantic-link)"
+                data-testid="documents-save"
+                :disabled="!isDirty || documentsStore.saving"
+                @click="save"
+              >
+                {{ documentsStore.saving ? 'Saving…' : 'Save' }}
+              </button>
+            </template>
+            <template v-else>
+              <button
+                class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
+                style="color: var(--semantic-text-dim)"
+                data-testid="documents-edit"
+                @click="startEditing"
+              >
+                Edit
+              </button>
+              <button
+                class="text-meta px-2 h-[var(--sb-hit)] transition-opacity hover:opacity-100"
+                style="color: var(--semantic-error)"
+                data-testid="documents-delete"
+                @click="remove"
+              >
+                Delete
+              </button>
+            </template>
+          </template>
         </div>
       </header>
+
+      <!-- An office document is edited in place: the grid IS the editor.
+           `:key` gives each document its own Univer instance, because the
+           component stays mounted across a Back/Forward. -->
+      <OfficeDocumentEditor
+        v-if="isOffice"
+        :key="props.documentId"
+        ref="officeEditor"
+        :body="savedContent"
+        @change="officeDirty = true"
+      />
 
       <!-- Both panes are always mounted while editing. `v-if` on the
            textarea would drop the caret and the scroll position on every
            preview toggle. -->
-      <div class="flex-1 min-h-0 flex" data-testid="documents-body">
+      <div v-else class="flex-1 min-h-0 flex" data-testid="documents-body">
         <textarea
           v-if="editing"
           v-model="draftContent"

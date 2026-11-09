@@ -8,6 +8,13 @@ import { useNavigationStore } from '../../stores/navigation'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { buildAppUrl } from '../../helpers/appUrl'
+import {
+  MARKDOWN_FORMAT,
+  OFFICE_FORMAT,
+  serializeOfficeBody,
+  type OfficeKind,
+} from '../../helpers/officeDocument'
+import DocumentsNewMenu from './DocumentsNewMenu.vue'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
 import type { Document, DocumentFolder } from '../../api'
 
@@ -264,10 +271,17 @@ const handleRootDrop = (event: DragEvent) => {
 }
 
 // ─── Create / rename / delete ────────────────────────────────────────────
-const createDocument = (folderId: string | null = null) => {
+const createDocument = (folderId: string | null = null, kind: 'markdown' | OfficeKind = 'markdown') => {
   const wsId = activeWorkspaceId()
   if (!wsId) return
-  void documentsStore.createDocument(wsId, 'Untitled document', '', folderId).then((doc) => {
+  const isMarkdown = kind === 'markdown'
+  // The envelope is written at create time, so the editor knows which Univer
+  // product to mount before the first Save.
+  const content = isMarkdown ? '' : serializeOfficeBody(kind, {})
+  const format = isMarkdown ? MARKDOWN_FORMAT : OFFICE_FORMAT
+  const title = kind === 'sheet' ? 'Untitled spreadsheet' : 'Untitled document'
+
+  void documentsStore.createDocument(wsId, title, content, folderId, format).then((doc) => {
     if (doc) {
       selectDocument(doc.id)
       emit('created', doc.id)
@@ -403,17 +417,10 @@ onUpdated(() => {
             <path d="M8 7.4v3.2M6.4 9h3.2" stroke="currentColor" stroke-width="1.2" />
           </svg>
         </button>
-        <button
+        <DocumentsNewMenu
           v-if="sidebarStore.documentsExpanded && workspaceId"
-          class="w-[var(--sb-hit)] h-[var(--sb-hit)] text-meta font-medium transition-opacity duration-150 hover:opacity-100 flex items-center justify-center shrink-0"
-          style="color: var(--semantic-text-dim); opacity: 0.7"
-          title="New Document"
-          aria-label="New Document"
-          data-testid="documents-add-button"
-          @click.stop="createDocument(null)"
-        >
-          +
-        </button>
+          @choose="createDocument(null, $event)"
+        />
       </div>
     </div>
 
