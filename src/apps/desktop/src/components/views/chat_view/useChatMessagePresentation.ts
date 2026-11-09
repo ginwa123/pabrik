@@ -330,26 +330,23 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
 
   /** The cards of one tool group, in order. Both views draw the same cards. */
   const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
-    group.messages.map((msg, idx) => {
-      const expandKey = toolExpandKey(msg, groupIndex, idx)
-      return {
-        ...(isBackgroundCompletion(msg)
-          ? backgroundCard(msg)
-          : {
-              message: msg,
-              content: innerToolData(msg),
-              parameters: getParametersForMessage(msg),
-            }),
-        expanded: expandedToolIds.value.has(expandKey),
-        expandKey,
-        subAgentProgress: msg.tool_call_id
-          ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
-          : null,
-        subAgentArgs: msg.tool_call_id
-          ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
-          : null,
-      }
-    })
+    group.messages.map((msg, idx) => ({
+      ...(isBackgroundCompletion(msg)
+        ? backgroundCard(msg)
+        : {
+            message: msg,
+            content: innerToolData(msg),
+            parameters: getParametersForMessage(msg),
+          }),
+      expanded: expandedToolIds.value.has(toolExpandKey(msg, groupIndex, idx)),
+      expandKey: toolExpandKey(msg, groupIndex, idx),
+      subAgentProgress: msg.tool_call_id
+        ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
+        : null,
+      subAgentArgs: msg.tool_call_id
+        ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
+        : null,
+    }))
 
   const standaloneCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
     toolCardsFor(group, groupIndex).filter((card) => !foldsIntoChain(card))

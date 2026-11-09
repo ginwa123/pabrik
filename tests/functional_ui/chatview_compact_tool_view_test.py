@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 from chatview_boot import (
@@ -148,6 +149,70 @@ def test_one_turn_of_calls_folds_into_one_card(ui_harness: UIHarness, page) -> N
     )
 
 
+def _seed_single_call_turn(h: UIHarness, workspace_id: str, session_id: str) -> None:
+    """One turn with exactly one tool call, then the answer."""
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="read the alpha file")
+        tool, parameters = CALLS[0]
+        seed.seed_assistant_message(
+            conn,
+            session_id,
+            text="",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "tc_single",
+                    "type": "function",
+                    "function": {"name": tool, "arguments": json.dumps(parameters)},
+                }
+            ],
+        )
+        seed.seed_tool_result(
+            conn,
+            session_id,
+            tool_call_id="tc_single",
+            tool_name=tool,
+            content=_envelope(tool, parameters, {}, duration_ms=1200),
+        )
+        seed.seed_assistant_message(conn, session_id, text=ANSWER, finish_reason="stop")
+
+
+def test_a_single_call_still_draws_a_card(ui_harness: UIHarness, page) -> None:
+    """A run of ONE is a card too: the count, the duration, and the call in the header."""
+    h = ui_harness
+    session_id = "sess_compact_view_single_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_single_call_turn(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=20000)
+
+    assert page.locator('[data-testid="compact-tool-group"]').count() == 1, (
+        "a run of one must still be a card"
+    )
+    count = page.locator('[data-testid="compact-tool-group-count"]').first.inner_text()
+    assert count.strip() == "1 tool call", f"the card must count its one call, got {count!r}"
+    summary = page.locator('[data-testid="compact-tool-group-summary"]').first.inner_text()
+    assert summary.strip() == "read_file /tmp/alpha.ts", (
+        f"a run of one has no count to scan, so the header names the call, got {summary!r}"
+    )
+    duration = page.locator('[data-testid="compact-tool-group-duration"]').first.inner_text()
+    assert duration.strip() == "1.2s", f"the card must carry the run's time, got {duration!r}"
+    assert page.locator('[data-testid="compact-tool-row"]').count() == 0, (
+        "a folded run must not draw its rows"
+    )
+
+    page.locator('[data-testid="compact-tool-group-header"]').first.click()
+    page.locator('[data-testid="compact-tool-row"]').first.wait_for(timeout=10000)
+    assert page.locator('[data-testid="compact-tool-row"]').count() == 1, (
+        "unfolding a run of one draws its single row"
+    )
+
+
 def test_the_thoughts_of_the_turn_are_inside_the_card(ui_harness: UIHarness, page) -> None:
     """A thought belongs to the call it led to, so it lives in the card — a
     Thought row leaking out below the card is the bug this guards."""
@@ -211,8 +276,6 @@ def test_unfolding_the_card_shows_the_tool_and_its_argument(ui_harness: UIHarnes
     assert primaries == ["/tmp/alpha.ts", "ls -la", "needle"], (
         f"each row must show the argument that identifies the call, got {primaries}"
     )
-    body = page.locator(".tool-sequence").first.inner_text()
-    assert "1 tool calls" not in body, f"no row may be a group of one, got {body!r}"
 
 
 def test_a_row_opens_the_full_card(ui_harness: UIHarness, page) -> None:
@@ -303,8 +366,16 @@ _SETTLE_PROBE = r"""
 async (args) => {
   const quietMs = args.quietMs;
   const maxMs = args.maxMs;
-  const scroller = document.querySelector('.messages-scroll-hide-native .virtual-scroller')
+  // The scroller unmounts for a frame whenever the history reloads (its v-if reads
+  // `messageGroups.length`), so a probe that samples once can miss it. Wait for it here.
+  const findScroller = () => document.querySelector('.messages-scroll-hide-native .virtual-scroller')
     || document.querySelector('.virtual-scroller');
+  let scroller = findScroller();
+  const waitStart = performance.now();
+  while (!scroller && performance.now() - waitStart < 10000) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    scroller = findScroller();
+  }
   if (!scroller) return { error: 'no scroller' };
   const sizer = scroller.querySelector('.virtual-scroller-sizer');
   const content = scroller.querySelector('.virtual-scroller-content');
@@ -349,6 +420,8 @@ async (args) => {
   const topSpacer = match ? Math.round(parseFloat(match[1])) : 0;
   const contentHeight = content ? Math.round(content.offsetHeight) : 0;
   const children = content ? Array.from(content.children) : [];
+  // A reload leaves the scroller mounted but empty; measuring that is measuring nothing.
+  if (children.length < 5) return { error: 'not ready', renderedItems: children.length };
   return {
     settledAfterMs: settledAfterMs,
     mutations: mutations,
@@ -387,7 +460,21 @@ def test_the_compact_view_settles_instead_of_repainting(ui_harness: UIHarness, p
     # The mount's own autoscroll is legitimate churn; judge the state it lands in.
     page.wait_for_timeout(800)
 
-    probe = page.evaluate(_SETTLE_PROBE, {"quietMs": IDLE_QUIET_MS, "maxMs": IDLE_MAX_MS})
+    # The dev server can reload the page under the probe (a Vite full reload destroys the JS
+    # context mid-measurement), so a sample that dies is retried rather than read as a verdict.
+    probe = None
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        try:
+            sample = page.evaluate(_SETTLE_PROBE, {"quietMs": IDLE_QUIET_MS, "maxMs": IDLE_MAX_MS})
+        except Exception:  # noqa: BLE001 — a destroyed context is a reload, not a result
+            page.wait_for_timeout(500)
+            continue
+        if "error" not in sample:
+            probe = sample
+            break
+        page.wait_for_timeout(500)
+    assert probe is not None, "the transcript never stayed mounted long enough to be measured"
     overshoot = probe["sizerHeight"] - probe["realContentBottom"]
 
     assert probe["zeroHeightItems"] > 0, (

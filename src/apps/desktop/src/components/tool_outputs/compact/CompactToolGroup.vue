@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /** CompactToolGroup — a run of tool calls, the thoughts between them and the narration the agent
- * wrote on the way to each call. A lone call is one row; a run of several folds into one group card
- * that unfolds into the rows. */
+ * wrote on the way to each call. Every run is one card that unfolds into the rows, a run of one
+ * included: the count and the duration are what the reader scans for. */
 import { computed, ref } from 'vue'
 
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
+import { summarizeToolCall } from '../_shared/toolSummary'
 import type { CompactChainItem } from './chain'
 import { formatDuration } from './duration'
 import CompactTextRow from './CompactTextRow.vue'
@@ -45,12 +46,27 @@ const durationMs = computed(() =>
 
 const durationLabel = computed(() => formatDuration(durationMs.value))
 
+const countLabel = computed(() =>
+  cards.value.length === 1 ? '1 tool call' : `${cards.value.length} tool calls`,
+)
+
+/** A run of one has no count to scan, so the header carries the call itself. */
+const summaryLabel = computed(() => {
+  const only = cards.value.length === 1 ? cards.value[0] : undefined
+  if (!only) return ''
+  const summary = summarizeToolCall(
+    only.message.tool_name ?? 'tool',
+    only.parameters,
+    only.message.content,
+  )
+  return `${summary.name} ${summary.primary}`.trim()
+})
+
 /** A call the user opened: the full card, not a row. */
 function isFullCard(card: ToolCardData): boolean {
   return card.expanded
 }
 
-const isRun = computed(() => cards.value.length > 1)
 const open = ref(false)
 
 function toggle(): void {
@@ -60,7 +76,7 @@ function toggle(): void {
 
 <template>
   <div class="tool-sequence tool-sequence-compact" data-testid="compact-tool-chain">
-    <div v-if="isRun" class="tool-item">
+    <div class="tool-item">
       <div class="chat-tool-card" data-testid="compact-tool-group">
         <div
           class="group flex items-center gap-1 px-2 py-1 cursor-pointer select-none hover:bg-[var(--tint-accent)]"
@@ -76,12 +92,14 @@ function toggle(): void {
             class="font-semibold text-[var(--color-violet)] text-dense"
             data-testid="compact-tool-group-count"
           >
-            {{ cards.length }} tool calls
+            {{ countLabel }}
           </span>
           <span
             class="flex-1 min-w-0 truncate text-left text-dense"
             style="color: var(--semantic-text-dim)"
-          ></span>
+            data-testid="compact-tool-group-summary"
+            >{{ summaryLabel }}</span
+          >
           <span
             v-if="failedCount > 0"
             class="font-medium text-dense"
@@ -111,7 +129,7 @@ function toggle(): void {
       </div>
     </div>
 
-    <template v-if="!isRun || open">
+    <template v-if="open">
       <template v-for="(item, idx) in items" :key="item.key">
         <ToolCard
           v-if="item.kind === 'tool' && isFullCard(item.card)"
