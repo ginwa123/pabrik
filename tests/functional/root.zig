@@ -98,6 +98,7 @@ const llm_stream_get_test = @import("llm_stream_get_test.zig");
 const llm_test_test = @import("llm_test_test.zig");
 const model_catalog_test = @import("model_catalog_test.zig");
 const mcp_http_test = @import("mcp_http_test.zig");
+const mcp_oauth_hello_world_test = @import("mcp_oauth_hello_world_test.zig");
 const mcp_server_toggle_test = @import("mcp_server_toggle_test.zig");
 const mcp_stdio_hang_test = @import("mcp_stdio_hang_test.zig");
 const mcp_stdio_test = @import("mcp_stdio_test.zig");
@@ -262,6 +263,7 @@ pub const suites = .{
     llm_test_test,
     model_catalog_test,
     mcp_http_test,
+    mcp_oauth_hello_world_test,
     mcp_server_toggle_test,
     mcp_stdio_hang_test,
     mcp_stdio_test,
