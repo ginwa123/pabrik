@@ -158,6 +158,7 @@ const migration_142 = @import("migration_142.zig");
 const migration_143 = @import("migration_143.zig");
 const migration_144 = @import("migration_144.zig");
 const migration_145 = @import("migration_145.zig");
+const migration_146 = @import("migration_146.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -305,6 +306,7 @@ pub const Migration142AddSessionGroup = migration_142.Migration142AddSessionGrou
 pub const Migration143AddDocumentContentKey = migration_143.Migration143AddDocumentContentKey;
 pub const Migration144DropDocumentContent = migration_144.Migration144DropDocumentContent;
 pub const Migration145AddPendingDelegate = migration_145.Migration145AddPendingDelegate;
+pub const Migration146AddMcpOAuth = migration_146.Migration146AddMcpOAuth;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -575,6 +577,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration144DropDocumentContent.version, .name = Migration144DropDocumentContent.name, .up = Migration144DropDocumentContent.up },
     // Migration 145 — one pending delegation per session, set by `delegate_agent`.
     .{ .version = Migration145AddPendingDelegate.version, .name = Migration145AddPendingDelegate.name, .up = Migration145AddPendingDelegate.up },
+    .{ .version = Migration146AddMcpOAuth.version, .name = Migration146AddMcpOAuth.name, .up = Migration146AddMcpOAuth.up },
 };
 
 /// Register all migrations with a MigrationManager

@@ -73,6 +73,7 @@ const headless_documents_test = @import("headless_documents_test.zig");
 const agent_document_tools_content_test = @import("agent_document_tools_content_test.zig");
 const headless_usage_test = @import("headless_usage_test.zig");
 const headless_memories_test = @import("headless_memories_test.zig");
+const headless_mcp_oauth_test = @import("headless_mcp_oauth_test.zig");
 const headless_group_test = @import("headless_group_test.zig");
 const session_group_test = @import("session_group_test.zig");
 const hook_zig_fmt_test = @import("hook_zig_fmt_test.zig");
@@ -98,6 +99,7 @@ const llm_stream_get_test = @import("llm_stream_get_test.zig");
 const llm_test_test = @import("llm_test_test.zig");
 const model_catalog_test = @import("model_catalog_test.zig");
 const mcp_http_test = @import("mcp_http_test.zig");
+const mcp_oauth_hello_world_test = @import("mcp_oauth_hello_world_test.zig");
 const mcp_server_toggle_test = @import("mcp_server_toggle_test.zig");
 const mcp_stdio_hang_test = @import("mcp_stdio_hang_test.zig");
 const mcp_stdio_test = @import("mcp_stdio_test.zig");
@@ -237,6 +239,7 @@ pub const suites = .{
     agent_document_tools_content_test,
     headless_usage_test,
     headless_memories_test,
+    headless_mcp_oauth_test,
     headless_group_test,
     session_group_test,
     hook_zig_fmt_test,
@@ -262,6 +265,7 @@ pub const suites = .{
     llm_test_test,
     model_catalog_test,
     mcp_http_test,
+    mcp_oauth_hello_world_test,
     mcp_server_toggle_test,
     mcp_stdio_hang_test,
     mcp_stdio_test,

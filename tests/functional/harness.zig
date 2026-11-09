@@ -1420,6 +1420,29 @@ pub fn mcpHttpHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
     return error.BinaryNotFound;
 }
 
+/// The `mcp-oauth-hello-world` fixture binary, or `error.BinaryNotFound`.
+/// Same resolution order as `mcpHttpHelloWorldBin`: an explicit env override
+/// first, then the two installed names.
+pub fn mcpOAuthHelloWorldBin(io: Io, gpa: Allocator) ![]u8 {
+    if (getEnvOrEmpty(gpa, "MCP_OAUTH_HELLO_WORLD_BIN")) |env_bin| {
+        defer gpa.free(env_bin);
+        if (env_bin.len > 0) {
+            const resolved = resolveRelative(io, gpa, env_bin) catch env_bin;
+            if (isExecutable(io, resolved)) return resolved;
+            if (resolved.ptr != env_bin.ptr) gpa.free(resolved);
+        }
+    } else |_| {}
+    for ([_][]const u8{
+        "zig-out/bin/mcp-oauth-hello-world",
+        "zig-out/bin/mcp-oauth-hello-world-linux-x86_64",
+    }) |c| {
+        const resolved = try resolveRelative(io, gpa, c);
+        if (isExecutable(io, resolved)) return resolved;
+        gpa.free(resolved);
+    }
+    return error.BinaryNotFound;
+}
+
 fn resolveRelative(io: Io, gpa: Allocator, path: []const u8) ![]u8 {
     if (std.fs.path.isAbsolute(path)) return gpa.dupe(u8, path);
     var buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1635,6 +1658,7 @@ comptime {
     _ = resolvePabrikBin;
     _ = mcpHelloWorldBin;
     _ = mcpHttpHelloWorldBin;
+    _ = mcpOAuthHelloWorldBin;
     _ = writeStubLlmProfile;
     _ = randomSuffix;
     _ = makeScratchDir;
