@@ -356,7 +356,25 @@ test "group delegate hands the next turn to the named member" {
     try testing.expect(std.mem.indexOf(u8, decided, "\"agent\":\"deepseek auto\"") != null);
 }
 
-test "group delegate refuses a name outside the roster" {
+test "group delegate honours a name outside the roster" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+
+    const joined = try join(&ctx, "BEAM", "lead", 0);
+    testing.allocator.free(joined);
+
+    const json = try runWithDb(testing.allocator, &ctx.db, .{
+        .op = .delegate,
+        .session_id = "s_1",
+        .agent = "ghost",
+        .message = "hello?",
+    });
+    defer testing.allocator.free(json);
+    try testing.expect(std.mem.indexOf(u8, json, "\"delegated_to\":\"ghost\"") != null);
+}
+
+test "group delegate refuses an empty agent name" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -367,7 +385,7 @@ test "group delegate refuses a name outside the roster" {
     try testing.expectError(error.DelegationRefused, runWithDb(testing.allocator, &ctx.db, .{
         .op = .delegate,
         .session_id = "s_1",
-        .agent = "ghost",
+        .agent = "",
         .message = "hello?",
     }));
 }
