@@ -96,6 +96,13 @@ pub const DocumentsOp = enum {
     folder_delete,
     doc_create,
     doc_move,
+    /// `add_document` through the real agent tool dispatch, so the body's
+    /// round trip through the object store is exercised with no server.
+    doc_add,
+    /// `edit_document` through the same dispatch.
+    doc_edit,
+    /// Read one document back, body included.
+    doc_get,
     backfill,
 };
 
@@ -109,9 +116,14 @@ pub const DocumentsArgs = struct {
     parent_id: ?[]const u8 = null,
     /// The folder being moved, renamed or deleted.
     folder_id: ?[]const u8 = null,
-    /// The document being moved.
+    /// The document being moved, edited or read.
     document_id: ?[]const u8 = null,
     title: []const u8 = "",
+    /// `doc-add` / `doc-edit`: the markdown body the model would send.
+    content: []const u8 = "",
+    /// `doc-add` / `doc-edit` / `doc-get`: the calling session, which is what
+    /// resolves the workspace. The tool never takes a workspace id.
+    session: []const u8 = "",
     /// `backfill`: stop after this many rows. 0 means no cap.
     limit: usize = 0,
     /// `backfill`: report what would move without writing anything.
@@ -214,9 +226,10 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-get | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      search flags: --query <text>\n" ++
+    "      agent-tool flags: --session <id> --title <t> --content <markdown> (doc-add, doc-edit, doc-get)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
@@ -350,6 +363,9 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "folder-delete")) break :blk .folder_delete;
         if (std.mem.eql(u8, word, "doc-create")) break :blk .doc_create;
         if (std.mem.eql(u8, word, "doc-move")) break :blk .doc_move;
+        if (std.mem.eql(u8, word, "doc-add")) break :blk .doc_add;
+        if (std.mem.eql(u8, word, "doc-edit")) break :blk .doc_edit;
+        if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
         if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
         return fail(.{ .kind = .documents_unknown_op, .value = word });
     };
@@ -382,6 +398,14 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.title = argv[i];
+        } else if (std.mem.eql(u8, flag, "--content")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.content = argv[i];
+        } else if (std.mem.eql(u8, flag, "--session")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.session = argv[i];
         } else if (std.mem.eql(u8, flag, "--limit")) {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
@@ -399,7 +423,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         i += 1;
     }
 
-    if (got.workspace_id.len == 0 and op != .backfill) {
+    const tool_op = op == .doc_add or op == .doc_edit or op == .doc_get;
+    if (tool_op) {
+        if (got.session.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--session" });
+    } else if (got.workspace_id.len == 0 and op != .backfill) {
         return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
     }
     switch (op) {
@@ -416,10 +443,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         .folder_move => {
             if (got.folder_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--folder" });
         },
-        .doc_create => {
+        .doc_create, .doc_add => {
             if (got.title.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--title" });
         },
-        .doc_move => {
+        .doc_move, .doc_edit, .doc_get => {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
     }
@@ -901,6 +928,27 @@ test "parse: documents refuses an unknown op by name" {
 test "parse: documents doc-move needs the document id" {
     try expectFailure(&.{ "documents", "doc-move", "--workspace", "ws_1" }, .documents_requires_flag);
     const a = try parse(&.{ "documents", "doc-move", "--workspace", "ws_1", "--document", "doc_a", "--folder", "fld_1" });
+    try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
+}
+
+test "parse: documents doc-add takes a session, a title and a body" {
+    const a = try parse(&.{
+        "documents", "doc-add", "--session", "task_1", "--title", "Plan", "--content", "# hi",
+    });
+    try testing.expectEqual(DocumentsOp.doc_add, a.documents.op);
+    try testing.expectEqualStrings("task_1", a.documents.session);
+    try testing.expectEqualStrings("Plan", a.documents.title);
+    try testing.expectEqualStrings("# hi", a.documents.content);
+    // The tool resolves the workspace from the session, so no --workspace.
+    try testing.expectEqualStrings("", a.documents.workspace_id);
+}
+
+test "parse: documents doc-get needs a session and a document id" {
+    try expectFailure(&.{ "documents", "doc-get", "--document", "doc_a" }, .documents_requires_flag);
+    try expectFailure(&.{ "documents", "doc-get", "--session", "task_1" }, .documents_requires_flag);
+
+    const a = try parse(&.{ "documents", "doc-get", "--session", "task_1", "--document", "doc_a" });
+    try testing.expectEqual(DocumentsOp.doc_get, a.documents.op);
     try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
 }
 

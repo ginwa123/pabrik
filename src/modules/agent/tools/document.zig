@@ -317,6 +317,7 @@ pub fn executeAddDocument(
             error.WorkspaceIdRequired => "Could not resolve this session's workspace.",
             error.TitleRequired => "title is required and must contain at least one non-whitespace character",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
             error.FolderNotFound => "No such folder in this workspace.",
             error.InsertFailed => "Could not store the document (database error).",
             error.RowNotFoundAfterInsert => "The document was written but could not be read back — the row is inconsistent, please retry.",
@@ -361,6 +362,7 @@ pub fn executeEditDocument(
             // the tool becomes an oracle for other workspaces' row ids.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
             error.FolderNotFound => "No such folder in this workspace.",
             error.UpdateFailed => "Could not save the document (database error).",
             error.QueryFailed => "Could not read the document (database error).",
@@ -1512,6 +1514,63 @@ test "execAddDocument: success envelope carries the created document" {
     try exec_testing.expect(env.err == null);
     try exec_testing.expectEqualStrings("ws_1", env.workspace_id);
     try exec_testing.expectEqualStrings("Notes", env.title);
+    try exec_testing.expectEqualStrings("# hi", env.content);
+
+    // And the body is really in the store, not only in the echo.
+    const stored = try (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", env.id);
+    defer exec_documents_store.freeDocumentRow(alloc, stored);
+    try exec_testing.expectEqualStrings("# hi", stored.content);
+}
+
+test "execAddDocument: no object store is a tool error, not a document with an empty body" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.deinit();
+
+    // The production dispatch used to build its context without the object
+    // store, so every agent-written document lost its body and read back
+    // empty. A missing store must now be a refusal the model can see.
+    const tc = makeTestCtx(alloc, &ctx.db, null, "s1");
+    const result = try execAddDocument(tc, fakeToolCall("add_document", "{\"title\":\"Notes\",\"content\":\"# hi\"}"));
+    defer alloc.free(result.output);
+
+    var env = try parseEnvelope(alloc, result.output);
+    defer env.deinit();
+    try exec_testing.expect(!env.success);
+    try exec_testing.expect(env.err != null);
+    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "object store") != null);
+
+    // Nothing was written: a row with no body is the bug, not a fallback.
+    const rows = try exec_documents_store.listDocuments(alloc, &ctx.db, "ws_1");
+    defer exec_documents_store.freeDocumentRows(alloc, rows);
+    try exec_testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "execEditDocument: no object store is a tool error, not a blanked document" {
+    const alloc = exec_testing.allocator;
+    var ctx = try exec_setupDb();
+    defer ctx.deinit();
+
+    const create = try execAddDocument(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), fakeToolCall("add_document", "{\"title\":\"Plan\",\"content\":\"v1\"}"));
+    defer alloc.free(create.output);
+    var created = try parseEnvelope(alloc, create.output);
+    defer created.deinit();
+    try exec_testing.expect(created.success);
+
+    const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\",\"content\":\"v2\"}}", .{created.id});
+    defer alloc.free(args);
+    const edit = try execEditDocument(makeTestCtx(alloc, &ctx.db, null, "s1"), fakeToolCall("edit_document", args));
+    defer alloc.free(edit.output);
+
+    var env = try parseEnvelope(alloc, edit.output);
+    defer env.deinit();
+    try exec_testing.expect(!env.success);
+    try exec_testing.expect(env.err != null);
+    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "object store") != null);
+
+    const row = try (exec_documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", created.id);
+    defer exec_documents_store.freeDocumentRow(alloc, row);
+    try exec_testing.expectEqualStrings("v1", row.content);
 }
 
 test "execAddDocument: a tool-level refusal surfaces as success=false" {

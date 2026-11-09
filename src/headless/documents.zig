@@ -7,9 +7,12 @@ const pabrikcore = @import("pabrikcore");
 
 const args = @import("args.zig");
 const boot_mod = @import("boot.zig");
+const handle_tool = @import("../modules/agent/loop/handle_tool.zig");
 
 const folders_store = pabrikcore.document_folders_store;
 const documents_store = pabrikcore.documents_store;
+const workspace_scope = pabrikcore.workspace_scope;
+const agent = pabrikcore.agent;
 
 const FolderDto = struct {
     id: []const u8,
@@ -117,10 +120,106 @@ pub fn run(
     backend: *boot_mod.Backend,
     a: args.DocumentsArgs,
 ) ![]u8 {
+    switch (a.op) {
+        .doc_add, .doc_edit => return runToolOp(allocator, backend, a),
+        .doc_get => return documentBodyJson(allocator, backend, a),
+        else => {},
+    }
     return runWithDb(allocator, .{
         .db = backend.ctx.db,
         .storage = backend.ctx.objectStore(),
     }, a);
+}
+
+/// The tool call the model would have made, dispatched through the SAME path
+/// the agent loop uses — hooks, registry, `dispatchFromRegistry`. That is what
+/// makes this a proof of the agent tool and not just of the store.
+fn runToolOp(
+    allocator: std.mem.Allocator,
+    backend: *boot_mod.Backend,
+    a: args.DocumentsArgs,
+) ![]u8 {
+    const tool_name = if (a.op == .doc_add) "add_document" else "edit_document";
+    const arguments = if (a.op == .doc_add)
+        try std.json.Stringify.valueAlloc(allocator, .{ .title = a.title, .content = a.content }, .{})
+    else
+        try std.json.Stringify.valueAlloc(allocator, .{
+            .document_id = a.document_id.?,
+            .content = a.content,
+        }, .{});
+    defer allocator.free(arguments);
+
+    var temperature: f32 = 0;
+    var thinking: bool = false;
+    const ctx = handle_tool.ToolContext{
+        .allocator = allocator,
+        .io = backend.io,
+        .db = backend.ctx.db,
+        .logger = backend.logger,
+        .session_id = a.session,
+        .model = "",
+        .cwd = "",
+        .api_key = "",
+        .base_url = "",
+        .config = backend.llm_config_ptr,
+        .agent_temperature = &temperature,
+        .is_thinking = &thinking,
+        .environment = backend.environment,
+    };
+
+    const output = try handle_tool.runToolDirect(ctx, .{
+        .id = "headless_documents",
+        .type = "function",
+        .function = .{ .name = tool_name, .arguments = arguments },
+    });
+    defer allocator.free(output);
+
+    if (try envelopeSucceeded(output)) return allocator.dupe(u8, output);
+    return error.ToolRefused;
+}
+
+/// True when the tool envelope reports `success: true`. A refusal is a
+/// non-zero exit, never a JSON object a caller could mistake for a write.
+fn envelopeSucceeded(envelope: []const u8) !bool {
+    const Wire = struct { success: bool = false };
+    const parsed = std.json.parseFromSlice(Wire, std.heap.page_allocator, envelope, .{
+        .ignore_unknown_fields = true,
+    }) catch return false;
+    defer parsed.deinit();
+    return parsed.value.success;
+}
+
+/// One document, body included, read back through the store the HTTP GET
+/// handler uses.
+fn documentBodyJson(
+    allocator: std.mem.Allocator,
+    backend: *boot_mod.Backend,
+    a: args.DocumentsArgs,
+) ![]u8 {
+    const workspace_id = (try workspace_scope.resolveWorkspaceId(
+        allocator,
+        backend.ctx.db,
+        a.session,
+    )) orelse return error.WorkspaceNotResolved;
+    defer allocator.free(workspace_id);
+
+    const store = documents_store.Store{
+        .db = backend.ctx.db,
+        .storage = backend.ctx.objectStore(),
+    };
+    const row = try store.getDocument(allocator, workspace_id, a.document_id.?);
+    defer documents_store.freeDocumentRow(allocator, row);
+
+    return std.json.Stringify.valueAlloc(allocator, .{
+        .id = row.id,
+        .workspace_id = row.workspace_id,
+        .title = row.title,
+        .content = row.content,
+        .content_key = row.content_key orelse "",
+        .content_bytes = row.content_bytes,
+        .format = row.format,
+        .updated_at = row.updated_at,
+    }, .{});
 }
 
 /// The op table, over a plain `*Db` so a test can drive it against an
@@ -132,6 +231,10 @@ pub fn runWithDb(
 ) ![]u8 {
     switch (a.op) {
         .list => return listJson(allocator, store, a.workspace_id),
+
+        // These three need the process singleton (the tool dispatch resolves
+        // the object store from it), so they only run through `run`.
+        .doc_add, .doc_edit, .doc_get => return error.RequiresBackend,
 
         .search => {
             const rows = try store.searchDocuments(allocator, a.workspace_id, a.query);

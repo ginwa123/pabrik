@@ -37,6 +37,7 @@ pub const DocumentsUpdateError = error{
     IdsRequired,
     NotFound,
     ContentTooLarge,
+    NoStorage,
     FolderNotFound,
     UpdateFailed,
     QueryFailed,
@@ -150,6 +151,7 @@ pub fn documentsUpdateHandler(
             // NotFound so it cannot be distinguished from a foreign id.
             error.NotFound => 400,
             error.ContentTooLarge => 413,
+            error.NoStorage => 500,
             error.FolderNotFound => 404,
             error.UpdateFailed, error.QueryFailed, error.OutOfMemory => 500,
         };
@@ -157,6 +159,7 @@ pub fn documentsUpdateHandler(
             error.IdsRequired => "workspace_id and document_id required",
             error.NotFound => "document not found, or title would be empty",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.NoStorage => "no object store configured: the body has nowhere to be stored",
             error.FolderNotFound => "folder not found in this workspace",
             error.UpdateFailed => "DB error",
             error.QueryFailed => "DB error",
@@ -191,9 +194,22 @@ const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
 
+const memory_backend = pabrikcore.storage.memory;
+
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
+    objects: memory_backend.MemoryStorage,
+
+    fn deinit(self: *TestCtx) void {
+        self.objects.deinit();
+        self.db.deinit();
+        self.threaded.deinit();
+    }
+
+    fn store(self: *TestCtx) documents_store.Store {
+        return .{ .db = &self.db, .storage = self.objects.asStorage() };
+    }
 };
 
 fn setupDb() !TestCtx {
@@ -214,18 +230,21 @@ fn setupDb() !TestCtx {
         \\  ('doc_a', 'ws_1', 'A', 'body a'),
         \\  ('doc_b', 'ws_2', 'B', 'body b')
     , &.{});
-    return .{ .db = db, .threaded = threaded };
+    return .{
+        .db = db,
+        .threaded = threaded,
+        .objects = memory_backend.MemoryStorage.init(testing.allocator),
+    };
 }
 
 test "useCase: empty ids return IdsRequired" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     try testing.expectError(
         error.IdsRequired,
-        useCase(alloc, .{ .db = &ctx.db }, .{
+        useCase(alloc, ctx.store(), .{
             .workspace_id = "ws_1",
             .document_id = "",
             .body = .{ .title = "x" },
@@ -236,12 +255,11 @@ test "useCase: empty ids return IdsRequired" {
 test "useCase: a title-only PATCH leaves the body intact" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // The regression this guards: writing `content = ''` for an absent
     // field would silently destroy the document body.
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{ .title = "A renamed" },
@@ -255,10 +273,9 @@ test "useCase: a title-only PATCH leaves the body intact" {
 test "useCase: a body-only PATCH leaves the title intact" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{ .content = "body a, revised" },
@@ -272,10 +289,9 @@ test "useCase: a body-only PATCH leaves the title intact" {
 test "useCase: an explicit empty content clears the body without tripping NOT NULL" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{ .content = "" },
@@ -287,8 +303,7 @@ test "useCase: an explicit empty content clears the body without tripping NOT NU
 test "useCase: an empty patch is a no-op that still advances updated_at" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // Backdate so a same-second CURRENT_TIMESTAMP write is still
     // detectable as a change.
@@ -298,7 +313,7 @@ test "useCase: an empty patch is a no-op that still advances updated_at" {
         &.{},
     );
 
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{},
@@ -313,19 +328,18 @@ test "useCase: an empty patch is a no-op that still advances updated_at" {
 test "useCase: a blank title is rejected and leaves the row untouched" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, .{ .db = &ctx.db }, .{
+        useCase(alloc, ctx.store(), .{
             .workspace_id = "ws_1",
             .document_id = "doc_a",
             .body = .{ .title = "   " },
         }),
     );
 
-    const after = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const after = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{},
@@ -337,12 +351,11 @@ test "useCase: a blank title is rejected and leaves the row untouched" {
 test "useCase: another workspace's document cannot be edited" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     try testing.expectError(
         error.NotFound,
-        useCase(alloc, .{ .db = &ctx.db }, .{
+        useCase(alloc, ctx.store(), .{
             .workspace_id = "ws_2",
             .document_id = "doc_a",
             .body = .{ .content = "hijacked" },
@@ -351,7 +364,7 @@ test "useCase: another workspace's document cannot be edited" {
 
     // The owner's copy is unchanged — a rejected cross-workspace edit must
     // not have half-applied.
-    const owner = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const owner = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .document_id = "doc_a",
         .body = .{},

@@ -41,7 +41,7 @@ const skill_evals_db = @import("skill_evals_db.zig");
 pub const TOOL_REGISTRY = tools_equipped.UNIFIED_TOOL_REGISTRY;
 
 /// Context passed to all tool handlers
-const ToolContext = struct {
+pub const ToolContext = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     db: *database.Db,
@@ -327,6 +327,14 @@ const SecretResolver = struct {
     }
 };
 
+/// Run ONE tool call through the agent loop's own path (hooks → registry →
+/// `dispatchFromRegistry`) with no `llm_history` bookkeeping, so a CLI or a
+/// test can exercise a tool without an LLM. Output is owned by the caller.
+pub fn runToolDirect(ctx: ToolContext, tool_call: agent.ToolCall) ![]const u8 {
+    const result = try dispatchTool(ctx, tool_call);
+    return result.output;
+}
+
 /// Lookup a tool by name and execute it using unified registry Refactored:
 /// Uses entry.exec() directly instead of double lookup Lua hooks
 /// (`hooks/register_hook.lua :: init(event, data)`) wrap every dispatch: the
@@ -453,6 +461,14 @@ fn runPostHookOverride(ctx: ToolContext, tool_name: []const u8, arguments: []con
     }
 }
 
+/// The object store document bodies live in, resolved from the process
+/// singleton so a dispatch never has to remember to thread it. With no store
+/// the document tools have nowhere to put a body.
+fn documentStorage() ?pabrik.storage.storage.Storage {
+    const di = pabrik.getSingleton() catch return null;
+    return di.objectStore();
+}
+
 /// Dispatch tool execution from registry entry
 /// Calls exec directly and handles auto-save via registry flags
 fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools_equipped.ToolExecFunc) !ToolResult {
@@ -488,6 +504,10 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         // The document tools broadcast their mutations over SSE on this bus.
         // A host without one (unit tests) leaves it null and the emit no-ops.
         .event_bus = if (pabrik.getSingleton()) |di| di.event_bus else |_| null,
+        // Document bodies live in the object store, not in a column. Without
+        // this handle `add_document` / `edit_document` write a row with no
+        // body and the document reads back empty.
+        .storage = documentStorage(),
         // Only a tool that blocks needs it, and only `command` reads it.
         .cancel_hook = cancel_probe.hook(),
     };

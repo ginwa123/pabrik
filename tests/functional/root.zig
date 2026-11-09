@@ -70,6 +70,7 @@ const harness_port_random_test = @import("harness_port_random_test.zig");
 const harness_safety_test = @import("harness_safety_test.zig");
 const headless_run_test = @import("headless_run_test.zig");
 const headless_documents_test = @import("headless_documents_test.zig");
+const agent_document_tools_content_test = @import("agent_document_tools_content_test.zig");
 const headless_usage_test = @import("headless_usage_test.zig");
 const headless_memories_test = @import("headless_memories_test.zig");
 const headless_group_test = @import("headless_group_test.zig");
@@ -233,6 +234,7 @@ pub const suites = .{
     harness_safety_test,
     headless_run_test,
     headless_documents_test,
+    agent_document_tools_content_test,
     headless_usage_test,
     headless_memories_test,
     headless_group_test,

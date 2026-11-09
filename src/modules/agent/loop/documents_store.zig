@@ -93,6 +93,9 @@ pub const CreateDocumentError = error{
     WorkspaceIdRequired,
     TitleRequired,
     ContentTooLarge,
+    /// A non-empty body with no object store configured. The body has nowhere
+    /// to live, so the write is refused rather than silently dropped.
+    NoStorage,
     FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
@@ -121,6 +124,9 @@ pub const UpdateDocumentError = error{
     IdsRequired,
     NotFound,
     ContentTooLarge,
+    /// A non-empty body with no object store configured. See
+    /// `CreateDocumentError.NoStorage`.
+    NoStorage,
     FolderNotFound,
     UpdateFailed,
     QueryFailed,
@@ -402,6 +408,7 @@ pub const Store = struct {
         const title = std.mem.trim(u8, args.title, " \t\n\r");
         if (title.len == 0) return error.TitleRequired;
         if (args.content.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
+        if (self.storage == null and args.content.len > 0) return error.NoStorage;
 
         // A folder id from another workspace must not become a dangling pointer.
         if (args.folder_id) |folder_id| {
@@ -480,6 +487,7 @@ pub const Store = struct {
         if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
         if (patch.content) |c| {
             if (c.len > MAX_CONTENT_BYTES) return error.ContentTooLarge;
+            if (self.storage == null and c.len > 0) return error.NoStorage;
         }
 
         // Load the current values so an absent field is a true no-op. This MUST
@@ -496,10 +504,10 @@ pub const Store = struct {
         } else existing.title;
         const content = patch.content orelse existing.content;
 
-        // With no store and no new body there is nothing to place: reuse the
-        // row's own pointer and preview. Recomputing from an empty body would
-        // wipe the preview of a document whose body lives elsewhere.
-        const placed = if (self.storage == null and patch.content == null)
+        // A patch with no body must not rewrite one: reuse the row's own
+        // pointer and preview, or a title-only patch blanks the preview of a
+        // row whose object is missing.
+        const placed = if (patch.content == null)
             placedFromRow(allocator, existing) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 error.ObjectStoreFailed => return error.UpdateFailed,
@@ -1166,26 +1174,70 @@ test "previewOf: the cut never splits a multi-byte codepoint" {
     try testing.expect(preview.len <= PREVIEW_MAX_BYTES);
 }
 
-test "createDocument with no store persists no body and no key" {
+test "createDocument with no store refuses a non-empty body instead of dropping it" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const row = try createDocument(alloc, &ctx.db, .{
+    // The body has nowhere to live: the `content` column is gone (Migration
+    // 144) and no object store is configured. Writing the row anyway would
+    // hand back a document that reads as empty — the exact bug this guards.
+    try testing.expectError(error.NoStorage, createDocument(alloc, &ctx.db, .{
         .workspace_id = "ws_1",
         .title = "Plan",
         .content = "# Plan\n",
+    }));
+
+    const rows = try listDocuments(alloc, &ctx.db, "ws_1");
+    defer freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
+}
+
+test "createDocument with no store still accepts an empty body" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    // Nothing to lose, so a heading-only stub is a legal write.
+    const row = try createDocument(alloc, &ctx.db, .{
+        .workspace_id = "ws_1",
+        .title = "Stub",
+        .content = "",
     });
     defer freeDocumentRow(alloc, row);
 
-    // There is nowhere to put the body, so it is not persisted at all. The
-    // metadata and the preview still are.
     try testing.expectEqualStrings("", row.content);
     try testing.expect(row.content_key == null);
-    try testing.expect(row.content_sha256 == null);
-    try testing.expectEqual(@as(i64, 7), row.content_bytes);
-    try testing.expectEqualStrings("# Plan\n", row.preview);
+    try testing.expectEqual(@as(i64, 0), row.content_bytes);
+}
+
+test "updateDocument with no store refuses a new body instead of blanking the document" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const good = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const created = try good.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Plan",
+        .content = "original",
+    });
+    defer freeDocumentRow(alloc, created);
+
+    const broken = Store{ .db = &ctx.db };
+    try testing.expectError(error.NoStorage, broken.updateDocument(alloc, "ws_1", created.id, .{
+        .content = "replacement",
+    }));
+
+    const row = try good.getDocument(alloc, "ws_1", created.id);
+    defer freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("original", row.content);
 }
 
 test "createDocument with a store writes the object and points the row at it" {
