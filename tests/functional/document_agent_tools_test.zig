@@ -14,11 +14,12 @@ const DOCUMENT_MARKDOWN = "document_markdown";
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 34 names, sorted ASC, matching the wire
 /// order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "add_skill",
     "command",
+    "delegate_agent",
     "document_markdown",
     "edit_skill",
     "get_plan",
@@ -66,6 +67,7 @@ const RETIRED_DOCUMENT_TOOLS = [_][]const u8{
 const DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS = [_][]const u8{
     "add_skill",
     "command",
+    "delegate_agent",
     "edit_skill",
     "get_plan",
     "glob",

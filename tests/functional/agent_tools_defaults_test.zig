@@ -13,11 +13,12 @@ const io = testing.io;
 // Expected tool lists — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the wire
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 34 names, sorted ASC, matching the wire
 /// order of `GET /api/agents/:agent_id/tools`.
 const EXPECTED_DEFAULTS = [_][]const u8{
     "add_skill",
     "command",
+    "delegate_agent",
     "document_markdown",
     "edit_skill",
     "get_plan",
@@ -63,6 +64,7 @@ const DEFAULT_KANBAN_TOOLS = [_][]const u8{
 const EXPECTED_KANBAN_DEFAULTS = [_][]const u8{
     "add_skill",
     "command",
+    "delegate_agent",
     "document_markdown",
     "edit_skill",
     "get_plan",
@@ -115,8 +117,8 @@ fn isSorted(list: []const []const u8) bool {
 
 comptime {
     @setEvalBranchQuota(20_000);
-    if (EXPECTED_DEFAULTS.len != 33)
-        @compileError("EXPECTED_DEFAULTS must mirror default_tools.py's 33-name DEFAULT_AGENT_TOOLS");
+    if (EXPECTED_DEFAULTS.len != 34)
+        @compileError("EXPECTED_DEFAULTS must mirror default_tools.py's 34-name DEFAULT_AGENT_TOOLS");
     if (EXPECTED_KANBAN_DEFAULTS.len != EXPECTED_DEFAULTS.len + 2)
         @compileError("EXPECTED_KANBAN_DEFAULTS must be EXPECTED_DEFAULTS plus exactly the two kanban tools");
     if (!isSorted(&EXPECTED_DEFAULTS))

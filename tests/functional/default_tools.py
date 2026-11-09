@@ -24,7 +24,7 @@ A stale entry here is a red build that names the one file to edit.
 
 from __future__ import annotations
 
-# Mirrors `DEFAULT_AGENT_TOOLS` — 33 names, sorted ASC, matching the
+# Mirrors `DEFAULT_AGENT_TOOLS` — 34 names, sorted ASC, matching the
 # wire order of `GET /api/agents/:agent_id/tools`.
 #
 # `document_markdown` is ONE tool with four actions (`create` / `edit` /
@@ -33,6 +33,7 @@ from __future__ import annotations
 DEFAULT_AGENT_TOOLS: list[str] = [
     "add_skill",
     "command",
+    "delegate_agent",
     "document_markdown",
     "edit_skill",
     "get_plan",
