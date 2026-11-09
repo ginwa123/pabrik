@@ -148,3 +148,48 @@ test "headless documents: a folder tree round-trips, and deleting a folder keeps
     try testing.expectEqual(@as(usize, 1), folders.items.len);
     try testing.expect((folders.items[0].object.get("parent_id") orelse return error.TestUnexpectedResult) == .null);
 }
+
+test "headless documents: doc-create --format office stores a spreadsheet, and an unknown format is refused" {
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const ws = try createWorkspace(&h, "office-headless");
+    defer gpa.free(ws);
+
+    const snapshot =
+        \\{"sheets":{"s1":{"cellData":{"0":{"0":{"v":"Q3 budget"},"1":{"v":1200}}}}}}
+    ;
+
+    var created = try documents(&h, &.{
+        "doc-create", "--workspace", ws, "--title", "Budget", "--format", "office", "--content", snapshot,
+    }, true);
+    defer created.deinit();
+    const created_doc = try created.json();
+    try testing.expectEqualStrings("office", try stringField(created_doc, "format"));
+    const doc_id = try gpa.dupe(u8, try stringField(created_doc, "id"));
+    defer gpa.free(doc_id);
+
+    // The format survives a read, so the grid knows which editor to mount.
+    var listed = try documents(&h, &.{ "list", "--workspace", ws }, true);
+    defer listed.deinit();
+    const list_doc = try listed.json();
+    const rows = (list_doc.object.get("documents") orelse return error.TestUnexpectedResult).array;
+    try testing.expectEqual(@as(usize, 1), rows.items.len);
+    try testing.expectEqualStrings("office", try stringField(&rows.items[0], "format"));
+
+    // A format the UI cannot render is a non-zero exit with nothing on stdout,
+    // and it writes no row.
+    var refused = try documents(&h, &.{
+        "doc-create", "--workspace", ws, "--title", "Slides", "--format", "slides",
+    }, false);
+    defer refused.deinit();
+    try testing.expect(refused.result.exit_code != 0);
+    try testing.expectEqualStrings("", refused.result.stdout);
+
+    var after = try documents(&h, &.{ "list", "--workspace", ws }, true);
+    defer after.deinit();
+    const after_doc = try after.json();
+    try testing.expectEqual(@as(i64, 1), try intField(after_doc, "document_count"));
+}

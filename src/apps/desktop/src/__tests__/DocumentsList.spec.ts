@@ -156,22 +156,58 @@ describe('DocumentsList — section chrome', () => {
     wrapper.unmount()
   })
 
-  it('the create button makes a document and opens it', async () => {
+  it('the create button offers the formats, and Markdown makes a markdown document', async () => {
     const created = { ...DOCS[0], id: 'doc_new', title: 'Untitled document' }
     createDocument.mockResolvedValue({ document: created })
     const router = await makeRouter()
     const wrapper = mountList(router)
     await nextTick()
 
+    // The button opens a menu rather than creating straight away: a document
+    // now has a format, and the user has to say which one.
     await wrapper.get('[data-testid="documents-add-button"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="documents-new-menu"]').exists()).toBe(true)
+    expect(createDocument).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="documents-new-markdown"]').trigger('click')
     await flushPromises()
     await nextTick()
 
-    expect(createDocument).toHaveBeenCalledWith('ws_1', 'Untitled document', '', null)
+    expect(createDocument).toHaveBeenCalledWith('ws_1', 'Untitled document', '', null, 'markdown')
     // A document is a PAGE now, so the id lives in the path. Asserting the
     // query here would pass even if the view still rendered as an overlay.
     expect(router.currentRoute.value.path).toBe('/app/ws_1/doc/doc_new')
     expect(router.currentRoute.value.query.doc).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('the Office spreadsheet choice creates an office document with its envelope', async () => {
+    const created = { ...DOCS[0], id: 'doc_sheet', title: 'Untitled spreadsheet', format: 'office' }
+    createDocument.mockResolvedValue({ document: created })
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await nextTick()
+
+    await wrapper.get('[data-testid="documents-add-button"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="documents-new-sheet"]').trigger('click')
+    await flushPromises()
+
+    const call = createDocument.mock.calls[0] as unknown as [
+      string,
+      string,
+      string,
+      string | null,
+      string,
+    ]
+    expect(call[0]).toBe('ws_1')
+    expect(call[1]).toBe('Untitled spreadsheet')
+    // The kind is written at create time, so the editor knows which Univer
+    // product to mount before the first Save.
+    expect(JSON.parse(call[2])).toEqual({ kind: 'sheet', snapshot: {} })
+    expect(call[3]).toBeNull()
+    expect(call[4]).toBe('office')
     wrapper.unmount()
   })
 })

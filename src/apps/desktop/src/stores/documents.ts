@@ -3,6 +3,7 @@ import { Effect } from 'effect'
 import { computed, ref } from 'vue'
 import * as api from '../api'
 import type { Document, DocumentFolder } from '../api'
+import { MARKDOWN_FORMAT } from '../helpers/officeDocument'
 import { documentEngineDb } from '../sync/DocumentEngineDb'
 import { SyncRemoteError } from '../sync/SyncError'
 import { runSyncEffectOr, runSyncResult, runSyncVoid } from '../sync/runtime'
@@ -121,12 +122,13 @@ export const useDocumentsStore = defineStore('documents', () => {
     title: string,
     content = '',
     folderId: string | null = null,
+    format: string = MARKDOWN_FORMAT,
   ): Promise<Document | null> {
     if (!workspaceId) return null
     saving.value = true
     error.value = null
     try {
-      const { document } = await api.createDocument(workspaceId, title, content, folderId)
+      const { document } = await api.createDocument(workspaceId, title, content, folderId, format)
       // Prepend rather than refetch: the backend positions a new document above
       // every existing one, so the prepend IS the saved order.
       documents.value = [document, ...documents.value]

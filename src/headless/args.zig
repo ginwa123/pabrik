@@ -140,8 +140,11 @@ pub const DocumentsArgs = struct {
     /// The document being moved, edited or read.
     document_id: ?[]const u8 = null,
     title: []const u8 = "",
-    /// `doc-add` / `doc-edit`: the markdown body the model would send.
+    /// `doc-create` / `doc-add` / `doc-edit`: the body. Markdown text, or a
+    /// Univer snapshot JSON when `format` is `office`.
     content: []const u8 = "",
+    /// `doc-create`: `markdown` (the default) or `office`.
+    format: []const u8 = "",
     /// `doc-add` / `doc-edit` / `doc-get`: the calling session, which is what
     /// resolves the workspace. The tool never takes a workspace id.
     session: []const u8 = "",
@@ -249,6 +252,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
     "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-get | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
+    "      doc-create flags: --content <body> --format markdown|office\n" ++
     "      search flags: --query <text>\n" ++
     "      agent-tool flags: --session <id> --title <t> --content <markdown> (doc-add, doc-edit, doc-get)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
@@ -500,6 +504,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.content = argv[i];
+        } else if (std.mem.eql(u8, flag, "--format")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.format = argv[i];
         } else if (std.mem.eql(u8, flag, "--session")) {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
