@@ -3412,10 +3412,10 @@ pub fn build(b: *std.Build) void {
         // zig-out/bin/pabrik) rather than `install:linux:system` which
         // additionally tries to `cp` to /usr/local/bin/pabrik and fails on
         run_functional.step.dependOn(b.getInstallStep());
-        // Depend on the mcp-http-hello-world build step so the HTTP test
-        // server is at zig-out/bin/mcp-http-hello-world when the functional
-        // tests run.
+        // Depend on the MCP fixture build steps so both test servers are at
+        // zig-out/bin/ when the functional tests run.
         run_functional.step.dependOn(mcp_http_hello_world_step);
+        run_functional.step.dependOn(mcp_oauth_hello_world_step);
         functional_test_step.dependOn(&run_functional.step);
         // Per-shard step, mirroring `test:shard:<i>`: it is how a shard is
         // reproduced in isolation, and it is the race-free way to run all N
@@ -3506,9 +3506,10 @@ pub fn build(b: *std.Build) void {
         run_functional_all.step.dependOn(&install_playwright_browsers.step);
         run_functional_all.step.dependOn(&python_probe.step);
         run_functional_all.step.dependOn(b.getInstallStep());
-        // Same reason as run_functional: mcp_http_test.py spawns this sibling
-        // binary, and without the dep the suite fails on a missing file.
+        // Same reason as run_functional: the MCP suites spawn these sibling
+        // binaries, and without the dep the suite fails on a missing file.
         run_functional_all.step.dependOn(mcp_http_hello_world_step);
+        run_functional_all.step.dependOn(mcp_oauth_hello_world_step);
         functional_test_all_step.dependOn(&run_functional_all.step);
         if (maybe_shard) |shard_index| {
             _ = b.step(
