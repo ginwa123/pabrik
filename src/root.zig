@@ -284,6 +284,7 @@ pub const workspace_items = @import("modules/agent/loop/llm_history.zig");
 pub const workspace_item_tasks = @import("modules/agent/loop/llm_history.zig");
 pub const http_response = @import("http_handlers/http_response.zig");
 pub const spawn_sub_agent = @import("modules/agent/tools/spawn_sub_agent.zig");
+pub const delegate_agent = @import("modules/agent/tools/delegate_agent.zig");
 pub const ask_user_message = @import("modules/agent/loop/ask_user_message.zig");
 pub const main_agent_only = @import("modules/agent/loop/main_agent_only.zig");
 pub const group_router = @import("modules/agent/loop/group_router.zig");

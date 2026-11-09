@@ -139,6 +139,30 @@ pub fn setLeadIfUnset(
     try setLead(allocator, db, session_id, current.?);
 }
 
+/// Record the agent the next turn belongs to. An empty name clears it.
+pub fn setPendingDelegate(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8, agent_name: []const u8) !void {
+    try db.exec(allocator, "UPDATE sessions SET pending_delegate = ? WHERE id = ?", &.{ agent_name, session_id });
+}
+
+/// The pending delegate, cleared as it is read. Null when none is set.
+pub fn takePendingDelegate(allocator: std.mem.Allocator, db: *database.Db, session_id: []const u8) !?[]const u8 {
+    var row = db.queryRow(
+        allocator,
+        "SELECT COALESCE(CAST(pending_delegate AS TEXT), '') FROM sessions WHERE id = ?",
+        &.{session_id},
+    ) catch |err| switch (err) {
+        error.RowNotFound => return null,
+        else => return err,
+    };
+    defer row.deinit(allocator);
+    if (row.values[0].len == 0) return null;
+
+    const name = try allocator.dupe(u8, row.values[0]);
+    errdefer allocator.free(name);
+    try db.exec(allocator, "UPDATE sessions SET pending_delegate = '' WHERE id = ?", &.{session_id});
+    return name;
+}
+
 /// The identity a routed group turn runs under: the member's own name, then its
 /// persona when it has one. Without it a member answers as whoever the
 /// transcript last named. Caller frees the result.
@@ -266,6 +290,21 @@ pub fn nextSpeaker(
 
     const hops = try hopsSinceHuman(allocator, db, session_id);
 
+    const pending = try takePendingDelegate(allocator, db, session_id);
+    defer if (pending) |p| allocator.free(p);
+
+    if (hops >= hop_budget) {
+        return .{ .decision = .{ .close = .hop_budget }, .members = members, .lead = lead, .hops = hops };
+    }
+
+    if (pending) |target| {
+        for (members) |m| {
+            if (std.mem.eql(u8, m.name, target)) {
+                return .{ .decision = .{ .speak = m.name }, .members = members, .lead = lead, .hops = hops };
+            }
+        }
+    }
+
     const last = try lastTurn(allocator, db, session_id);
     defer if (last) |row| {
         allocator.free(row.speaker);
@@ -304,7 +343,8 @@ fn setupDb() !TestCtx {
         \\    id TEXT PRIMARY KEY,
         \\    name TEXT NOT NULL DEFAULT '',
         \\    status TEXT NOT NULL DEFAULT 'active',
-        \\    group_lead TEXT
+        \\    group_lead TEXT,
+        \\    pending_delegate TEXT
         \\)
     , &.{});
     try db.exec(alloc,
@@ -526,4 +566,105 @@ test "a turn that is neither a sub-agent nor a group keeps the group persona" {
     defer testing.allocator.free(persona);
 
     try testing.expectEqualStrings("", persona);
+}
+
+test "a pending delegation speaks the named member instead of the router" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer next.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("Android Engineer", next.decision.speak);
+}
+
+test "a pending delegation outranks a mention in the last row" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
+    try insertRow(&ctx, "h2", "assistant", "Engineer", "Audit it first, @Security Engineerr.", 2);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer next.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("Android Engineer", next.decision.speak);
+}
+
+test "a pending delegation is consumed by the turn it routes" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
+
+    var first = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer first.deinit(testing.allocator);
+    try testing.expectEqualStrings("Android Engineer", first.decision.speak);
+
+    var second = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer second.deinit(testing.allocator);
+    try testing.expectEqualStrings("Engineer", second.decision.speak);
+}
+
+test "a pending delegation naming a non-member is dropped and the router decides" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Ghost");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer next.deinit(testing.allocator);
+    try testing.expectEqualStrings("Engineer", next.decision.speak);
+
+    try testing.expect((try takePendingDelegate(testing.allocator, &ctx.db, "s_1")) == null);
+}
+
+test "a session with no pending delegation reports none" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+
+    try testing.expect((try takePendingDelegate(testing.allocator, &ctx.db, "s_1")) == null);
+}
+
+test "clearing a pending delegation leaves the router in charge" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    defer next.deinit(testing.allocator);
+    try testing.expectEqualStrings("Engineer", next.decision.speak);
+}
+
+test "a pending delegation does not outrun the hop budget" {
+    var ctx = try setupDb();
+    defer ctx.db.deinit();
+    defer ctx.threaded.deinit();
+    try seedRoster(&ctx);
+    try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
+    try insertRow(&ctx, "h2", "assistant", "Engineer", "Working on it.", 2);
+    try insertRow(&ctx, "h3", "assistant", "Security Engineerr", "Audited.", 3);
+    try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
+
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 2)).?;
+    defer next.deinit(testing.allocator);
+    try testing.expectEqual(CloseReason.hop_budget, next.decision.close);
+
+    try testing.expect((try takePendingDelegate(testing.allocator, &ctx.db, "s_1")) == null);
 }
