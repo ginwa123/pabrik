@@ -5,6 +5,83 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const windows = std.os.windows;
+
+/// Windows has no process-group signal, so a hard-killed parent leaves the
+/// child running. A job object with KILL_ON_JOB_CLOSE is the OS-level answer:
+/// the kernel kills every process in the job when this process dies.
+const Job = struct {
+    handle: windows.HANDLE,
+
+    const KILL_ON_JOB_CLOSE: u32 = 0x2000;
+    const EXTENDED_LIMIT_INFORMATION: u32 = 9;
+
+    const BasicLimitInformation = extern struct {
+        PerProcessUserTimeLimit: i64,
+        PerJobUserTimeLimit: i64,
+        LimitFlags: u32,
+        MinimumWorkingSetSize: usize,
+        MaximumWorkingSetSize: usize,
+        ActiveProcessLimit: u32,
+        Affinity: usize,
+        PriorityClass: u32,
+        SchedulingClass: u32,
+    };
+
+    const IoCounters = extern struct {
+        ReadOperationCount: u64,
+        WriteOperationCount: u64,
+        OtherOperationCount: u64,
+        ReadTransferCount: u64,
+        WriteTransferCount: u64,
+        OtherTransferCount: u64,
+    };
+
+    const ExtendedLimitInformation = extern struct {
+        BasicLimitInformation: BasicLimitInformation,
+        IoInfo: IoCounters,
+        ProcessMemoryLimit: usize,
+        JobMemoryLimit: usize,
+        PeakProcessMemoryUsed: usize,
+        PeakJobMemoryUsed: usize,
+    };
+
+    extern "kernel32" fn CreateJobObjectW(attributes: ?*anyopaque, name: ?[*:0]const u16) callconv(.winapi) ?windows.HANDLE;
+    extern "kernel32" fn SetInformationJobObject(job: windows.HANDLE, class: u32, info: *const anyopaque, len: u32) callconv(.winapi) windows.BOOL;
+    extern "kernel32" fn AssignProcessToJobObject(job: windows.HANDLE, process: windows.HANDLE) callconv(.winapi) windows.BOOL;
+    extern "kernel32" fn CloseHandle(handle: windows.HANDLE) callconv(.winapi) windows.BOOL;
+
+    /// Put `process` in a job that dies with this process. Null when the OS
+    /// refuses (a nested job, a restricted token): the caller keeps working,
+    /// it just loses the hard-kill guarantee.
+    fn adopt(process: windows.HANDLE) ?Job {
+        if (comptime builtin.os.tag != .windows) {
+            return null;
+        } else {
+            const handle = CreateJobObjectW(null, null) orelse return null;
+            var info = std.mem.zeroes(ExtendedLimitInformation);
+            info.BasicLimitInformation.LimitFlags = KILL_ON_JOB_CLOSE;
+            if (SetInformationJobObject(handle, EXTENDED_LIMIT_INFORMATION, &info, @sizeOf(ExtendedLimitInformation)) == .FALSE) {
+                _ = CloseHandle(handle);
+                return null;
+            }
+            if (AssignProcessToJobObject(handle, process) == .FALSE) {
+                _ = CloseHandle(handle);
+                return null;
+            }
+            return .{ .handle = handle };
+        }
+    }
+
+    fn close(self: Job) void {
+        if (comptime builtin.os.tag != .windows) {
+            return;
+        } else {
+            _ = CloseHandle(self.handle);
+        }
+    }
+};
+
 /// How long to wait for the port to answer before giving up.
 pub const READY_TIMEOUT_MS: u32 = 15_000;
 /// How often to retry while waiting.
@@ -47,6 +124,9 @@ pub const Supervisor = struct {
     secret_key: []u8,
     data_dir: []u8,
     pid_file: []u8,
+    /// Windows only: the job the child belongs to, so a hard-killed parent
+    /// still takes it down. Null on POSIX and when the OS refused the job.
+    job: ?Job = null,
 
     /// Start rustfs and wait until its S3 port answers.
     pub fn start(
@@ -117,10 +197,12 @@ pub const Supervisor = struct {
         };
 
         // POSIX only: `child.id` is a HANDLE on Windows, and the sweep below
-        // is the POSIX half of the hard-kill story (Windows needs a Job
-        // Object, which is a separate change).
+        // is the POSIX half of the hard-kill story. Windows gets the job
+        // object instead, which survives a `TerminateProcess` on this process.
         if (comptime builtin.os.tag != .windows) {
             writePidFile(io, allocator, opts.pid_file, child.id orelse 0);
+        } else {
+            if (child.id) |handle| self.job = Job.adopt(handle);
         }
 
         if (!waitUntilReady(io, opts.port, READY_TIMEOUT_MS)) {
@@ -134,6 +216,9 @@ pub const Supervisor = struct {
     pub fn deinit(self: *Supervisor) void {
         // `kill` reaps the child itself; a following `wait` would assert.
         self.child.kill(self.io);
+        // Closing the job after the child is gone is a no-op for it; the
+        // handle must not leak.
+        if (self.job) |job| job.close();
         std.Io.Dir.cwd().deleteFile(self.io, self.pid_file) catch {};
         self.allocator.free(self.endpoint);
         self.allocator.free(self.access_key);

@@ -2480,6 +2480,27 @@ pub fn build(b: *std.Build) void {
         check_desktop_cross.dependOn(&obj.step);
     }
 
+    // === Cross-target compile check (storage module's per-OS branches) ===
+    // The Windows data dir, the job object and the POSIX pid sweep fork on
+    // `builtin.os.tag`; this compiles the kabelweb-free half for all three.
+    const check_storage_cross = b.step(
+        "check:storage-cross",
+        "Compile-check the storage module's per-OS branches for Windows/macOS/Linux",
+    );
+    for (cross_targets, 0..) |query, i| {
+        const resolved = b.resolveTargetQuery(query);
+        const obj = b.addObject(.{
+            .name = b.fmt("storage-cross-check-{d}", .{i}),
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/modules/storage/cross_compile_check.zig"),
+                .target = resolved,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
+        });
+        check_storage_cross.dependOn(&obj.step);
+    }
+
     // =====================================================================
     // CLI executable (`src/apps/cli/main.zig`) — wraps - POST
     // /api/llm/session - GET /api/llm/session - GET
