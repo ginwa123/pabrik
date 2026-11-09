@@ -47,12 +47,16 @@ const PAGE = {
   messages: ROWS,
 }
 
+/** The rows the transcript reads; a test may swap them before mounting. */
+const ctl = { rows: ROWS as Array<Record<string, unknown>> }
+
 vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api')>()
+  const page = () => ({ ...PAGE, messages: ctl.rows })
   return {
     ...actual,
-    getChatHistory: () => Promise.resolve(PAGE),
-    fetchChatHistoryEffect: () => Effect.succeed(PAGE),
+    getChatHistory: () => Promise.resolve(page()),
+    fetchChatHistoryEffect: () => Effect.succeed(page()),
   }
 })
 
@@ -125,6 +129,7 @@ describe('ChatView — the chat names the agent that answers', () => {
     }
     setActivePinia(createPinia())
     useChatViewStore().setMode('dev')
+    ctl.rows = ROWS
     __resetSseBus()
     app = createApp({})
     installSseBus(app)
@@ -175,6 +180,22 @@ describe('ChatView — the chat names the agent that answers', () => {
     const w = await mountChat('alpha')
 
     expect(w.find('[data-testid="composer-agent-chip"]').text()).toBe('alpha')
+    expect(w.find('.msg-author-name').text()).toBe('alpha')
+  })
+
+  it('ignores a row that credits a profile the workspace no longer has', async () => {
+    ctl.rows = [
+      { id: 'u1', role: 'user', content: 'hai', created_at: 1_700_000_001 },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'Halo!',
+        agent: 'space',
+        created_at: 1_700_000_002,
+      },
+    ]
+    const w = await mountChat(null)
+
     expect(w.find('.msg-author-name').text()).toBe('alpha')
   })
 })

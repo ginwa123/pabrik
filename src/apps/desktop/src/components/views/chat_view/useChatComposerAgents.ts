@@ -129,6 +129,7 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     chatWorkspaceId,
     loadAgents,
     effectiveAgent,
+    namesConfiguredAgent,
     effectiveProfileUrlStyle,
     agentChipTooltip,
     selectAgent,

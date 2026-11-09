@@ -36,6 +36,9 @@ export interface ChatTranscriptViewDeps {
   sessionCwd: Ref<string>
   /** The session's agent name, which labels a thread that has a single author. */
   authorLabel: () => string
+  /** True when `name` is an agent this workspace still configures. A row that
+   * names a profile the config no longer has is not an author worth a badge. */
+  isKnownAgent: (name: string) => boolean
   effectiveCwd: ComputedRef<string>
   isLastGroup: (index: number) => boolean
   nav: ReturnType<typeof useNavigationStore>
@@ -52,6 +55,7 @@ export interface ChatTranscriptViewDeps {
 export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
   const {
     authorLabel,
+    isKnownAgent,
     props,
     sessionId,
     messages,
@@ -211,6 +215,7 @@ export function useChatTranscriptView(deps: ChatTranscriptViewDeps) {
     isRemoteLoadPending,
     mode: () => chatView.mode,
     authorLabel,
+    isKnownAgent,
   })
 
   const statesProps = computed(() => ({

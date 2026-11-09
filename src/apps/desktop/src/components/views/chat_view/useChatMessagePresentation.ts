@@ -70,6 +70,9 @@ export interface ChatMessagePresentationDeps {
   mode: () => ChatViewMode
   /** The session's own agent, which labels a thread that has a single author. */
   authorLabel?: () => string
+  /** True when `name` is an agent the workspace still configures. A row that
+   * names a profile the config no longer has is not an author worth a badge. */
+  isKnownAgent?: (name: string) => boolean
 }
 
 /** `llm_history.agent`'s column default when nothing named the speaker
@@ -181,16 +184,20 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
 
     // Credit every reply to the agent that answered: the row's own `agent_name`
     // first (a group thread), else the session's agent — never for a thread with
-    // two authors, and never for the `Agent` column default.
+    // two authors, and never for a name the workspace no longer configures.
+    const known = (name: string): boolean => deps.isKnownAgent?.(name) ?? true
+    const credited = (m: Message): string =>
+      m.agent_name && m.agent_name !== PLACEHOLDER_AGENT && known(m.agent_name) ? m.agent_name : ''
     const authors = new Set<string>()
     for (const g of groups) {
       if (g.role !== 'assistant') continue
       for (const m of g.messages) {
-        if (m.agent_name && m.agent_name !== PLACEHOLDER_AGENT) authors.add(m.agent_name)
+        const name = credited(m)
+        if (name) authors.add(name)
       }
     }
     const ownAuthor = (g: MessageGroup): string =>
-      g.messages.find((m) => m.agent_name && m.agent_name !== PLACEHOLDER_AGENT)?.agent_name ?? ''
+      g.messages.map(credited).find((name) => name.length > 0) ?? ''
     const sessionAuthor = (deps.authorLabel?.() ?? '').trim()
     for (const g of groups) {
       if (g.role !== 'assistant') continue
