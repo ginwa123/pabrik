@@ -11,6 +11,10 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   const availableAgents = ref<
     Array<{ name: string; model: string; base_url: string; url_style: string }>
   >([])
+  // Every profile the config names, disabled ones included: the backend's
+  // `getAgent` does not filter `enabled`, so a disabled profile still resolves.
+  const configuredAgentNames = ref<string[]>([])
+  const configLoaded = ref(false)
   const selectedAgent = ref<string | null>(null)
   // User-chosen default agent from Settings → Agents → "Set active". `null` when no agent
   // is marked active (or no agents configured).
@@ -41,6 +45,8 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
           base_url: p.base_url ?? '',
           url_style: p.url_style ?? '',
         }))
+      configuredAgentNames.value = Object.keys(agents)
+      configLoaded.value = true
       // `active_profile` is the user-chosen default from Settings. Empty
       // string → null (matches the backend's PUT coercion in
       // `pabrik_config_put.zig`).
@@ -58,11 +64,20 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   }
 
   // Effective agent the chip / picker reflect — mirrors the backend cascade in
-  // `workflow.zig::resolveEffectiveAgent`.
+  // `Config.zig::resolveEffectiveAgent`: a name only counts when it names a
+  // configured profile, so a stale selection falls through to the active one.
+  const namesConfiguredAgent = (name: string | null): name is string => {
+    if (!name) return false
+    if (!configLoaded.value) return true
+    return configuredAgentNames.value.includes(name)
+  }
+
   const effectiveAgent = computed<string | null>(() => {
     const sel = selectedAgent.value
-    if (sel && sel.length > 0) return sel
-    return activeAgent.value
+    if (namesConfiguredAgent(sel)) return sel
+    const act = activeAgent.value
+    if (namesConfiguredAgent(act)) return act
+    return null
   })
 
   /// The wire style the effective profile uses — it decides which file types the model can read.
@@ -75,10 +90,10 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
   })
 
   const agentChipTooltip = computed(() => {
-    const sel = selectedAgent.value
-    if (sel && sel.length > 0) return `Using agent: ${sel}`
-    if (activeAgent.value) return `Using active agent: ${activeAgent.value}`
-    return 'Using default (top-level config)'
+    const name = effectiveAgent.value
+    if (!name) return 'Using default (top-level config)'
+    if (name === selectedAgent.value) return `Using agent: ${name}`
+    return `Using active agent: ${name}`
   })
 
   const selectAgent = async (name: string | null) => {
