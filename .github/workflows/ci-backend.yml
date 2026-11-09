@@ -1075,6 +1075,17 @@ jobs:
         run: |
           zig build check:desktop-cross --summary all
 
+      - name: Cross-target compile check (storage module per-OS branches)
+        # The Windows data dir (%LOCALAPPDATA%), the job object and the POSIX
+        # pid sweep all fork on `builtin.os.tag`, so only the target's branch
+        # is ever analysed. Compiling the module for all three from Linux is
+        # the only cheap place to catch a Windows-only type error before the
+        # Windows cell spends twenty minutes finding it.
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          zig build check:storage-cross --summary all
+
       - name: Clean stale webapp html staging
         # build.zig copies src/apps/desktop/dist → zig-out/bin/html with
         # addInstallDirectory, which never deletes: every rebuild's hashed

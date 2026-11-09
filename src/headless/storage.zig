@@ -293,19 +293,29 @@ test "headless storage: put reads the body from a file when one is given" {
     try testing.expectEqualStrings("from a file", body);
 }
 
-test "headless storage: resolveRoot prefers the flag, then the environment, then HOME" {
+test "headless storage: resolveRoot prefers the flag, then the environment, then the platform scope" {
     const alloc = testing.allocator;
     var env = std.process.Environ.Map.init(alloc);
     defer env.deinit();
     try env.put("HOME", "/home/tester");
 
-    const from_home = try resolveRoot(alloc, &env, null);
-    defer alloc.free(from_home);
-    // Built with the same join the implementation uses: the separator is
-    // platform-specific, so a hardcoded '/' fails on Windows.
-    const expected_home = try std.fs.path.join(alloc, &.{ "/home/tester", DEFAULT_ROOT_SUFFIX });
-    defer alloc.free(expected_home);
-    try testing.expectEqualStrings(expected_home, from_home);
+    // Windows has no HOME: %LOCALAPPDATA% is the scope (see resolveRoot).
+    if (comptime @import("builtin").os.tag == .windows) {
+        try env.put("LOCALAPPDATA", "C:\\Users\\tester\\AppData\\Local");
+        const from_scope = try resolveRoot(alloc, &env, null);
+        defer alloc.free(from_scope);
+        const expected = try std.fs.path.join(alloc, &.{ "C:\\Users\\tester\\AppData\\Local", "pabrik", "objects" });
+        defer alloc.free(expected);
+        try testing.expectEqualStrings(expected, from_scope);
+    } else {
+        const from_home = try resolveRoot(alloc, &env, null);
+        defer alloc.free(from_home);
+        // Built with the same join the implementation uses: the separator is
+        // platform-specific, so a hardcoded '/' fails on Windows.
+        const expected_home = try std.fs.path.join(alloc, &.{ "/home/tester", DEFAULT_ROOT_SUFFIX });
+        defer alloc.free(expected_home);
+        try testing.expectEqualStrings(expected_home, from_home);
+    }
 
     try env.put("PABRIK_STORAGE_ROOT", "/srv/objects");
     const from_env = try resolveRoot(alloc, &env, null);

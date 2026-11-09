@@ -3,6 +3,7 @@
 //! body in the `documents.content` column.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const storage = @import("storage.zig");
 const fs_backend = @import("fs.zig");
 const s3_backend = @import("s3.zig");
@@ -53,6 +54,13 @@ pub fn resolveDataDir(
 ) ![]u8 {
     if (environment.get("PABRIK_DATA_DIR")) |dir| {
         if (dir.len > 0) return allocator.dupe(u8, dir);
+    }
+    // Windows has no HOME: a native pabrik.exe launched from cmd or PowerShell
+    // sees only USERPROFILE/LOCALAPPDATA, and the rest of the app already keeps
+    // its state under %LOCALAPPDATA%\pabrik (the webapp, the TLS cert).
+    if (comptime builtin.os.tag == .windows) {
+        const base = environment.get("LOCALAPPDATA") orelse return error.RootRequired;
+        if (base.len > 0) return std.fs.path.join(allocator, &.{ base, "pabrik" });
     }
     if (environment.get("XDG_DATA_HOME")) |base| {
         if (base.len > 0) return std.fs.path.join(allocator, &.{ base, "pabrik" });
@@ -112,6 +120,12 @@ pub fn resolveRoot(
     }
     if (environment.get("PABRIK_STORAGE_ROOT")) |root| {
         if (root.len > 0) return allocator.dupe(u8, root);
+    }
+    // Same Windows reason as `resolveDataDir`: no HOME, so the filesystem
+    // store would be disabled and every document body would be dropped.
+    if (comptime builtin.os.tag == .windows) {
+        const base = environment.get("LOCALAPPDATA") orelse return error.RootRequired;
+        if (base.len > 0) return std.fs.path.join(allocator, &.{ base, "pabrik", "objects" });
     }
     const home = environment.get("HOME") orelse return error.RootRequired;
     return std.fs.path.join(allocator, &.{ home, DEFAULT_ROOT_SUFFIX });
@@ -485,7 +499,7 @@ test "runtime: s3 without an endpoint is refused" {
     try testing.expectError(error.S3EndpointRequired, Runtime.fromBackend(alloc, testing.io, &env, .s3));
 }
 
-test "runtime: the data dir follows XDG_DATA_HOME, then HOME" {
+test "runtime: the data dir follows the platform scope" {
     const alloc = testing.allocator;
 
     var env = std.process.Environ.Map.init(alloc);
@@ -493,19 +507,53 @@ test "runtime: the data dir follows XDG_DATA_HOME, then HOME" {
     try env.put("XDG_DATA_HOME", "/xdg");
     try env.put("HOME", "/home/u");
 
-    // Built with `path.join` so the assertion holds on Windows too.
-    const want_xdg = try std.fs.path.join(alloc, &.{ "/xdg", "pabrik" });
-    defer alloc.free(want_xdg);
-    const xdg = try resolveDataDir(alloc, &env);
-    defer alloc.free(xdg);
-    try testing.expectEqualStrings(want_xdg, xdg);
+    if (comptime builtin.os.tag == .windows) {
+        // Windows has no HOME: %LOCALAPPDATA% is the scope, and XDG/HOME must
+        // not rescue it — that is the bug that disabled the store outright.
+        try env.put("LOCALAPPDATA", "C:\\Users\\u\\AppData\\Local");
+        const want = try std.fs.path.join(alloc, &.{ "C:\\Users\\u\\AppData\\Local", "pabrik" });
+        defer alloc.free(want);
+        const got = try resolveDataDir(alloc, &env);
+        defer alloc.free(got);
+        try testing.expectEqualStrings(want, got);
+    } else {
+        // Built with `path.join` so the assertion holds on Windows too.
+        const want_xdg = try std.fs.path.join(alloc, &.{ "/xdg", "pabrik" });
+        defer alloc.free(want_xdg);
+        const xdg = try resolveDataDir(alloc, &env);
+        defer alloc.free(xdg);
+        try testing.expectEqualStrings(want_xdg, xdg);
 
-    _ = env.orderedRemove("XDG_DATA_HOME");
-    const want_home = try std.fs.path.join(alloc, &.{ "/home/u", ".local", "share", "pabrik" });
-    defer alloc.free(want_home);
-    const home = try resolveDataDir(alloc, &env);
-    defer alloc.free(home);
-    try testing.expectEqualStrings(want_home, home);
+        _ = env.orderedRemove("XDG_DATA_HOME");
+        const want_home = try std.fs.path.join(alloc, &.{ "/home/u", ".local", "share", "pabrik" });
+        defer alloc.free(want_home);
+        const home = try resolveDataDir(alloc, &env);
+        defer alloc.free(home);
+        try testing.expectEqualStrings(want_home, home);
+    }
+}
+
+test "runtime: the store root follows the platform scope" {
+    const alloc = testing.allocator;
+
+    var env = std.process.Environ.Map.init(alloc);
+    defer env.deinit();
+    try env.put("HOME", "/home/u");
+
+    if (comptime builtin.os.tag == .windows) {
+        try env.put("LOCALAPPDATA", "C:\\Users\\u\\AppData\\Local");
+        const want = try std.fs.path.join(alloc, &.{ "C:\\Users\\u\\AppData\\Local", "pabrik", "objects" });
+        defer alloc.free(want);
+        const got = try resolveRoot(alloc, &env, null);
+        defer alloc.free(got);
+        try testing.expectEqualStrings(want, got);
+    } else {
+        const want = try std.fs.path.join(alloc, &.{ "/home/u", DEFAULT_ROOT_SUFFIX });
+        defer alloc.free(want);
+        const got = try resolveRoot(alloc, &env, null);
+        defer alloc.free(got);
+        try testing.expectEqualStrings(want, got);
+    }
 }
 
 test "runtime: PABRIK_RUSTFS_PORT is honoured, and a free port is picked otherwise" {
