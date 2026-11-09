@@ -220,4 +220,86 @@ describe('ChatView — the chat names the agent that answers', () => {
 
     expect(w.find('.msg-author-name').text()).toBe('BEAM')
   })
+
+  it('does not badge a row whose narration the compact run card already holds', async () => {
+    // The report's ~25 bare "deepseek auto" rows: a turn narrates before each call, the compact
+    // view folds that narration INTO the run card, and the group that carried it was left with an
+    // empty body — but kept its author badge.
+    ctl.rows = [
+      { id: 'u1', role: 'user', content: 'fix this conflict first', created_at: 1_700_000_001 },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'Let me look at the conflict.',
+        finish_reason: 'tool_calls',
+        tool_calls_json: JSON.stringify([
+          {
+            id: 'tc1',
+            type: 'function',
+            function: { name: 'read_file', arguments: '{"path":"/tmp/a.ts"}' },
+          },
+        ]),
+        created_at: 1_700_000_002,
+      },
+      {
+        id: 't1',
+        role: 'tool',
+        content: JSON.stringify({
+          tool: 'read_file',
+          parameters: { path: '/tmp/a.ts' },
+          success: true,
+          data: {},
+          error: null,
+          v: 1,
+          duration_ms: 1200,
+        }),
+        tool_call_id: 'tc1',
+        tool_name: 'read_file',
+        created_at: 1_700_000_003,
+      },
+      {
+        id: 'a2',
+        role: 'assistant',
+        content: 'Now the other side.',
+        finish_reason: 'tool_calls',
+        tool_calls_json: JSON.stringify([
+          {
+            id: 'tc2',
+            type: 'function',
+            function: { name: 'read_file', arguments: '{"path":"/tmp/b.ts"}' },
+          },
+        ]),
+        created_at: 1_700_000_004,
+      },
+      {
+        id: 't2',
+        role: 'tool',
+        content: JSON.stringify({
+          tool: 'read_file',
+          parameters: { path: '/tmp/b.ts' },
+          success: true,
+          data: {},
+          error: null,
+          v: 1,
+          duration_ms: 900,
+        }),
+        tool_call_id: 'tc2',
+        tool_name: 'read_file',
+        created_at: 1_700_000_005,
+      },
+      {
+        id: 'a3',
+        role: 'assistant',
+        content: 'The conflict is resolved.',
+        finish_reason: 'stop',
+        created_at: 1_700_000_006,
+      },
+    ]
+    const w = await mountChat(null, { ...CONFIG, chat_view: 'compact' })
+
+    expect(w.findAll('.msg-author')).toHaveLength(1)
+    expect(w.find('.msg-author-name').text()).toBe('alpha')
+    expect(w.text()).toContain('The conflict is resolved.')
+    expect(w.text()).not.toContain('Let me look at the conflict.')
+  })
 })

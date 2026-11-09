@@ -138,8 +138,8 @@ describe('the live SSE path keeps the author the backend sends', () => {
 describe('the badge markup reads the presenter’s decision', () => {
   const template = readFileSync(path.join(CHAT_VIEW, 'ChatMessageRow.vue'), 'utf8')
 
-  it('renders only when the group carries an author', () => {
-    expect(template).toMatch(/v-if="group\.role === 'assistant' && group\.author"/)
+  it('renders only when the group carries an author and the row draws something', () => {
+    expect(template).toMatch(/v-if="group\.role === 'assistant' && group\.author && drawsContent"/)
     expect(template).toMatch(/class="msg-author"/)
   })
 
