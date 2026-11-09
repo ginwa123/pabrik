@@ -22,6 +22,7 @@ pub const DocumentsCreateError = error{
     WorkspaceIdRequired,
     TitleRequired,
     ContentTooLarge,
+    NoStorage,
     FolderNotFound,
     InsertFailed,
     RowNotFoundAfterInsert,
@@ -92,6 +93,7 @@ pub fn documentsCreateHandler(
         const status: u16 = switch (err) {
             error.WorkspaceIdRequired, error.TitleRequired => 400,
             error.ContentTooLarge => 413,
+            error.NoStorage => 500,
             error.FolderNotFound => 404,
             error.InsertFailed, error.RowNotFoundAfterInsert, error.OutOfMemory => 500,
         };
@@ -99,6 +101,7 @@ pub fn documentsCreateHandler(
             error.WorkspaceIdRequired => "workspace_id required",
             error.TitleRequired => "title is required",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.NoStorage => "no object store configured: the body has nowhere to be stored",
             error.FolderNotFound => "folder not found in this workspace",
             error.InsertFailed => "DB error",
             error.RowNotFoundAfterInsert => "row missing after insert (DB inconsistency)",
@@ -132,10 +135,22 @@ const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 const testing = std.testing;
 const migration = @import("../migrations/migration.zig");
+const memory_backend = pabrikcore.storage.memory;
 
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
+    objects: memory_backend.MemoryStorage,
+
+    fn deinit(self: *TestCtx) void {
+        self.objects.deinit();
+        self.db.deinit();
+        self.threaded.deinit();
+    }
+
+    fn store(self: *TestCtx) documents_store.Store {
+        return .{ .db = &self.db, .storage = self.objects.asStorage() };
+    }
 };
 
 fn setupDb() !TestCtx {
@@ -151,44 +166,45 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
-    return .{ .db = db, .threaded = threaded };
+    return .{
+        .db = db,
+        .threaded = threaded,
+        .objects = memory_backend.MemoryStorage.init(testing.allocator),
+    };
 }
 
 test "useCase: empty workspace_id returns WorkspaceIdRequired" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     try testing.expectError(
         error.WorkspaceIdRequired,
-        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "", .body = .{ .title = "x" } }),
+        useCase(alloc, ctx.store(), .{ .workspace_id = "", .body = .{ .title = "x" } }),
     );
 }
 
 test "useCase: a blank or whitespace-only title returns TitleRequired" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     try testing.expectError(
         error.TitleRequired,
-        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .body = .{ .title = "" } }),
+        useCase(alloc, ctx.store(), .{ .workspace_id = "ws_1", .body = .{ .title = "" } }),
     );
     try testing.expectError(
         error.TitleRequired,
-        useCase(alloc, .{ .db = &ctx.db }, .{ .workspace_id = "ws_1", .body = .{ .title = "   \n\t " } }),
+        useCase(alloc, ctx.store(), .{ .workspace_id = "ws_1", .body = .{ .title = "   \n\t " } }),
     );
 }
 
 test "useCase: creates a markdown document and stamps both timestamps" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .body = .{ .title = "  Release notes  ", .content = "# v1\n\nship it" },
     });
@@ -207,13 +223,12 @@ test "useCase: creates a markdown document and stamps both timestamps" {
 test "useCase: an empty body is stored as \"\" not NULL" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
     // The empty slice would bind as SQL NULL and violate
     // `content TEXT NOT NULL`; COALESCE(NULLIF(?, ''), '') is what stops
     // that, so a blank note must survive the round-trip.
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Blank", .content = "" },
     });
@@ -224,17 +239,16 @@ test "useCase: an empty body is stored as \"\" not NULL" {
 test "useCase: an explicit format is honoured, an empty one falls back to markdown" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const plain = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const plain = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Text", .content = "x", .format = "text" },
     });
     defer documents_store.freeDocumentRow(alloc, plain.document);
     try testing.expectEqualStrings("text", plain.document.format);
 
-    const fallback = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const fallback = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Default", .content = "x", .format = "" },
     });
@@ -245,10 +259,9 @@ test "useCase: an explicit format is honoured, an empty one falls back to markdo
 test "useCase: the new document is invisible from another workspace" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
-    defer ctx.threaded.deinit();
-    defer ctx.db.deinit();
+    defer ctx.deinit();
 
-    const output = try useCase(alloc, .{ .db = &ctx.db }, .{
+    const output = try useCase(alloc, ctx.store(), .{
         .workspace_id = "ws_1",
         .body = .{ .title = "Secret", .content = "nope" },
     });
