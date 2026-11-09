@@ -496,28 +496,28 @@ jobs:
         # harness enforces the "never delete real $HOME" invariant via
         # is_safe_tmp() — see tests/functional/harness.py.
         #
-        # NO `-n auto` (pytest-xdist), on purpose. xdist is the obvious way
-        # to make this faster and it is wrong here: the port picker binds a
-        # probe socket, closes it, and hands the number to the pabrik child,
-        # which binds tens of milliseconds later. That gap is documented in
-        # harness.py's RANDOM_PORT_* comment as the reason the range moved
-        # to 20k-32k in the first place — and widening the range does not
-        # help when N workers draw from it at the same instant. Under -n the
-        # suite would trade a deterministic ~15 min for intermittent
-        # BindFailed at boot. If this job ever needs to be faster, the fix
-        # is a reservation protocol in the picker (bind, hold, hand off),
-        # not a flag.
+        # `-n` IS safe here now, and the reason is the port picker, not the
+        # flag. The picker binds a probe socket, closes it, and hands the
+        # number to the pabrik child, which binds tens of milliseconds
+        # later — the gap harness.py's RANDOM_PORT_* comment documents as
+        # the reason the range moved to 20k-32k. Widening the range never
+        # helped, because N workers drew from it at the SAME instant.
+        # `harness._xdist_port_slot` now gives worker `gwK` a disjoint
+        # 1000-port window, so no two workers can draw the same number and
+        # the gap stops mattering. That is the reservation protocol this
+        # comment used to ask for, done without a lock or an fd handoff.
         #
-        # Measured on a 4-core Windows dev box (2026-10-13), and the same
-        # conclusion holds for shards sharing one machine: four concurrent
-        # `functional-test-ui:shard:<i>` steps left the FIRST test of every
-        # shard unfinished after 8 minutes, against a ~33 s single-shard
-        # baseline. Each test boots a Vite dev server + headless Chromium +
-        # a pabrik backend, so one shard is already ~2 cores of demand; four
-        # of them on four cores is thrash, not parallelism. Shards belong in
-        # separate JOBS (what this workflow does — each cell is its own VM)
-        # or in separate shells on a much bigger host. `-Dfunc-shards=N`
-        # fans out for convenience; it does not make N of them free.
+        # The worker count is `-Dfunc-ui-workers` (default min(4, cpus/2)).
+        # It is NOT `auto`: measured on a 16-core host, 8 workers were
+        # slower than 4 (23.7 s vs 20.4 s on an 18-test subset) because
+        # every worker pays its own cold Vite module-graph compile and they
+        # contend for the same cores. Each worker is one Vite server + one
+        # Chromium + one pabrik backend, so the real ceiling is memory
+        # (~1.2 GB per worker), not ports.
+        #
+        # Shards still belong in separate JOBS (what this workflow does —
+        # each cell is its own VM). `-Dfunc-shards=N` fans out for
+        # convenience; it does not make N of them free.
         shell: bash
         env:
           # The pytest venv lives OUTSIDE the workspace because the

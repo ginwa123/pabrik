@@ -48,6 +48,7 @@ import dataclasses
 import json
 import os
 import random
+import re
 import shlex
 import shutil
 import signal
@@ -143,6 +144,17 @@ RANDOM_PORT_ATTEMPTS = 50
 #: ``UIHarness`` adds 5173 (Vite's default) when calling
 #: ``find_free_port_random(reserved=...)``.
 RESERVED_PORTS: tuple[int, ...] = (8081,)
+
+#: Width of the disjoint port window each pytest-xdist worker draws from.
+#: ``find_free_port_random`` partitions ``[RANDOM_PORT_START,
+#: RANDOM_PORT_END]`` into ``PORT_SLOT_COUNT`` windows and gives worker
+#: ``gwK`` window ``K``. Without this, N workers draw from the same 12k
+#: ports at the same instant: the picker binds a probe socket, closes it,
+#: and the pabrik child binds tens of milliseconds later — the gap that
+#: ``RANDOM_PORT_*`` above documents. Partitioning removes the shared
+#: draw entirely, so no lock, no handoff and no fd passing is needed.
+PORT_SLOT_SIZE = 1000
+PORT_SLOT_COUNT = (RANDOM_PORT_END - RANDOM_PORT_START + 1) // PORT_SLOT_SIZE
 
 
 # ============================================================================
@@ -335,6 +347,7 @@ class FunctionalHarness:
         pabrik_bin: Path | None = None,
         *,
         port: int | None = None,
+        pin_port: bool = False,
         ready_timeout_s: float = 30.0,
         stub_llm_profile: bool = False,
         extra_args: Sequence[str] = (),
@@ -355,6 +368,10 @@ class FunctionalHarness:
             ready_timeout_s: Seconds to wait for pabrik to become ready.
             stub_llm_profile: Pre-create a stub LLM profile so the
                 backend boots without a real API key.
+            pin_port: With ``port``, bind that exact port instead of
+                scanning upward from it. The UI suite pins one backend
+                port per worker so its long-lived Vite proxy target
+                stays valid across every test in that worker.
             extra_args: Extra CLI flags appended after `--port` (e.g.
                 `("--http2", "h2c")`). Defaults to none, so existing
                 callers keep the exact same command line.
@@ -411,7 +428,7 @@ class FunctionalHarness:
         #    20k-port range (see RANDOM_PORT_START..END). Explicit
         #    int → sequential scan from that port for backward compat
         #    with tests that want a deterministic value.
-        chosen_port = _find_free_port(port)
+        chosen_port = _find_free_port(port, pin=pin_port)
 
         # 3. mkdtemp. Atomic, fresh, mode 0700.
         temp_dir = Path(tempfile.mkdtemp(prefix=REQUIRED_TMP_SUBSTR))
@@ -512,31 +529,54 @@ class FunctionalHarness:
         # WinError 32. The filesystem store has no child process and lives
         # inside the tempdir, so teardown is clean on every platform.
         env["PABRIK_STORAGE_BACKEND"] = "fs"
-        log_file = log_path.open("wb")
-        # `start_new_session=True` is a keyword arg accepted on
-        # Python 3.2+ for both POSIX (setsid) and Windows
-        # (CREATE_NEW_PROCESS_GROUP). Pass it unconditionally.
-        proc = subprocess.Popen(
-            [str(bin_path), "--port", str(chosen_port), *extra_args],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            env=env,
-            start_new_session=True,
-        )
-        # Parent can close its handle — child has duped it. On Windows, keeping
-        # it open prevents shutil.rmtree (PermissionError: file in use).
-        try:
-            log_file.close()
-        except Exception:
-            pass
+        # A random pick can still lose the race against another process
+        # between the probe bind and the child's bind. One redraw turns
+        # that into a retry instead of a red test. A pinned port is
+        # validated by ``_wait_port_free`` and is never redrawn — the
+        # caller's Vite proxy target depends on it.
+        spawn_attempts = 1 if pin_port else 2
+        proc: subprocess.Popen[bytes] | None = None
+        for spawn_attempt in range(spawn_attempts):
+            if spawn_attempt:
+                chosen_port = _find_free_port(None)
+            log_file = log_path.open("wb")
+            # `start_new_session=True` is a keyword arg accepted on
+            # Python 3.2+ for both POSIX (setsid) and Windows
+            # (CREATE_NEW_PROCESS_GROUP). Pass it unconditionally.
+            proc = subprocess.Popen(
+                [str(bin_path), "--port", str(chosen_port), *extra_args],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                env=env,
+                start_new_session=True,
+            )
+            # Parent can close its handle — child has duped it. On Windows, keeping
+            # it open prevents shutil.rmtree (PermissionError: file in use).
+            try:
+                log_file.close()
+            except Exception:
+                pass
+            try:
+                _wait_ready(chosen_port, ready_timeout_s, proc, log_path)
+            except FunctionalHarnessError:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                if spawn_attempt + 1 < spawn_attempts and _is_bind_failure(log_path):
+                    continue
+                raise
+            break
+        assert proc is not None
 
         # 7.5. Record pids so a subsequent boot can reap us if we die.
-        #      The pidfile format is "<harness_pid> <pabrik_pid>\n":
+        #      The pidfile format is
+        #      "<harness_pid> <pabrik_pid> [<extra_pid>...]\n":
         #        - harness_pid: the Python process running this code
         #          (pytest worker, or the bare pytest process without xdist).
         #          When reap sees this pid is dead, the tempdir is an orphan.
         #        - pabrik_pid: the actual pabrik binary holding the TCP port.
         #          When reap sees the harness is dead, it kills this pid.
+        #        - extra pids: appended by ``record_extra_pid`` for children
+        #          the caller spawns later (the UI harness registers Vite).
         #      Wrapped in try/except because a write failure here must NOT
         #      prevent tests from running — the worst case is "this test
         #      won't be reaped on the next boot" which is the pre-patch
@@ -545,16 +585,6 @@ class FunctionalHarness:
             (temp_dir / ".harness.pid").write_text(f"{os.getpid()} {proc.pid}\n")
         except OSError as e:
             print(f"warning: failed to write pidfile: {e}", file=sys.stderr)
-
-        # 8. Wait for readiness.
-        try:
-            _wait_ready(chosen_port, ready_timeout_s, proc, log_path)
-        except Exception:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            with contextlib.suppress(Exception):
-                log_file.close()
-            raise
 
         return cls(
             port=chosen_port,
@@ -655,6 +685,26 @@ class FunctionalHarness:
             return "\n".join(data.splitlines()[-n:])
         except FileNotFoundError:
             return ""
+
+    def record_extra_pid(self, pid: int) -> None:
+        """Add ``pid`` to this harness's pidfile so an orphan reap kills it.
+
+        The pidfile is written at boot, before a caller can spawn anything
+        of its own. ``UIHarness`` uses this to register the Vite dev
+        server, which otherwise survives a killed pytest run forever and
+        keeps burning CPU on the next one.
+        """
+        pidfile = self.temp_dir / ".harness.pid"
+        try:
+            tokens = pidfile.read_text().split()
+        except OSError:
+            return
+        if len(tokens) < 2:
+            return
+        try:
+            pidfile.write_text(f"{tokens[0]} {tokens[1]} {pid}\n")
+        except OSError as e:
+            print(f"warning: failed to record extra pid: {e}", file=sys.stderr)
 
     # ---- teardown ---------------------------------------------------------
 
@@ -921,7 +971,23 @@ class FunctionalHarness:
 # ============================================================================
 
 
-def _find_free_port(start: int | None = None) -> int:
+def _wait_port_free(port: int, timeout_s: float = 5.0) -> bool:
+    """Return True once ``port`` is bindable, polling for up to ``timeout_s``.
+
+    A pinned port is reused by every backend boot in a worker, so the
+    previous backend's listener may still be closing when the next boot
+    probes. ``port_is_free_with_reuse`` sets ``SO_REUSEADDR``, which
+    covers TIME_WAIT but not a socket that is still LISTENing.
+    """
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if port_is_free_with_reuse(port):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _find_free_port(start: int | None = None, *, pin: bool = False) -> int:
     """Find a free port for the pabrik backend.
 
     Default behaviour (no ``start``): pick a random port from the wide
@@ -950,6 +1016,10 @@ def _find_free_port(start: int | None = None) -> int:
         start: If given, scan sequentially from this port to
             ``PORT_SCAN_END`` (legacy behaviour). If ``None``, pick
             a random port from the wide range.
+        pin: With ``start``, use that exact port instead of scanning.
+            Used by the UI suite, which keeps one backend port per
+            worker so a single long-lived Vite proxy target stays
+            valid across every test in that worker.
 
     Returns:
         A free port number (never 8081).
@@ -959,6 +1029,13 @@ def _find_free_port(start: int | None = None) -> int:
             the configured budget.
     """
     if start is not None:
+        if pin:
+            if not _wait_port_free(start):
+                raise FunctionalHarnessError(
+                    f"Pinned port {start} is still in use after 5s. A backend "
+                    f"from a previous test on this worker did not exit."
+                )
+            return start
         return _find_free_port_sequential(start)
     return find_free_port_random()
 
@@ -1031,6 +1108,22 @@ def port_is_free_with_reuse(port: int) -> bool:
             return False
 
 
+def _xdist_port_slot() -> tuple[int, int] | None:
+    """The ``(start, end)`` port window this pytest-xdist worker owns.
+
+    Returns ``None`` when not running under xdist, in which case the
+    picker uses the whole range. Worker ``gwK`` gets window
+    ``K % PORT_SLOT_COUNT``, so up to ``PORT_SLOT_COUNT`` workers never
+    share a port. A worker index beyond that wraps, which is safe
+    because the picker still probes each candidate before returning it.
+    """
+    match = re.fullmatch(r"gw(\d+)", os.environ.get("PYTEST_XDIST_WORKER", ""))
+    if match is None:
+        return None
+    start = RANDOM_PORT_START + (int(match.group(1)) % PORT_SLOT_COUNT) * PORT_SLOT_SIZE
+    return start, start + PORT_SLOT_SIZE - 1
+
+
 def find_free_port_random(
     *,
     reserved: tuple[int, ...] = RESERVED_PORTS,
@@ -1071,6 +1164,10 @@ def find_free_port_random(
         )
     if attempts <= 0:
         raise ValueError(f"attempts must be > 0, got {attempts}")
+    if (range_start, range_end) == (RANDOM_PORT_START, RANDOM_PORT_END):
+        slot = _xdist_port_slot()
+        if slot is not None:
+            range_start, range_end = slot
     range_size = range_end - range_start + 1
     for _ in range(attempts):
         port = range_start + random.randint(0, range_size - 1)
@@ -1123,7 +1220,8 @@ def _reap_orphan_test_pids() -> int:
 
     On every harness boot, scan ``<tempfile.gettempdir()>/pabrik-func-*/
     .harness.pid``. Each pidfile contains ``"<harness_worker_pid>
-    <pabrik_child_pid>\n"`` — written by ``boot()``. If the harness python
+    <pabrik_child_pid> [<extra_pid>...]\n"`` — written by ``boot()``
+    and extended by ``record_extra_pid()``. If the harness python
     parent died (``kill -0`` returns ``ProcessLookupError``), the tempdir
     is an orphan: the pabrik child survived in its own pgid
     (``subprocess.Popen(start_new_session=True)``) and is still holding
@@ -1154,13 +1252,15 @@ def _reap_orphan_test_pids() -> int:
         pidfile = entry / ".harness.pid"
         if not pidfile.is_file():
             continue
-        # Parse "<harness_pid> <pabrik_pid>". Anything else → skip silently.
+        # Parse "<harness_pid> <pabrik_pid> [<extra_pid>...]". Anything
+        # else → skip silently. The extra pids are the caller's own
+        # children (the UI harness registers its Vite dev server there).
         try:
             tokens = pidfile.read_text().split()
-            if len(tokens) != 2:
+            if len(tokens) < 2:
                 continue
             harness_pid = int(tokens[0])
-            pabrik_pid = int(tokens[1])
+            child_pids = [int(t) for t in tokens[1:]]
         except (OSError, ValueError):
             continue
         # If the harness python is alive, this test is still in progress —
@@ -1180,17 +1280,19 @@ def _reap_orphan_test_pids() -> int:
                 pass  # harness is dead — this dir is an orphan
             else:
                 continue
-            # Harness is dead. Kill the pabrik child if alive.
-            if pabrik_pid and pabrik_pid != os.getpid():
+            # Harness is dead. Kill every child it recorded.
+            for child_pid in child_pids:
+                if not child_pid or child_pid == os.getpid():
+                    continue
                 try:
-                    os.kill(pabrik_pid, signal.SIGTERM)
+                    os.kill(child_pid, signal.SIGTERM)
                 except OSError:
-                    pass
+                    continue
                 # Wait up to 1s for graceful exit; SIGKILL fallback
                 # (SIGTERM on Windows, which lacks SIGKILL).
-                if not _wait_pid_dead(pabrik_pid, 1.0):
+                if not _wait_pid_dead(child_pid, 1.0):
                     try:
-                        os.kill(pabrik_pid, _SIGKILL)
+                        os.kill(child_pid, _SIGKILL)
                     except OSError:
                         pass
         except Exception as e:
@@ -1304,6 +1406,24 @@ def mcp_http_hello_world_bin() -> Path:
     raise FunctionalHarnessError(
         "mcp-http-hello-world binary not found; set MCP_HTTP_HELLO_WORLD_BIN "
         "or run `zig build mcp-http-hello-world` first."
+    )
+
+
+def _is_bind_failure(log_path: Path) -> bool:
+    """True iff the child's log shows it died because the port was taken.
+
+    Only this class of boot failure is worth a redraw: a missing binary,
+    a bad flag or a crash would fail identically on the next port, and
+    retrying it would just double the time to a red test.
+    """
+    try:
+        text = log_path.read_text(errors="replace").lower()
+    except OSError:
+        return False
+    return (
+        "bindfailed" in text
+        or "address already in use" in text
+        or "address in use" in text
     )
 
 

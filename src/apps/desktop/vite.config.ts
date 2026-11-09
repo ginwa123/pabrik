@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import type { Buffer } from 'node:buffer'
+import { Agent } from 'node:http'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -40,6 +41,15 @@ export default defineConfig({
       '/api': {
         target: apiProxyTarget, // Override-able via VITE_API_PROXY_TARGET env var
         changeOrigin: true,
+        // Node >= 19 keeps sockets alive by default, so a pooled
+        // connection outlives the backend it was opened to. The UI
+        // suite reuses one backend PORT for every test in a worker
+        // (that is what lets a single Vite server serve the whole
+        // worker), so the next test's first /api request would be
+        // written to a socket whose peer is gone — ECONNRESET on a
+        // request the test never made. A fresh connection per request
+        // costs ~0.1 ms locally and removes the whole class.
+        agent: new Agent({ keepAlive: false }),
         // WS for the right-sidebar terminal (/api/terminal/ws). Prod is
         // same-origin (pabrik serves the webapp itself); dev needs this
         // or the socket falls back to REST polling.

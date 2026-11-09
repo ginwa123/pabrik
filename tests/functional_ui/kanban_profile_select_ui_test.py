@@ -48,9 +48,11 @@ Task: task_1787494153778_2
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -172,6 +174,43 @@ def _kanban_url(h: UIHarness, workspace_id: str, kanban_id: str) -> str:
     )
 
 
+def _settle(locator: Any, timeout_ms: int = 15000) -> None:
+    """Wait for ``locator`` to become visible, tolerating its absence.
+
+    Replaces a fixed ``page.wait_for_timeout`` after a click or a
+    navigation. The caller's own ``count()`` / ``is_visible()`` check
+    still decides what a missing element means, so a skip stays a skip
+    and a failure keeps its message — only the arbitrary delay goes.
+    """
+    with contextlib.suppress(Exception):
+        locator.wait_for(state="visible", timeout=timeout_ms)
+
+
+def _wait_for_task(
+    h: UIHarness,
+    workspace_id: str,
+    kanban_id: str,
+    task_name: str,
+    timeout_s: float = 15.0,
+) -> list[dict[str, Any]]:
+    """Poll the tasks API until ``task_name`` appears, or the budget runs out.
+
+    The create click is asynchronous: the dialog POSTs, the board
+    refetches. A fixed sleep either wastes time or races. Polling the
+    same endpoint the assertion reads makes the wait exactly as long as
+    the work.
+    """
+    deadline = time.monotonic() + timeout_s
+    while True:
+        matching = [
+            t for t in _list_tasks(h, workspace_id, kanban_id)
+            if t.get("name") == task_name
+        ]
+        if matching or time.monotonic() >= deadline:
+            return matching
+        time.sleep(0.05)
+
+
 def _list_tasks(h: UIHarness, workspace_id: str, kanban_id: str) -> list[dict[str, Any]]:
     r = h.http(
         "GET",
@@ -251,7 +290,7 @@ def test_dialog_create_task_persists_picked_profile_in_db(
     kanban_id = _create_kanban(h, ws_id)
 
     page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)
+    _settle(page.locator('[data-testid="kanban-add-task-button"]').first)
 
     # 1. Click "Add task" — opens the dialog in create mode.
     add_button = page.locator('[data-testid="kanban-add-task-button"]').first
@@ -303,7 +342,11 @@ def test_dialog_create_task_persists_picked_profile_in_db(
             "never offered a choice to click."
         )
     profile_button.click()
-    page.wait_for_timeout(150)
+    _settle(
+        page.locator(
+            '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
+        ).first
+    )
     # The dropdown renders one button per configured profile, all sharing
     # data-testid="kanban-task-detail-agent-picker-item". Filter by the
     # profile name text — Playwright's has_text matches the button's text
@@ -317,7 +360,7 @@ def test_dialog_create_task_persists_picked_profile_in_db(
         "and the GET /api/config/pabrik response."
     )
     target_profile_row.click()
-    page.wait_for_timeout(100)
+    _settle(profile_button)
 
     # 4. Toggle Unattended mode ON — this is the bug's trigger.
     unattended_toggle = page.locator(
@@ -346,14 +389,12 @@ def test_dialog_create_task_persists_picked_profile_in_db(
         f"expected the flat 'Create task' button, got {save_button.inner_text()!r}"
     )
     save_button.click()
-    page.wait_for_timeout(800)
 
     # ─── Assertion: DB row must carry the picked profile + flag ───
 
     # API-level confirmation that the task exists (more reliable than
     # scraping the kanban board DOM).
-    tasks = _list_tasks(h, ws_id, kanban_id)
-    matching = [t for t in tasks if t.get("name") == task_title]
+    matching = _wait_for_task(h, ws_id, kanban_id, task_title)
     assert matching, (
         f"task {task_title!r} not visible via API after click-create. "
         f"The Save button may not have fired. Vite log: {h.vite_log_path}, "
@@ -401,7 +442,7 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
     kanban_id = _create_kanban(h, ws_id)
 
     page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)
+    _settle(page.locator('[data-testid="kanban-add-task-button"]').first)
 
     add_button = page.locator('[data-testid="kanban-add-task-button"]').first
     assert add_button.count() > 0, "Add task button missing"
@@ -432,11 +473,14 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
     ).first
     assert profile_button.count() > 0, "Profile picker missing"
     profile_button.click()
-    page.wait_for_timeout(150)
+    _settle(
+        page.locator(
+            '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
+        ).first
+    )
     page.locator(
         '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
     ).first.click()
-    page.wait_for_timeout(100)
 
     # No unattended toggle needed for this test — wire also fires
     # when the field is OFF. Doesn't matter for the regression.
@@ -449,14 +493,12 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
         "'Create task & run agent' button missing — create-mode only."
     )
     and_run.click()
-    page.wait_for_timeout(1000)
 
     # The worker runs in the background against the stub's dead port
     # and fails silently — but the wire reaches the handler first, and
     # step 5's INSERT ran. Read the row straight from sqlite3 to avoid
     # racing with whatever the worker does to the row.
-    tasks = _list_tasks(h, ws_id, kanban_id)
-    matching = [t for t in tasks if t.get("name") == task_title]
+    matching = _wait_for_task(h, ws_id, kanban_id, task_title)
     assert matching, f"task {task_title!r} not created via API"
     task_id = matching[0]["id"]
 
@@ -490,7 +532,7 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     kanban_id = _create_kanban(h, ws_id)
 
     page.goto(_kanban_url(h, ws_id, kanban_id), wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)
+    _settle(page.locator('[data-testid="kanban-add-task-button"]').first)
 
     add_button = page.locator('[data-testid="kanban-add-task-button"]').first
     add_button.click()
@@ -526,18 +568,20 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
     page.locator(
         '[data-testid="kanban-task-detail-agent-picker"]'
     ).first.click()
-    page.wait_for_timeout(150)
+    _settle(
+        page.locator(
+            '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
+        ).first
+    )
     page.locator(
         '[data-testid="kanban-task-detail-agent-picker-item"]:has-text("900ribu")'
     ).first.click()
-    page.wait_for_timeout(100)
 
     # The footer's split button and its caret menu are gone; plain
     # create is the flat "Create task" button.
     page.locator(
         '[data-testid="kanban-task-detail-save"]'
     ).first.click()
-    page.wait_for_timeout(800)
 
     task_id = _task_id_for_name(h, ws_id, kanban_id, task_title)
 
@@ -555,8 +599,8 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
         wait_until="load",
         timeout=60000,
     )
-    # Give Vue + getSession() + loadProfiles() time to settle.
-    page.wait_for_timeout(2500)
+    # Wait for Vue + getSession() + loadProfiles() to render the chip.
+    _settle(page.get_by_role("button").filter(has_text="900ribu").first)
 
     # The chatview's profile chip (ChatView.vue:3300) renders
     # `{{ effectiveProfile ?? 'Default' }}`. The bug surfaces as the

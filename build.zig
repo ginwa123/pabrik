@@ -3467,12 +3467,31 @@ pub fn build(b: *std.Build) void {
     install_playwright_browsers.setCwd(b.path(""));
     install_playwright_browsers.step.dependOn(&install_ui_requirements.step);
 
-    const argv_functional_ui = [_][]const u8{
+    // Parallel UI workers: `harness._xdist_port_slot` gives each worker a
+    // disjoint port window, so `-n` is safe. Not `auto` — 8 workers measured
+    // slower than 4, because each pays its own cold Vite compile.
+    const func_ui_workers_opt: u32 = b.option(
+        u32,
+        "func-ui-workers",
+        "pytest-xdist workers for the Playwright UI suite (default: min(4, cpus/2); 1 = serial)",
+    ) orelse 0;
+    const func_ui_workers: u32 = if (func_ui_workers_opt != 0)
+        func_ui_workers_opt
+    else
+        @max(1, @min(4, @as(u32, @intCast(host_cpus / 2))));
+
+    var argv_functional_ui: std.ArrayList([]const u8) = .empty;
+    argv_functional_ui.appendSlice(b.allocator, &.{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }), "-m", "pytest", "tests/functional_ui/", "-v", "--tb=short",
-    };
+    }) catch @panic("build.zig: appendSlice of the UI pytest argv failed");
+    if (func_ui_workers > 1) {
+        argv_functional_ui.appendSlice(b.allocator, &.{
+            "-n", b.fmt("{d}", .{func_ui_workers}),
+        }) catch @panic("build.zig: append of the UI worker count failed");
+    }
     const functional_test_ui_step = b.step("functional-test-ui", "Run UI functional tests (Playwright Python) against pabrik + Vite dev server");
     for (python_shard_indices) |maybe_shard| {
-        const run_functional_ui = addPythonSuiteRun(b, &argv_functional_ui, func_pabrik_bin, python_shards, maybe_shard);
+        const run_functional_ui = addPythonSuiteRun(b, argv_functional_ui.items, func_pabrik_bin, python_shards, maybe_shard);
         run_functional_ui.step.dependOn(&install_playwright_browsers.step);
         run_functional_ui.step.dependOn(&python_probe.step);
         // Depend on the same binary install as the API suite.
