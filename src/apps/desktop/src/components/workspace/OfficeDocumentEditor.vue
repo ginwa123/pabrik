@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { parseOfficeBody } from '../../helpers/officeDocument'
+import { parseOfficeBody, type OfficeKind } from '../../helpers/officeDocument'
 import { mountOfficeEditor, type OfficeEditor } from '../../helpers/univerBootstrap'
 
 const props = defineProps<{
@@ -18,6 +18,9 @@ const failure = ref<string | null>(null)
 const loading = ref(true)
 
 let editor: OfficeEditor | null = null
+/** The kind this editor actually mounted. The view stores the snapshot under
+ *  this kind, so the envelope can never claim a kind the snapshot is not. */
+let mountedKind: OfficeKind | null = null
 let unsubscribe: (() => void) | null = null
 /** Set when the component unmounts before the async mount resolves, so the
  *  editor that arrives late is disposed instead of leaking a live Univer. */
@@ -47,6 +50,7 @@ onMounted(async () => {
       return
     }
     editor = mounted
+    mountedKind = parsed.kind
     unsubscribe = mounted.onEdit(() => emit('change'))
   } catch (error) {
     failure.value = error instanceof Error ? error.message : String(error)
@@ -69,7 +73,12 @@ function snapshot(): unknown {
   return editor?.snapshot() ?? null
 }
 
-defineExpose({ snapshot })
+/** The kind this editor mounted, or null before it is ready. */
+function kind(): OfficeKind | null {
+  return mountedKind
+}
+
+defineExpose({ snapshot, kind })
 </script>
 
 <template>

@@ -30,8 +30,13 @@ const OfficeEditorStub = defineComponent({
   name: 'OfficeDocumentEditor',
   props: { body: { type: String, default: '' } },
   emits: ['change'],
-  setup(_props, { expose }) {
-    expose({ snapshot: () => SNAPSHOT })
+  setup(props, { expose }) {
+    expose({
+      snapshot: () => SNAPSHOT,
+      // The view stores the snapshot under the kind the editor mounted, so the
+      // stub reports the kind its body names — exactly like the real one.
+      kind: () => (JSON.parse(props.body || '{}').kind === 'doc' ? 'doc' : 'sheet'),
+    })
     return () => h('div', { 'data-testid': 'office-editor-stub' })
   },
 })
@@ -124,6 +129,59 @@ describe('DocumentsView — office documents', () => {
     // A rename must not rewrite the body: the editor's snapshot is not the
     // user's intent here, and a whole-body PATCH would revert an agent edit.
     expect(Object.keys(patch)).toEqual(['title'])
+    wrapper.unmount()
+  })
+
+  it('does not mount the editor until the body has loaded', async () => {
+    // The bug this guards: mounting the editor while the body is still empty
+    // opened a blank spreadsheet for every office document, and Save then wrote
+    // that workbook under the document's real kind.
+    let release: (value: unknown) => void = () => {}
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    getDocument.mockReturnValue(gate)
+
+    // A list row: metadata only, no body. This is what the sidebar holds
+    // before the single-document read lands.
+    const { content: _omit, ...listRow } = OFFICE_DOC
+    useDocumentsStore().documents = [listRow]
+
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="office-editor-stub"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="documents-office-loading"]').exists()).toBe(true)
+
+    release({ document: OFFICE_DOC })
+    await flushPromises()
+
+    const stub = wrapper.findComponent(OfficeEditorStub)
+    expect(stub.exists()).toBe(true)
+    // And it mounts with the REAL body, not an empty one.
+    expect(stub.props('body')).toBe(OFFICE_DOC.content)
+    wrapper.unmount()
+  })
+
+  it('stores the snapshot under the kind the editor mounted', async () => {
+    updateDocument.mockResolvedValue({
+      document: { ...OFFICE_DOC, content: serializeOfficeBody('doc', SNAPSHOT) },
+    })
+    useDocumentsStore().documents = [
+      { ...OFFICE_DOC, content: serializeOfficeBody('doc', {}) },
+    ]
+    const wrapper = await mountView()
+    await flushPromises()
+
+    wrapper.findComponent(OfficeEditorStub).vm.$emit('change')
+    await nextTick()
+    await wrapper.get('[data-testid="documents-save"]').trigger('click')
+    await flushPromises()
+
+    const patch = (updateDocument.mock.calls[0] as [string, string, Record<string, unknown>])[2]
+    // A docx must stay a docx: the envelope's kind and the snapshot inside it
+    // come from the same editor.
+    expect(JSON.parse(String(patch.content)).kind).toBe('doc')
     wrapper.unmount()
   })
 

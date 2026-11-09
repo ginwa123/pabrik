@@ -36,6 +36,10 @@ const showPreview = ref(true)
  *  stored body is stale is the editor telling us a command ran. */
 const officeDirty = ref(false)
 const officeEditor = ref<InstanceType<typeof OfficeDocumentEditor> | null>(null)
+/** True once the body has been read. The office editor mounts ONCE with the
+ *  body it is handed, so an empty body would open a blank spreadsheet and Save
+ *  would write that workbook under the document's real kind. */
+const bodyLoaded = ref(false)
 
 // The resolved workspace, not the raw `activeWorkspaceId` ref.
 const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
@@ -44,10 +48,14 @@ const document_ = computed(() => documentsStore.findById(props.documentId))
 
 const isOffice = computed(() => isOfficeFormat(document_.value?.format))
 
-/** Which Univer product renders this document. An unreadable body still needs a
- *  kind for the header, and the editor reports the failure itself. */
+/** Which Univer product renders this document. The mounted editor wins: it is
+ *  the thing holding the snapshot Save will store, so the envelope's `kind` and
+ *  the snapshot inside it can never disagree. */
 const officeKind = computed(
-  () => parseOfficeBody(savedContent.value)?.kind ?? DEFAULT_OFFICE_KIND,
+  () =>
+    officeEditor.value?.kind() ??
+    parseOfficeBody(savedContent.value)?.kind ??
+    DEFAULT_OFFICE_KIND,
 )
 
 const isDirty = computed(
@@ -58,12 +66,18 @@ const isDirty = computed(
 
 const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
 
+/** The id whose body is being fetched, so a retry cannot stack up requests. */
+let loadingId: string | null = null
+
 // Load on mount AND on id change: a Back/Forward between two documents keeps the same component
 // mounted, so an `onMounted`-only fetch would leave the previous document's body on screen under
 // the new title. Prev-value guard on update — same load the watcher did.
 async function loadForDocument(id: string) {
-  if (!id || !workspaceId.value) return
-  const doc = await documentsStore.loadDocument(workspaceId.value, id)
+  if (!id || !workspaceId.value || loadingId === id) return
+  loadingId = id
+  const doc = await documentsStore.loadDocument(workspaceId.value, id).finally(() => {
+    if (loadingId === id) loadingId = null
+  })
   if (!doc) return
   // `loadDocument` guarantees a body; the `?? ''` is for the type, not a case.
   const body = doc.content ?? ''
@@ -72,6 +86,7 @@ async function loadForDocument(id: string) {
   savedTitle.value = doc.title
   savedContent.value = body
   officeDirty.value = false
+  bodyLoaded.value = true
   editing.value = false
 }
 
@@ -123,8 +138,15 @@ onUpdated(() => {
   if (props.documentId !== prevDocumentId) {
     prevDocumentId = props.documentId
     hadDocumentRow = false
+    bodyLoaded.value = false
     void loadForDocument(props.documentId)
     return
+  }
+  // On a cold load the workspace resolves AFTER mount, so the first
+  // `loadForDocument` returns early and the body would never arrive. Retry
+  // until it does; `bodyLoaded` stops this the moment the body is in.
+  if (!bodyLoaded.value && workspaceId.value && document_) {
+    void loadForDocument(props.documentId)
   }
   syncFromStore()
 })
@@ -336,13 +358,23 @@ const remove = async () => {
       <!-- An office document is edited in place: the grid IS the editor.
            `:key` gives each document its own Univer instance, because the
            component stays mounted across a Back/Forward. -->
-      <OfficeDocumentEditor
-        v-if="isOffice"
-        :key="props.documentId"
-        ref="officeEditor"
-        :body="savedContent"
-        @change="officeDirty = true"
-      />
+      <template v-if="isOffice">
+        <OfficeDocumentEditor
+          v-if="bodyLoaded"
+          :key="props.documentId"
+          ref="officeEditor"
+          :body="savedContent"
+          @change="officeDirty = true"
+        />
+        <div
+          v-else
+          class="p-6 text-body"
+          style="color: var(--semantic-text-dim)"
+          data-testid="documents-office-loading"
+        >
+          Loading document…
+        </div>
+      </template>
 
       <!-- Both panes are always mounted while editing. `v-if` on the
            textarea would drop the caret and the scroll position on every
