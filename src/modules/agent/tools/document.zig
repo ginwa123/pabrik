@@ -559,6 +559,88 @@ test "add_document: creates a markdown document in the caller's own workspace" {
     try testing.expectEqualStrings("markdown", p.format);
 }
 
+test "add_document: format office stores the envelope and echoes it back" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const body = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{\"0\":{\"0\":{\"v\":\"Q3\"}}}}}}}";
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .title = "Budget",
+        .content = body,
+        .format = "office",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err == null);
+    try testing.expectEqualStrings("office", p.format);
+    // The body round-trips through the object store unchanged, so the grid
+    // reopens on the same snapshot the model wrote.
+    try testing.expectEqualStrings(body, p.content);
+}
+
+test "add_document: an unknown format is a tool error, not a stored row" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const out = try executeAddDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .title = "Slides",
+        .content = "{}",
+        .format = "slides",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err != null);
+    try testing.expect(std.mem.indexOf(u8, p.err.?, "format") != null);
+
+    var q = try ctx.db.query(alloc, "SELECT COUNT(*) FROM documents", &.{});
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.RowMissing;
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("0", row.values[0]);
+}
+
+test "edit_document: an office body keeps its format and re-previews from the cells" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+    const store = documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() };
+
+    const created = try executeAddDocument(alloc, store, "s1", .{
+        .title = "Budget",
+        .content = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{\"0\":{\"0\":{\"v\":\"old\"}}}}}}}",
+        .format = "office",
+    });
+    defer alloc.free(created);
+    var c = try parseJson(alloc, created);
+    defer c.deinit();
+    try testing.expect(c.err == null);
+
+    const edited = try executeEditDocument(alloc, store, "s1", .{
+        .document_id = c.id,
+        .content = "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{\"s1\":{\"cellData\":{\"0\":{\"0\":{\"v\":\"new\"}}}}}}}",
+    });
+    defer alloc.free(edited);
+    var e = try parseJson(alloc, edited);
+    defer e.deinit();
+
+    try testing.expect(e.err == null);
+    // `edit_document` cannot change the format — it is immutable after create —
+    // so the row stays an office document and the preview follows the cells.
+    try testing.expectEqualStrings("office", e.format);
+    try testing.expectEqualStrings("Budget", e.title);
+
+    const row = try store.getDocument(alloc, "ws_1", c.id);
+    defer documents_store.freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("office", row.format);
+    try testing.expectEqualStrings("new", row.preview);
+}
+
 test "add_document: a blank title is a tool error, not a Zig error" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
