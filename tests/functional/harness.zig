@@ -567,6 +567,10 @@ pub const Harness = struct {
         // priming fetch would open one live 5 MB request per spawned server. The
         // boot behaviour itself is covered by the unit tests.
         try env_map.put("PABRIK_MODEL_CATALOG_FETCH", "0");
+        // The default object store is a supervised rustfs child. On Windows it
+        // outlives the killed server and locks the tempdir, so teardown cannot
+        // remove it. The filesystem store has no child and lives in the tempdir.
+        try env_map.put("PABRIK_STORAGE_BACKEND", "fs");
         if (is_windows) {
             try env_map.put("USERPROFILE", temp_dir);
             const roaming = try std.fs.path.join(gpa, &.{ temp_dir, "AppData", "Roaming" });
@@ -1533,6 +1537,9 @@ pub fn runPabrikCommand(
     // Same reason as `boot` above: a CLI subcommand boots the app too, and a
     // 5 MB fetch from a test process is not what any of these suites measure.
     try env_map.put("PABRIK_MODEL_CATALOG_FETCH", "0");
+    // Same reason as `boot` above: a rustfs child would outlive the CLI and
+    // lock the tempdir on Windows.
+    try env_map.put("PABRIK_STORAGE_BACKEND", "fs");
 
     // The capture files live inside `home` — normally the harness tempdir,
     // which teardown removes anyway.

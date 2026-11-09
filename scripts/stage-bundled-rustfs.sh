@@ -111,15 +111,10 @@ if [[ "$print_only" -eq 1 ]]; then
     exit 0
 fi
 
-cache_dir="${PABRIK_RUSTFS_CACHE:-}"
-if [[ -n "$cache_dir" ]]; then
-    mkdir -p "$cache_dir"
-    work_dir="$cache_dir"
-    cleanup_work=0
-else
-    work_dir="$(mktemp -d)"
-    cleanup_work=1
-fi
+cache_dir="${PABRIK_RUSTFS_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/pabrik/rustfs}"
+mkdir -p "$cache_dir"
+work_dir="$cache_dir"
+cleanup_work=0
 cleanup() {
     if [[ "$cleanup_work" -eq 1 ]]; then
         rm -rf "$work_dir"
@@ -189,10 +184,16 @@ if command -v unzip >/dev/null 2>&1; then
     want_size="$(unzip -l "$archive" rustfs 2>/dev/null | awk '$NF == "rustfs" { print $1; exit }')"
 fi
 
+# Extract to a temp file and rename into place: writing straight to `$dest`
+# fails with ETXTBSY when a smoke test left pabrik-fs running, and a rename
+# replaces the directory entry without touching the running inode.
+staged="${dest}.staged.$$"
+trap 'rm -f "$staged"' EXIT
+
 if command -v unzip >/dev/null 2>&1; then
-    unzip -p "$archive" rustfs > "$dest"
+    unzip -p "$archive" rustfs > "$staged"
 elif command -v python3 >/dev/null 2>&1; then
-    python3 - "$archive" "$dest" <<'PY'
+    python3 - "$archive" "$staged" <<'PY'
 import sys, zipfile
 archive, dest = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(archive) as z:
@@ -209,15 +210,17 @@ else
 fi
 
 if [[ -n "$want_size" ]]; then
-    got_size="$(wc -c < "$dest" | tr -d ' ')"
+    got_size="$(wc -c < "$staged" | tr -d ' ')"
     if [[ "$got_size" != "$want_size" ]]; then
         echo "extracted rustfs is ${got_size} bytes, expected ${want_size} (truncated write?)" >&2
         exit 1
     fi
 fi
 
-chmod 0755 "$dest"
+chmod 0755 "$staged"
+mv -f "$staged" "$dest"
 
-version_out=""
-if version_out="$("$dest" --version 2>/dev/null | head -n 1)"; then :; fi
-echo "staged bundled rustfs -> ${dest}${version_out:+ (${version_out})}"
+# Do NOT execute the staged binary to print its version: on Windows it leaves a
+# process behind that locks the file, and the next staging run cannot replace
+# it. The sha256 above is the integrity proof; the version is the pinned one.
+echo "staged bundled rustfs -> ${dest} (rustfs ${rustfs_version})"

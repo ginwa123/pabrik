@@ -171,6 +171,55 @@ pub fn startRustfs(
     });
 }
 
+/// `<data_root>/rustfs`, the volume rustfs keeps its objects in.
+fn rustfsDataDir(allocator: std.mem.Allocator, environment: *const std.process.Environ.Map) ![]u8 {
+    const data_root = try resolveDataDir(allocator, environment);
+    defer allocator.free(data_root);
+    return std.fs.path.join(allocator, &.{ data_root, "rustfs" });
+}
+
+fn dirExists(io: std.Io, path: []const u8) bool {
+    var dir = std.Io.Dir.cwd().openDir(io, path, .{}) catch return false;
+    dir.close(io);
+    return true;
+}
+
+/// Move a filesystem-store root into the object store, once. The key is the
+/// path under the root, which is exactly what the fs backend used.
+fn migrateFsRoot(io: std.Io, allocator: std.mem.Allocator, fs_root: []const u8, store: storage.Storage) void {
+    var dir = std.Io.Dir.cwd().openDir(io, fs_root, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+
+    var walker = dir.walk(allocator) catch return;
+    defer walker.deinit();
+
+    var moved: usize = 0;
+    while (walker.next(io) catch null) |entry| {
+        if (entry.kind != .file) continue;
+        const body = entry.dir.readFileAlloc(io, entry.basename, allocator, .limited(storage.MAX_OBJECT_BYTES)) catch continue;
+        defer allocator.free(body);
+        const key = keyFromPath(allocator, entry.path) catch continue;
+        defer allocator.free(key);
+        store.put(key, body) catch continue;
+        moved += 1;
+    }
+    if (moved == 0) return;
+
+    // Out of the way, so this never runs twice. The tree is kept, not deleted.
+    const retired = std.fmt.allocPrint(allocator, "{s}.migrated", .{fs_root}) catch return;
+    defer allocator.free(retired);
+    std.Io.Dir.rename(std.Io.Dir.cwd(), fs_root, std.Io.Dir.cwd(), retired, io) catch {};
+}
+
+/// `ws/x/documents/y/z.md` on every host: an object key uses `/`.
+fn keyFromPath(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
+    const key = try allocator.dupe(u8, path);
+    for (key) |*c| {
+        if (c.* == std.fs.path.sep) c.* = '/';
+    }
+    return key;
+}
+
 /// `PABRIK_RUSTFS_ACCESS_KEY`/`_SECRET_KEY`, else the pair persisted in the
 /// data dir, else a fresh random pair written there.
 pub fn resolveRustfsCredentials(
@@ -300,6 +349,11 @@ pub const Runtime = struct {
                 );
             },
             .rustfs => {
+                // A checkout that ran the filesystem store before rustfs was
+                // bundled has its bodies under `objects/`. The first rustfs
+                // start moves them across, so nothing disappears.
+                const fresh = !dirExists(io, try rustfsDataDir(allocator, environment));
+
                 const supervisor = try startRustfs(allocator, io, environment);
                 errdefer supervisor.deinit();
 
@@ -326,6 +380,12 @@ pub const Runtime = struct {
                 // A fresh rustfs has no buckets, so the first write would fail
                 // with NoSuchBucket.
                 try waitUntilServing(io, &runtime.kind.rustfs.store);
+
+                if (fresh) {
+                    const fs_root = try resolveRoot(allocator, environment, null);
+                    defer allocator.free(fs_root);
+                    migrateFsRoot(io, allocator, fs_root, runtime.asStorage());
+                }
             },
         }
         return runtime;
