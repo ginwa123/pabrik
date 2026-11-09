@@ -63,13 +63,14 @@ export function useChatComposerAgents(deps: ChatComposerAgentsDeps) {
     }
   }
 
-  // Effective agent the chip / picker reflect — mirrors the backend cascade in
-  // `Config.zig::resolveEffectiveAgent`: a name only counts when it names a
-  // configured profile, so a stale selection falls through to the active one.
+  // Mirrors `Config.zig::resolveEffectiveAgent`: a name only counts when it
+  // names a configured profile. A workspace with no profiles cannot contradict
+  // a name, so the name stands — the backend falls back to top-level there too.
   const namesConfiguredAgent = (name: string | null): name is string => {
     if (!name) return false
-    if (!configLoaded.value) return true
-    return configuredAgentNames.value.includes(name)
+    const known = configuredAgentNames.value
+    if (!configLoaded.value || known.length === 0) return true
+    return known.includes(name)
   }
 
   const effectiveAgent = computed<string | null>(() => {
