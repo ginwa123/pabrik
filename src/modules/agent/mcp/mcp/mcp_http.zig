@@ -6,6 +6,7 @@ const std = @import("std");
 const mcp_scope = @import("mcp_scope.zig");
 const builtin = @import("builtin");
 const mcp_types = @import("mcp_types.zig");
+const mcp_oauth = @import("mcp_oauth.zig");
 const custom_http_client_mod = @import("kabelweb").client;
 
 // ============================================================================
@@ -27,6 +28,7 @@ pub const HttpError = error{
     ServerMethodNotFound,      // 404 (distinct from a legacy 404)
     ServerReturnedError,       // other 4xx/5xx
     InvalidJson,               // response body wasn't valid JSON-RPC
+    Unauthorized,              // 401 — the caller must run the OAuth flow
 };
 
 // ============================================================================
@@ -184,6 +186,31 @@ fn buildMcpHeaders(
     return out;
 }
 
+pub const TokenProvider = struct {
+    ctx: *anyopaque,
+    getFn: *const fn (ctx: *anyopaque, allocator: std.mem.Allocator) anyerror!?[]u8,
+
+    pub fn get(self: TokenProvider, allocator: std.mem.Allocator) anyerror!?[]u8 {
+        return self.getFn(self.ctx, allocator);
+    }
+};
+
+fn buildMcpHeadersWithAuth(
+    allocator: std.mem.Allocator,
+    method: []const u8,
+    tool_name: []const u8,
+    custom_headers: []const custom_http_client_mod.Header,
+    authorization: ?[]const u8,
+) ![]custom_http_client_mod.Header {
+    const base = try buildMcpHeaders(allocator, method, tool_name, custom_headers);
+    const auth = authorization orelse return base;
+    defer allocator.free(base);
+    const out = try allocator.alloc(custom_http_client_mod.Header, base.len + 1);
+    @memcpy(out[0..base.len], base);
+    out[base.len] = .{ .name = "Authorization", .value = auth };
+    return out;
+}
+
 // ============================================================================
 // SECTION D — HttpClient + HttpRegistry (arrives in Task 3)
 // ============================================================================
@@ -198,6 +225,8 @@ pub const HttpClient = struct {
     /// client; freed by deinit. NOT thread-safe; the HttpRegistry
     /// provides the mutex.
     http: custom_http_client_mod.Client,
+    token_provider: ?TokenProvider = null,
+    last_challenge: ?mcp_oauth.BearerChallenge = null,
 
     const Self = @This();
 
@@ -211,7 +240,29 @@ pub const HttpClient = struct {
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.last_challenge) |*c| c.deinit(self.allocator);
+        self.last_challenge = null;
         self.allocator.free(self.url);
+    }
+
+    fn authorizationHeader(self: *Self) !?[]u8 {
+        const provider = self.token_provider orelse return null;
+        const token = (provider.get(self.allocator) catch null) orelse return null;
+        defer self.allocator.free(token);
+        return try mcp_oauth.bearerHeaderValue(self.allocator, token);
+    }
+
+    fn captureChallenge(self: *Self, headers: []const custom_http_client_mod.Header) void {
+        if (self.last_challenge) |*old| old.deinit(self.allocator);
+        self.last_challenge = null;
+        for (headers) |h| {
+            if (!std.ascii.eqlIgnoreCase(h.name, "WWW-Authenticate")) continue;
+            const parsed = mcp_oauth.parseBearerChallenge(self.allocator, h.value) catch continue;
+            if (parsed) |challenge| {
+                self.last_challenge = challenge;
+                return;
+            }
+        }
     }
 
     /// Send a `tools/call` JSON-RPC request and return the raw JSON-RPC
@@ -227,7 +278,9 @@ pub const HttpClient = struct {
 
         // Build the spec-mandated headers + per-method Mcp-Name, merged
         // with the user's custom_headers (spec headers win).
-        const headers = try buildMcpHeaders(self.allocator, "tools/call", tool_name, self.custom_headers);
+        const authorization = try self.authorizationHeader();
+        defer if (authorization) |v| self.allocator.free(v);
+        const headers = try buildMcpHeadersWithAuth(self.allocator, "tools/call", tool_name, self.custom_headers, authorization);
         defer self.allocator.free(headers);
 
         // POST. custom_http_client returns a fully-buffered Response.
@@ -243,6 +296,10 @@ pub const HttpClient = struct {
         return switch (result.status_code) {
             200 => parseResponseBody(self.allocator, result.body),
             400 => error.ServerReturnedError, // simplified — real impl inspects error code
+            401 => {
+                self.captureChallenge(result.headers);
+                return error.Unauthorized;
+            },
             404 => error.ServerMethodNotFound,
             else => error.ServerReturnedError,
         };
@@ -478,7 +535,9 @@ pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types
 
     // Headers: same spec-mandated set as callTool, minus the
     // Mcp-Name (tools/list doesn't take a name).
-    const headers = try buildMcpHeaders(allocator, "tools/list", "", client.custom_headers);
+    const authorization = try client.authorizationHeader();
+    defer if (authorization) |v| allocator.free(v);
+    const headers = try buildMcpHeadersWithAuth(allocator, "tools/list", "", client.custom_headers, authorization);
     defer allocator.free(headers);
 
     // POST. Response memory belongs to the client's registry arena
@@ -494,6 +553,7 @@ pub fn listTools(allocator: std.mem.Allocator, client: *HttpClient) ![]mcp_types
     defer result.deinit(client.allocator);
 
     if (result.status_code != 200) {
+        if (result.status_code == 401) client.captureChallenge(result.headers);
         return &[_]mcp_types.McpTool{};
     }
 
@@ -1001,4 +1061,107 @@ test "parseLastSseData: last event wins across progress + result events" {
 test "parseLastSseData: no data lines returns InvalidSseEvent" {
     const body = "event: ping\n:heartbeat\n\n";
     try testing.expectError(error.InvalidSseEvent, parseLastSseData(testing.allocator, body));
+}
+
+// ── OAuth wiring tests ─────────────────────────────────────────────────
+
+const FakeTokenProvider = struct {
+    token: ?[]const u8,
+    fail: bool = false,
+
+    fn provider(self: *FakeTokenProvider) TokenProvider {
+        return .{ .ctx = @ptrCast(self), .getFn = get };
+    }
+
+    fn get(ctx: *anyopaque, allocator: std.mem.Allocator) anyerror!?[]u8 {
+        const self: *FakeTokenProvider = @ptrCast(@alignCast(ctx));
+        if (self.fail) return error.ProviderFailed;
+        const token = self.token orelse return null;
+        return try allocator.dupe(u8, token);
+    }
+};
+
+test "a 401 challenge is captured for the caller to start the oauth flow" {
+    var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
+    defer client.deinit();
+
+    const headers = [_]custom_http_client_mod.Header{
+        .{ .name = "Content-Type", .value = "application/json" },
+        .{ .name = "WWW-Authenticate", .value = "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource/mcp\", scope=\"files:read\"" },
+    };
+    client.captureChallenge(&headers);
+
+    const challenge = client.last_challenge orelse return error.TestUnexpectedResult;
+    try testing.expectEqualStrings("https://mcp.example.com/.well-known/oauth-protected-resource/mcp", challenge.resource_metadata.?);
+    try testing.expectEqualStrings("files:read", challenge.scope.?);
+}
+
+test "a 401 without a challenge leaves the challenge empty" {
+    var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
+    defer client.deinit();
+
+    const headers = [_]custom_http_client_mod.Header{
+        .{ .name = "Content-Type", .value = "application/json" },
+    };
+    client.captureChallenge(&headers);
+
+    try testing.expectEqual(@as(?mcp_oauth.BearerChallenge, null), client.last_challenge);
+}
+
+test "a second 401 replaces the previous challenge" {
+    var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
+    defer client.deinit();
+
+    const first = [_]custom_http_client_mod.Header{
+        .{ .name = "WWW-Authenticate", .value = "Bearer resource_metadata=\"https://a/prm\"" },
+    };
+    const second = [_]custom_http_client_mod.Header{
+        .{ .name = "WWW-Authenticate", .value = "Bearer resource_metadata=\"https://b/prm\"" },
+    };
+    client.captureChallenge(&first);
+    client.captureChallenge(&second);
+
+    try testing.expectEqualStrings("https://b/prm", client.last_challenge.?.resource_metadata.?);
+}
+
+test "the authorization header is added when a token provider yields a token" {
+    var fake = FakeTokenProvider{ .token = "at-1" };
+    var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
+    defer client.deinit();
+    client.token_provider = fake.provider();
+
+    const authorization = (try client.authorizationHeader()) orelse return error.TestUnexpectedResult;
+    defer testing.allocator.free(authorization);
+    try testing.expectEqualStrings("Bearer at-1", authorization);
+
+    const headers = try buildMcpHeadersWithAuth(testing.allocator, "tools/call", "say_hello", &.{}, authorization);
+    defer testing.allocator.free(headers);
+    try testing.expectEqual(@as(usize, 6), headers.len);
+    try testing.expectEqualStrings("Authorization", headers[5].name);
+    try testing.expectEqualStrings("Bearer at-1", headers[5].value);
+}
+
+test "no authorization header is added when the provider yields nothing" {
+    var fake = FakeTokenProvider{ .token = null };
+    var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
+    defer client.deinit();
+    client.token_provider = fake.provider();
+
+    try testing.expectEqual(@as(?[]u8, null), try client.authorizationHeader());
+
+    const headers = try buildMcpHeadersWithAuth(testing.allocator, "tools/call", "say_hello", &.{}, null);
+    defer testing.allocator.free(headers);
+    try testing.expectEqual(@as(usize, 5), headers.len);
+    for (headers) |h| {
+        try testing.expect(!std.ascii.eqlIgnoreCase(h.name, "Authorization"));
+    }
+}
+
+test "a failing token provider leaves the request unauthenticated" {
+    var fake = FakeTokenProvider{ .token = "at-1", .fail = true };
+    var client = try HttpClient.init(testing.allocator, "http://x/mcp", &.{});
+    defer client.deinit();
+    client.token_provider = fake.provider();
+
+    try testing.expectEqual(@as(?[]u8, null), try client.authorizationHeader());
 }

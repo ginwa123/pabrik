@@ -12,6 +12,7 @@ pub const usage = @import("usage.zig");
 pub const messages_admin = @import("messages_admin.zig");
 pub const group = @import("group.zig");
 pub const memories = @import("memories.zig");
+pub const mcp_oauth = @import("mcp_oauth.zig");
 
 /// The subcommand to run, with its arguments already parsed. `help` is a
 /// first-class variant rather than an error so `pabrik headless --help` exits
@@ -34,6 +35,8 @@ pub const Command = union(enum) {
     storage: args.StorageArgs,
     /// Read or change a workspace's saved memories.
     memories: args.MemoriesArgs,
+    /// Authorize a remote MCP server over OAuth 2.1.
+    mcp_oauth: args.McpOAuthArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -53,6 +56,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .group => |a| .{ .group = a },
         .storage => |a| .{ .storage = a },
         .memories => |a| .{ .memories = a },
+        .mcp_oauth => |a| .{ .mcp_oauth = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };

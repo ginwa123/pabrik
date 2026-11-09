@@ -67,6 +67,27 @@ pub const UsageArgs = struct {
     range: []const u8 = "",
 };
 
+pub const McpOAuthOp = enum {
+    discover,
+    authorize_url,
+    exchange,
+    status,
+    refresh,
+    logout,
+};
+
+pub const McpOAuthArgs = struct {
+    op: McpOAuthOp,
+    url: []const u8 = "",
+    workspace_id: []const u8 = "",
+    server_name: []const u8 = "",
+    redirect_uri: []const u8 = "http://127.0.0.1:0/callback",
+    scope: []const u8 = "",
+    client_id: []const u8 = "",
+    code: []const u8 = "",
+    state: []const u8 = "",
+};
+
 pub const MemoriesOp = enum {
     list,
     get,
@@ -231,6 +252,10 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
+    "  pabrik headless mcp-oauth <op> [flags]    Authorize a remote MCP server over OAuth 2.1\n" ++
+    "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
+    "      flags: --url <mcp-url> --workspace <id> --server <name> --redirect-uri <uri>\n" ++
+    "             --scope <s> --client-id <id> --code <c> --state <s>\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -256,6 +281,7 @@ pub const Outcome = union(enum) {
     storage: StorageArgs,
     message: MessageArgs,
     memories: MemoriesArgs,
+    mcp_oauth: McpOAuthArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -286,8 +312,80 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "storage")) return try parseStorage(rest);
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
     if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
+    if (std.mem.eql(u8, verb, "mcp-oauth")) return try parseMcpOAuth(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
+}
+
+fn parseMcpOAuth(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .unknown_subcommand, .value = "mcp-oauth" });
+
+    const op: McpOAuthOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "discover")) break :blk .discover;
+        if (std.mem.eql(u8, word, "authorize-url")) break :blk .authorize_url;
+        if (std.mem.eql(u8, word, "exchange")) break :blk .exchange;
+        if (std.mem.eql(u8, word, "status")) break :blk .status;
+        if (std.mem.eql(u8, word, "refresh")) break :blk .refresh;
+        if (std.mem.eql(u8, word, "logout")) break :blk .logout;
+        return fail(.{ .kind = .unknown_subcommand, .value = word });
+    };
+
+    var got = McpOAuthArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--url")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.url = argv[i];
+        } else if (std.mem.eql(u8, flag, "--workspace")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.workspace_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--server")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.server_name = argv[i];
+        } else if (std.mem.eql(u8, flag, "--redirect-uri")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.redirect_uri = argv[i];
+        } else if (std.mem.eql(u8, flag, "--scope")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.scope = argv[i];
+        } else if (std.mem.eql(u8, flag, "--client-id")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.client_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--code")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.code = argv[i];
+        } else if (std.mem.eql(u8, flag, "--state")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.state = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    if (got.url.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--url" });
+    switch (op) {
+        .discover => {},
+        .authorize_url, .exchange, .status, .refresh, .logout => {
+            if (got.workspace_id.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
+        },
+    }
+    if (op == .exchange) {
+        if (got.state.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--state" });
+        if (got.code.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--code" });
+    }
+
+    return .{ .mcp_oauth = got };
 }
 
 fn parseRun(argv: []const []const u8) ParseError!Outcome {

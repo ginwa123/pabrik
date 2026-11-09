@@ -79,6 +79,7 @@ pub fn dispatchHeadless(
         .group => |a| try runGroup(allocator, io, environment, a, log_file, db_request),
         .storage => |a| try runStorage(allocator, io, environment, a),
         .memories => |a| try runMemories(allocator, io, environment, a, log_file, db_request),
+        .mcp_oauth => |a| try runMcpOAuth(allocator, io, environment, a, log_file, db_request),
     }
     return true;
 }
@@ -457,4 +458,32 @@ fn writeStdout(io: std.Io, bytes: []const u8) !void {
     var w = stdout.writer(io, &buf);
     try w.interface.writeAll(bytes);
     try w.interface.flush();
+}
+
+fn runMcpOAuth(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.McpOAuthArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const json = headless.mcp_oauth.run(allocator, &backend, a) catch |err| {
+        std.log.err("headless: mcp-oauth {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
+        backend.finish(1);
+    };
+    defer allocator.free(json);
+
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    defer out.deinit();
+    try out.writer.writeAll(json);
+    try out.writer.writeByte('\n');
+    try writeStdout(io, out.written());
+    backend.finish(0);
 }

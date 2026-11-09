@@ -113,6 +113,10 @@ pub const mcp_scope = @import("modules/agent/mcp/mcp/mcp_scope.zig");
 pub const mcp_session_scope = @import("modules/agent/loop/mcp_session_scope.zig");
 pub const mcp_http = @import("modules/agent/mcp/mcp/mcp_http.zig");
 pub const mcp_types = @import("modules/agent/mcp/mcp/mcp_types.zig");
+pub const mcp_oauth = @import("modules/agent/mcp/mcp/mcp_oauth.zig");
+pub const mcp_oauth_store = @import("modules/agent/mcp/mcp/mcp_oauth_store.zig");
+pub const mcp_oauth_flow = @import("modules/agent/mcp/mcp/mcp_oauth_flow.zig");
+pub const mcp_oauth_e2e = @import("modules/agent/mcp/mcp/mcp_oauth_e2e.zig");
 
 pub const skill_mod = @import("modules/agent/tools/skills.zig");
 pub const skill_evals_db = @import("modules/agent/loop/skill_evals_db.zig");
