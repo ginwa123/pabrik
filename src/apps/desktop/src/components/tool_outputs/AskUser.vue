@@ -158,13 +158,7 @@ const questionHtml = computed(() => renderMarkdownHtml(props.question.question))
 
 const optionLabels = computed<string[]>(() => options.value.map((o) => stripMarkdownSyntax(o)))
 
-const title = computed(() => {
-  const header = stripMarkdownSyntax(props.question.header)
-  if (header) return header
-  const q = stripMarkdownSyntax(props.question.question)
-  if (q.length > 0) return q.length > 60 ? `${q.slice(0, 60)}…` : q
-  return 'Question'
-})
+const title = computed(() => stripMarkdownSyntax(props.question.header))
 
 const rightMeta = computed(() => {
   switch (state.value) {
@@ -178,6 +172,8 @@ const rightMeta = computed(() => {
       return null
   }
 })
+
+const headVisible = computed(() => title.value !== '' || rightMeta.value !== null || waiting.value)
 
 const answerChip = computed(() =>
   answers.value.map((answer) => stripMarkdownSyntax(answer)).join(' · '),
@@ -204,16 +200,20 @@ defineExpose({ submit, toggleOption, chooseFreeText, canSend, buildBody })
 </script>
 
 <template>
-  <div
-    class="ask-user-card font-mono text-dense"
-    data-testid="ask-user-card"
-    :data-state="state"
-  >
-    <div class="ask-user-head" data-testid="ask-user-header">
-      <span class="ask-user-title font-sans text-dense">{{ title }}</span>
+  <div class="ask-user-card font-mono text-dense" data-testid="ask-user-card" :data-state="state">
+    <div v-if="headVisible" class="ask-user-head" data-testid="ask-user-header">
+      <span v-if="title" class="ask-user-title font-sans text-dense">{{ title }}</span>
       <span v-if="rightMeta" class="ask-user-meta text-micro">{{ rightMeta }}</span>
       <span v-if="waiting" class="ask-user-waiting text-micro">waiting for you</span>
     </div>
+
+    <div
+      v-if="question.question"
+      class="markdown-content ask-user-question px-3 pb-2 font-sans text-body"
+      :class="{ 'pt-2': !headVisible }"
+      data-testid="ask-user-question"
+      v-html="questionHtml"
+    />
 
     <div
       v-if="state !== 'pending' && state !== 'settled'"
@@ -224,13 +224,6 @@ defineExpose({ submit, toggleOption, chooseFreeText, canSend, buildBody })
       <template v-else-if="state === 'skipped'">skipped — the agent will not guess</template>
       <template v-else-if="state === 'abandoned'">you moved on — the agent will not guess</template>
     </div>
-
-    <div
-      v-if="question.question"
-      class="markdown-content ask-user-question px-3 pb-2 font-sans text-body"
-      data-testid="ask-user-question"
-      v-html="questionHtml"
-    />
 
     <div
       v-if="state === 'settled'"
@@ -289,11 +282,7 @@ defineExpose({ submit, toggleOption, chooseFreeText, canSend, buildBody })
           rows="3"
           data-testid="ask-user-freetext"
           class="w-full resize-y rounded-md border bg-transparent px-2 py-1.5 font-sans text-dense leading-relaxed"
-          style="
-            border-color: var(--color-border);
-            color: var(--semantic-text);
-            min-height: 4.5rem;
-          "
+          style="border-color: var(--color-border); color: var(--semantic-text); min-height: 4.5rem"
           placeholder="Type your answer…"
           :disabled="submitting"
           @focus="chooseFreeText()"
