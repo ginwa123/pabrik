@@ -1,14 +1,6 @@
-//! End-to-end functional test for pabrik's MCP OAuth client.
-//!
-//! Boots the real `mcp-oauth-hello-world` fixture (an OAuth-protected MCP
-//! server that also plays the authorization server) and drives the real
-//! `pabrik` binary through the whole flow with `pabrik headless mcp-oauth`:
-//!
-//!   discover → authorize-url → (browser) → exchange → status → refresh → logout
-//!
-//! The "browser" step is a plain GET of the authorization URL: the fixture
-//! auto-approves and answers 302 with `?code=…&state=…`, which is exactly
-//! what a consent page would hand back.
+//! End-to-end test for pabrik's MCP OAuth client: boots the real
+//! `mcp-oauth-hello-world` fixture and drives `pabrik headless mcp-oauth`
+//! through discover → authorize-url → 302 → exchange → status → refresh → logout.
 
 const std = @import("std");
 const testing = std.testing;
