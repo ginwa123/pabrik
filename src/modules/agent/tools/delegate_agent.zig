@@ -10,11 +10,10 @@ pub const DelegateAgentInput = struct {
 pub const delegate_agent_tool_system_prompt =
     \\## Delegate Agent Tool — Behavior
     \\Use `delegate_agent` to hand the turn to another agent in THIS chat.
-    \\- `agent_name` must be a member of this chat's roster (the agents the human added to the group). Call `list_agents` to see the configured agents; the roster is the subset that joined this chat.
+    \\- `agent_name` is any agent the workspace configures — a roster member, or the chat's own agent. Call `list_agents` to see them. A chat with no roster still has its own agent, so delegation works there too.
     \\- `message` is what you are asking that agent. Write it as a complete request: the other agent does not see your reasoning, only this message and the chat history.
     \\- The turn changes hands: you stop speaking, the named agent answers next in the same chat, and the human sees its reply. You do not get a reply back inside this turn.
     \\- Use it when the job belongs to another agent's expertise or persona, not to dodge work you can do yourself.
-    \\- A name that is not in the roster is refused, and the refusal lists the members you can address.
     \\
 ;
 
@@ -23,7 +22,7 @@ pub const delegate_agent_tool = AgentTool{
     .function = .{
         .name = "delegate_agent",
         .description =
-        \\Hand the turn to another agent in this chat. The named agent must be a member of this chat's roster; it answers next, in the same session, and the human sees its reply. Use it when the job belongs to another agent's expertise or persona. A name outside the roster is refused with the list of members.
+        \\Hand the turn to another agent in this chat. The named agent answers next, in the same session, and the human sees its reply. Use it when the job belongs to another agent's expertise or persona. Any configured agent can be addressed, including the chat's own agent; a roster is not required.
         ,
         .parameters = .{
             .type = "object",
@@ -31,7 +30,7 @@ pub const delegate_agent_tool = AgentTool{
                 .{
                     .name = "agent_name",
                     .type = "string",
-                    .description = "The agent to hand the turn to. Must be a member of this chat's roster (see list_agents for the configured agents).",
+                    .description = "The agent to hand the turn to. Any agent the workspace configures (see list_agents), including the chat's own agent.",
                 },
                 .{
                     .name = "message",
@@ -64,16 +63,6 @@ fn errorJson(allocator: std.mem.Allocator, message: []const u8) ![]u8 {
     return try std.json.Stringify.valueAlloc(allocator, .{ .@"error" = message }, .{});
 }
 
-fn memberNames(allocator: std.mem.Allocator, members: []const session_group.Member) ![]u8 {
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(allocator);
-    for (members, 0..) |m, i| {
-        if (i > 0) try out.appendSlice(allocator, ", ");
-        try out.appendSlice(allocator, m.name);
-    }
-    return out.toOwnedSlice(allocator);
-}
-
 /// Record the delegation and answer with the payload the caller sees. A
 /// refusal is a payload with an `error` field, not a Zig error: the model
 /// reads it and can retry with a name that exists.
@@ -97,10 +86,9 @@ pub fn delegateToAgent(
     const members = try session_group.listMembers(allocator, db, session_id);
     defer session_group.freeMembers(allocator, members);
 
-    if (members.len == 0) {
-        return .{ .ok = false, .json = try errorJson(allocator, "This chat has no roster, so there is no other agent to hand the turn to. Add agents to the group first.") };
-    }
-
+    // The roster is not a gate: a chat with no members still has its own agent,
+    // and the caller may address any agent by name. The roster only supplies the
+    // spelling when it has one.
     var target: ?[]const u8 = null;
     for (members) |m| {
         if (std.ascii.eqlIgnoreCase(m.name, wanted)) {
@@ -108,18 +96,11 @@ pub fn delegateToAgent(
             break;
         }
     }
-
-    const name = target orelse {
-        const names = try memberNames(allocator, members);
-        defer allocator.free(names);
-        const refusal = try std.fmt.allocPrint(allocator, "Agent '{s}' is not in this chat's roster. Members you can address: {s}.", .{ wanted, names });
-        defer allocator.free(refusal);
-        return .{ .ok = false, .json = try errorJson(allocator, refusal) };
-    };
+    const name = target orelse wanted;
 
     const lead = try session_group.groupLead(allocator, db, session_id);
     defer if (lead) |l| allocator.free(l);
-    if (lead == null) {
+    if (lead == null and members.len > 0) {
         try session_group.setLead(allocator, db, session_id, members[0].name);
     }
 
@@ -245,7 +226,7 @@ test "the delegation payload names the agent and carries the message" {
     try testing.expectEqualStrings("What is the retry policy?", parsed.value.object.get("message").?.string);
 }
 
-test "a name outside the roster is refused and the refusal lists the members" {
+test "a name outside the roster is still honoured" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -253,14 +234,14 @@ test "a name outside the roster is refused and the refusal lists the members" {
 
     const outcome = try delegateToAgent(testing.allocator, &ctx.db, "s_1", "ghost", "hello?");
     defer testing.allocator.free(outcome.json);
-    try testing.expect(!outcome.ok);
-    try testing.expect(std.mem.indexOf(u8, outcome.json, "BEAM") != null);
-    try testing.expect(std.mem.indexOf(u8, outcome.json, "deepseek auto") != null);
+    try testing.expect(outcome.ok);
 
-    try testing.expect((try pendingOf(&ctx)) == null);
+    const pending = (try pendingOf(&ctx)).?;
+    defer testing.allocator.free(pending);
+    try testing.expectEqualStrings("ghost", pending);
 }
 
-test "a chat with no roster refuses the delegation" {
+test "a chat with no roster still delegates" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -268,8 +249,11 @@ test "a chat with no roster refuses the delegation" {
 
     const outcome = try delegateToAgent(testing.allocator, &ctx.db, "s_1", "deepseek auto", "hello?");
     defer testing.allocator.free(outcome.json);
-    try testing.expect(!outcome.ok);
-    try testing.expect(std.mem.indexOf(u8, outcome.json, "no roster") != null);
+    try testing.expect(outcome.ok);
+
+    const pending = (try pendingOf(&ctx)).?;
+    defer testing.allocator.free(pending);
+    try testing.expectEqualStrings("deepseek auto", pending);
 }
 
 test "an empty message is refused" {
