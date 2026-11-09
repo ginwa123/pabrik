@@ -58,9 +58,10 @@ describe('AskUser — rendering', () => {
     expect(wrapper.get('[data-testid="ask-user-header"]').text()).toContain('Deploy target')
   })
 
-  it('falls back to the truncated question when no header was written', () => {
+  it('does not repeat the question in the title when no header was written', () => {
     const wrapper = mountCard(question({ header: '' }))
-    expect(wrapper.get('[data-testid="ask-user-header"]').text()).toContain(
+    const header = wrapper.find('[data-testid="ask-user-header"]')
+    expect(header.exists() ? header.text() : '').not.toContain(
       'Which environment should I deploy to?',
     )
   })
@@ -77,9 +78,7 @@ describe('AskUser — rendering', () => {
   })
 
   it('renders an answered question as a resolved chip', () => {
-    const wrapper = mountCard(
-      question({ status: 'answered', answer: 'staging', answersCount: 1 }),
-    )
+    const wrapper = mountCard(question({ status: 'answered', answer: 'staging', answersCount: 1 }))
     expect(wrapper.attributes('data-state')).toBe('answered')
     expect(wrapper.get('[data-testid="ask-user-resolved-summary"]').text()).toContain('staging')
     expect(wrapper.find('[data-testid="ask-user-send"]').exists()).toBe(false)
@@ -113,9 +112,7 @@ describe('AskUser — rendering', () => {
 
   it('renders <>& in the question verbatim', () => {
     const wrapper = mountCard(question({ question: 'Is <a> & <b> fine?' }))
-    expect(wrapper.get('[data-testid="ask-user-question"]').text()).toContain(
-      'Is <a> & <b> fine?',
-    )
+    expect(wrapper.get('[data-testid="ask-user-question"]').text()).toContain('Is <a> & <b> fine?')
   })
 })
 
@@ -280,5 +277,33 @@ describe('AskUser — keyboard', () => {
     await nextTick()
     expect(mockedAnswer).not.toHaveBeenCalled()
     wrapper.unmount()
+  })
+})
+
+describe('AskUser — reading order', () => {
+  const testIds = (wrapper: ReturnType<typeof mountCard>): string[] =>
+    wrapper.findAll('[data-testid]').map((el) => el.attributes('data-testid') ?? '')
+
+  it('reads the question before the answer it was resolved with', () => {
+    const wrapper = mountCard(question({ status: 'answered', answer: 'staging' }))
+    const ids = testIds(wrapper)
+
+    expect(ids).toContain('ask-user-question')
+    expect(ids).toContain('ask-user-resolved-summary')
+    expect(ids.indexOf('ask-user-question')).toBeLessThan(ids.indexOf('ask-user-resolved-summary'))
+  })
+
+  it('reads the question before the options it is waiting on', () => {
+    const wrapper = mountCard()
+    const ids = testIds(wrapper)
+
+    expect(ids.indexOf('ask-user-question')).toBeLessThan(ids.indexOf('ask-user-option-0'))
+  })
+
+  it('keeps the header above the question when the model wrote one', () => {
+    const wrapper = mountCard(question({ status: 'answered', answer: 'staging' }))
+    const ids = testIds(wrapper)
+
+    expect(ids.indexOf('ask-user-header')).toBeLessThan(ids.indexOf('ask-user-question'))
   })
 })
