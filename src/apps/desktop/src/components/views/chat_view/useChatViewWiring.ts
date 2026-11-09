@@ -148,7 +148,8 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
       resolveWorkspaceId(route?.params?.workspaceId, workspacesStore.activeWorkspace?.id),
     applyChatViewMode: (config) => chatView.setMode(chatViewModeFrom(config)),
   })
-  const { selectedAgent, loadAgents, effectiveProfileUrlStyle, closeOnOutsideClick } = agents
+  const { selectedAgent, loadAgents, effectiveAgent, effectiveProfileUrlStyle, closeOnOutsideClick } =
+    agents
 
   const worktree = useChatWorktree({
     sessionId,
@@ -159,16 +160,17 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     checkGitStatus: () => checkGitStatus(),
   })
 
-  // The agent that answers here: the sub-agent's name, else the profile the
-  // chip shows. Filled by the session read below; the transcript spends it on a
+  // The agent that answers here: the sub-agent's name, else the composer's
+  // cascade. Filled by the session read below; the transcript spends it on a
   // thread that has only one author.
   const sessionAuthor = ref('')
+  const authorLabel = (): string => sessionAuthor.value || effectiveAgent.value || ''
 
   const transcript = useChatTranscriptView({
     props,
     sessionId,
     messages,
-    authorLabel: () => sessionAuthor.value,
+    authorLabel,
     isPendingSession,
     isRemoteLoadPending,
     isLoading,

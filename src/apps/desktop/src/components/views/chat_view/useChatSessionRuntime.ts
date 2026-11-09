@@ -579,10 +579,10 @@ export function useChatSessionRuntime(deps: ChatSessionRuntimeDeps) {
       const session = await api.getSession(newId)
       const raw = session?.selectedAgent ?? null
       selectedAgent.value = typeof raw === 'string' ? raw : null
-      // A sub-agent session is named after the agent that runs it; every other
-      // session after the profile the composer chip shows.
-      const subAgent = session?.subAgentName ?? ''
-      sessionAuthor.value = subAgent.length > 0 ? subAgent : typeof raw === 'string' ? raw : ''
+      // A sub-agent session is named after the agent that runs it. Every other
+      // session is named by the composer's cascade, which knows whether the
+      // stored profile still exists — see `authorLabel` in useChatViewWiring.
+      sessionAuthor.value = session?.subAgentName ?? ''
     } catch (err) {
       console.error('Failed to load session agent:', err)
       selectedAgent.value = null

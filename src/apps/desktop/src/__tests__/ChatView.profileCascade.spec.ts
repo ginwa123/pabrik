@@ -107,4 +107,32 @@ describe('composer agent cascade — effectiveAgent', () => {
     expect(update).toHaveBeenLastCalledWith('sess_cascade', { selectedAgent: null })
     expect(composer.effectiveAgent.value).toBe('300 ribu')
   })
+
+  it('falls through a stored selection that names no configured profile', async () => {
+    const { composer } = await loadComposer(TWO_PROFILES)
+    composer.selectedAgent.value = 'space'
+
+    expect(composer.effectiveAgent.value).toBe('300 ribu')
+    expect(composer.agentChipTooltip.value).toMatch(/active agent/i)
+  })
+
+  it('resolves to no agent when the active profile names no configured profile', async () => {
+    const { composer } = await loadComposer({ ...TWO_PROFILES, active_profile: 'space' })
+
+    expect(composer.effectiveAgent.value).toBeNull()
+    expect(composer.agentChipTooltip.value).toMatch(/top-level/i)
+  })
+
+  it('resolves a disabled profile, because the backend does not filter on enabled', async () => {
+    const { composer } = await loadComposer({
+      profiles: {
+        '300 ribu': { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1' },
+        off: { model: 'MiniMax-M3', base_url: 'https://api.minimax.io/v1', enabled: false },
+      },
+      active_profile: 'off',
+    })
+
+    expect(composer.availableAgents.value.map((p) => p.name)).toEqual(['300 ribu'])
+    expect(composer.effectiveAgent.value).toBe('off')
+  })
 })

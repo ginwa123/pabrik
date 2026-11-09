@@ -230,6 +230,7 @@ const { setupCodeBlockCopyButtons } = useChatCodeCopy({ virtualScrollerRef, copy
 
 const {
   activePillGroupIndex,
+  agentChipTooltip,
   agentError,
   availableAgents,
   chatPrProvider,
@@ -240,6 +241,7 @@ const {
   collapsedCount,
   collapsedPaths,
   diffMode,
+  effectiveAgent,
   effectiveCwd,
   gitStatus,
   gitWorktreeCwd,
@@ -699,6 +701,17 @@ const compactSession = async () => {
                     <span>{{ isCompacting ? 'Compacting...' : 'Compact' }}</span>
                   </button>
 
+                  <!-- The agent that answers here. The chip was removed when
+                       `@` took over addressing, which left a chat naming no
+                       agent at all — a reply could be credited to a profile
+                       the reader had never seen. -->
+                  <span
+                    class="composer-tool-btn composer-agent-chip"
+                    data-testid="composer-agent-chip"
+                    :title="agentChipTooltip"
+                  >
+                    <span class="composer-agent-label">{{ effectiveAgent || 'Default' }}</span>
+                  </span>
                 </div>
                 <span class="composer-toolbar-divider" aria-hidden="true" />
                 <!-- Middle zone: token status (display-only, muted) -->

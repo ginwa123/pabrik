@@ -544,6 +544,24 @@
   max-width: 220px;
 }
 
+/* The agent that answers here is status, not an action: `@` is how an agent
+   is addressed, so the chip keeps the strip's type but drops the affordance. */
+.composer-agent-chip {
+  cursor: default;
+  max-width: 200px;
+}
+
+.composer-agent-chip:hover {
+  background: transparent;
+  color: var(--semantic-text-dim);
+}
+
+.composer-agent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 720px) {
   .composer-branch-label {
     max-width: 120px;
