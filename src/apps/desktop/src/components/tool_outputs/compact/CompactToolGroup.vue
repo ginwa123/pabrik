@@ -6,6 +6,7 @@ import { computed, ref } from 'vue'
 
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
 import type { CompactChainItem } from './chain'
+import { formatDuration } from './duration'
 import CompactTextRow from './CompactTextRow.vue'
 import CompactToolRow from './CompactToolRow.vue'
 import ToolCard, { type ToolCardData } from '../ToolCard.vue'
@@ -42,11 +43,7 @@ const durationMs = computed(() =>
   envelopes.value.reduce((total, envelope) => total + (envelope?.duration_ms ?? 0), 0),
 )
 
-const durationLabel = computed(() => {
-  const ms = durationMs.value
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-})
+const durationLabel = computed(() => formatDuration(durationMs.value))
 
 /** A call the user opened: the full card, not a row. */
 function isFullCard(card: ToolCardData): boolean {

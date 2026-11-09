@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import CompactionCard from '../../preview/CompactionCard.vue'
 import ShellTool from '../../preview/ShellTool.vue'
 import SkillInvocationCard from '../../preview/SkillInvocationCard.vue'
@@ -30,7 +31,7 @@ function htmlFrameSrcDoc(block: string): string {
   return buildHtmlSrcdoc(block)
 }
 
-defineProps<{
+const props = defineProps<{
   group: MessageGroup
   groupIndex: number
   mode: ChatViewMode
@@ -58,6 +59,20 @@ defineProps<{
   hasVisibleContent: (m: Message) => boolean
   renderMessageHtml: (msg: Message) => string
 }>()
+
+/** Whether this row draws anything at all. In compact mode a turn's narration and thoughts are
+ * folded into the run card, so the group that carried them has nothing left to show — and a row
+ * that shows nothing must not draw its author badge either. */
+const drawsContent = computed((): boolean => {
+  if (props.group.role !== 'assistant') {
+    return props.hasBubbleContent(props.group, props.groupIndex)
+  }
+  return (
+    props.visibleReasoning(props.group).length > 0 ||
+    props.answeredMessages(props.group).some(props.hasVisibleContent) ||
+    props.asked !== null
+  )
+})
 </script>
 
 <template>
@@ -94,13 +109,14 @@ defineProps<{
         "
       >
         <!-- A shared thread names its author. Set only when the thread has
-             more than one agent, so a one-agent chat is unchanged. -->
-        <div v-if="group.role === 'assistant' && group.author" class="msg-author">
+             more than one agent, so a one-agent chat is unchanged. A row that
+             draws nothing names nobody: the badge alone is not a reply. -->
+        <div v-if="group.role === 'assistant' && group.author && drawsContent" class="msg-author">
           <span class="msg-author-avatar">{{ group.author.slice(0, 1).toUpperCase() }}</span>
           <span class="msg-author-name">{{ group.author }}</span>
         </div>
         <div
-          v-if="hasBubbleContent(group, groupIndex)"
+          v-if="drawsContent"
           class="text-body leading-relaxed"
           role="button"
           tabindex="0"

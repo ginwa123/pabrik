@@ -381,6 +381,9 @@ def test_the_compact_view_settles_instead_of_repainting(ui_harness: UIHarness, p
 
     open_chatview(page, h, workspace_id, session_id)
     page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=30000)
+    # The probe reads the scroller's own geometry, so wait for the scroller itself: a fixed sleep
+    # raced the mount under load and the probe answered `no scroller` instead of a measurement.
+    page.locator(".virtual-scroller").first.wait_for(timeout=30000, state="attached")
     # The mount's own autoscroll is legitimate churn; judge the state it lands in.
     page.wait_for_timeout(800)
 
@@ -702,4 +705,188 @@ def test_a_presented_file_keeps_its_own_card(ui_harness: UIHarness, page) -> Non
     names = page.locator('[data-testid="compact-tool-row-name"]').all_text_contents()
     assert "present_files" not in names, (
         f"a presented file must keep its own card, not become a chain row, got {names}"
+    )
+
+
+# ─── A long run: the shape the report showed ─────────────────────────────────────────────────────
+#
+# TC-01 of the report: one turn fired 59 tool calls, each preceded by a line of narration, and the
+# transcript then showed ~25 rows carrying nothing but the agent's name. The narration of those
+# turns is folded INTO the run card, so the group that carried it drew an empty bubble — and the
+# author badge above it stayed, one bare "deepseek auto" per call.
+
+LONG_RUN_CALLS = 59
+
+# The agent the report's screenshot names on every row.
+LONG_RUN_AGENT = "deepseek auto"
+
+
+def _seed_workspace_agent(h: UIHarness, workspace_id: str, name: str) -> None:
+    """Make `name` the workspace's active agent, so replies are credited to it."""
+    h.http(
+        "PUT",
+        f"/api/workspaces/{workspace_id}/config",
+        json_body={
+            "profiles": {
+                name: {
+                    "model": "stub-model",
+                    "base_url": "http://127.0.0.1:1",
+                    "api_key": "stub-not-real",
+                }
+            },
+            "active_profile": name,
+        },
+        expect=200,
+    )
+
+
+def _seed_long_narrated_turn(
+    h: UIHarness, workspace_id: str, session_id: str, calls: int = LONG_RUN_CALLS
+) -> None:
+    """One turn that narrates before each of `calls` calls, then answers."""
+    _seed_workspace_agent(h, workspace_id, LONG_RUN_AGENT)
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="fix this conflict first")
+        for index in range(calls):
+            tool, parameters = CALLS[index % len(CALLS)]
+            call_id = f"tc_long_{index}"
+            seed.seed_assistant_message(
+                conn,
+                session_id,
+                text=f"Step {index + 1}: let me look at that.",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(parameters)},
+                    }
+                ],
+            )
+            seed.seed_tool_result(
+                conn,
+                session_id,
+                tool_call_id=call_id,
+                tool_name=tool,
+                content=_envelope(tool, parameters, {}, duration_ms=1000),
+            )
+        seed.seed_assistant_message(conn, session_id, text=ANSWER, finish_reason="stop")
+
+
+# A row whose whole text is the author's name: the badge with nothing under it.
+_BARE_AUTHOR_ROWS = r"""
+() => Array.from(document.querySelectorAll('.msg-author'))
+  .filter((badge) => {
+    const row = badge.closest('[data-group-key]');
+    if (!row) return true;
+    return (row.innerText || '').trim() === (badge.innerText || '').trim();
+  })
+  .map((badge) => (badge.innerText || '').trim())
+"""
+
+
+def test_a_long_turn_leaves_no_bare_author_rows(ui_harness: UIHarness, page) -> None:
+    """TC-01: every row of a 59-call turn shows something, or is not a row at all."""
+    h = ui_harness
+    session_id = "sess_compact_view_long_run_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_long_narrated_turn(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=30000)
+
+    bare = page.evaluate(_BARE_AUTHOR_ROWS)
+    assert bare == [], (
+        f"{len(bare)} row(s) carry nothing but the agent's name: {bare[:5]} — the narration of "
+        "those turns is folded into the run card, so the group itself must not draw a badge"
+    )
+    badges = page.locator(".msg-author").count()
+    assert badges == 1, (
+        "only the answer the turn ended with is a reply worth naming, "
+        f"got {badges} author badges"
+    )
+
+
+def test_a_long_turn_folds_into_one_card(ui_harness: UIHarness, page) -> None:
+    """TC-02b: 59 calls are ONE group, and the count says 59."""
+    h = ui_harness
+    session_id = "sess_compact_view_long_run_002"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_long_narrated_turn(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=30000)
+
+    cards = page.locator('[data-testid="compact-tool-group"]')
+    assert cards.count() == 1, (
+        f"one turn's calls must fold into ONE card, got {cards.count()} cards"
+    )
+    count = page.locator('[data-testid="compact-tool-group-count"]').first.inner_text()
+    assert count.strip() == f"{LONG_RUN_CALLS} tool calls", (
+        f"the card must count the whole turn, got {count!r}"
+    )
+    assert page.locator('[data-testid="compact-tool-row"]').count() == 0, (
+        "a folded run must not draw its rows"
+    )
+
+
+# ─── TC-03: a long duration reads as minutes, not as raw seconds ────────────────────────────────
+
+# The screenshot's own number: 3217.1s of tool time in one run.
+LONG_RUN_MS = 3_217_100
+
+
+def _seed_long_duration_turn(h: UIHarness, workspace_id: str, session_id: str) -> None:
+    """One turn whose two calls add up to 3217.1s of tool time."""
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="fix this conflict first")
+        for index, (tool, parameters) in enumerate(CALLS[:2]):
+            call_id = f"tc_slow_{index}"
+            seed.seed_assistant_message(
+                conn,
+                session_id,
+                text="",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(parameters)},
+                    }
+                ],
+            )
+            seed.seed_tool_result(
+                conn,
+                session_id,
+                tool_call_id=call_id,
+                tool_name=tool,
+                content=_envelope(
+                    tool, parameters, {}, duration_ms=LONG_RUN_MS // 2 + index
+                ),
+            )
+        seed.seed_assistant_message(conn, session_id, text=ANSWER, finish_reason="stop")
+
+
+def test_a_long_duration_reads_as_minutes_and_seconds(ui_harness: UIHarness, page) -> None:
+    """TC-03: 3217.1s is `53m 37s`, not a raw second count."""
+    h = ui_harness
+    session_id = "sess_compact_view_duration_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_long_duration_turn(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group-duration"]').first.wait_for(timeout=20000)
+
+    label = page.locator('[data-testid="compact-tool-group-duration"]').first.inner_text()
+    assert label.strip() == "53m 37s", (
+        f"a 3217.1s run must read as minutes and seconds, got {label!r}"
     )
