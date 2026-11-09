@@ -1785,10 +1785,8 @@ pub fn build(b: *std.Build) void {
     // build mcp-http-hello-world`.
 
     // === mcp-oauth-hello-world: OAuth-protected MCP server (test fixture) ===
-    // Same 3 tools as mcp-http-hello-world, but every /mcp request needs a
-    // Bearer token and the process also plays the authorization server
-    // (PRM + AS metadata + dynamic registration + PKCE S256 + resource).
-    // Self-test target for pabrik's MCP OAuth client.
+    // Same 3 tools as mcp-http-hello-world, but /mcp needs a Bearer token and
+    // the process also plays the authorization server.
     const mcp_oauth_hello_world_dir = "src/apps/mcp_oauth_hello_world";
     const mcp_oauth_hello_world_step = b.step("mcp-oauth-hello-world", "Build the mcp-oauth-hello-world OAuth-protected test MCP server");
 
