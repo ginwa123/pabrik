@@ -156,11 +156,20 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
   const groupKey = (group: MessageGroup): string =>
     group.messages[0]?.id ?? `empty-${group.timestamp.getTime()}`
 
+  /** A background-command completion is a TOOL result the backend stores as `role=user` (the loop
+   * feeds it back to the model). It is not a human turn, so it groups and folds with the calls. */
+  const isBackgroundCompletion = (m: Message): boolean =>
+    m.role === 'user' && isBackgroundCommandOutput(m.content)
+
+  const groupRoleOf = (m: Message): MessageGroup['role'] =>
+    isBackgroundCompletion(m) ? 'tool' : (m.role as MessageGroup['role'])
+
   const messageGroups = computed((): MessageGroup[] => {
     const groups: MessageGroup[] = []
 
     for (const msg of filteredMessages.value) {
       const lastGroup = groups[groups.length - 1]
+      const role = groupRoleOf(msg)
 
       // Consecutive assistant rows are one block — unless a different agent
       // wrote the next one, which is exactly what a group thread does.
@@ -168,14 +177,14 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
         msg.role !== 'assistant' ||
         (lastGroup?.messages[0]?.agent_name ?? '') === (msg.agent_name ?? '')
 
-      if (lastGroup && lastGroup.role === msg.role && sameAuthor) {
+      if (lastGroup && lastGroup.role === role && sameAuthor) {
         lastGroup.messages.push(msg)
         if (msg.timestamp > lastGroup.timestamp) {
           lastGroup.timestamp = msg.timestamp
         }
       } else {
         groups.push({
-          role: msg.role as 'user' | 'assistant' | 'tool',
+          role,
           messages: [msg],
           timestamp: msg.timestamp,
         })
@@ -226,11 +235,10 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
   const userPills = computed((): UserPill[] => {
     const pills: UserPill[] = []
     messageGroups.value.forEach((g, i) => {
-      // Real user turns only: bg-output groups are role=user on the wire
-      // but render as tool cards, compaction envelopes are system
-      // artifacts — neither gets a pill (see isPillGroup).
+      // Real user turns only: a background completion groups as a tool row, and a compaction
+      // envelope is a system artifact — neither gets a pill (see isPillGroup).
       const first = g.messages[0]
-      if (!isPillGroup(g.role, isBgOnlyGroup(g), !!first && isCompactionMessage(first))) return
+      if (!isPillGroup(g.role, !!first && isCompactionMessage(first))) return
       // Per message, not on the join: a `/skill-` turn carries the loaded bodies
       // as a trailing envelope, and the preview is for the human's sentence.
       let text = ''
@@ -307,21 +315,41 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     return index
   })
 
+  /** A background completion as the shell card the tool cards already read: the command it ran and
+   * the log the watcher captured. */
+  const backgroundCard = (
+    msg: Message,
+  ): Pick<ToolCardData, 'message' | 'content' | 'parameters'> => {
+    const parsed = parseBackgroundCommandOutput(msg.content)
+    return {
+      message: { ...msg, tool_name: 'command' },
+      content: parsed ? backgroundToShellData(parsed) : msg.content,
+      parameters: JSON.stringify({ command: parsed?.command ?? '' }),
+    }
+  }
+
   /** The cards of one tool group, in order. Both views draw the same cards. */
   const toolCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
-    group.messages.map((msg, idx) => ({
-      message: msg,
-      content: innerToolData(msg),
-      parameters: getParametersForMessage(msg),
-      expanded: expandedToolIds.value.has(toolExpandKey(msg, groupIndex, idx)),
-      expandKey: toolExpandKey(msg, groupIndex, idx),
-      subAgentProgress: msg.tool_call_id
-        ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
-        : null,
-      subAgentArgs: msg.tool_call_id
-        ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
-        : null,
-    }))
+    group.messages.map((msg, idx) => {
+      const expandKey = toolExpandKey(msg, groupIndex, idx)
+      return {
+        ...(isBackgroundCompletion(msg)
+          ? backgroundCard(msg)
+          : {
+              message: msg,
+              content: innerToolData(msg),
+              parameters: getParametersForMessage(msg),
+            }),
+        expanded: expandedToolIds.value.has(expandKey),
+        expandKey,
+        subAgentProgress: msg.tool_call_id
+          ? (subAgentProgressMap.value[msg.tool_call_id] ?? null)
+          : null,
+        subAgentArgs: msg.tool_call_id
+          ? (subAgentArgsByToolCallId.value.get(msg.tool_call_id) ?? null)
+          : null,
+      }
+    })
 
   const standaloneCardsFor = (group: MessageGroup, groupIndex: number): ToolCardData[] =>
     toolCardsFor(group, groupIndex).filter((card) => !foldsIntoChain(card))
@@ -338,19 +366,6 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
           msg.finish_reason,
           msg.tool_calls_json,
         )
-
-  const isBgUserMsg = (m: { content?: string }): boolean =>
-    !!m.content && isBackgroundCommandOutput(m.content)
-
-  const bgShellData = (m: { content?: string }): unknown => {
-    const pr = m.content ? parseBackgroundCommandOutput(m.content) : null
-    return pr ? backgroundToShellData(pr) : (m.content ?? '')
-  }
-  // A user group made ONLY of background completions renders as a transparent left-aligned tool card,
-  // not the blue right bubble (background completions are role=user on the wire, tool-styled in
-  // pixels — see helpers/isBackgroundCommandOutput).
-  const isBgOnlyGroup = (group: { role: string; messages: { content?: string }[] }): boolean =>
-    group.role === 'user' && group.messages.length > 0 && group.messages.every(isBgUserMsg)
 
   const groupToolNames = computed((): (string | null)[] => {
     const renderedToolCallIds = new Set<string>()
@@ -471,9 +486,6 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
     toolCardsFor,
     standaloneCardsFor,
     renderMessageHtml,
-    isBgUserMsg,
-    bgShellData,
-    isBgOnlyGroup,
     groupToolNames,
     hasVisibleContent,
     hasBubbleContent,
