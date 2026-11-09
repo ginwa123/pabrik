@@ -61,7 +61,13 @@ pub const Backend = struct {
 
     /// End the process with `code`, without unwinding.
     pub fn finish(self: *Backend, code: u8) noreturn {
-        _ = self;
+        // `std.process.exit` does not unwind, so the `defer` in `deinit` never
+        // runs. The object store is a supervised child process: without this
+        // it outlives the CLI and keeps the rustfs volume locked.
+        if (self.ctx.storage_runtime) |runtime| {
+            runtime.deinit();
+            self.ctx.storage_runtime = null;
+        }
         std.process.exit(code);
     }
 };
