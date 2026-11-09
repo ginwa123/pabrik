@@ -3467,18 +3467,14 @@ pub fn build(b: *std.Build) void {
     install_playwright_browsers.setCwd(b.path(""));
     install_playwright_browsers.step.dependOn(&install_ui_requirements.step);
 
-    // Parallel UI workers: `harness._xdist_port_slot` gives each worker a
-    // disjoint port window, so `-n` is safe. Not `auto` — 8 workers measured
-    // slower than 4, because each pays its own cold Vite compile.
-    const func_ui_workers_opt: u32 = b.option(
+    // `-n` is safe for the port picker (`_xdist_port_slot`). Default 1: the
+    // firecracker-guest tests collide when two run at once. Opt in with
+    // `-Dfunc-ui-workers=4`.
+    const func_ui_workers: u32 = b.option(
         u32,
         "func-ui-workers",
-        "pytest-xdist workers for the Playwright UI suite (default: min(4, cpus/2); 1 = serial)",
-    ) orelse 0;
-    const func_ui_workers: u32 = if (func_ui_workers_opt != 0)
-        func_ui_workers_opt
-    else
-        @max(1, @min(4, @as(u32, @intCast(host_cpus / 2))));
+        "pytest-xdist workers for the Playwright UI suite (default 1 = serial; 4 is the measured sweet spot)",
+    ) orelse 1;
 
     var argv_functional_ui: std.ArrayList([]const u8) = .empty;
     argv_functional_ui.appendSlice(b.allocator, &.{

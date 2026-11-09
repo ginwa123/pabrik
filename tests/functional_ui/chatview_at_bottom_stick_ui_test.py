@@ -247,6 +247,35 @@ def _emit_chunk(h: UIHarness, session_id: str, text: str) -> None:
     )
 
 
+def _emit_chunk_and_settle(
+    page, h: UIHarness, session_id: str, text: str, marker: str
+) -> dict:
+    """Emit a chunk, wait for it to land, then wait for the scroller to rest.
+
+    ``_settle`` alone can return before the chunk has reached the browser:
+    it stops on motion ceasing, and a scroller that has not started moving
+    yet is trivially at rest. The chunk has landed when the transcript
+    grew — ``scrollHeight`` is the one signal that works whether or not
+    the new row is inside the virtual window, which it is not when the
+    reader has scrolled up. ``marker`` is the fallback for a chunk that
+    lands without growing the sizer.
+    """
+    before = page.evaluate(
+        "() => { const el = " + _CHAT_SCROLLER + "; return el ? el.scrollHeight : 0; }"
+    )
+    _emit_chunk(h, session_id, text)
+    page.wait_for_function(
+        "([t, h0]) => {"
+        "  const el = " + _CHAT_SCROLLER + ";"
+        "  if (!el) return false;"
+        "  return el.scrollHeight > h0 || document.body.textContent.includes(t);"
+        "}",
+        arg=[marker, before],
+        timeout=15000,
+    )
+    return _settle(page)
+
+
 def _emit_turn(h: UIHarness, session_id: str, text: str, *, index: int) -> None:
     h.http(
         "POST",
@@ -269,12 +298,12 @@ def _scroll_to_fraction(page, frac: float) -> None:
         + str(frac)
         + "; }"
     )
-    page.wait_for_timeout(500)
+    _settle(page)
 
 
 def _set_scroll_top(page, top_js: str) -> None:
     page.evaluate(f"() => {{ const el = {_CHAT_SCROLLER}; if (el) el.scrollTop = {top_js}; }}")
-    page.wait_for_timeout(500)
+    _settle(page)
 
 
 def _ruler_gap(page) -> float:
@@ -436,7 +465,7 @@ def test_the_stick_survives_a_sizer_that_overshoots_the_content(
     _open_chat(page, h, session_id)
 
     page.evaluate("() => { const el = " + _CHAT_SCROLLER + "; if (el) el.scrollTop = 1e9; }")
-    page.wait_for_timeout(800)
+    _settle(page)
     armed = _geom(page)
     print(f"\n[at-bottom] armed before the overshoot : {armed}")
     assert not armed["arrow"], f"precondition failed: the stick is not armed: {armed}"
@@ -447,7 +476,7 @@ def test_the_stick_survives_a_sizer_that_overshoots_the_content(
         # reproducing the defect at all.
         staged0 = _stage_persistent_overshoot(page, 150)
         assert staged0.get("ok"), f"could not stage the overshoot: {staged0}"
-        page.wait_for_timeout(600)
+        _settle(page)
         staged = _geom(page)
         print(f"[at-bottom] staged overshoot : {staged}")
         assert staged["rulerGap"] > HYSTERESIS_PX, (
@@ -537,12 +566,13 @@ def test_the_stick_survives_a_long_stream(ui_harness: UIHarness, page) -> None:
 
     samples: list[dict] = []
     for k in range(12):
-        _emit_chunk(
+        _emit_chunk_and_settle(
+            page,
             h,
             session_id,
             f"Stream part {k}: " + "a run of words that makes the tail row grow. " * 4,
+            f"Stream part {k}",
         )
-        page.wait_for_timeout(450)
         samples.append(_geom(page))
 
     print(f"\n[at-bottom] stream samples: {[(s['scrollTop'], s['arrow']) for s in samples]}")
@@ -583,6 +613,10 @@ def test_scrolling_up_disengages_and_the_stream_leaves_it_alone(ui_harness: UIHa
     assert parked["arrow"], "precondition failed: scrolling up did not disarm the stick"
     assert parked["scrollTop"] < parked["appBottom"] - SLACK_PX
 
+    # A NEGATIVE assertion: the claim is that nothing happens. There is no
+    # DOM signal for "the chunk landed" here — the reader is scrolled up,
+    # so the tail row is outside the virtual window and neither its text
+    # nor the sizer height changes. Proving absence needs a bounded wait.
     for k in range(4):
         _emit_chunk(
             h,
@@ -628,7 +662,7 @@ def test_returning_to_the_bottom_rearms_the_stick(ui_harness: UIHarness, page) -
     page.wait_for_function(
         "() => !document.querySelector('.chat-scroll-to-bottom')", timeout=15000
     )
-    page.wait_for_timeout(900)
+    _settle(page)
     back = _geom(page)
     print(f"\n[at-bottom] back at the bottom : {back}")
     assert back["appRulerSource"] == "exposed", (
@@ -650,8 +684,13 @@ def test_returning_to_the_bottom_rearms_the_stick(ui_harness: UIHarness, page) -
     # not the at-bottom ruler — and it is tracked, with this reproduction, in
     # `test_a_large_remeasure_does_not_yank_an_at_bottom_reader` below. Folding
     # it in here would have made this test red for a reason it does not own.
-    _emit_chunk(h, session_id, "After the return: " + "words that grow the tail. " * 4)
-    page.wait_for_timeout(700)
+    _emit_chunk_and_settle(
+        page,
+        h,
+        session_id,
+        "After the return: " + "words that grow the tail. " * 4,
+        "After the return",
+    )
     final = _geom(page)
     print(f"\n[at-bottom] re-arm, one chunk later : {final}")
     assert not final["arrow"], f"the re-armed stick did not survive one chunk: {final}"
@@ -704,14 +743,19 @@ def test_a_large_remeasure_does_not_yank_an_at_bottom_reader(
     page.wait_for_function(
         "() => !document.querySelector('.chat-scroll-to-bottom')", timeout=15000
     )
-    page.wait_for_timeout(900)
+    _settle(page)
     before = _geom(page)
     print(f"\n[remeasure-yank] armed : {before}")
     assert not before["arrow"], f"precondition failed: not armed: {before}"
 
     for k in range(2):
-        _emit_chunk(h, session_id, f"Trigger {k}: " + "words that grow the tail. " * 4)
-        page.wait_for_timeout(700)
+        _emit_chunk_and_settle(
+            page,
+            h,
+            session_id,
+            f"Trigger {k}: " + "words that grow the tail. " * 4,
+            f"Trigger {k}",
+        )
         now = _geom(page)
         print(f"[remeasure-yank] chunk {k}: {before['scrollTop']} -> {now['scrollTop']}")
         assert now["scrollTop"] >= now["appBottom"] - SLACK_PX, (
@@ -741,7 +785,7 @@ def test_a_reader_a_viewport_above_the_bottom_is_not_at_the_bottom(
     page.evaluate(
         "() => { const el = " + _CHAT_SCROLLER + "; if (el) el.scrollTop = 1e9; }"
     )
-    page.wait_for_timeout(600)
+    _settle(page)
     bottom = _geom(page)
     assert not bottom["arrow"], f"precondition failed: not armed at the bottom: {bottom}"
 
@@ -750,11 +794,11 @@ def test_a_reader_a_viewport_above_the_bottom_is_not_at_the_bottom(
         page.evaluate(
             "() => { const el = " + _CHAT_SCROLLER + "; if (el) el.scrollTop = 1e9; }"
         )
-        page.wait_for_timeout(500)
+        _settle(page)
         page.evaluate(
             f"() => {{ const el = {_CHAT_SCROLLER}; if (el) el.scrollTop -= el.clientHeight * {offset}; }}"
         )
-        page.wait_for_timeout(500)
+        _settle(page)
         g = _geom(page)
         assert g["arrow"], (
             f"{offset} viewport(s) above the bottom, but the app calls it 'at the "
@@ -762,8 +806,13 @@ def test_a_reader_a_viewport_above_the_bottom_is_not_at_the_bottom(
         )
 
     # And a stream must not drag them back.
-    _emit_chunk(h, session_id, "Should not pull the reader down. " * 4)
-    page.wait_for_timeout(600)
+    _emit_chunk_and_settle(
+        page,
+        h,
+        session_id,
+        "Should not pull the reader down. " * 4,
+        "Should not pull the reader down",
+    )
     after = _geom(page)
     assert after["arrow"], f"the stick re-engaged for a deliberate reader: {after}"
 
@@ -802,7 +851,7 @@ def test_sending_from_history_still_lands_on_the_newest_turn(
     page.wait_for_function(
         "() => !document.querySelector('.chat-scroll-to-bottom')", timeout=15000
     )
-    page.wait_for_timeout(600)
+    _settle(page)
     after = _geom(page)
     print(f"\n[at-bottom] after send from history : {after}")
     assert not after["arrow"], f"the send did not re-arm the stick: {after}"

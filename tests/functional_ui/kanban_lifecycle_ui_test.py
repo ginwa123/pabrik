@@ -30,6 +30,7 @@ silently passing.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,33 @@ from typing import Any
 import pytest
 
 from ui_harness import UIHarness
+
+
+def _settle(locator: Any, timeout_ms: int = 20000) -> None:
+    """Wait for ``locator`` to become visible, tolerating its absence.
+
+    Replaces a fixed ``page.wait_for_timeout`` after a navigation. The
+    caller's own ``count()`` / ``is_visible()`` check still decides what
+    a missing element means, so a skip stays a skip and a failure keeps
+    its message — only the arbitrary delay goes.
+    """
+    with contextlib.suppress(Exception):
+        locator.wait_for(state="visible", timeout=timeout_ms)
+
+
+def _wait_for_task(
+    h: UIHarness, workspace_id: str, kanban_id: str, task_name: str, timeout_s: float = 15.0
+) -> list[dict[str, Any]]:
+    """Poll the tasks API until ``task_name`` appears, or the budget runs out."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        matching = [
+            t for t in _list_tasks(h, workspace_id, kanban_id)
+            if t.get("name") == task_name
+        ]
+        if matching or time.monotonic() >= deadline:
+            return matching
+        time.sleep(0.05)
 
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
@@ -96,7 +124,7 @@ def test_kanban_board_renders_after_creation(ui_harness: UIHarness, page) -> Non
     # Use ``domcontentloaded`` not ``networkidle``: Vite's HMR keeps a
     # persistent WebSocket open that prevents networkidle from ever firing.
     page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)  # give Vue + API calls time to settle
+    _settle(page.locator("text=todo").first)
 
     # The board should show the 3 default columns: todo, in progress, done.
     # We look for any element containing one of those labels.
@@ -152,7 +180,7 @@ def test_kanban_create_task_via_api_then_verify_in_ui(ui_harness: UIHarness, pag
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle`` (see comment in test 1)
     page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)
+    _settle(page.locator(f"text={task_title}").first)
     # The task title should appear somewhere on the page (the kanban
     # board renders each task as a card with its name).
     task_visible = page.locator(f"text={task_title}").count() > 0
@@ -214,7 +242,7 @@ def test_kanban_move_task_between_columns_via_api(ui_harness: UIHarness, page) -
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle`` (see comment in test 1)
     page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)
+    _settle(page.locator(f"text={task_title}").first)
     task_visible = page.locator(f"text={task_title}").count() > 0
     assert task_visible, (
         f"Task {task_title!r} not visible after move. "
@@ -248,7 +276,7 @@ def test_kanban_via_real_ui_click_create_button(ui_harness: UIHarness, page) -> 
     url = _kanban_url(h, ws_id, kanban_id)
     # ``domcontentloaded`` not ``networkidle`` (see comment in test 1)
     page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(1000)
+    _settle(page.locator('[data-testid="kanban-add-task-button"]').first)
 
     # Find the "Add task" button. The kanban toolbar uses
     # ``data-testid="kanban-add-task-button"`` on the global + Add
@@ -287,12 +315,10 @@ def test_kanban_via_real_ui_click_create_button(ui_harness: UIHarness, page) -> 
     save_button = page.locator('[data-testid="kanban-task-detail-save"]').first
     assert save_button.count() > 0, "flat Create task button not found"
     save_button.click()
-    page.wait_for_timeout(1000)
 
     # Verify the task appears via the API (more reliable than DOM check
     # which depends on the exact card-component selector).
-    tasks = _list_tasks(h, ws_id, kanban_id)
-    matching = [t for t in tasks if t["name"] == task_title]
+    matching = _wait_for_task(h, ws_id, kanban_id, task_title)
     assert matching, (
         f"Task {task_title!r} not found via API after click-create. "
         f"The click handler may not have fired, or the create call may "
