@@ -59,7 +59,7 @@ pub const MergeOutcome = struct {
 
 /// `detail` receives the CLI's own stderr (or a synthesized hint) on failure,
 /// capped and trimmed by `pr_status.setFetchDetail`.
-fn mergeUseCase(
+pub fn mergeUseCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,

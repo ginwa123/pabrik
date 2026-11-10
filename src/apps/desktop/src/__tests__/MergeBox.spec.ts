@@ -15,14 +15,20 @@ import {
 import { forgeWording } from '../helpers/forgeWording'
 import { clearPrStatusCache, fetchPrStatusCached } from '../helpers/prStatusCache'
 
-const { mergePrMock, getPrStatusMock } = vi.hoisted(() => ({
+const { mergePrMock, getPrStatusMock, getPrChecksMock } = vi.hoisted(() => ({
   mergePrMock: vi.fn(),
   getPrStatusMock: vi.fn(),
+  getPrChecksMock: vi.fn(),
 }))
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  return { ...actual, mergePr: mergePrMock, getPrStatus: getPrStatusMock }
+  return {
+    ...actual,
+    mergePr: mergePrMock,
+    getPrStatus: getPrStatusMock,
+    getPrChecks: getPrChecksMock,
+  }
 })
 
 const GH = forgeWording('github')
@@ -52,6 +58,27 @@ function status(over: Partial<Record<string, unknown>> = {}) {
     changed_files: 3,
     ...over,
   } as never
+}
+
+/** A `GET /api/git/pr/checks` payload with the counts a test cares about. */
+function checks(over: Partial<Record<string, number>> = {}) {
+  const summary = {
+    total: 0,
+    passed: 0,
+    failed: 0,
+    pending: 0,
+    skipped: 0,
+    cancelled: 0,
+    ...over,
+  }
+  summary.total = over.total ?? summary.passed + summary.failed + summary.pending + summary.skipped + summary.cancelled
+  return {
+    provider: 'github',
+    pr_url: 'https://github.com/ginwa123/pabrik/pull/891',
+    checks: [],
+    summary,
+    steps_truncated: false,
+  }
 }
 
 const state = (over: Partial<Record<string, unknown>> = {}) =>
@@ -382,5 +409,94 @@ describe('MergeBox', () => {
       'This merge request is not approved yet.',
     )
     expect(w.get('[data-testid="pr-merge-button"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('a PR blocked on CI offers Check CI, and a ready one does not', () => {
+    const blocked = mount(MergeBox, {
+      props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+    })
+    expect(blocked.find('[data-testid="pr-ci-check"]').exists()).toBe(true)
+
+    const ready = mount(MergeBox, { props: { ...props, status: status() } })
+    expect(ready.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
+  })
+
+  it('a conflicting PR does not offer Check CI, because waiting cannot fix a conflict', () => {
+    const w = mount(MergeBox, {
+      props: { ...props, status: status({ mergeable: 'CONFLICTING', merge_state: 'DIRTY' }) },
+    })
+    expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
+  })
+
+  it('Check CI shows live progress, then reports green and tells the owner to re-read', async () => {
+    vi.useFakeTimers()
+    try {
+      getPrChecksMock
+        .mockResolvedValueOnce(checks({ passed: 1, pending: 1 }))
+        .mockResolvedValueOnce(checks({ passed: 2 }))
+      const w = mount(MergeBox, {
+        props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+      })
+
+      await w.get('[data-testid="pr-ci-check"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(w.get('[data-testid="pr-ci-watch-line"]').text()).toContain(
+        '1 of 2 checks passed · 1 running',
+      )
+      expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(w.find('[data-testid="pr-ci-watch"]').exists()).toBe(false)
+      expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe(
+        'All checks passed — ready to merge',
+      )
+      expect(w.emitted('checksPassed')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Check CI stops on a red run and says how many failed', async () => {
+    vi.useFakeTimers()
+    try {
+      getPrChecksMock.mockResolvedValueOnce(checks({ passed: 2, failed: 1 }))
+      const w = mount(MergeBox, {
+        props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+      })
+
+      await w.get('[data-testid="pr-ci-check"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe(
+        'CI failed — 1 of 3 checks failed',
+      )
+      expect(w.emitted('checksPassed')).toBeFalsy()
+      // The button comes back so the user can retry after a re-run.
+      expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Stop ends the watch without ever claiming the checks passed', async () => {
+    vi.useFakeTimers()
+    try {
+      getPrChecksMock.mockResolvedValue(checks({ passed: 1, pending: 1 }))
+      const w = mount(MergeBox, {
+        props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+      })
+
+      await w.get('[data-testid="pr-ci-check"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+      await w.get('[data-testid="pr-ci-watch-cancel"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe('Stopped watching CI')
+      expect(w.emitted('checksPassed')).toBeFalsy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

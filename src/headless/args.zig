@@ -106,6 +106,36 @@ pub const MemoriesArgs = struct {
     offset: []const u8 = "",
 };
 
+/// The change-request verbs. `wait` is the headless twin of the merge box's
+/// Check CI button: poll the forge until every check is green, then exit 0.
+pub const PrOp = enum {
+    checks,
+    merge,
+    wait,
+};
+
+pub const PrArgs = struct {
+    op: PrOp,
+    /// The repository the forge CLI runs in. Required.
+    path: []const u8 = "",
+    /// Number, URL or branch. Empty = the one for the current branch.
+    pr: []const u8 = "",
+    /// `github` | `gitlab` | `generic`. Empty = resolve from the remote.
+    provider: []const u8 = "",
+    /// `merge` | `squash` | `rebase`. Required for `merge`.
+    method: []const u8 = "",
+    /// Commit message for the merge/squash commit.
+    title: []const u8 = "",
+    body: []const u8 = "",
+    delete_branch: bool = false,
+    /// The head commit the caller was looking at; both CLIs guard on it.
+    head_sha: []const u8 = "",
+    /// `wait`: how long to sleep between polls. 0 = the built-in 10 s.
+    interval_ms: u64 = 0,
+    /// `wait`: the whole budget. 0 = the built-in 15 min.
+    timeout_ms: u64 = 0,
+};
+
 /// The document-folder verbs. One subcommand per write the HTTP API exposes,
 /// so an agent can drive the whole feature with no server and no port.
 pub const DocumentsOp = enum {
@@ -231,6 +261,9 @@ pub const FailureKind = enum {
     message_requires_flag,
     memories_unknown_op,
     memories_requires_flag,
+    pr_unknown_op,
+    pr_requires_flag,
+    pr_invalid_method,
 };
 
 pub const Failure = struct {
@@ -287,6 +320,11 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
     "      flags: --url <mcp-url> --workspace <id> --server <name> --redirect-uri <uri>\n" ++
     "             --scope <s> --client-id <id> --code <c> --state <s>\n" ++
+    "  pabrik headless pr <op> [flags]           Read CI checks, wait for green, or merge\n" ++
+    "      ops: checks | wait | merge\n" ++
+    "      flags: --path <dir> --pr <n|url|branch> --provider github|gitlab|generic\n" ++
+    "      merge flags: --method merge|squash|rebase --title <t> --body <b> --head-sha <sha> --delete-branch\n" ++
+    "      wait flags: --interval-ms <n> --timeout-ms <n>\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -313,6 +351,7 @@ pub const Outcome = union(enum) {
     message: MessageArgs,
     memories: MemoriesArgs,
     mcp_oauth: McpOAuthArgs,
+    pr: PrArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -344,8 +383,85 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
     if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
     if (std.mem.eql(u8, verb, "mcp-oauth")) return try parseMcpOAuth(rest);
+    if (std.mem.eql(u8, verb, "pr")) return try parsePr(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
+}
+
+fn parsePr(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .pr_unknown_op });
+
+    const op: PrOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "checks")) break :blk .checks;
+        if (std.mem.eql(u8, word, "merge")) break :blk .merge;
+        if (std.mem.eql(u8, word, "wait")) break :blk .wait;
+        return fail(.{ .kind = .pr_unknown_op, .value = word });
+    };
+
+    var got = PrArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--path")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.path = argv[i];
+        } else if (std.mem.eql(u8, flag, "--pr")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.pr = argv[i];
+        } else if (std.mem.eql(u8, flag, "--provider")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.provider = argv[i];
+        } else if (std.mem.eql(u8, flag, "--method")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.method = argv[i];
+        } else if (std.mem.eql(u8, flag, "--title")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.title = argv[i];
+        } else if (std.mem.eql(u8, flag, "--body")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.body = argv[i];
+        } else if (std.mem.eql(u8, flag, "--head-sha")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.head_sha = argv[i];
+        } else if (std.mem.eql(u8, flag, "--delete-branch")) {
+            got.delete_branch = true;
+        } else if (std.mem.eql(u8, flag, "--interval-ms")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.interval_ms = std.fmt.parseInt(u64, argv[i], 10) catch
+                return fail(.{ .kind = .invalid_number, .value = argv[i] });
+        } else if (std.mem.eql(u8, flag, "--timeout-ms")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.timeout_ms = std.fmt.parseInt(u64, argv[i], 10) catch
+                return fail(.{ .kind = .invalid_number, .value = argv[i] });
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    if (got.path.len == 0) return fail(.{ .kind = .pr_requires_flag, .value = "--path" });
+    if (op == .merge) {
+        if (got.method.len == 0) return fail(.{ .kind = .pr_requires_flag, .value = "--method" });
+        if (!isMergeMethod(got.method)) return fail(.{ .kind = .pr_invalid_method, .value = got.method });
+    }
+
+    return .{ .pr = got };
+}
+
+fn isMergeMethod(word: []const u8) bool {
+    return std.mem.eql(u8, word, "merge") or
+        std.mem.eql(u8, word, "squash") or
+        std.mem.eql(u8, word, "rebase");
 }
 
 fn parseMcpOAuth(argv: []const []const u8) ParseError!Outcome {
@@ -901,6 +1017,9 @@ pub fn reportFailure(f: Failure) void {
         .message_requires_flag => std.log.err("headless: message needs {s}", .{f.value}),
         .memories_unknown_op => std.log.err("headless: unknown memories op '{s}'", .{f.value}),
         .memories_requires_flag => std.log.err("headless: memories needs {s}", .{f.value}),
+        .pr_unknown_op => std.log.err("headless: unknown pr op '{s}'", .{f.value}),
+        .pr_requires_flag => std.log.err("headless: pr needs {s}", .{f.value}),
+        .pr_invalid_method => std.log.err("headless: --method must be \"merge\", \"squash\", or \"rebase\", not '{s}'", .{f.value}),
     }
 }
 
@@ -1304,4 +1423,63 @@ test "the help text lists every flag the table gives this scope" {
             try testing.expect(std.mem.indexOf(u8, HELP_TEXT, dashed) != null);
         }
     }
+}
+
+test "parse: pr checks reads the path, the change request and the provider" {
+    const a = try parse(&.{ "pr", "checks", "--path", "/work/repo", "--pr", "891", "--provider", "github" });
+    try testing.expectEqual(PrOp.checks, a.pr.op);
+    try testing.expectEqualStrings("/work/repo", a.pr.path);
+    try testing.expectEqualStrings("891", a.pr.pr);
+    try testing.expectEqualStrings("github", a.pr.provider);
+}
+
+test "parse: pr checks needs a path, because the forge CLI runs in it" {
+    try expectFailure(&.{ "pr", "checks" }, .pr_requires_flag);
+    try expectFailure(&.{ "pr", "checks", "--pr", "891" }, .pr_requires_flag);
+}
+
+test "parse: pr merge reads the method and the head guard" {
+    const a = try parse(&.{
+        "pr",      "merge",          "--path",     "/work/repo", "--pr",            "891", "--method", "squash",
+        "--title", "Scroll restore", "--head-sha", "4f21c9e",    "--delete-branch",
+    });
+    try testing.expectEqual(PrOp.merge, a.pr.op);
+    try testing.expectEqualStrings("squash", a.pr.method);
+    try testing.expectEqualStrings("Scroll restore", a.pr.title);
+    try testing.expectEqualStrings("4f21c9e", a.pr.head_sha);
+    try testing.expect(a.pr.delete_branch);
+}
+
+test "parse: pr merge refuses to run without a method, because gh would prompt" {
+    try expectFailure(&.{ "pr", "merge", "--path", "/work/repo" }, .pr_requires_flag);
+}
+
+test "parse: pr merge refuses a method the forge CLIs do not have" {
+    try expectFailure(&.{ "pr", "merge", "--path", "/work/repo", "--method", "fast-forward" }, .pr_invalid_method);
+}
+
+test "parse: pr wait reads the poll interval and the budget" {
+    const a = try parse(&.{ "pr", "wait", "--path", "/work/repo", "--interval-ms", "5000", "--timeout-ms", "60000" });
+    try testing.expectEqual(PrOp.wait, a.pr.op);
+    try testing.expectEqual(@as(u64, 5000), a.pr.interval_ms);
+    try testing.expectEqual(@as(u64, 60000), a.pr.timeout_ms);
+}
+
+test "parse: pr wait defaults both timings to zero, so the built-in ones apply" {
+    const a = try parse(&.{ "pr", "wait", "--path", "/work/repo" });
+    try testing.expectEqual(@as(u64, 0), a.pr.interval_ms);
+    try testing.expectEqual(@as(u64, 0), a.pr.timeout_ms);
+}
+
+test "parse: pr wait refuses a non-numeric interval" {
+    try expectFailure(&.{ "pr", "wait", "--path", "/work/repo", "--interval-ms", "soon" }, .invalid_number);
+}
+
+test "parse: pr refuses an unknown op by name" {
+    try expectFailure(&.{ "pr", "explode", "--path", "/work/repo" }, .pr_unknown_op);
+    try expectFailure(&.{"pr"}, .pr_unknown_op);
+}
+
+test "parse: pr refuses a flag it does not own" {
+    try expectFailure(&.{ "pr", "checks", "--path", "/work/repo", "--workspace", "ws_1" }, .unknown_subcommand);
 }

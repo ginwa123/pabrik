@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Effect } from 'effect'
-import { mergePr, type GitPrStatus } from '../../../api'
+import { getPrChecks, mergePr, type GitPrChecksSummary, type GitPrStatus } from '../../../api'
 import { forgeWording } from '../../../helpers/forgeWording'
 import { invalidatePrStatus } from '../../../helpers/prStatusCache'
 import {
@@ -35,6 +35,12 @@ import {
   repoKeyFor,
   type MergeMethod,
 } from '../../../helpers/mergeWording'
+import {
+  ciProgressLine,
+  ciWatchResultLine,
+  watchCiChecks,
+  type CiWatchResult,
+} from '../../../helpers/ciWatch'
 import { SyncRemoteError } from '../../../sync/SyncError'
 import { runSyncResult } from '../../../sync/runtime'
 
@@ -51,6 +57,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** A merge was attempted and the forge answered. The owner re-reads status. */
   merged: []
+  /** The CI watch saw every check go green. The owner re-reads status so the
+   *  merge button stops being blocked by a stale `merge_state`. */
+  checksPassed: []
 }>()
 
 const forge = computed(() => forgeWording(props.prProvider))
@@ -162,6 +171,92 @@ function openConfirm() {
   message.value = defaultMessage.value
   confirming.value = true
   menuOpen.value = false
+}
+
+// ── watching CI ───────────────────────────────────────────────────────────
+/** True while the poll loop is running. The button becomes a progress line. */
+const watching = ref(false)
+const watchSummary = ref<GitPrChecksSummary | null>(null)
+const watchResult = ref<CiWatchResult | null>(null)
+/** Set by Stop; the loop reads it before its next poll. */
+let stopWatching = false
+
+const watchLine = computed(() =>
+  watchSummary.value ? ciProgressLine(watchSummary.value) : 'no checks reported yet',
+)
+
+const watchResultLine = computed(() =>
+  watchResult.value ? ciWatchResultLine(watchResult.value) : '',
+)
+
+const watchResultColor = computed(() => {
+  switch (watchResult.value?.outcome) {
+    case 'pass':
+      return 'var(--color-green)'
+    case 'fail':
+    case 'error':
+      return 'var(--semantic-error)'
+    case 'timeout':
+      return 'var(--color-yellow)'
+    default:
+      return 'var(--semantic-text-muted)'
+  }
+})
+
+/** Waiting on CI cannot fix a conflict or a draft, so the button is not offered
+ *  for those — it would be a spinner that can only ever time out. */
+const ciCanUnblock = computed(() => {
+  const mergeable = (props.status?.mergeable ?? '').toUpperCase()
+  const mergeState = (props.status?.merge_state ?? '').toUpperCase()
+  return !(mergeable === 'CONFLICTING' || mergeState === 'DIRTY' || mergeState === 'DRAFT')
+})
+
+const showCheckCi = computed(
+  () =>
+    !watching.value &&
+    !wording.value.canMerge &&
+    wording.value.state !== 'merged' &&
+    wording.value.state !== 'closed' &&
+    ciCanUnblock.value,
+)
+
+async function startWatch() {
+  if (watching.value) return
+  watching.value = true
+  stopWatching = false
+  watchSummary.value = null
+  watchResult.value = null
+  const result = await watchCiChecks({
+    fetchChecks: async () => {
+      const fetched = await runSyncResult(
+        Effect.tryPromise({
+          try: () =>
+            getPrChecks(props.cwd, props.prUrl, { provider: props.prProvider || undefined }),
+          catch: (e) =>
+            new SyncRemoteError({
+              op: 'prChecks.watch',
+              reason: e instanceof Error ? e.message : String(e),
+            }),
+        }),
+        'prChecks.watch',
+      )
+      return fetched.ok
+        ? { ok: true as const, checks: fetched.value }
+        : { ok: false as const, error: fetched.reason }
+    },
+    sleep: (ms) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)),
+    shouldStop: () => stopWatching,
+    onTick: (tick) => {
+      watchSummary.value = tick.summary
+    },
+  })
+  watching.value = false
+  watchResult.value = result
+  if (result.outcome === 'pass') emit('checksPassed')
+}
+
+function cancelWatch() {
+  stopWatching = true
 }
 
 // ── the merge itself ──────────────────────────────────────────────────────
@@ -337,6 +432,50 @@ async function submit() {
           status?.head_ref || ''
         }}</span>
       </label>
+
+      <div v-if="watching" class="mb-1.5" data-testid="pr-ci-watch">
+        <div class="flex items-center gap-1.5 text-micro" style="color: var(--semantic-text-muted)">
+          <span
+            class="w-2 h-2 shrink-0 rounded-full animate-pulse"
+            style="background-color: var(--color-yellow)"
+            aria-hidden="true"
+          ></span>
+          <span class="truncate" data-testid="pr-ci-watch-line">Checking CI… {{ watchLine }}</span>
+          <button
+            type="button"
+            class="ml-auto shrink-0 px-1 rounded hover:opacity-80"
+            style="color: var(--semantic-text-dim)"
+            data-testid="pr-ci-watch-cancel"
+            @click="cancelWatch"
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-else-if="watchResult"
+        class="mb-1.5 text-micro leading-snug"
+        :style="{ color: watchResultColor }"
+        data-testid="pr-ci-watch-result"
+      >
+        {{ watchResultLine }}
+      </div>
+
+      <button
+        v-if="showCheckCi"
+        type="button"
+        class="w-full h-6 mb-1.5 rounded text-micro"
+        style="
+          background-color: var(--color-bg-p1);
+          color: var(--semantic-text);
+          border: 1px solid var(--color-border-light);
+        "
+        data-testid="pr-ci-check"
+        @click="startWatch"
+      >
+        Check CI
+      </button>
 
       <div class="relative">
         <div
