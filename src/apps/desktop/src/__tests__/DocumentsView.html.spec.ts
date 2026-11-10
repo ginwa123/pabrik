@@ -216,4 +216,59 @@ describe('DocumentsView — html viewport switcher', () => {
     expect(wrapper.find('[data-testid="documents-viewport-switcher"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('Custom reveals a width field and starts at 400px', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="documents-viewport-custom-width"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="documents-viewport-custom"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="documents-viewport-custom-width"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 400px',
+    )
+    wrapper.unmount()
+  })
+
+  it('typing a custom width resizes the frame to it', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-custom"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="documents-viewport-custom-width"]').setValue('512')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 512px',
+    )
+    wrapper.unmount()
+  })
+
+  it('a custom width outside the range is clamped, not rendered as-is', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-custom"]').trigger('click')
+    await nextTick()
+
+    const field = wrapper.get('[data-testid="documents-viewport-custom-width"]')
+    await field.setValue('10')
+    await field.trigger('change')
+    await nextTick()
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 240px',
+    )
+
+    await field.setValue('9999')
+    await field.trigger('change')
+    await nextTick()
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 2560px',
+    )
+    wrapper.unmount()
+  })
 })

@@ -16,9 +16,13 @@ import {
 } from '../../helpers/officeDocument'
 import OfficeDocumentEditor from './OfficeDocumentEditor.vue'
 import {
+  clampWidth,
+  DEFAULT_CUSTOM_WIDTH,
   DEFAULT_HTML_VIEWPORT,
   HTML_VIEWPORTS,
   isHtmlFormat,
+  MAX_CUSTOM_WIDTH,
+  MIN_CUSTOM_WIDTH,
   viewportWidth,
   type HtmlViewportId,
 } from '../../helpers/htmlDocument'
@@ -50,6 +54,9 @@ const bodyLoaded = ref(false)
 /** The width an HTML page is previewed at. Per document, so opening another
  *  page never inherits a phone frame the user forgot they chose. */
 const viewport = ref<HtmlViewportId>(DEFAULT_HTML_VIEWPORT)
+/** The Custom viewport's width. Kept across documents — it is a preference,
+ *  not a property of the page. */
+const customWidth = ref<number>(DEFAULT_CUSTOM_WIDTH)
 
 // The resolved workspace, not the raw `activeWorkspaceId` ref.
 const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
@@ -81,7 +88,7 @@ const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
 /** The iframe's own size. A non-desktop width is a fixed device width, centred
  *  in the stage and ringed so it reads as a device rather than a broken page. */
 const frameStyle = computed(() => {
-  const width = viewportWidth(viewport.value)
+  const width = viewportWidth(viewport.value, customWidth.value)
   if (width === null) return 'width: 100%; height: 100%;'
   return `width: ${width}px; max-width: 100%; height: 100%; box-shadow: 0 0 0 1px var(--color-border);`
 })
@@ -309,6 +316,25 @@ const remove = async () => {
             >
               {{ choice.label }}
             </button>
+            <label
+              v-if="viewport === 'custom'"
+              class="flex items-center gap-1 ml-1 text-meta"
+              style="color: var(--semantic-text-dim)"
+            >
+              <input
+                v-model.number="customWidth"
+                type="number"
+                :min="MIN_CUSTOM_WIDTH"
+                :max="MAX_CUSTOM_WIDTH"
+                step="10"
+                class="w-16 px-1 h-[var(--sb-hit)] rounded-md bg-transparent outline-none text-meta"
+                style="border: 1px solid var(--color-border); color: var(--semantic-text)"
+                aria-label="Custom viewport width in pixels"
+                data-testid="documents-viewport-custom-width"
+                @change="customWidth = clampWidth(customWidth)"
+              />
+              <span>px</span>
+            </label>
           </div>
           <template v-if="isOffice">
             <button
