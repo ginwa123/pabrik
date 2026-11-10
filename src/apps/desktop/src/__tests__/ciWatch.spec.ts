@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   CI_WATCH_DEADLINE_MS,
-  CI_WATCH_INTERVAL_MS,
+  CI_WATCH_TICK_MS,
   ciProgressLine,
   ciVerdict,
   ciWatchResultLine,
   watchCiChecks,
-  type CiFetchResult,
   type CiWatchResult,
 } from '../helpers/ciWatch'
-import type { GitPrChecks, GitPrChecksSummary } from '../api'
+import type { GitPrChecksSummary } from '../api'
 
 function summary(over: Partial<GitPrChecksSummary> = {}): GitPrChecksSummary {
   const s: GitPrChecksSummary = {
@@ -25,24 +24,15 @@ function summary(over: Partial<GitPrChecksSummary> = {}): GitPrChecksSummary {
   return s
 }
 
-const payload = (s: GitPrChecksSummary): GitPrChecks => ({
-  provider: 'github',
-  pr_url: 'https://github.com/ginwa123/pabrik/pull/891',
-  checks: [],
-  summary: s,
-  steps_truncated: false,
-})
-
-function scripted(steps: Array<GitPrChecksSummary | Error>) {
-  const calls: number[] = []
-  const fetchChecks = async (): Promise<CiFetchResult> => {
-    const next = steps[calls.length]
-    calls.push(calls.length)
-    if (next === undefined) return { ok: false, error: 'script exhausted' }
-    if (next instanceof Error) return { ok: false, error: next.message }
-    return { ok: true, checks: payload(next) }
+/** A getter that hands out one rollup per tick, repeating the last one. */
+function scripted(steps: Array<GitPrChecksSummary | null>) {
+  let reads = 0
+  const readSummary = () => {
+    const next = steps[Math.min(reads, steps.length - 1)]
+    reads += 1
+    return next
   }
-  return { fetchChecks, calls }
+  return { readSummary, reads: () => reads }
 }
 
 function fakeSleep() {
@@ -107,93 +97,104 @@ describe('ciProgressLine', () => {
 })
 
 describe('watchCiChecks', () => {
-  it('returns pass on the first poll when the checks are already green', async () => {
-    const { fetchChecks, calls } = scripted([summary({ passed: 3 })])
+  it('returns pass on the first read when the checks are already green', async () => {
+    const { readSummary } = scripted([summary({ passed: 3 })])
     const { sleep, waits } = fakeSleep()
 
-    const result = await watchCiChecks({ fetchChecks, sleep })
+    const result = await watchCiChecks({ readSummary, sleep })
 
     expect(result.outcome).toBe('pass')
-    expect(result.polls).toBe(1)
-    expect(calls).toHaveLength(1)
+    expect(result.updates).toBe(1)
     expect(waits).toEqual([])
   })
 
-  it('keeps polling while checks are running and stops the moment they all pass', async () => {
-    const { fetchChecks, calls } = scripted([
+  it('keeps waiting while checks are running and stops the moment they all pass', async () => {
+    const { readSummary } = scripted([
       summary({ passed: 1, pending: 2 }),
       summary({ passed: 2, pending: 1 }),
       summary({ passed: 3 }),
     ])
     const { sleep, waits } = fakeSleep()
 
-    const result = await watchCiChecks({ fetchChecks, sleep, intervalMs: 1000 })
+    const result = await watchCiChecks({ readSummary, sleep, tickMs: 1000 })
 
     expect(result.outcome).toBe('pass')
-    expect(result.polls).toBe(3)
-    expect(calls).toHaveLength(3)
+    expect(result.updates).toBe(3)
     expect(waits).toEqual([1000, 1000])
   })
 
   it('stops on the first failure instead of waiting for the rest of the run', async () => {
-    const { fetchChecks, calls } = scripted([
+    const { readSummary } = scripted([
       summary({ passed: 1, pending: 1 }),
       summary({ passed: 1, failed: 1, pending: 1 }),
       summary({ passed: 3 }),
     ])
     const { sleep, waits } = fakeSleep()
 
-    const result = await watchCiChecks({ fetchChecks, sleep, intervalMs: 1000 })
+    const result = await watchCiChecks({ readSummary, sleep, tickMs: 1000 })
 
     expect(result.outcome).toBe('fail')
-    expect(result.polls).toBe(2)
-    expect(calls).toHaveLength(2)
+    expect(result.updates).toBe(2)
     expect(waits).toEqual([1000])
   })
 
   it('keeps waiting when the forge has not registered any check yet', async () => {
-    const { fetchChecks } = scripted([summary(), summary(), summary({ passed: 1 })])
+    const { readSummary } = scripted([summary(), summary(), summary({ passed: 1 })])
     const { sleep } = fakeSleep()
 
-    const result = await watchCiChecks({ fetchChecks, sleep, intervalMs: 1000 })
+    const result = await watchCiChecks({ readSummary, sleep, tickMs: 1000 })
 
     expect(result.outcome).toBe('pass')
-    expect(result.polls).toBe(3)
+    expect(result.updates).toBe(2)
+  })
+
+  it('counts a rollup once, however many ticks read the same one', async () => {
+    // The panel polls the status endpoint every 30 s; the watch ticks far more
+    // often than that. Re-reporting an unchanged rollup would make the progress
+    // line flicker and the update count meaningless.
+    const pending = summary({ passed: 1, pending: 1 })
+    const { readSummary, reads } = scripted([pending, pending, pending, pending, summary({ passed: 2 })])
+    const { sleep } = fakeSleep()
+
+    const result = await watchCiChecks({ readSummary, sleep, tickMs: 1000 })
+
+    expect(result.outcome).toBe('pass')
+    expect(result.updates).toBe(2)
+    expect(reads()).toBe(5)
   })
 
   it('gives up at the deadline and reports the last summary it saw', async () => {
     const pending = summary({ passed: 1, pending: 1 })
-    const { fetchChecks, calls } = scripted([pending, pending, pending, pending, pending])
+    const { readSummary } = scripted([pending])
     const { sleep, waits } = fakeSleep()
 
-    const result = await watchCiChecks({ fetchChecks, sleep, intervalMs: 1000, deadlineMs: 2000 })
+    const result = await watchCiChecks({ readSummary, sleep, tickMs: 1000, deadlineMs: 2000 })
 
     expect(result.outcome).toBe('timeout')
     expect(result.summary).toEqual(pending)
-    expect(result.polls).toBe(3)
-    expect(calls).toHaveLength(3)
+    expect(result.updates).toBe(1)
     expect(waits).toEqual([1000, 1000])
   })
 
-  it('polls once even with a zero deadline, so a green run is never reported as a timeout', async () => {
-    const { fetchChecks } = scripted([summary({ passed: 1 })])
+  it('reads once even with a zero deadline, so a green run is never reported as a timeout', async () => {
+    const { readSummary } = scripted([summary({ passed: 1 })])
     const { sleep } = fakeSleep()
 
-    const result = await watchCiChecks({ fetchChecks, sleep, deadlineMs: 0 })
+    const result = await watchCiChecks({ readSummary, sleep, deadlineMs: 0 })
 
     expect(result.outcome).toBe('pass')
-    expect(result.polls).toBe(1)
+    expect(result.updates).toBe(1)
   })
 
   it('stops when the caller asks it to, and keeps the last summary', async () => {
-    const { fetchChecks, calls } = scripted([summary({ passed: 1, pending: 1 }), summary({ passed: 2 })])
+    const { readSummary } = scripted([summary({ passed: 1, pending: 1 }), summary({ passed: 2 })])
     const { sleep } = fakeSleep()
     let stop = false
 
     const result = await watchCiChecks({
-      fetchChecks,
+      readSummary,
       sleep,
-      intervalMs: 1000,
+      tickMs: 1000,
       shouldStop: () => stop,
       onTick: () => {
         stop = true
@@ -201,45 +202,44 @@ describe('watchCiChecks', () => {
     })
 
     expect(result.outcome).toBe('cancelled')
-    expect(result.polls).toBe(1)
+    expect(result.updates).toBe(1)
     expect(result.summary).toEqual(summary({ passed: 1, pending: 1 }))
-    expect(calls).toHaveLength(1)
   })
 
-  it('reports a fetch failure as an error carrying the server sentence', async () => {
-    const { fetchChecks } = scripted([new Error('gh CLI not found on PATH')])
-    const { sleep } = fakeSleep()
-
-    const result = await watchCiChecks({ fetchChecks, sleep })
-
-    expect(result.outcome).toBe('error')
-    expect(result.error).toBe('gh CLI not found on PATH')
-    expect(result.polls).toBe(0)
-  })
-
-  it('reports every poll to the caller so the UI can show live progress', async () => {
-    const { fetchChecks } = scripted([
+  it('reports every change to the caller so the UI can show live progress', async () => {
+    const { readSummary } = scripted([
+      summary({ passed: 1, pending: 1 }),
       summary({ passed: 1, pending: 1 }),
       summary({ passed: 2 }),
     ])
     const { sleep } = fakeSleep()
-    const ticks: Array<{ polls: number; verdict: string }> = []
+    const ticks: Array<{ updates: number; verdict: string }> = []
 
     await watchCiChecks({
-      fetchChecks,
+      readSummary,
       sleep,
-      intervalMs: 1000,
-      onTick: (t) => ticks.push({ polls: t.polls, verdict: t.verdict }),
+      tickMs: 1000,
+      onTick: (t) => ticks.push({ updates: t.updates, verdict: t.verdict }),
     })
 
     expect(ticks).toEqual([
-      { polls: 1, verdict: 'pending' },
-      { polls: 2, verdict: 'pass' },
+      { updates: 1, verdict: 'pending' },
+      { updates: 2, verdict: 'pass' },
     ])
   })
 
-  it('defaults to a 10 s interval and a 15 min deadline', () => {
-    expect(CI_WATCH_INTERVAL_MS).toBe(10_000)
+  it('tolerates a status payload that has not arrived yet', async () => {
+    const { readSummary } = scripted([null, null, summary({ passed: 1 })])
+    const { sleep } = fakeSleep()
+
+    const result = await watchCiChecks({ readSummary, sleep, tickMs: 1000 })
+
+    expect(result.outcome).toBe('pass')
+    expect(result.updates).toBe(1)
+  })
+
+  it('defaults to a 2 s tick and a 15 min deadline', () => {
+    expect(CI_WATCH_TICK_MS).toBe(2_000)
     expect(CI_WATCH_DEADLINE_MS).toBe(900_000)
   })
 })
@@ -248,8 +248,7 @@ describe('ciWatchResultLine', () => {
   const result = (over: Partial<CiWatchResult>): CiWatchResult => ({
     outcome: 'pass',
     summary: null,
-    polls: 1,
-    error: null,
+    updates: 1,
     ...over,
   })
 
@@ -271,11 +270,5 @@ describe('ciWatchResultLine', () => {
 
   it('says it stopped when the user cancelled', () => {
     expect(ciWatchResultLine(result({ outcome: 'cancelled' }))).toBe('Stopped watching CI')
-  })
-
-  it('carries the server sentence when the checks could not be read', () => {
-    expect(ciWatchResultLine(result({ outcome: 'error', error: 'boom' }))).toBe(
-      'Could not read CI checks — boom',
-    )
   })
 })

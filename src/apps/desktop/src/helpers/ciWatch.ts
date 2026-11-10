@@ -1,11 +1,11 @@
-import type { GitPrChecks, GitPrChecksSummary } from '../api'
+import type { GitPrChecksSummary } from '../api'
 
 export type CiVerdict = 'pass' | 'fail' | 'pending' | 'empty'
 
-export type CiWatchOutcome = 'pass' | 'fail' | 'timeout' | 'cancelled' | 'error'
+export type CiWatchOutcome = 'pass' | 'fail' | 'timeout' | 'cancelled'
 
 export interface CiWatchTick {
-  polls: number
+  updates: number
   summary: GitPrChecksSummary
   verdict: CiVerdict
 }
@@ -13,26 +13,19 @@ export interface CiWatchTick {
 export interface CiWatchResult {
   outcome: CiWatchOutcome
   summary: GitPrChecksSummary | null
-  polls: number
-  error: string | null
+  updates: number
 }
 
-/** The failure is in the type, not in a `try`: a watch that could not read the
- *  forge must be distinguishable from one that read a green run. */
-export type CiFetchResult =
-  | { ok: true; checks: GitPrChecks }
-  | { ok: false; error: string }
-
 export interface CiWatchOptions {
-  fetchChecks: () => Promise<CiFetchResult>
+  readSummary: () => GitPrChecksSummary | null | undefined
   sleep: (ms: number) => Promise<void>
-  intervalMs?: number
+  tickMs?: number
   deadlineMs?: number
   onTick?: (tick: CiWatchTick) => void
   shouldStop?: () => boolean
 }
 
-export const CI_WATCH_INTERVAL_MS = 10_000
+export const CI_WATCH_TICK_MS = 2_000
 export const CI_WATCH_DEADLINE_MS = 15 * 60_000
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -66,36 +59,43 @@ export function ciWatchResultLine(result: CiWatchResult): string {
       return `Still not green after ${Math.round(CI_WATCH_DEADLINE_MS / 60_000)} min — ${ciProgressLine(result.summary)}`
     case 'cancelled':
       return 'Stopped watching CI'
-    case 'error':
-      return `Could not read CI checks — ${result.error ?? 'unknown error'}`
   }
 }
 
+function sameRollup(a: GitPrChecksSummary | null, b: GitPrChecksSummary): boolean {
+  return (
+    a !== null &&
+    a.total === b.total &&
+    a.passed === b.passed &&
+    a.failed === b.failed &&
+    a.pending === b.pending &&
+    a.skipped === b.skipped &&
+    a.cancelled === b.cancelled
+  )
+}
+
 export async function watchCiChecks(opts: CiWatchOptions): Promise<CiWatchResult> {
-  const intervalMs = opts.intervalMs ?? CI_WATCH_INTERVAL_MS
+  const tickMs = opts.tickMs ?? CI_WATCH_TICK_MS
   const deadlineMs = opts.deadlineMs ?? CI_WATCH_DEADLINE_MS
-  let polls = 0
+  let updates = 0
   let elapsed = 0
   let last: GitPrChecksSummary | null = null
 
   for (;;) {
-    if (opts.shouldStop?.()) {
-      return { outcome: 'cancelled', summary: last, polls, error: null }
+    if (opts.shouldStop?.()) return { outcome: 'cancelled', summary: last, updates }
+
+    const summary = opts.readSummary() ?? null
+    if (summary && !sameRollup(last, summary)) {
+      updates += 1
+      last = summary
+      const verdict = ciVerdict(summary)
+      opts.onTick?.({ updates, summary, verdict })
+      if (verdict === 'pass') return { outcome: 'pass', summary, updates }
+      if (verdict === 'fail') return { outcome: 'fail', summary, updates }
     }
-    const fetched = await opts.fetchChecks()
-    if (!fetched.ok) {
-      return { outcome: 'error', summary: last, polls, error: fetched.error }
-    }
-    polls += 1
-    last = fetched.checks.summary
-    const verdict = ciVerdict(fetched.checks.summary)
-    opts.onTick?.({ polls, summary: fetched.checks.summary, verdict })
-    if (verdict === 'pass') return { outcome: 'pass', summary: last, polls, error: null }
-    if (verdict === 'fail') return { outcome: 'fail', summary: last, polls, error: null }
-    if (elapsed + intervalMs > deadlineMs) {
-      return { outcome: 'timeout', summary: last, polls, error: null }
-    }
-    await opts.sleep(intervalMs)
-    elapsed += intervalMs
+
+    if (elapsed + tickMs > deadlineMs) return { outcome: 'timeout', summary: last, updates }
+    await opts.sleep(tickMs)
+    elapsed += tickMs
   }
 }

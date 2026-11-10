@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Effect } from 'effect'
-import { getPrChecks, mergePr, type GitPrChecksSummary, type GitPrStatus } from '../../../api'
+import { mergePr, type GitPrChecksSummary, type GitPrStatus } from '../../../api'
 import { forgeWording } from '../../../helpers/forgeWording'
 import { invalidatePrStatus } from '../../../helpers/prStatusCache'
 import {
@@ -194,7 +194,6 @@ const watchResultColor = computed(() => {
     case 'pass':
       return 'var(--color-green)'
     case 'fail':
-    case 'error':
       return 'var(--semantic-error)'
     case 'timeout':
       return 'var(--color-yellow)'
@@ -227,23 +226,7 @@ async function startWatch() {
   watchSummary.value = null
   watchResult.value = null
   const result = await watchCiChecks({
-    fetchChecks: async () => {
-      const fetched = await runSyncResult(
-        Effect.tryPromise({
-          try: () =>
-            getPrChecks(props.cwd, props.prUrl, { provider: props.prProvider || undefined }),
-          catch: (e) =>
-            new SyncRemoteError({
-              op: 'prChecks.watch',
-              reason: e instanceof Error ? e.message : String(e),
-            }),
-        }),
-        'prChecks.watch',
-      )
-      return fetched.ok
-        ? { ok: true as const, checks: fetched.value }
-        : { ok: false as const, error: fetched.reason }
-    },
+    readSummary: () => props.status?.checks ?? null,
     sleep: (ms) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)),
     shouldStop: () => stopWatching,
     onTick: (tick) => {

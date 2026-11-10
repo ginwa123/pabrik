@@ -15,20 +15,14 @@ import {
 import { forgeWording } from '../helpers/forgeWording'
 import { clearPrStatusCache, fetchPrStatusCached } from '../helpers/prStatusCache'
 
-const { mergePrMock, getPrStatusMock, getPrChecksMock } = vi.hoisted(() => ({
+const { mergePrMock, getPrStatusMock } = vi.hoisted(() => ({
   mergePrMock: vi.fn(),
   getPrStatusMock: vi.fn(),
-  getPrChecksMock: vi.fn(),
 }))
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
-  return {
-    ...actual,
-    mergePr: mergePrMock,
-    getPrStatus: getPrStatusMock,
-    getPrChecks: getPrChecksMock,
-  }
+  return { ...actual, mergePr: mergePrMock, getPrStatus: getPrStatusMock }
 })
 
 const GH = forgeWording('github')
@@ -56,12 +50,14 @@ function status(over: Partial<Record<string, unknown>> = {}) {
     additions: 1,
     deletions: 2,
     changed_files: 3,
+    checks: rollup(),
     ...over,
   } as never
 }
 
-/** A `GET /api/git/pr/checks` payload with the counts a test cares about. */
-function checks(over: Partial<Record<string, number>> = {}) {
+/** The CI rollup the status endpoint already carries, with the counts a test
+ *  cares about. The watch reads this — it makes no request of its own. */
+function rollup(over: Partial<Record<string, number>> = {}) {
   const summary = {
     total: 0,
     passed: 0,
@@ -71,14 +67,9 @@ function checks(over: Partial<Record<string, number>> = {}) {
     cancelled: 0,
     ...over,
   }
-  summary.total = over.total ?? summary.passed + summary.failed + summary.pending + summary.skipped + summary.cancelled
-  return {
-    provider: 'github',
-    pr_url: 'https://github.com/ginwa123/pabrik/pull/891',
-    checks: [],
-    summary,
-    steps_truncated: false,
-  }
+  summary.total =
+    over.total ?? summary.passed + summary.failed + summary.pending + summary.skipped + summary.cancelled
+  return summary
 }
 
 const state = (over: Partial<Record<string, unknown>> = {}) =>
@@ -431,11 +422,11 @@ describe('MergeBox', () => {
   it('Check CI shows live progress, then reports green and tells the owner to re-read', async () => {
     vi.useFakeTimers()
     try {
-      getPrChecksMock
-        .mockResolvedValueOnce(checks({ passed: 1, pending: 1 }))
-        .mockResolvedValueOnce(checks({ passed: 2 }))
       const w = mount(MergeBox, {
-        props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+        props: {
+          ...props,
+          status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 1, pending: 1 }) }),
+        },
       })
 
       await w.get('[data-testid="pr-ci-check"]').trigger('click')
@@ -446,7 +437,12 @@ describe('MergeBox', () => {
       )
       expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
 
-      await vi.advanceTimersByTimeAsync(10_000)
+      // The owner's own 30 s status poll lands; the watch reads it, it does not
+      // ask the forge itself.
+      await w.setProps({
+        status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 2 }) }),
+      })
+      await vi.advanceTimersByTimeAsync(2_000)
 
       expect(w.find('[data-testid="pr-ci-watch"]').exists()).toBe(false)
       expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe(
@@ -461,9 +457,11 @@ describe('MergeBox', () => {
   it('Check CI stops on a red run and says how many failed', async () => {
     vi.useFakeTimers()
     try {
-      getPrChecksMock.mockResolvedValueOnce(checks({ passed: 2, failed: 1 }))
       const w = mount(MergeBox, {
-        props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+        props: {
+          ...props,
+          status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 2, failed: 1 }) }),
+        },
       })
 
       await w.get('[data-testid="pr-ci-check"]').trigger('click')
@@ -483,15 +481,17 @@ describe('MergeBox', () => {
   it('Stop ends the watch without ever claiming the checks passed', async () => {
     vi.useFakeTimers()
     try {
-      getPrChecksMock.mockResolvedValue(checks({ passed: 1, pending: 1 }))
       const w = mount(MergeBox, {
-        props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
+        props: {
+          ...props,
+          status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 1, pending: 1 }) }),
+        },
       })
 
       await w.get('[data-testid="pr-ci-check"]').trigger('click')
       await vi.advanceTimersByTimeAsync(0)
       await w.get('[data-testid="pr-ci-watch-cancel"]').trigger('click')
-      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.advanceTimersByTimeAsync(2_000)
 
       expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe('Stopped watching CI')
       expect(w.emitted('checksPassed')).toBeFalsy()
