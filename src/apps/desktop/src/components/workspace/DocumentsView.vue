@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The document page (Migration 095), reached from the sidebar's Documents section, which writes
 // `/app/{ws}/doc/{id}` into the URL — a PAGE shape, so the chat it was opened from is unmounted.
-// Two formats share it: `markdown` (textarea + preview) and `office` (a Univer editor).
+// Three formats share it: `markdown`, `office` (a Univer editor) and `html` (a sandboxed iframe).
 import { computed, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDocumentsStore } from '../../stores/documents'
@@ -15,7 +15,13 @@ import {
   serializeOfficeBody,
 } from '../../helpers/officeDocument'
 import OfficeDocumentEditor from './OfficeDocumentEditor.vue'
-import { isHtmlFormat } from '../../helpers/htmlDocument'
+import {
+  DEFAULT_HTML_VIEWPORT,
+  HTML_VIEWPORTS,
+  isHtmlFormat,
+  viewportWidth,
+  type HtmlViewportId,
+} from '../../helpers/htmlDocument'
 
 const props = defineProps<{
   documentId: string
@@ -41,6 +47,9 @@ const officeEditor = ref<InstanceType<typeof OfficeDocumentEditor> | null>(null)
  *  body it is handed, so an empty body would open a blank spreadsheet and Save
  *  would write that workbook under the document's real kind. */
 const bodyLoaded = ref(false)
+/** The width an HTML page is previewed at. Per document, so opening another
+ *  page never inherits a phone frame the user forgot they chose. */
+const viewport = ref<HtmlViewportId>(DEFAULT_HTML_VIEWPORT)
 
 // The resolved workspace, not the raw `activeWorkspaceId` ref.
 const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
@@ -68,6 +77,14 @@ const isDirty = computed(
 )
 
 const renderedHtml = computed(() => renderMarkdownHtml(draftContent.value))
+
+/** The iframe's own size. A non-desktop width is a fixed device width, centred
+ *  in the stage and ringed so it reads as a device rather than a broken page. */
+const frameStyle = computed(() => {
+  const width = viewportWidth(viewport.value)
+  if (width === null) return 'width: 100%; height: 100%;'
+  return `width: ${width}px; max-width: 100%; height: 100%; box-shadow: 0 0 0 1px var(--color-border);`
+})
 
 /** The id whose body is being fetched, so a retry cannot stack up requests. */
 let loadingId: string | null = null
@@ -142,6 +159,7 @@ onUpdated(() => {
     prevDocumentId = props.documentId
     hadDocumentRow = false
     bodyLoaded.value = false
+    viewport.value = DEFAULT_HTML_VIEWPORT
     void loadForDocument(props.documentId)
     return
   }
@@ -269,6 +287,29 @@ const remove = async () => {
         </span>
 
         <div class="ml-auto flex items-center gap-2 shrink-0">
+          <div
+            v-if="isHtml"
+            class="flex items-center gap-0.5 mr-1"
+            role="group"
+            aria-label="Preview viewport"
+            data-testid="documents-viewport-switcher"
+          >
+            <button
+              v-for="choice in HTML_VIEWPORTS"
+              :key="choice.id"
+              class="text-meta px-2 h-[var(--sb-hit)] rounded-md transition-colors"
+              :style="
+                viewport === choice.id
+                  ? 'background: var(--semantic-active-bg); color: var(--semantic-active-text);'
+                  : 'color: var(--semantic-text-dim);'
+              "
+              :aria-pressed="viewport === choice.id"
+              :data-testid="`documents-viewport-${choice.id}`"
+              @click="viewport = choice.id"
+            >
+              {{ choice.label }}
+            </button>
+          </div>
           <template v-if="isOffice">
             <button
               v-if="editing"
@@ -384,25 +425,41 @@ const remove = async () => {
            WITHOUT `allow-same-origin`, so the page runs on a null origin and
            cannot reach the app. -->
       <div v-else-if="isHtml" class="flex-1 min-h-0 flex" data-testid="documents-html-body">
-        <textarea
-          v-if="editing"
-          v-model="draftContent"
-          class="flex-1 min-w-0 p-4 bg-transparent outline-none resize-none text-body font-mono"
-          style="color: var(--semantic-text)"
-          data-testid="documents-content-input"
-          aria-label="HTML source"
-          spellcheck="false"
-        />
-        <iframe
-          v-if="!editing || showPreview"
-          :srcdoc="draftContent"
-          sandbox="allow-scripts allow-forms"
-          referrerpolicy="no-referrer"
-          class="flex-1 min-w-0 border-0"
-          :style="editing ? 'border-left: 1px solid var(--color-border)' : ''"
-          title="HTML preview"
-          data-testid="documents-html-preview"
-        ></iframe>
+        <div
+          v-if="!bodyLoaded"
+          class="p-6 text-body"
+          style="color: var(--semantic-text-dim)"
+          data-testid="documents-html-loading"
+        >
+          {{ documentsStore.error ?? 'Loading document…' }}
+        </div>
+        <template v-else>
+          <textarea
+            v-if="editing"
+            v-model="draftContent"
+            class="flex-1 min-w-0 p-4 bg-transparent outline-none resize-none text-body font-mono"
+            style="color: var(--semantic-text)"
+            data-testid="documents-content-input"
+            aria-label="HTML source"
+            spellcheck="false"
+          />
+          <div
+            v-if="!editing || showPreview"
+            class="flex-1 min-w-0 flex justify-center overflow-auto"
+            :style="editing ? 'border-left: 1px solid var(--color-border)' : ''"
+            data-testid="documents-html-stage"
+          >
+            <iframe
+              :srcdoc="draftContent"
+              sandbox="allow-scripts allow-forms"
+              referrerpolicy="no-referrer"
+              class="border-0"
+              :style="frameStyle"
+              title="HTML preview"
+              data-testid="documents-html-preview"
+            ></iframe>
+          </div>
+        </template>
       </div>
 
       <!-- Both panes are always mounted while editing. `v-if` on the

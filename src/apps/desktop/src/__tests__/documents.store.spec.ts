@@ -224,18 +224,20 @@ describe('documents store — mutations', () => {
 })
 
 describe('documents store — single-document load', () => {
-  it('serves a cached row without a network call', async () => {
+  it('revalidates a cached body instead of serving it', async () => {
     listDocuments.mockResolvedValue({ documents: [doc('doc_1', { content: 'cached' })], count: 1 })
     const store = useDocumentsStore()
     await store.fetchDocuments('ws_1')
     getDocument.mockClear()
+    getDocument.mockResolvedValue({ document: doc('doc_1', { content: 'server body' }) })
 
     const loaded = await store.loadDocument('ws_1', 'doc_1')
 
-    expect(loaded?.content).toBe('cached')
-    // The list response already carries every body, so a sidebar-driven
-    // open costs nothing extra.
-    expect(getDocument).not.toHaveBeenCalled()
+    // The list is cache-first, but the OPEN document must be the server's: a
+    // cached body is what made an agent edit invisible and a cleared body
+    // render as a blank page.
+    expect(getDocument).toHaveBeenCalledWith('ws_1', 'doc_1')
+    expect(loaded?.content).toBe('server body')
   })
 
   it('fetches the body for a list row, which carries metadata only', async () => {
@@ -267,12 +269,9 @@ describe('documents store — single-document load', () => {
     await store.loadDocument('ws_1', 'doc_1')
 
     // The row stays in the list (the sidebar keeps it) and now carries the
-    // body, so a second open is free.
+    // body, so an offline open still has something to render.
     expect(store.documents).toHaveLength(1)
     expect(store.findById('doc_1')?.content).toBe('body')
-    getDocument.mockClear()
-    await store.loadDocument('ws_1', 'doc_1')
-    expect(getDocument).not.toHaveBeenCalled()
   })
 
   it('falls through to the API for a deep-linked id not in the list', async () => {
@@ -283,6 +282,9 @@ describe('documents store — single-document load', () => {
 
     expect(loaded?.id).toBe('doc_9')
     expect(getDocument).toHaveBeenCalledWith('ws_1', 'doc_9')
+    // Inserted, so the page has a row to render instead of "Loading document…"
+    // forever.
+    expect(store.findById('doc_9')?.content).toBe('deep link')
   })
 
   it('a 404 on a deep link is an error, not an empty document', async () => {
