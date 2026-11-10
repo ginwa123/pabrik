@@ -193,3 +193,84 @@ test "headless documents: doc-create --format office stores a spreadsheet, and a
     const after_doc = try after.json();
     try testing.expectEqual(@as(i64, 1), try intField(after_doc, "document_count"));
 }
+
+test "headless documents: export writes one document as a file and several as one zip" {
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const ws = try createWorkspace(&h, "export-headless");
+    defer gpa.free(ws);
+
+    // 1. A markdown document and an office document, so the two export formats
+    //    are both exercised.
+    var md_run = try documents(&h, &.{
+        "doc-create", "--workspace", ws, "--title", "Release plan", "--content", "# v1\n\nship it",
+    }, true);
+    defer md_run.deinit();
+    const md_doc = try md_run.json();
+    const md_id = try gpa.dupe(u8, try stringField(md_doc, "id"));
+    defer gpa.free(md_id);
+
+    var sheet_run = try documents(&h, &.{
+        "doc-create", "--workspace", ws, "--title", "Budget", "--format", "office",
+        "--content", "{\"kind\":\"sheet\",\"snapshot\":{\"sheets\":{}}}",
+    }, true);
+    defer sheet_run.deinit();
+    const sheet_doc = try sheet_run.json();
+    const sheet_id = try gpa.dupe(u8, try stringField(sheet_doc, "id"));
+    defer gpa.free(sheet_id);
+
+    // 2. One document exports as its own body, under a name derived from the
+    //    title and the format.
+    const one_path = try harness.harnessPath(gpa, h.temp_dir, &.{"export-one.md"});
+    defer gpa.free(one_path);
+
+    var one_run = try documents(&h, &.{
+        "export", "--workspace", ws, "--document", md_id, "--out", one_path,
+    }, true);
+    defer one_run.deinit();
+    const one_doc = try one_run.json();
+    try testing.expectEqualStrings("Release plan.md", try stringField(one_doc, "filename"));
+    try testing.expectEqualStrings("text/markdown; charset=utf-8", try stringField(one_doc, "mime"));
+    try testing.expectEqual(@as(i64, 1), try intField(one_doc, "count"));
+    try testing.expectEqualStrings(one_path, try stringField(one_doc, "path"));
+
+    const one_bytes = try std.Io.Dir.cwd().readFileAlloc(io, one_path, gpa, .limited(1 << 20));
+    defer gpa.free(one_bytes);
+    try testing.expectEqualStrings("# v1\n\nship it", one_bytes);
+
+    // 3. Several documents export as one zip holding both, with the office
+    //    document keeping its .json extension.
+    const zip_path = try harness.harnessPath(gpa, h.temp_dir, &.{"export-all.zip"});
+    defer gpa.free(zip_path);
+
+    const ids = try std.fmt.allocPrint(gpa, "{s},{s}", .{ md_id, sheet_id });
+    defer gpa.free(ids);
+
+    var zip_run = try documents(&h, &.{
+        "export", "--workspace", ws, "--documents", ids, "--out", zip_path,
+    }, true);
+    defer zip_run.deinit();
+    const zip_doc = try zip_run.json();
+    try testing.expectEqualStrings("documents.zip", try stringField(zip_doc, "filename"));
+    try testing.expectEqualStrings("application/zip", try stringField(zip_doc, "mime"));
+    try testing.expectEqual(@as(i64, 2), try intField(zip_doc, "count"));
+
+    const zip_bytes = try std.Io.Dir.cwd().readFileAlloc(io, zip_path, gpa, .limited(1 << 20));
+    defer gpa.free(zip_bytes);
+    try testing.expect(std.mem.startsWith(u8, zip_bytes, "PK\x03\x04"));
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "Release plan.md") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "Budget.json") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "# v1\n\nship it") != null);
+
+    // 4. An id that does not exist is a non-zero exit with nothing on stdout —
+    //    a machine caller must never read a half-written object.
+    var refused = try documents(&h, &.{
+        "export", "--workspace", ws, "--document", "doc_missing", "--out", one_path,
+    }, false);
+    defer refused.deinit();
+    try testing.expect(refused.result.exit_code != 0);
+    try testing.expectEqualStrings("", refused.result.stdout);
+}

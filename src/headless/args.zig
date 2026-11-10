@@ -129,6 +129,9 @@ pub const DocumentsOp = enum {
     doc_search,
     /// Read one document back, body included.
     doc_get,
+    /// Write one document, or a zip of several, to a file — the same bytes the
+    /// HTTP export endpoints return.
+    export_file,
     backfill,
 };
 
@@ -159,6 +162,11 @@ pub const DocumentsArgs = struct {
     dry_run: bool = false,
     /// `search`: the literal substring to look for.
     query: []const u8 = "",
+    /// `export`: comma-separated document ids, zipped into one archive.
+    documents: []const u8 = "",
+    /// `export`: where to write the file. Null means the exported file's own
+    /// name, in the current directory.
+    out: ?[]const u8 = null,
 };
 
 /// The object-store verbs. One per `Storage` method, so an agent can exercise
@@ -255,10 +263,11 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-get | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-get | export | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      doc-create flags: --content <body> --format markdown|office\n" ++
     "      search flags: --query <text>\n" ++
+    "      export flags: --document <id> | --documents <id,id,...> --out <path>\n" ++
     "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
@@ -475,6 +484,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-delete")) break :blk .doc_delete;
         if (std.mem.eql(u8, word, "doc-search")) break :blk .doc_search;
         if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
+        if (std.mem.eql(u8, word, "export")) break :blk .export_file;
         if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
         return fail(.{ .kind = .documents_unknown_op, .value = word });
     };
@@ -530,6 +540,14 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.query = argv[i];
+        } else if (std.mem.eql(u8, flag, "--documents")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.documents = argv[i];
+        } else if (std.mem.eql(u8, flag, "--out")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.out = argv[i];
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
@@ -544,6 +562,11 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     }
     switch (op) {
         .list, .folder_delete, .backfill => {},
+        .export_file => {
+            if (got.document_id == null and got.documents.len == 0) {
+                return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
+            }
+        },
         .search => {
             if (got.query.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--query" });
         },

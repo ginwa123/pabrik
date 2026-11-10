@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, onUpdated, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSidebarStore } from '../../stores/sidebar'
-import { isAtOrBelow, useDocumentsStore } from '../../stores/documents'
+import { useDocumentsStore } from '../../stores/documents'
 import { useNavigationStore } from '../../stores/navigation'
 import { useWorkspacesStore } from '../../stores/workspaces'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
@@ -15,8 +15,12 @@ import {
   type OfficeKind,
 } from '../../helpers/officeDocument'
 import DocumentsNewMenu from './DocumentsNewMenu.vue'
+import DocumentsContextMenu from './DocumentsContextMenu.vue'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
-import type { Document, DocumentFolder } from '../../api'
+import { useDocumentSelectionExport } from '../../composables/useDocumentSelectionExport'
+import { useDocumentDragDrop } from '../../composables/useDocumentDragDrop'
+import type { DocumentRow } from '../../helpers/documentRow'
+import type { DocumentFolder } from '../../api'
 
 const props = defineProps<{
   workspaceId: string | null
@@ -40,16 +44,10 @@ const isCurrentDocument = (id: string): boolean =>
 
 const documents = computed(() => documentsStore.documents)
 
-/** Folders whose children are hidden. A collapsed folder still renders its own
- * row, so the count stays visible while the level below it does not. */
 const collapsed = ref<Set<string>>(new Set())
 
-/** A drop lands as a click on some browsers; toggling the folder shut right
- * after the document fell into it reads as "the move did nothing". */
-let lastDropAt = 0
-
 const toggleFolder = (id: string) => {
-  if (Date.now() - lastDropAt < 300) return
+  if (Date.now() - lastDropAt.value < 300) return
   const next = new Set(collapsed.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
@@ -73,14 +71,10 @@ const expand = (id: string) => {
   collapsed.value = next
 }
 
-type Row =
-  | { kind: 'folder'; folder: DocumentFolder; depth: number }
-  | { kind: 'document'; document: Document; depth: number }
-
 /** Flattened visible tree, depth-first. Folders come before documents at every
  * level (the store owns that rule) and a collapsed folder contributes one row. */
-const rows = computed<Row[]>(() => {
-  const out: Row[] = []
+const rows = computed<DocumentRow[]>(() => {
+  const out: DocumentRow[] = []
   const walk = (parentId: string | null, depth: number) => {
     for (const entry of documentsStore.level(parentId)) {
       if (entry.kind === 'folder') {
@@ -131,144 +125,38 @@ const selectDocument = (id: string) => {
   navigationStore.clearActiveChat()
 }
 
-// ─── Drag state ──────────────────────────────────────────────────────────
-const draggingDoc = ref<string | null>(null)
-const draggingFolder = ref<string | null>(null)
-/** Folder row currently outlined as "drop inside me". */
-const overFolder = ref<string | null>(null)
-/** Document row the drop would land next to, and on which side. */
-const overDoc = ref<{ id: string; after: boolean } | null>(null)
+const {
+  selectedIds,
+  isSelected,
+  onDocumentClick,
+  onDocumentContextMenu,
+  exporting,
+  exportNotice,
+  menuPos,
+  exportSelected,
+  exportAll,
+  selectAllDocuments,
+  clearSelectionFromMenu,
+} = useDocumentSelectionExport({
+  documents,
+  rows,
+  workspaceId: activeWorkspaceId,
+  openDocument: selectDocument,
+})
 
-const clearDragState = () => {
-  draggingDoc.value = null
-  draggingFolder.value = null
-  overFolder.value = null
-  overDoc.value = null
-}
-
-const startDragDocument = (event: DragEvent, id: string) => {
-  draggingDoc.value = id
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('application/x-document-id', id)
-  }
-}
-
-const startDragFolder = (event: DragEvent, id: string) => {
-  draggingFolder.value = id
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('application/x-document-folder-id', id)
-  }
-}
-
-/** Dragging over a folder row means "into"; over a document row it means
- * "before/after", the same two halves the shipped reorder used. */
-const handleDragOver = (event: DragEvent, row: Row) => {
-  if (!draggingDoc.value && !draggingFolder.value) return
-  event.preventDefault()
-  if (row.kind === 'folder') {
-    // A folder cannot be dropped into itself or its own descendant; the store
-    // refuses it too, but a dead drop target should not look alive.
-    const source = draggingFolder.value
-    if (
-      source &&
-      (source === row.folder.id || isAtOrBelow(documentsStore.folders, source, row.folder.id))
-    ) {
-      return
-    }
-    overFolder.value = row.folder.id
-    overDoc.value = null
-    return
-  }
-  if (!draggingDoc.value) return
-  overFolder.value = null
-  const target = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  overDoc.value = { id: row.document.id, after: event.clientY > target.top + target.height / 2 }
-}
-
-const levelDocumentIds = (folderId: string | null): string[] =>
-  documentsStore
-    .level(folderId)
-    .filter((entry): entry is { kind: 'document'; document: Document } => entry.kind === 'document')
-    .map((entry) => entry.document.id)
-
-const reorderWithin = (
-  folderId: string | null,
-  sourceId: string,
-  targetId: string,
-  after: boolean,
-) => {
-  const ids = levelDocumentIds(folderId)
-  const from = ids.indexOf(sourceId)
-  const to = ids.indexOf(targetId)
-  if (from === -1 || to === -1) return
-  const [moved] = ids.splice(from, 1)
-  if (!moved) return
-  const targetIdx = to > from ? to - 1 : to
-  ids.splice(targetIdx + (after ? 1 : 0), 0, moved)
-  const wsId = activeWorkspaceId()
-  if (!wsId) return
-  void documentsStore.reorderDocuments(wsId, ids, folderId)
-}
-
-/** The element under the pointer is the truth: a drag can skip a `dragover`
- * frame, and a drop that trusts the last hover frame is a silent no-op on any
- * part of a folder row that is not its exact middle. */
-const rowUnder = (event: DragEvent) => {
-  const el = event.target as HTMLElement | null
-  const rowEl = el?.closest('[data-folder-id], [data-doc-id]') as HTMLElement | null
-  return {
-    rowEl,
-    folderId: rowEl?.getAttribute('data-folder-id') ?? null,
-    documentId: rowEl?.getAttribute('data-doc-id') ?? null,
-  }
-}
-
-const handleDrop = (event: DragEvent, row: Row) => {
-  event.preventDefault()
-  const wsId = activeWorkspaceId()
-  const doc = draggingDoc.value
-  const folder = draggingFolder.value
-  const { rowEl, folderId, documentId } = rowUnder(event)
-  const hovered = overDoc.value
-  const rect = rowEl?.getBoundingClientRect()
-  const after = rect ? event.clientY > rect.top + rect.height / 2 : (hovered?.after ?? false)
-  lastDropAt = Date.now()
-  clearDragState()
-  if (!wsId) return
-
-  // A folder row means "into", whatever part of the row you let go on.
-  const targetFolder = folderId ?? (row.kind === 'folder' ? row.folder.id : null)
-  if (targetFolder) {
-    if (doc) {
-      expand(targetFolder)
-      void documentsStore.moveDocument(wsId, doc, targetFolder)
-    } else if (folder && folder !== targetFolder) {
-      expand(targetFolder)
-      void documentsStore.moveFolder(wsId, folder, targetFolder)
-    }
-    return
-  }
-
-  const targetDocument = documentId ?? (row.kind === 'document' ? row.document.id : null)
-  if (targetDocument && doc && doc !== targetDocument) {
-    const target = documentsStore.documents.find((d) => d.id === targetDocument)
-    reorderWithin(target?.folder_id ?? null, doc, targetDocument, after)
-  }
-}
-
-/** Dropping on the empty space below the tree moves the row to the root. */
-const handleRootDrop = (event: DragEvent) => {
-  event.preventDefault()
-  const wsId = activeWorkspaceId()
-  const doc = draggingDoc.value
-  const folder = draggingFolder.value
-  clearDragState()
-  if (!wsId) return
-  if (doc) void documentsStore.moveDocument(wsId, doc, null)
-  else if (folder) void documentsStore.moveFolder(wsId, folder, null)
-}
+const {
+  lastDropAt,
+  draggingDoc,
+  draggingFolder,
+  overFolder,
+  overDoc,
+  clearDragState,
+  startDragDocument,
+  startDragFolder,
+  handleDragOver,
+  handleDrop,
+  handleRootDrop,
+} = useDocumentDragDrop({ workspaceId: activeWorkspaceId, expand })
 
 // ─── Create / rename / delete ────────────────────────────────────────────
 const createDocument = (folderId: string | null = null, kind: 'markdown' | OfficeKind = 'markdown') => {
@@ -574,12 +462,16 @@ onUpdated(() => {
             :data-testid="`document-row-${row.document.id}`"
             role="treeitem"
             :aria-level="row.depth + 1"
+            :aria-selected="isSelected(row.document.id)"
             :style="
               isCurrentDocument(row.document.id)
                 ? `padding-left: ${indent(row.depth)}; background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);`
-                : `padding-left: ${indent(row.depth)}; color: var(--semantic-text-muted);`
+                : isSelected(row.document.id)
+                  ? `padding-left: ${indent(row.depth)}; background: var(--tint-accent); color: var(--semantic-text); box-shadow: inset 0 0 0 1px var(--tint-accent-border);`
+                  : `padding-left: ${indent(row.depth)}; color: var(--semantic-text-muted);`
             "
-            @click="selectDocument(row.document.id)"
+            @click="onDocumentClick($event, row.document.id)"
+            @contextmenu.prevent="onDocumentContextMenu($event, row.document.id)"
           >
             <span class="w-[var(--sb-mark)] shrink-0" aria-hidden="true"></span>
             <span class="flex-1 min-w-0 truncate">{{ row.document.title }}</span>
@@ -594,6 +486,29 @@ onUpdated(() => {
           @drop="handleRootDrop"
         ></li>
       </ul>
+
+      <p
+        v-if="exportNotice"
+        class="px-[var(--sb-gutter)] text-meta py-1 truncate"
+        style="color: var(--semantic-success)"
+        data-testid="documents-export-notice"
+        :title="exportNotice"
+      >
+        {{ exportNotice }}
+      </p>
     </div>
+
+    <DocumentsContextMenu
+      v-if="menuPos"
+      :x="menuPos.x"
+      :y="menuPos.y"
+      :selected-count="selectedIds.size"
+      :total-count="documents.length"
+      :busy="exporting"
+      @export-selected="exportSelected"
+      @export-all="exportAll"
+      @select-all="selectAllDocuments"
+      @clear-selection="clearSelectionFromMenu"
+    />
   </div>
 </template>
