@@ -19,6 +19,8 @@ const getRegistryMock = api.getAgentToolsRegistry as unknown as ReturnType<typeo
 
 const MCP_NAME = 'mcp_ctx_query-docs'
 
+type RegistryOpts = { includeMcp?: boolean; workspaceId?: string | null }
+
 function seedWorkspace(id = 'ws_1'): void {
   const store = useWorkspacesStore()
   store.workspaces = [
@@ -37,6 +39,13 @@ function registryWithMcpTool() {
         kind: 'mcp' as const,
       },
     ],
+  }
+}
+
+/** The wire shape the endpoint returns for the compiled-in registry alone. */
+function builtinsOnly() {
+  return {
+    tools: [{ name: 'read_file', description: 'reads a file', kind: 'builtin' as const }],
   }
 }
 
@@ -111,6 +120,68 @@ describe('FileInput — /tool picker MCP rows', () => {
     expect(row.find('[data-testid="tool-picker-mcp-badge"]').exists()).toBe(false)
   })
 
+  it('renders the built-in tools while the MCP request is still pending', async () => {
+    seedWorkspace()
+    let resolveMcp: (value: unknown) => void = () => {}
+    getRegistryMock.mockImplementation((opts: RegistryOpts = {}) => {
+      if (opts.includeMcp) {
+        return new Promise((resolve) => {
+          resolveMcp = resolve
+        })
+      }
+      return Promise.resolve(builtinsOnly())
+    })
+
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+    await typeInTextarea(textarea, '/tool-')
+
+    const list = wrapper.find('[data-testid="tool-picker-list"]')
+    expect(list.text()).toContain('read_file')
+    expect(wrapper.find('[data-testid="tool-picker-mcp-loading"]').exists()).toBe(true)
+
+    resolveMcp(registryWithMcpTool())
+    await flushPromises()
+
+    expect(list.text()).toContain(MCP_NAME)
+    expect(wrapper.find('[data-testid="tool-picker-mcp-loading"]').exists()).toBe(false)
+  })
+
+  it('an MCP failure keeps the built-in rows usable and says so', async () => {
+    seedWorkspace()
+    getRegistryMock.mockImplementation((opts: RegistryOpts = {}) => {
+      if (opts.includeMcp) return Promise.reject(new Error('mcp down'))
+      return Promise.resolve(builtinsOnly())
+    })
+
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+    await typeInTextarea(textarea, '/tool-')
+
+    const list = wrapper.find('[data-testid="tool-picker-list"]')
+    expect(list.text()).toContain('read_file')
+    expect(wrapper.find('[data-testid="tool-picker-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tool-picker-mcp-error"]').text()).toContain('mcp down')
+  })
+
+  it('a second open does not refetch the MCP tools for the same workspace', async () => {
+    seedWorkspace()
+    const wrapper = await mountInput()
+    const textarea = wrapper.find('textarea')
+
+    await typeInTextarea(textarea, '/tool-')
+    const mcpCalls = () =>
+      getRegistryMock.mock.calls.filter(([opts]) => (opts as RegistryOpts)?.includeMcp).length
+    expect(mcpCalls()).toBe(1)
+
+    await textarea.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    await typeInTextarea(textarea, '/tool-')
+
+    expect(mcpCalls()).toBe(1)
+    expect(wrapper.find('[data-testid="tool-picker-list"]').text()).toContain(MCP_NAME)
+  })
+
   it("asks the backend for the active workspace's MCP tools", async () => {
     const WORKSPACE = 'ws_with_servers'
     seedWorkspace(WORKSPACE)
@@ -119,9 +190,7 @@ describe('FileInput — /tool picker MCP rows', () => {
 
     await typeInTextarea(textarea, '/tool-')
 
-    expect(getRegistryMock).toHaveBeenCalledWith({
-      includeMcp: true,
-      workspaceId: WORKSPACE,
-    })
+    const mcpCall = getRegistryMock.mock.calls.find(([opts]) => (opts as RegistryOpts)?.includeMcp)
+    expect(mcpCall?.[0]).toEqual({ includeMcp: true, workspaceId: WORKSPACE })
   })
 })
