@@ -45,6 +45,8 @@ pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
 // after `SkillWriteToolRule` and before the gated Secrets rule.
 pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
 pub const PullRequestToolRule = prompts.PullRequestToolRule;
+// The `#Notes AutoMerge` flag: wait for CI, then merge — only when the note says so.
+pub const AutoMergeToolRule = prompts.AutoMergeToolRule;
 // The `<ask_user>` question card — appended by `buildMessages` for the main
 // agent only, because a sub-agent cannot reach the human.
 pub const AskUserRule = prompts.AskUserRule;
@@ -424,8 +426,7 @@ test "build_agent_prompt omits Local Knowledge when cwd is empty" {
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "",                  
-        "", "", "", "", &tools, "", null, "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No cwd → no Local Knowledge section
@@ -470,20 +471,7 @@ test "build_agent_prompt: no sub-agent section is rendered" {
     const io = std.testing.io;
 
     const tools = [_]AgentTool{};
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,                            
-        "",                          
-        "",                             
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Available Sub-Agents"));
@@ -534,20 +522,7 @@ test "build_agent_prompt omits Kanban Status Tracking when section is empty" {
     const io = std.testing.io;
 
     const tools = [_]AgentTool{};
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",                          
-        "",                             
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Kanban Status Tracking"));
@@ -1069,20 +1044,7 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
     const tools = [_]AgentTool{};
     // workspaceContext is "" — mirrors the production behavior when
     // the session is not bound to any workspace_item_task.
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",                          
-        "",                             
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No Workspace Context section is rendered.
@@ -1100,20 +1062,7 @@ test "build_agent_prompt always renders Search Tool Preference (unconditional)" 
 
     // Empty tool list — proves the section has no `requires_tool` gate.
     const tools = [_]AgentTool{};
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // Header is rendered.
@@ -1149,20 +1098,7 @@ test "build_agent_prompt Search Tool Preference appears even with non-empty tool
         makeTool("bash", "Run a bash command"),
         makeTool("search", "Search tool"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(contains(prompt, "## Search Tool Preference (MANDATORY)"));
@@ -1182,20 +1118,7 @@ test "build_agent_prompt renders Memory Tools section when load_memory is in too
         makeTool("read_file", "Read a file"),
         makeTool("load_memory", "Search saved notes (FTS5)"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // Section header is rendered.
@@ -1218,20 +1141,7 @@ test "build_agent_prompt omits Memory Tools section when load_memory is absent" 
         makeTool("read_file", "Read a file"),
         makeTool("bash", "Run shell"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Memory Tools"));
@@ -1492,6 +1402,7 @@ const mandate_order = [_][]const u8{
     SkillWriteToolRule,
     GitWorktreeToolRule,
     PullRequestToolRule,
+    AutoMergeToolRule,
 };
 
 /// Assemble one session's system prompt through the live path and hand
@@ -1843,5 +1754,27 @@ test "PullRequestToolRule mandates the binding, keeps creation with the forge CL
     // The escape hatch, same reasoning as the worktree rule above.
     try std.testing.expect(contains(prompt, "search_tool"));
     try std.testing.expect(contains(prompt, "use_tool"));
+    try std.testing.expect(contains(prompt, "Self-check"));
+}
+
+test "AutoMergeToolRule gates the merge on the note and on a green wait" {
+    const prompt: []const u8 = AutoMergeToolRule;
+
+    // The gate: no note, no merge. This is the whole point of the rule.
+    try std.testing.expect(contains(prompt, "#Notes AutoMerge"));
+    try std.testing.expect(contains(prompt, "Never merge"));
+    // The engine: the headless commands, in the order they must run.
+    const i_wait = std.mem.indexOf(u8, prompt, "headless pr wait").?;
+    const i_merge = std.mem.indexOf(u8, prompt, "headless pr merge").?;
+    try std.testing.expect(i_wait < i_merge);
+    // The method comes from the note, and squash is the fallback.
+    try std.testing.expect(contains(prompt, "Method:"));
+    try std.testing.expect(contains(prompt, "squash"));
+    // Exit codes are the contract, including the accepted-but-not-merged case
+    // that must never be reported as landed.
+    try std.testing.expect(contains(prompt, "exit"));
+    try std.testing.expect(contains(prompt, "never claim it landed"));
+    // A red run stops the agent instead of merging anyway.
+    try std.testing.expect(contains(prompt, "do NOT merge"));
     try std.testing.expect(contains(prompt, "Self-check"));
 }

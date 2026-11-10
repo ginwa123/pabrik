@@ -81,6 +81,8 @@ export interface KanbanBoardContext {
     useGitWorktree?: boolean
     worktreePath?: string
     worktreeBaseBranch?: string
+    autoMerge?: boolean
+    autoMergeMethod?: string
     tags?: string[]
     selectedAgent?: string
     pendingFiles?: PreviewFile[]

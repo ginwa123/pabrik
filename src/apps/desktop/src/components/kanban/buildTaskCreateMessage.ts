@@ -5,6 +5,8 @@ export function buildTaskCreateMessage(
   useGitWorktree: boolean,
   worktreePath?: string,
   baseBranch?: string,
+  autoMerge?: boolean,
+  autoMergeMethod?: string,
 ): string {
   const lines: string[] = [`Task : ${name}`]
   const desc = description.trim()
@@ -20,6 +22,14 @@ export function buildTaskCreateMessage(
     const base = (baseBranch ?? '').trim()
     if (base !== '') {
       lines.push(`Base: ${base}`)
+    }
+  }
+  if (autoMerge) {
+    if (!useGitWorktree) lines.push('')
+    lines.push('#Notes AutoMerge')
+    const method = (autoMergeMethod ?? '').trim()
+    if (method !== '') {
+      lines.push(`Method: ${method}`)
     }
   }
   // No `#Skill` line here: the backend appends one per skill from the task's

@@ -208,6 +208,22 @@ pub const PullRequestToolRule =
     \\**Self-check:** did I learn a PR URL without binding it? Call `set_pull_request` first.
 ;
 
+pub const AutoMergeToolRule =
+    \\## Auto Merge — wait for CI, then merge, only when the note says so
+    \\
+    \\**Never merge a change request unless the task note carries `#Notes AutoMerge`.** Otherwise a human merges by hand: a merge is not reversible, and it is not yours to take.
+    \\
+    \\**When the note carries it,** after the PR exists and is bound with `set_pull_request`, run the headless command — it is the same use case the HTTP API calls, with no server and no port:
+    \\
+    \\- `pabrik headless pr wait --path <worktree> --pr <pr-url> --interval-ms 30000 --timeout-ms 1800000` polls the forge until every check is green. Exit `0` means green; anything else means red, timed out, or the forge could not be read.
+    \\- On exit `0` ONLY: `pabrik headless pr merge --path <worktree> --pr <pr-url> --method <method>`, where `<method>` is the note's `Method:` line (`merge`, `squash`, or `rebase`; `squash` when the note has none).
+    \\- On a non-zero exit: do NOT merge. The JSON names the failing checks — report them and stop.
+    \\
+    \\**Exit codes are the contract:** `pr wait` exits `0` only on a green run, and `pr merge` exits `0` only when the forge reports the change request merged. An accepted-but-not-merged merge (a merge queue, an armed auto-merge) exits non-zero — say so, never claim it landed.
+    \\
+    \\**Self-check:** about to merge? The note must say `#Notes AutoMerge`, and `pr wait` must have exited `0` in this session.
+;
+
 pub const SecretsToolRule =
     \\## Workspace Secrets — reference credentials by name, never by value
     \\

@@ -50,26 +50,8 @@ function status(over: Partial<Record<string, unknown>> = {}) {
     additions: 1,
     deletions: 2,
     changed_files: 3,
-    checks: rollup(),
     ...over,
   } as never
-}
-
-/** The CI rollup the status endpoint already carries, with the counts a test
- *  cares about. The watch reads this — it makes no request of its own. */
-function rollup(over: Partial<Record<string, number>> = {}) {
-  const summary = {
-    total: 0,
-    passed: 0,
-    failed: 0,
-    pending: 0,
-    skipped: 0,
-    cancelled: 0,
-    ...over,
-  }
-  summary.total =
-    over.total ?? summary.passed + summary.failed + summary.pending + summary.skipped + summary.cancelled
-  return summary
 }
 
 const state = (over: Partial<Record<string, unknown>> = {}) =>
@@ -400,103 +382,5 @@ describe('MergeBox', () => {
       'This merge request is not approved yet.',
     )
     expect(w.get('[data-testid="pr-merge-button"]').attributes('disabled')).toBeDefined()
-  })
-
-  it('a PR blocked on CI offers Check CI, and a ready one does not', () => {
-    const blocked = mount(MergeBox, {
-      props: { ...props, status: status({ merge_state: 'BLOCKED' }) },
-    })
-    expect(blocked.find('[data-testid="pr-ci-check"]').exists()).toBe(true)
-
-    const ready = mount(MergeBox, { props: { ...props, status: status() } })
-    expect(ready.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
-  })
-
-  it('a conflicting PR does not offer Check CI, because waiting cannot fix a conflict', () => {
-    const w = mount(MergeBox, {
-      props: { ...props, status: status({ mergeable: 'CONFLICTING', merge_state: 'DIRTY' }) },
-    })
-    expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
-  })
-
-  it('Check CI shows live progress, then reports green and tells the owner to re-read', async () => {
-    vi.useFakeTimers()
-    try {
-      const w = mount(MergeBox, {
-        props: {
-          ...props,
-          status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 1, pending: 1 }) }),
-        },
-      })
-
-      await w.get('[data-testid="pr-ci-check"]').trigger('click')
-      await vi.advanceTimersByTimeAsync(0)
-
-      expect(w.get('[data-testid="pr-ci-watch-line"]').text()).toContain(
-        '1 of 2 checks passed · 1 running',
-      )
-      expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(false)
-
-      // The owner's own 30 s status poll lands; the watch reads it, it does not
-      // ask the forge itself.
-      await w.setProps({
-        status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 2 }) }),
-      })
-      await vi.advanceTimersByTimeAsync(2_000)
-
-      expect(w.find('[data-testid="pr-ci-watch"]').exists()).toBe(false)
-      expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe(
-        'All checks passed — ready to merge',
-      )
-      expect(w.emitted('checksPassed')).toBeTruthy()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('Check CI stops on a red run and says how many failed', async () => {
-    vi.useFakeTimers()
-    try {
-      const w = mount(MergeBox, {
-        props: {
-          ...props,
-          status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 2, failed: 1 }) }),
-        },
-      })
-
-      await w.get('[data-testid="pr-ci-check"]').trigger('click')
-      await vi.advanceTimersByTimeAsync(0)
-
-      expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe(
-        'CI failed — 1 of 3 checks failed',
-      )
-      expect(w.emitted('checksPassed')).toBeFalsy()
-      // The button comes back so the user can retry after a re-run.
-      expect(w.find('[data-testid="pr-ci-check"]').exists()).toBe(true)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('Stop ends the watch without ever claiming the checks passed', async () => {
-    vi.useFakeTimers()
-    try {
-      const w = mount(MergeBox, {
-        props: {
-          ...props,
-          status: status({ merge_state: 'BLOCKED', checks: rollup({ passed: 1, pending: 1 }) }),
-        },
-      })
-
-      await w.get('[data-testid="pr-ci-check"]').trigger('click')
-      await vi.advanceTimersByTimeAsync(0)
-      await w.get('[data-testid="pr-ci-watch-cancel"]').trigger('click')
-      await vi.advanceTimersByTimeAsync(2_000)
-
-      expect(w.get('[data-testid="pr-ci-watch-result"]').text()).toBe('Stopped watching CI')
-      expect(w.emitted('checksPassed')).toBeFalsy()
-    } finally {
-      vi.useRealTimers()
-    }
   })
 })

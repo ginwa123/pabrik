@@ -2,10 +2,14 @@
 import GitBaseBranchSelect from './GitBaseBranchSelect.vue'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import { useTaskDetailContext } from './kanbanTaskDetailContext'
+import { MERGE_METHODS, methodLabel } from '../../helpers/mergeWording'
 
 const {
+  autoMerge,
+  autoMergeMethod,
   cwd,
   cwdSession,
+  handleAutoMergeToggle,
   handleStartAgent,
   handleUnattendedToggle,
   handleUseGitWorktreeToggle,
@@ -126,6 +130,66 @@ const {
               Optional but recommended. The new worktree's branch is created from this ref (e.g.
               origin/main). "HEAD (default)" branches from whatever the repo currently has checked
               out.
+            </div>
+          </div>
+          <!-- Auto-merge toggle (create mode only). Bakes
+                   `#Notes AutoMerge` into the queue_message, which is what
+                   tells the agent to wait for CI and merge the PR itself. -->
+          <div
+            v-if="isCreateMode"
+            class="ktd-switch-row"
+            data-testid="kanban-task-detail-auto-merge"
+          >
+            <div class="ktd-switch-text">
+              <div class="text-dense font-medium" style="color: var(--semantic-text-muted)">
+                Auto merge
+              </div>
+              <div class="text-meta" style="color: var(--semantic-text-muted)">
+                Let the agent wait for CI and merge the pull request itself once every check is
+                green.
+              </div>
+            </div>
+            <label class="ktd-switch" :class="autoMerge ? 'is-on' : ''">
+              <input
+                type="checkbox"
+                :checked="autoMerge"
+                @change="handleAutoMergeToggle"
+                class="sr-only peer"
+                data-testid="kanban-task-detail-auto-merge-toggle"
+              />
+              <span class="ktd-switch-word">{{ autoMerge ? 'On' : 'Off' }}</span>
+              <span class="ktd-switch-track"><span class="ktd-switch-knob" /></span>
+            </label>
+          </div>
+          <!-- Merge method (create mode only, visible when the toggle is ON).
+                   Baked as the `Method:` line right after `#Notes AutoMerge`. -->
+          <div
+            v-if="isCreateMode && autoMerge"
+            class="pt-2 flex flex-col gap-1"
+            data-testid="kanban-task-detail-auto-merge-method-wrap"
+          >
+            <label
+              class="text-dense font-medium"
+              style="color: var(--semantic-text-dim)"
+              for="kanban-auto-merge-method"
+            >
+              Merge method
+            </label>
+            <select
+              id="kanban-auto-merge-method"
+              v-model="autoMergeMethod"
+              class="w-full px-2 py-1.5 rounded-lg text-dense"
+              style="
+                background-color: var(--semantic-sidebar-bg);
+                border: 1px solid var(--color-border);
+                color: var(--semantic-text);
+              "
+              data-testid="kanban-task-detail-auto-merge-method"
+            >
+              <option v-for="m in MERGE_METHODS" :key="m" :value="m">{{ methodLabel(m) }}</option>
+            </select>
+            <div class="text-meta" style="color: var(--semantic-text-muted)">
+              The agent passes this to `pabrik headless pr merge --method`.
             </div>
           </div>
           <div v-if="!isCreateMode" class="ktd-thread">

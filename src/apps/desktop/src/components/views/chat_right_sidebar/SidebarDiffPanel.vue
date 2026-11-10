@@ -582,7 +582,6 @@ defineExpose({
       :status="prStatusData"
       :failed-checks="failedChecksCount"
       @merged="onMerged"
-      @checks-passed="loadPrStatus"
     />
 
 
