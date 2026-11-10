@@ -28,6 +28,7 @@ pub const execViewSession = @import("../tools/view_session.zig").execViewSession
 // adapter lists names only (see list_secrets.zig).
 pub const execListSecrets = @import("../tools/list_secrets.zig").execListSecrets;
 pub const execDocumentMarkdown = @import("../tools/document.zig").execDocumentMarkdown;
+pub const execDocumentHtml = @import("../tools/document_html.zig").execDocumentHtml;
 pub const execUseSkill = @import("../tools/skill_tools.zig").execUseSkill;
 pub const execRemoveSkill = @import("../tools/skill_tools.zig").execRemoveSkill;
 pub const execAddSkill = @import("../tools/skill_tools.zig").execAddSkill;

@@ -236,7 +236,7 @@ pub fn executeAddDocument(
             error.TitleRequired => "title is required and must contain at least one non-whitespace character",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
             error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
-            error.UnsupportedFormat => "format must be 'markdown' or 'office'",
+            error.UnsupportedFormat => "format must be 'markdown', 'office' or 'html'",
             error.FolderNotFound => "No such folder in this workspace.",
             error.InsertFailed => "Could not store the document (database error).",
             error.RowNotFoundAfterInsert => "The document was written but could not be read back — the row is inconsistent, please retry.",
@@ -256,6 +256,18 @@ pub fn executeEditDocument(
     caller_session_id: []const u8,
     input: DocumentMarkdownInput,
 ) ![]const u8 {
+    return executeEditDocumentWithFormat(allocator, store, caller_session_id, input, null);
+}
+
+/// `executeEditDocument`, refusing a document whose stored format is not
+/// `require_format`. A null `require_format` accepts any format.
+pub fn executeEditDocumentWithFormat(
+    allocator: std.mem.Allocator,
+    store: documents_store.Store,
+    caller_session_id: []const u8,
+    input: DocumentMarkdownInput,
+    require_format: ?[]const u8,
+) ![]const u8 {
     if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
         return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action.");
     }
@@ -273,6 +285,7 @@ pub fn executeEditDocument(
     const row = store.updateDocument(allocator, workspace_id, input.document_id, .{
         .title = input.title,
         .content = input.content,
+        .require_format = require_format,
     }) catch |err| {
         const msg = switch (err) {
             error.IdsRequired => "workspace_id and document_id required",
@@ -280,6 +293,7 @@ pub fn executeEditDocument(
             // blanked the title" — the first two must be indistinguishable or
             // the tool becomes an oracle for other workspaces' row ids.
             error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
+            error.FormatMismatch => "That document is not an HTML document. Use `document_markdown` to edit it.",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
             error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
             error.FolderNotFound => "No such folder in this workspace.",

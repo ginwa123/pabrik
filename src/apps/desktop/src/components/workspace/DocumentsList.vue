@@ -14,6 +14,7 @@ import {
   serializeOfficeBody,
   type OfficeKind,
 } from '../../helpers/officeDocument'
+import { DEFAULT_HTML_BODY, HTML_FORMAT } from '../../helpers/htmlDocument'
 import DocumentsNewMenu from './DocumentsNewMenu.vue'
 import DocumentsContextMenu from './DocumentsContextMenu.vue'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
@@ -159,15 +160,20 @@ const {
 } = useDocumentDragDrop({ workspaceId: activeWorkspaceId, expand })
 
 // ─── Create / rename / delete ────────────────────────────────────────────
-const createDocument = (folderId: string | null = null, kind: 'markdown' | OfficeKind = 'markdown') => {
+const createDocument = (
+  folderId: string | null = null,
+  kind: 'markdown' | 'html' | OfficeKind = 'markdown',
+) => {
   const wsId = activeWorkspaceId()
   if (!wsId) return
   const isMarkdown = kind === 'markdown'
+  const isHtml = kind === 'html'
   // The envelope is written at create time, so the editor knows which Univer
   // product to mount before the first Save.
-  const content = isMarkdown ? '' : serializeOfficeBody(kind, {})
-  const format = isMarkdown ? MARKDOWN_FORMAT : OFFICE_FORMAT
-  const title = kind === 'sheet' ? 'Untitled spreadsheet' : 'Untitled document'
+  const content = isMarkdown ? '' : isHtml ? DEFAULT_HTML_BODY : serializeOfficeBody(kind, {})
+  const format = isMarkdown ? MARKDOWN_FORMAT : isHtml ? HTML_FORMAT : OFFICE_FORMAT
+  const title =
+    kind === 'sheet' ? 'Untitled spreadsheet' : isHtml ? 'Untitled page' : 'Untitled document'
 
   void documentsStore.createDocument(wsId, title, content, folderId, format).then((doc) => {
     if (doc) {

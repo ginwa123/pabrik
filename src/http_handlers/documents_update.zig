@@ -37,6 +37,7 @@ pub const DocumentsUpdateError = error{
     IdsRequired,
     NotFound,
     ContentTooLarge,
+    FormatMismatch,
     NoStorage,
     FolderNotFound,
     UpdateFailed,
@@ -151,6 +152,7 @@ pub fn documentsUpdateHandler(
             // NotFound so it cannot be distinguished from a foreign id.
             error.NotFound => 400,
             error.ContentTooLarge => 413,
+            error.FormatMismatch => 400,
             error.NoStorage => 500,
             error.FolderNotFound => 404,
             error.UpdateFailed, error.QueryFailed, error.OutOfMemory => 500,
@@ -159,6 +161,7 @@ pub fn documentsUpdateHandler(
             error.IdsRequired => "workspace_id and document_id required",
             error.NotFound => "document not found, or title would be empty",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+            error.FormatMismatch => "document format does not match the requested one",
             error.NoStorage => "no object store configured: the body has nowhere to be stored",
             error.FolderNotFound => "folder not found in this workspace",
             error.UpdateFailed => "DB error",

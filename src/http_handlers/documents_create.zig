@@ -101,7 +101,7 @@ pub fn documentsCreateHandler(
         const message: []const u8 = switch (err) {
             error.WorkspaceIdRequired => "workspace_id required",
             error.TitleRequired => "title is required",
-            error.UnsupportedFormat => "format must be one of: markdown, office",
+            error.UnsupportedFormat => "format must be one of: markdown, office, html",
             error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
             error.NoStorage => "no object store configured: the body has nowhere to be stored",
             error.FolderNotFound => "folder not found in this workspace",

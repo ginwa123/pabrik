@@ -13,6 +13,10 @@ pub const MARKDOWN_EXT = ".md";
 /// faithful representation we hold, and it round-trips back into the editor.
 pub const OFFICE_EXT = ".json";
 
+/// An HTML document's body is the page source, so it exports as a file a
+/// browser opens directly.
+pub const HTML_EXT = ".html";
+
 /// The name a document with no usable title exports as.
 pub const FALLBACK_STEM = "document";
 
@@ -36,12 +40,14 @@ pub const ExportError = error{
 /// The extension a document of `format` exports as.
 pub fn extensionFor(format: []const u8) []const u8 {
     if (std.mem.eql(u8, format, documents_store.FORMAT_OFFICE)) return OFFICE_EXT;
+    if (std.mem.eql(u8, format, documents_store.FORMAT_HTML)) return HTML_EXT;
     return MARKDOWN_EXT;
 }
 
 /// The `Content-Type` a document of `format` exports as.
 pub fn mimeFor(format: []const u8) []const u8 {
     if (std.mem.eql(u8, format, documents_store.FORMAT_OFFICE)) return "application/json";
+    if (std.mem.eql(u8, format, documents_store.FORMAT_HTML)) return "text/html; charset=utf-8";
     return "text/markdown; charset=utf-8";
 }
 
@@ -387,6 +393,14 @@ test "fileName: an office document exports as .json" {
     const name = try fileName(alloc, "Budget", documents_store.FORMAT_OFFICE);
     defer alloc.free(name);
     try testing.expectEqualStrings("Budget.json", name);
+}
+
+test "fileName: an html document exports as .html a browser opens" {
+    const alloc = testing.allocator;
+    const name = try fileName(alloc, "Landing draft", documents_store.FORMAT_HTML);
+    defer alloc.free(name);
+    try testing.expectEqualStrings("Landing draft.html", name);
+    try testing.expectEqualStrings("text/html; charset=utf-8", mimeFor(documents_store.FORMAT_HTML));
 }
 
 test "fileName: path separators and header-hostile characters become one dash" {
