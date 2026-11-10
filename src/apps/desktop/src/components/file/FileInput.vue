@@ -779,9 +779,13 @@ const selectedToolIndex = ref(0)
 const toolPickerRef = ref<HTMLElement | null>(null)
 // A load failure renders in its own error row, never as an empty list.
 const toolError = ref<string | null>(null)
-// The registry is fetched once per mount — it is global, not per-workspace,
-// so there is no workspace key to compare against.
+// The compiled-in registry is global, so it is fetched once per mount.
 const toolsLoaded = ref(false)
+// MCP tools are workspace-scoped and cost a live `tools/list` roundtrip per
+// server, so they load after the built-ins and are cached per workspace.
+const isLoadingMcpTools = ref(false)
+const toolMcpError = ref<string | null>(null)
+const mcpToolsWorkspace = ref<string | null>(null)
 
 const closeToolPicker = () => {
   showToolPicker.value = false
@@ -790,33 +794,60 @@ const closeToolPicker = () => {
   toolError.value = null
 }
 
-const loadToolsOnce = async () => {
-  if (toolsLoaded.value) return
-  isLoadingTools.value = true
-  toolError.value = null
+const loadMcpTools = async () => {
+  const workspaceId = activeWorkspaceId()
+  const key = workspaceId ?? ''
+  if (mcpToolsWorkspace.value === key) return
+  if (mcpToolsWorkspace.value !== null) {
+    toolList.value = toolList.value.filter((t) => t.kind !== 'mcp')
+  }
+  isLoadingMcpTools.value = true
+  toolMcpError.value = null
   const result = await runSyncResult(
     Effect.tryPromise({
-      try: () =>
-        api.getAgentToolsRegistry({
-          includeMcp: true,
-          workspaceId: activeWorkspaceId(),
-        }),
+      try: () => api.getAgentToolsRegistry({ includeMcp: true, workspaceId }),
       catch: (e) =>
         new SyncRemoteError({
-          op: 'tools.load',
+          op: 'tools.loadMcp',
           reason: e instanceof Error ? e.message : String(e),
         }),
     }),
-    'tools.load',
+    'tools.loadMcp',
   )
-  isLoadingTools.value = false
+  isLoadingMcpTools.value = false
   if (result.ok) {
     toolList.value = Array.isArray(result.value?.tools) ? result.value.tools : []
-    toolsLoaded.value = true
+    mcpToolsWorkspace.value = key
   } else {
-    toolList.value = []
-    toolError.value = result.reason
+    toolMcpError.value = result.reason
   }
+}
+
+const loadToolsOnce = async () => {
+  if (!toolsLoaded.value) {
+    isLoadingTools.value = true
+    toolError.value = null
+    const result = await runSyncResult(
+      Effect.tryPromise({
+        try: () => api.getAgentToolsRegistry({}),
+        catch: (e) =>
+          new SyncRemoteError({
+            op: 'tools.load',
+            reason: e instanceof Error ? e.message : String(e),
+          }),
+      }),
+      'tools.load',
+    )
+    isLoadingTools.value = false
+    if (!result.ok) {
+      toolList.value = []
+      toolError.value = result.reason
+      return
+    }
+    toolList.value = Array.isArray(result.value?.tools) ? result.value.tools : []
+    toolsLoaded.value = true
+  }
+  void loadMcpTools()
 }
 
 const detectToolTrigger = () => {
@@ -1480,6 +1511,22 @@ const sendMessage = () => {
             }}</span>
           </span>
         </button>
+      </div>
+      <div
+        v-if="isLoadingMcpTools"
+        class="px-3 py-1.5 text-dense"
+        style="color: var(--semantic-text-dim)"
+        data-testid="tool-picker-mcp-loading"
+      >
+        Loading MCP tools…
+      </div>
+      <div
+        v-else-if="toolMcpError"
+        class="px-3 py-1.5 text-dense"
+        style="color: var(--semantic-text-dim)"
+        data-testid="tool-picker-mcp-error"
+      >
+        MCP tools unavailable: {{ toolMcpError }}
       </div>
     </div>
 

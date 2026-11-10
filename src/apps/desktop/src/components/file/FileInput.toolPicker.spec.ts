@@ -75,13 +75,12 @@ describe('FileInput — /tool picker', () => {
     vi.restoreAllMocks()
   })
 
-  it("typing '/tool-' opens the picker and calls getAgentToolsRegistry once", async () => {
+  it("typing '/tool-' opens the picker and renders the built-in tools", async () => {
     seedWorkspace()
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
     await typeInTextarea(textarea, '/tool-')
 
-    expect(getRegistryMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="tool-picker-list"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tool-picker-list"]').text()).toContain('read_file')
   })
@@ -92,10 +91,10 @@ describe('FileInput — /tool picker', () => {
     const textarea = wrapper.find('textarea')
     await typeInTextarea(textarea, '/tool-')
 
-    expect(getRegistryMock).toHaveBeenCalledTimes(1)
+    const callsAfterOpen = getRegistryMock.mock.calls.length
 
     await typeInTextarea(textarea, '/tool-write')
-    expect(getRegistryMock).toHaveBeenCalledTimes(1)
+    expect(getRegistryMock.mock.calls.length).toBe(callsAfterOpen)
     const list = wrapper.find('[data-testid="tool-picker-list"]')
     expect(list.text()).toContain('write_file')
     expect(list.text()).not.toContain('read_file')
@@ -142,13 +141,13 @@ describe('FileInput — /tool picker', () => {
     expect(wrapper.find('[data-testid="tool-picker-list"]').text()).not.toContain('No tools found')
   })
 
-  it('the registry is not workspace-scoped: no workspace still opens the picker', async () => {
+  it('no workspace still opens the picker with the built-in tools', async () => {
     const wrapper = await mountInput()
     const textarea = wrapper.find('textarea')
     await typeInTextarea(textarea, '/tool-')
 
-    expect(getRegistryMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="tool-picker-list"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tool-picker-list"]').text()).toContain('read_file')
   })
 
   it('a slash inside a URL or path never opens the picker', async () => {
@@ -221,8 +220,8 @@ describe('FileInput — /tool picker', () => {
       const textarea = wrapper.find('textarea')
       await typeInTextarea(textarea, 'please run /tool-')
 
-      expect(getRegistryMock).toHaveBeenCalledTimes(1)
       expect(wrapper.find('[data-testid="tool-picker-list"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="tool-picker-list"]').text()).toContain('read_file')
     })
 
     it('a `/tool-` token mid-word does not open the picker', async () => {
@@ -389,7 +388,6 @@ describe('FileInput — /tool picker', () => {
       expect(element.value).toBe('/tool-')
       expect(wrapper.find(MENU).exists()).toBe(false)
       expect(wrapper.find(PICKER).exists()).toBe(true)
-      expect(getRegistryMock).toHaveBeenCalledTimes(1)
       expect(wrapper.find(PICKER).text()).toContain('read_file')
     })
 
@@ -475,7 +473,6 @@ describe('FileInput — /tool picker', () => {
       expect(list.exists()).toBe(true)
       expect(list.text()).toContain('write_file')
       expect(list.text()).not.toContain('read_file')
-      expect(getRegistryMock).toHaveBeenCalledTimes(1)
     })
 
     it('a path or URL does not open the menu', async () => {
