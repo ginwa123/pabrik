@@ -11,6 +11,7 @@ const handle_tool = @import("../modules/agent/loop/handle_tool.zig");
 
 const folders_store = pabrikcore.document_folders_store;
 const documents_store = pabrikcore.documents_store;
+const documents_export = pabrikcore.documents_export;
 const workspace_scope = pabrikcore.workspace_scope;
 const agent = pabrikcore.agent;
 const document_tool = pabrikcore.document_tool;
@@ -133,7 +134,7 @@ pub fn run(
         .doc_get => return documentBodyJson(allocator, backend, a),
         else => {},
     }
-    return runWithDb(allocator, .{
+    return runWithDb(allocator, backend.io, .{
         .db = backend.ctx.db,
         .storage = backend.ctx.objectStore(),
     }, a);
@@ -251,10 +252,84 @@ fn documentBodyJson(
     }, .{});
 }
 
+/// `export`: write the document — or a zip of `--documents` — to a file and
+/// report where it landed. The bytes come from `documents_export`, the same
+/// module the HTTP endpoints answer with, so a CLI export and a browser
+/// download are the same file.
+fn exportJson(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    store: documents_store.Store,
+    a: args.DocumentsArgs,
+) ![]u8 {
+    if (a.document_id) |document_id| {
+        const file = try documents_export.exportOne(allocator, store, a.workspace_id, document_id);
+        defer {
+            allocator.free(file.name);
+            allocator.free(file.bytes);
+        }
+        const path = try writeExport(allocator, io, a.out, file.name, file.bytes);
+        defer allocator.free(path);
+        return std.json.Stringify.valueAlloc(allocator, .{
+            .path = path,
+            .filename = file.name,
+            .mime = file.mime,
+            .bytes = file.bytes.len,
+            .count = @as(usize, 1),
+        }, .{});
+    }
+
+    const ids = try parseIdList(allocator, a.documents);
+    defer allocator.free(ids);
+
+    const archive = try documents_export.exportMany(allocator, store, a.workspace_id, ids);
+    defer allocator.free(archive.bytes);
+    const path = try writeExport(allocator, io, a.out, archive.name, archive.bytes);
+    defer allocator.free(path);
+    return std.json.Stringify.valueAlloc(allocator, .{
+        .path = path,
+        .filename = archive.name,
+        .mime = archive.mime,
+        .bytes = archive.bytes.len,
+        .count = archive.count,
+    }, .{});
+}
+
+/// The `--documents` value split into ids. Blank entries are dropped, so a
+/// trailing comma is not an id and an empty value is an empty list.
+fn parseIdList(allocator: std.mem.Allocator, raw: []const u8) ![]const []const u8 {
+    var ids: std.ArrayList([]const u8) = .empty;
+    errdefer ids.deinit(allocator);
+
+    var it = std.mem.splitScalar(u8, raw, ',');
+    while (it.next()) |part| {
+        const id = std.mem.trim(u8, part, " \t");
+        if (id.len == 0) continue;
+        try ids.append(allocator, id);
+    }
+    return ids.toOwnedSlice(allocator);
+}
+
+/// Write `bytes` to `out`, or to `default_name` in the current directory when
+/// the caller named no path. Returns the path actually written, owned by the
+/// caller.
+fn writeExport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    out: ?[]const u8,
+    default_name: []const u8,
+    bytes: []const u8,
+) ![]u8 {
+    const path = out orelse default_name;
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = bytes });
+    return allocator.dupe(u8, path);
+}
+
 /// The op table, over a plain `*Db` so a test can drive it against an
 /// in-memory database without booting a backend.
 pub fn runWithDb(
     allocator: std.mem.Allocator,
+    io: std.Io,
     store: documents_store.Store,
     a: args.DocumentsArgs,
 ) ![]u8 {
@@ -264,6 +339,8 @@ pub fn runWithDb(
         // These need the process singleton (the tool dispatch resolves the
         // object store from it), so they only run through `run`.
         .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get => return error.RequiresBackend,
+
+        .export_file => return exportJson(allocator, io, store, a),
 
         .search => {
             const rows = try store.searchDocuments(allocator, a.workspace_id, a.query);
@@ -379,7 +456,7 @@ test "headless documents: folder-create then list returns the folder and the mov
     defer ctx.threaded.deinit();
     defer ctx.db.deinit();
 
-    const folder_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
+    const folder_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
         .op = .folder_create,
         .workspace_id = "ws_1",
         .name = "Split bill",
@@ -390,7 +467,7 @@ test "headless documents: folder-create then list returns the folder and the mov
     defer parsed.deinit();
     const folder_id = parsed.value.object.get("id").?.string;
 
-    const doc_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
+    const doc_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
         .op = .doc_create,
         .workspace_id = "ws_1",
         .title = "POST split-bill",
@@ -398,7 +475,7 @@ test "headless documents: folder-create then list returns the folder and the mov
     });
     defer alloc.free(doc_json);
 
-    const list_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{ .op = .list, .workspace_id = "ws_1" });
+    const list_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{ .op = .list, .workspace_id = "ws_1" });
     defer alloc.free(list_json);
 
     const list = try std.json.parseFromSlice(std.json.Value, alloc, list_json, .{});
@@ -424,7 +501,7 @@ test "headless documents: doc-move with no folder puts the document back at the 
     });
     defer documents_store.freeDocumentRow(alloc, doc);
 
-    const moved_json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
+    const moved_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
         .op = .doc_move,
         .workspace_id = "ws_1",
         .document_id = doc.id,
@@ -448,7 +525,7 @@ test "headless documents: search returns only the matching documents" {
         \\       ('doc_miss', 'ws_1', 'Notes', 'nothing relevant')
     , &[_][]const u8{});
 
-    const json = try runWithDb(alloc, .{ .db = &ctx.db }, .{
+    const json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
         .op = .search,
         .workspace_id = "ws_1",
         .query = "zephyrword",
@@ -461,4 +538,32 @@ test "headless documents: search returns only the matching documents" {
     const obj = parsed.value.object;
     try testing.expectEqual(@as(i64, 1), obj.get("count").?.integer);
     try testing.expectEqualStrings("doc_hit", obj.get("documents").?.array.items[0].object.get("id").?.string);
+}
+
+test "parseIdList: a comma list becomes one id per entry, trimmed" {
+    const alloc = testing.allocator;
+    const ids = try parseIdList(alloc, "doc_a, doc_b ,doc_c");
+    defer alloc.free(ids);
+
+    try testing.expectEqual(@as(usize, 3), ids.len);
+    try testing.expectEqualStrings("doc_a", ids[0]);
+    try testing.expectEqualStrings("doc_b", ids[1]);
+    try testing.expectEqualStrings("doc_c", ids[2]);
+}
+
+test "parseIdList: a trailing comma is not an id" {
+    const alloc = testing.allocator;
+    const ids = try parseIdList(alloc, "doc_a,");
+    defer alloc.free(ids);
+
+    try testing.expectEqual(@as(usize, 1), ids.len);
+    try testing.expectEqualStrings("doc_a", ids[0]);
+}
+
+test "parseIdList: an empty value is an empty list, not one blank id" {
+    const alloc = testing.allocator;
+    const ids = try parseIdList(alloc, "");
+    defer alloc.free(ids);
+
+    try testing.expectEqual(@as(usize, 0), ids.len);
 }

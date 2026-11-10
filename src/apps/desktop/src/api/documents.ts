@@ -1,4 +1,4 @@
-import { apiFetch } from './client'
+import { API_BASE, ApiError, apiFetch } from './client'
 import { MARKDOWN_FORMAT } from '../helpers/officeDocument'
 
 // ─── Documents (Migration 095) ─────────────────────────────────────────── Workspace-scoped
@@ -173,4 +173,70 @@ export async function deleteDocument(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
     { method: 'DELETE' },
   )
+}
+
+/** The URL one document exports from. A document exports as a file the browser saves: markdown
+ * as `.md`, an office document as `.json`. Several export as one zip, and the bytes come from
+ * the backend, so a download and `pabrik headless documents export` are the same file. */
+export function exportDocumentUrl(workspaceId: string, documentId: string): string {
+  return `${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/export`
+}
+
+/** The name a download should be saved under, read from a `Content-Disposition` header. RFC
+ * 5987's `filename*=UTF-8''…` wins — the only form that carries a non-ASCII title intact.
+ * `fallback` is used when the header names nothing. */
+export function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (encoded?.[1]) {
+    const decoded = decodeURIComponent(encoded[1].trim())
+    if (decoded.length > 0) return decoded
+  }
+
+  const plain = /filename="([^"]*)"/i.exec(header) ?? /filename=([^;]+)/i.exec(header)
+  const name = plain?.[1]?.trim()
+  return name && name.length > 0 ? name : fallback
+}
+
+export interface ExportedDownload {
+  blob: Blob
+  /** The name the server chose, or `fallback` when it named none. */
+  filename: string
+}
+
+/** One document, as a downloadable file. */
+export async function exportDocument(
+  workspaceId: string,
+  documentId: string,
+  fallbackName = 'document',
+): Promise<ExportedDownload> {
+  const response = await fetch(exportDocumentUrl(workspaceId, documentId))
+  if (!response.ok) {
+    throw new ApiError(response.status, response.statusText, await response.text().catch(() => ''))
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(response.headers.get('Content-Disposition'), fallbackName),
+  }
+}
+
+/** Several documents, as one zip. */
+export async function exportDocuments(
+  workspaceId: string,
+  documentIds: string[],
+  fallbackName = 'documents.zip',
+): Promise<ExportedDownload> {
+  const response = await fetch(`${API_BASE}/workspaces/${encodeURIComponent(workspaceId)}/documents/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document_ids: documentIds }),
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, response.statusText, await response.text().catch(() => ''))
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(response.headers.get('Content-Disposition'), fallbackName),
+  }
 }

@@ -230,6 +230,8 @@ pub const vmd_lifecycle = @import("vmd/lifecycle.zig");
 pub const agent_memories = @import("modules/agent/loop/agent_memories.zig");
 /// Workspace-scoped document storage (Migration 098).
 pub const documents_store = @import("modules/agent/loop/documents_store.zig");
+/// Turning a document into a downloadable file, and a set of them into a zip.
+pub const documents_export = @import("modules/agent/loop/documents_export.zig");
 /// The object-store seam document bodies move behind: an interface plus a
 /// filesystem backend and an in-memory one.
 pub const storage = @import("modules/storage/mod.zig");

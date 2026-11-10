@@ -417,6 +417,10 @@ fn registerWorkspaceDocumentRoutes(authed: *Group) !void {
     try authed.get("/api/workspaces/:workspace_id/documents", ai_mod.http_handlers.documentsListHandler);
     try authed.post("/api/workspaces/:workspace_id/documents", ai_mod.http_handlers.documentsCreateHandler);
     try authed.patch("/api/workspaces/:workspace_id/documents/reorder", ai_mod.http_handlers.documentsReorderHandler);
+    // Export. The zip route is registered before the `:document_id` routes so
+    // `documents/export` can never be read as a document id.
+    try authed.post("/api/workspaces/:workspace_id/documents/export", ai_mod.http_handlers.documentsExportZipHandler);
+    try authed.get("/api/workspaces/:workspace_id/documents/:document_id/export", ai_mod.http_handlers.documentsExportHandler);
     try authed.get("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsGetHandler);
     try authed.patch("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsUpdateHandler);
     try authed.delete("/api/workspaces/:workspace_id/documents/:document_id", ai_mod.http_handlers.documentsDeleteHandler);

@@ -201,6 +201,8 @@ pub const documentsGetHandler = @import("documents_get.zig").documentsGetHandler
 pub const documentsUpdateHandler = @import("documents_update.zig").documentsUpdateHandler;
 pub const documentsDeleteHandler = @import("documents_delete.zig").documentsDeleteHandler;
 pub const documentsReorderHandler = @import("documents_reorder.zig").documentsReorderHandler;
+pub const documentsExportHandler = @import("documents_export.zig").documentsExportHandler;
+pub const documentsExportZipHandler = @import("documents_export.zig").documentsExportZipHandler;
 
 // Workspace-scoped secrets (Migration 103). Same house shape as the documents
 // block above: one file per HTTP verb, each carrying its own private
