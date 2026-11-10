@@ -22,6 +22,9 @@ const STORAGE_KEY_SKILLS_EXPANDED = 'pabrik-sidebar-skills-expanded'
 const DEFAULT_CHATS_HEIGHT = 40
 const MIN_CHATS_HEIGHT = 10
 const MAX_CHATS_HEIGHT = 80
+const STORAGE_KEY_PROJECTS_HEIGHT = 'pabrik-sidebar-projects-height'
+const MIN_PROJECTS_HEIGHT = 10
+const MAX_PROJECTS_HEIGHT = 80
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 280
 const MIN_RIGHT_SIDEBAR_WIDTH = 200
 const MAX_RIGHT_SIDEBAR_WIDTH = 600
@@ -48,6 +51,26 @@ export const useSidebarStore = defineStore('sidebar', () => {
   const setChatsHeight = (height: number) => {
     chatsHeight.value = Math.max(MIN_CHATS_HEIGHT, Math.min(MAX_CHATS_HEIGHT, height))
     saveChatsHeight()
+  }
+
+  const loadProjectsHeight = (): number | null => {
+    const saved = localStorage.getItem(STORAGE_KEY_PROJECTS_HEIGHT)
+    if (saved === null) return null
+    const parsed = parseFloat(saved)
+    if (isNaN(parsed) || parsed < MIN_PROJECTS_HEIGHT || parsed > MAX_PROJECTS_HEIGHT) return null
+    return parsed
+  }
+
+  const projectsHeight = ref<number | null>(loadProjectsHeight())
+
+  const setProjectsHeight = (height: number | null) => {
+    if (height === null) {
+      projectsHeight.value = null
+      localStorage.removeItem(STORAGE_KEY_PROJECTS_HEIGHT)
+      return
+    }
+    projectsHeight.value = Math.max(MIN_PROJECTS_HEIGHT, Math.min(MAX_PROJECTS_HEIGHT, height))
+    localStorage.setItem(STORAGE_KEY_PROJECTS_HEIGHT, projectsHeight.value.toString())
   }
 
   // Load right sidebar width from localStorage
@@ -191,6 +214,8 @@ export const useSidebarStore = defineStore('sidebar', () => {
   return {
     chatsHeight,
     setChatsHeight,
+    projectsHeight,
+    setProjectsHeight,
     navExpanded,
     projectsExpanded,
     toggleNavExpanded,
