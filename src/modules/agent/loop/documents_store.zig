@@ -14,9 +14,13 @@ pub const FORMAT_MARKDOWN = "markdown";
 /// workbook's sheets, cells and styles.
 pub const FORMAT_OFFICE = "office";
 
+/// A self-contained HTML page. The body is HTML source, rendered in a
+/// sandboxed iframe.
+pub const FORMAT_HTML = "html";
+
 /// Every format a document may be created with. A format outside this list is
 /// refused at create time rather than stored and rendered as a blank page.
-pub const SUPPORTED_FORMATS = [_][]const u8{ FORMAT_MARKDOWN, FORMAT_OFFICE };
+pub const SUPPORTED_FORMATS = [_][]const u8{ FORMAT_MARKDOWN, FORMAT_OFFICE, FORMAT_HTML };
 
 /// The canonical format for `raw`, or null when it is not one we can render.
 /// An empty value means "the caller did not choose", which is markdown.
@@ -54,7 +58,115 @@ pub fn previewOf(body: []const u8) []const u8 {
 /// The searchable text for a body of `format`. Owned by the caller.
 fn previewFor(allocator: std.mem.Allocator, body: []const u8, format: []const u8) ![]u8 {
     if (std.mem.eql(u8, format, FORMAT_OFFICE)) return officePreview(allocator, body);
+    if (std.mem.eql(u8, format, FORMAT_HTML)) return htmlPreview(allocator, body);
     return allocator.dupe(u8, previewOf(body));
+}
+
+/// The visible text of an HTML body: `<script>`/`<style>` content dropped,
+/// tags stripped, entities decoded, runs of whitespace collapsed. A search
+/// for a phrase the reader can see must not depend on the markup around it.
+fn htmlPreview(allocator: std.mem.Allocator, body: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    var i: usize = 0;
+    var pending_space = false;
+    while (i < body.len) {
+        if (body[i] == '<') {
+            if (skipElement(body, i, "script")) |end| {
+                i = end;
+                pending_space = out.items.len > 0;
+                continue;
+            }
+            if (skipElement(body, i, "style")) |end| {
+                i = end;
+                pending_space = out.items.len > 0;
+                continue;
+            }
+            const close = std.mem.indexOfScalarPos(u8, body, i, '>') orelse body.len;
+            i = close + 1;
+            pending_space = out.items.len > 0;
+            continue;
+        }
+        if (body[i] == '&') {
+            const decoded = decodeEntity(body[i..]);
+            if (decoded.consumed > 0) {
+                if (pending_space) {
+                    try out.append(allocator, ' ');
+                    pending_space = false;
+                }
+                try out.appendSlice(allocator, decoded.text);
+                i += decoded.consumed;
+                continue;
+            }
+        }
+        if (body[i] == ' ' or body[i] == '\t' or body[i] == '\n' or body[i] == '\r') {
+            pending_space = out.items.len > 0;
+            i += 1;
+            continue;
+        }
+        if (pending_space) {
+            try out.append(allocator, ' ');
+            pending_space = false;
+        }
+        try out.append(allocator, body[i]);
+        i += 1;
+        if (out.items.len >= PREVIEW_MAX_BYTES) break;
+    }
+
+    if (out.items.len == 0) return allocator.dupe(u8, previewOf(body));
+    const text = try out.toOwnedSlice(allocator);
+    if (text.len <= PREVIEW_MAX_BYTES) return text;
+    defer allocator.free(text);
+    return allocator.dupe(u8, previewOf(text));
+}
+
+/// The index just past `</name>` when `body[start..]` opens `<name`, else null.
+fn skipElement(body: []const u8, start: usize, name: []const u8) ?usize {
+    if (start + 1 + name.len >= body.len) return null;
+    if (!std.ascii.eqlIgnoreCase(body[start + 1 .. start + 1 + name.len], name)) return null;
+    const after = body[start + 1 + name.len];
+    if (after != '>' and after != ' ' and after != '\t' and after != '\n' and after != '\r') return null;
+
+    var needle_buf: [16]u8 = undefined;
+    const needle = std.fmt.bufPrint(&needle_buf, "</{s}", .{name}) catch return null;
+    const close = indexOfIgnoreCase(body, start, needle) orelse return null;
+    const end = std.mem.indexOfScalarPos(u8, body, close, '>') orelse return null;
+    return end + 1;
+}
+
+fn indexOfIgnoreCase(haystack: []const u8, start: usize, needle: []const u8) ?usize {
+    if (needle.len == 0 or start >= haystack.len) return null;
+    var i = start;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return i;
+    }
+    return null;
+}
+
+const DecodedEntity = struct {
+    text: []const u8,
+    consumed: usize,
+};
+
+/// The five named entities plus numeric references. An unknown entity is left
+/// alone, so `&` in prose survives.
+fn decodeEntity(rest: []const u8) DecodedEntity {
+    const named = [_]struct { raw: []const u8, text: []const u8 }{
+        .{ .raw = "&amp;", .text = "&" },
+        .{ .raw = "&lt;", .text = "<" },
+        .{ .raw = "&gt;", .text = ">" },
+        .{ .raw = "&quot;", .text = "\"" },
+        .{ .raw = "&#39;", .text = "'" },
+        .{ .raw = "&apos;", .text = "'" },
+        .{ .raw = "&nbsp;", .text = " " },
+    };
+    for (named) |entity| {
+        if (std.mem.startsWith(u8, rest, entity.raw)) {
+            return .{ .text = entity.text, .consumed = entity.raw.len };
+        }
+    }
+    return .{ .text = "", .consumed = 0 };
 }
 
 /// The readable text of an office document: cell text for a sheet, `dataStream`
@@ -271,6 +383,9 @@ pub const UpdateDocumentArgs = struct {
     /// rather than "keep the current folder".
     folder_id: ?[]const u8 = null,
     move_folder: bool = false,
+    /// When set, the patch is refused with `error.FormatMismatch` unless the
+    /// stored document already has this format.
+    require_format: ?[]const u8 = null,
 };
 
 pub const CreateDocumentError = error{
@@ -309,6 +424,8 @@ pub const UpdateDocumentError = error{
     IdsRequired,
     NotFound,
     ContentTooLarge,
+    /// `require_format` was set and the stored document has another format.
+    FormatMismatch,
     /// A non-empty body with no object store configured. See
     /// `CreateDocumentError.NoStorage`.
     NoStorage,
@@ -682,6 +799,10 @@ pub const Store = struct {
         const existing = self.getDocument(allocator, workspace_id, document_id) catch
             return error.NotFound;
         defer freeDocumentRow(allocator, existing);
+
+        if (patch.require_format) |required| {
+            if (!std.mem.eql(u8, existing.format, required)) return error.FormatMismatch;
+        }
 
         const title = if (patch.title) |t| blk: {
             const trimmed = std.mem.trim(u8, t, " \t\n\r");
@@ -1788,8 +1909,121 @@ test "normalizeFormat: an empty value is markdown, a known value is itself, anyt
     try testing.expectEqualStrings(FORMAT_MARKDOWN, normalizeFormat("").?);
     try testing.expectEqualStrings(FORMAT_MARKDOWN, normalizeFormat("markdown").?);
     try testing.expectEqualStrings(FORMAT_OFFICE, normalizeFormat("office").?);
+    try testing.expectEqualStrings(FORMAT_HTML, normalizeFormat("html").?);
     try testing.expect(normalizeFormat("pdf") == null);
     try testing.expect(normalizeFormat("Office") == null);
+}
+
+test "createDocument: an html document previews its visible text, not its markup" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const body =
+        \\<!doctype html><html><head><title>Q3</title></head>
+        \\<body><h1>Release plan</h1><p>Ship &amp; celebrate.</p></body></html>
+    ;
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Page",
+        .content = body,
+        .format = FORMAT_HTML,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectEqualStrings(FORMAT_HTML, row.format);
+    // A preview of the markup would match every html document on `<div`, so
+    // the searchable text is what a reader sees.
+    try testing.expectEqualStrings("Q3 Release plan Ship & celebrate.", row.preview);
+}
+
+test "createDocument: an html preview drops script and style content" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const body =
+        \\<html><head><style>body { color: red }</style></head>
+        \\<body><script>console.log("noise")</script><p>Visible</p></body></html>
+    ;
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Page",
+        .content = body,
+        .format = FORMAT_HTML,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectEqualStrings("Visible", row.preview);
+}
+
+test "updateDocument: require_format refuses a document of another format and leaves it untouched" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Notes",
+        .content = "# keep me",
+        .format = FORMAT_MARKDOWN,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    try testing.expectError(error.FormatMismatch, store.updateDocument(alloc, "ws_1", row.id, .{
+        .content = "<p>clobbered</p>",
+        .require_format = FORMAT_HTML,
+    }));
+
+    const after = try store.getDocument(alloc, "ws_1", row.id);
+    defer freeDocumentRow(alloc, after);
+    try testing.expectEqualStrings("# keep me", after.content);
+    try testing.expectEqualStrings(FORMAT_MARKDOWN, after.format);
+}
+
+test "updateDocument: require_format accepts a document of that format" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    var objects = memory_backend.MemoryStorage.init(alloc);
+    defer objects.deinit();
+    const store = Store{ .db = &ctx.db, .storage = objects.asStorage() };
+
+    const row = try store.createDocument(alloc, .{
+        .workspace_id = "ws_1",
+        .title = "Page",
+        .content = "<p>one</p>",
+        .format = FORMAT_HTML,
+    });
+    defer freeDocumentRow(alloc, row);
+
+    const updated = try store.updateDocument(alloc, "ws_1", row.id, .{
+        .content = "<p>two</p>",
+        .require_format = FORMAT_HTML,
+    });
+    defer freeDocumentRow(alloc, updated);
+
+    try testing.expectEqualStrings("<p>two</p>", updated.content);
+    try testing.expectEqualStrings(FORMAT_HTML, updated.format);
 }
 
 test "createDocument: an office spreadsheet keeps its format and previews its cell text" {

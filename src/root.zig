@@ -103,6 +103,9 @@ pub const list_secrets = @import("modules/agent/tools/list_secrets.zig");
 /// It resolves its own workspace from the calling session, so the schema
 /// deliberately carries no `workspace_id` parameter.
 pub const document_tool = @import("modules/agent/tools/document.zig");
+/// `document_html` agent tool: create, edit and read HTML documents. Search
+/// and delete stay in `document_markdown`, which covers every format.
+pub const document_html_tool = @import("modules/agent/tools/document_html.zig");
 
 // `modules/http/HttpClient.zig` was removed — the project uses the
 // libcurl-backed client inside the `kabelweb` package (imported via

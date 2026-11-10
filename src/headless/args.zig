@@ -127,6 +127,13 @@ pub const DocumentsOp = enum {
     doc_delete,
     /// `document_markdown` with `action: "search"`, through the same dispatch.
     doc_search,
+    /// `document_html` with `action: "create"`, through the real agent tool
+    /// dispatch, so the HTML page's round trip is exercised with no server.
+    doc_html_add,
+    /// `document_html` with `action: "edit"`, through the same dispatch.
+    doc_html_edit,
+    /// `document_html` with `action: "read"`, through the same dispatch.
+    doc_html_read,
     /// Read one document back, body included.
     doc_get,
     /// Write one document, or a zip of several, to a file — the same bytes the
@@ -151,6 +158,13 @@ pub const DocumentsArgs = struct {
     /// `doc-create` / `doc-add` / `doc-edit`: the body. Markdown text, or a
     /// Univer snapshot JSON when `format` is `office`.
     content: []const u8 = "",
+    /// `doc-edit` / `doc-html-edit`: exact text to patch in place instead of
+    /// replacing the whole body.
+    old_text: ?[]const u8 = null,
+    /// `doc-edit` / `doc-html-edit`: the replacement for `old_text`.
+    new_text: ?[]const u8 = null,
+    /// `doc-edit` / `doc-html-edit`: replace every occurrence of `old_text`.
+    replace_all: bool = false,
     /// `doc-create`: `markdown` (the default) or `office`.
     format: []const u8 = "",
     /// `doc-add` / `doc-edit` / `doc-get`: the calling session, which is what
@@ -263,12 +277,13 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-get | export | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
-    "      doc-create flags: --content <body> --format markdown|office\n" ++
+    "      doc-create flags: --content <body> --format markdown|office|html\n" ++
     "      search flags: --query <text>\n" ++
     "      export flags: --document <id> | --documents <id,id,...> --out <path>\n" ++
-    "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get)\n" ++
+    "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get, doc-html-add, doc-html-edit, doc-html-read)\n" ++
+    "      in-place patch flags: --old-text <t> --new-text <t> --replace-all (doc-edit, doc-html-edit)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
@@ -483,6 +498,9 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-edit")) break :blk .doc_edit;
         if (std.mem.eql(u8, word, "doc-delete")) break :blk .doc_delete;
         if (std.mem.eql(u8, word, "doc-search")) break :blk .doc_search;
+        if (std.mem.eql(u8, word, "doc-html-add")) break :blk .doc_html_add;
+        if (std.mem.eql(u8, word, "doc-html-edit")) break :blk .doc_html_edit;
+        if (std.mem.eql(u8, word, "doc-html-read")) break :blk .doc_html_read;
         if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
         if (std.mem.eql(u8, word, "export")) break :blk .export_file;
         if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
@@ -521,6 +539,16 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.content = argv[i];
+        } else if (std.mem.eql(u8, flag, "--old-text")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.old_text = argv[i];
+        } else if (std.mem.eql(u8, flag, "--new-text")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.new_text = argv[i];
+        } else if (std.mem.eql(u8, flag, "--replace-all")) {
+            got.replace_all = true;
         } else if (std.mem.eql(u8, flag, "--format")) {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
@@ -554,7 +582,8 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         i += 1;
     }
 
-    const tool_op = op == .doc_add or op == .doc_edit or op == .doc_delete or op == .doc_search or op == .doc_get;
+    const tool_op = op == .doc_add or op == .doc_edit or op == .doc_delete or op == .doc_search or op == .doc_get or
+        op == .doc_html_add or op == .doc_html_edit or op == .doc_html_read;
     if (tool_op) {
         if (got.session.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--session" });
     } else if (got.workspace_id.len == 0 and op != .backfill) {
@@ -579,10 +608,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         .folder_move => {
             if (got.folder_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--folder" });
         },
-        .doc_create, .doc_add => {
+        .doc_create, .doc_add, .doc_html_add => {
             if (got.title.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--title" });
         },
-        .doc_move, .doc_edit, .doc_delete, .doc_get => {
+        .doc_move, .doc_edit, .doc_delete, .doc_get, .doc_html_edit, .doc_html_read => {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
         .doc_search => {},
@@ -1078,6 +1107,42 @@ test "parse: documents doc-add takes a session, a title and a body" {
     try testing.expectEqualStrings("# hi", a.documents.content);
     // The tool resolves the workspace from the session, so no --workspace.
     try testing.expectEqualStrings("", a.documents.workspace_id);
+}
+
+test "parse: documents doc-html-add takes a session, a title and a page" {
+    const a = try parse(&.{
+        "documents", "doc-html-add", "--session", "task_1", "--title", "Page", "--content", "<p>hi</p>",
+    });
+    try testing.expectEqual(DocumentsOp.doc_html_add, a.documents.op);
+    try testing.expectEqualStrings("task_1", a.documents.session);
+    try testing.expectEqualStrings("Page", a.documents.title);
+    try testing.expectEqualStrings("<p>hi</p>", a.documents.content);
+}
+
+test "parse: documents doc-html-edit and doc-html-read need a document id" {
+    try expectFailure(&.{ "documents", "doc-html-edit", "--session", "task_1" }, .documents_requires_flag);
+    try expectFailure(&.{ "documents", "doc-html-read", "--session", "task_1" }, .documents_requires_flag);
+
+    const edit = try parse(&.{
+        "documents", "doc-html-edit", "--session", "task_1", "--document", "doc_a", "--content", "<p>x</p>",
+    });
+    try testing.expectEqual(DocumentsOp.doc_html_edit, edit.documents.op);
+    try testing.expectEqualStrings("doc_a", edit.documents.document_id.?);
+
+    const read = try parse(&.{ "documents", "doc-html-read", "--session", "task_1", "--document", "doc_a" });
+    try testing.expectEqual(DocumentsOp.doc_html_read, read.documents.op);
+}
+
+test "parse: documents doc-html-edit takes an in-place patch instead of a whole body" {
+    const a = try parse(&.{
+        "documents", "doc-html-edit", "--session", "task_1", "--document", "doc_a",
+        "--old-text", "<h1>Old</h1>", "--new-text", "<h1>New</h1>", "--replace-all",
+    });
+    try testing.expectEqual(DocumentsOp.doc_html_edit, a.documents.op);
+    try testing.expectEqualStrings("<h1>Old</h1>", a.documents.old_text.?);
+    try testing.expectEqualStrings("<h1>New</h1>", a.documents.new_text.?);
+    try testing.expect(a.documents.replace_all);
+    try testing.expectEqualStrings("", a.documents.content);
 }
 
 test "parse: documents doc-get needs a session and a document id" {

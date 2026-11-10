@@ -2,14 +2,17 @@
 import { onBeforeUnmount, ref } from 'vue'
 import type { OfficeKind } from '../../helpers/officeDocument'
 
+type DocumentKind = 'markdown' | 'html' | OfficeKind
+
 const emit = defineEmits<{
-  choose: [kind: 'markdown' | OfficeKind]
+  choose: [kind: DocumentKind]
 }>()
 
 const open = ref(false)
 
-const CHOICES: { kind: 'markdown' | OfficeKind; label: string; testId: string }[] = [
+const CHOICES: { kind: DocumentKind; label: string; testId: string }[] = [
   { kind: 'markdown', label: 'Markdown document', testId: 'documents-new-markdown' },
+  { kind: 'html', label: 'HTML document', testId: 'documents-new-html' },
   { kind: 'doc', label: 'Office document', testId: 'documents-new-doc' },
   { kind: 'sheet', label: 'Office spreadsheet', testId: 'documents-new-sheet' },
 ]
@@ -30,7 +33,7 @@ function toggle() {
   setTimeout(() => document.addEventListener('click', close), 0)
 }
 
-function choose(kind: 'markdown' | OfficeKind) {
+function choose(kind: DocumentKind) {
   close()
   emit('choose', kind)
 }

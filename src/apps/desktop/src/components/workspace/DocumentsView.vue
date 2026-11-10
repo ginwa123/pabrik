@@ -15,6 +15,7 @@ import {
   serializeOfficeBody,
 } from '../../helpers/officeDocument'
 import OfficeDocumentEditor from './OfficeDocumentEditor.vue'
+import { isHtmlFormat } from '../../helpers/htmlDocument'
 
 const props = defineProps<{
   documentId: string
@@ -47,6 +48,8 @@ const workspaceId = computed(() => workspacesStore.activeWorkspace?.id ?? null)
 const document_ = computed(() => documentsStore.findById(props.documentId))
 
 const isOffice = computed(() => isOfficeFormat(document_.value?.format))
+
+const isHtml = computed(() => isHtmlFormat(document_.value?.format))
 
 /** Which Univer product renders this document. The mounted editor wins: it is
  *  the thing holding the snapshot Save will store, so the envelope's `kind` and
@@ -375,6 +378,32 @@ const remove = async () => {
           Loading document…
         </div>
       </template>
+
+      <!-- An HTML document is its own page: the source on the left while
+           editing, the rendered page on the right. The iframe is sandboxed
+           WITHOUT `allow-same-origin`, so the page runs on a null origin and
+           cannot reach the app. -->
+      <div v-else-if="isHtml" class="flex-1 min-h-0 flex" data-testid="documents-html-body">
+        <textarea
+          v-if="editing"
+          v-model="draftContent"
+          class="flex-1 min-w-0 p-4 bg-transparent outline-none resize-none text-body font-mono"
+          style="color: var(--semantic-text)"
+          data-testid="documents-content-input"
+          aria-label="HTML source"
+          spellcheck="false"
+        />
+        <iframe
+          v-if="!editing || showPreview"
+          :srcdoc="draftContent"
+          sandbox="allow-scripts allow-forms"
+          referrerpolicy="no-referrer"
+          class="flex-1 min-w-0 border-0"
+          :style="editing ? 'border-left: 1px solid var(--color-border)' : ''"
+          title="HTML preview"
+          data-testid="documents-html-preview"
+        ></iframe>
+      </div>
 
       <!-- Both panes are always mounted while editing. `v-if` on the
            textarea would drop the caret and the scroll position on every

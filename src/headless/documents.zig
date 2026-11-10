@@ -15,6 +15,7 @@ const documents_export = pabrikcore.documents_export;
 const workspace_scope = pabrikcore.workspace_scope;
 const agent = pabrikcore.agent;
 const document_tool = pabrikcore.document_tool;
+const document_html_tool = pabrikcore.document_html_tool;
 
 const FolderDto = struct {
     id: []const u8,
@@ -130,7 +131,7 @@ pub fn run(
     a: args.DocumentsArgs,
 ) ![]u8 {
     switch (a.op) {
-        .doc_add, .doc_edit, .doc_delete, .doc_search => return runToolOp(allocator, backend, a),
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_html_add, .doc_html_edit, .doc_html_read => return runToolOp(allocator, backend, a),
         .doc_get => return documentBodyJson(allocator, backend, a),
         else => {},
     }
@@ -149,19 +150,30 @@ fn runToolOp(
     a: args.DocumentsArgs,
 ) ![]u8 {
     const action: []const u8 = switch (a.op) {
-        .doc_add => "create",
-        .doc_edit => "edit",
+        .doc_add, .doc_html_add => "create",
+        .doc_edit, .doc_html_edit => "edit",
         .doc_delete => "delete",
         .doc_search => "search",
+        .doc_html_read => "read",
         else => unreachable,
     };
+    const tool_name: []const u8 = switch (a.op) {
+        .doc_html_add, .doc_html_edit, .doc_html_read => document_html_tool.TOOL_NAME,
+        else => document_tool.TOOL_NAME,
+    };
     const arguments = switch (a.op) {
-        .doc_add => try std.json.Stringify.valueAlloc(allocator, .{
+        .doc_add, .doc_html_add => try std.json.Stringify.valueAlloc(allocator, .{
             .action = action,
             .title = a.title,
             .content = a.content,
         }, .{}),
-        .doc_edit => try std.json.Stringify.valueAlloc(allocator, .{
+        .doc_edit, .doc_html_edit => if (a.old_text) |old_text| try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
+            .document_id = a.document_id.?,
+            .old_text = old_text,
+            .new_text = a.new_text orelse "",
+            .replace_all = a.replace_all,
+        }, .{}) else try std.json.Stringify.valueAlloc(allocator, .{
             .action = action,
             .document_id = a.document_id.?,
             .content = a.content,
@@ -175,6 +187,10 @@ fn runToolOp(
             .query = a.query,
             .limit = if (a.limit == 0) null else @as(i64, @intCast(a.limit)),
         }, .{ .emit_null_optional_fields = false }),
+        .doc_html_read => try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
+            .document_id = a.document_id.?,
+        }, .{}),
         else => unreachable,
     };
     defer allocator.free(arguments);
@@ -200,7 +216,7 @@ fn runToolOp(
     const output = try handle_tool.runToolDirect(ctx, .{
         .id = "headless_documents",
         .type = "function",
-        .function = .{ .name = document_tool.TOOL_NAME, .arguments = arguments },
+        .function = .{ .name = tool_name, .arguments = arguments },
     });
     defer allocator.free(output);
 
@@ -337,7 +353,7 @@ pub fn runWithDb(
 
         // These need the process singleton (the tool dispatch resolves the
         // object store from it), so they only run through `run`.
-        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get => return error.RequiresBackend,
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get, .doc_html_add, .doc_html_edit, .doc_html_read => return error.RequiresBackend,
 
         .export_file => return exportJson(allocator, io, store, a),
 

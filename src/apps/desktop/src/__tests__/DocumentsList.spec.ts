@@ -210,6 +210,35 @@ describe('DocumentsList — section chrome', () => {
     expect(call[4]).toBe('office')
     wrapper.unmount()
   })
+
+  it('the HTML choice creates an html document with a starter page', async () => {
+    const created = { ...DOCS[0], id: 'doc_html', title: 'Untitled page', format: 'html' }
+    createDocument.mockResolvedValue({ document: created })
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await nextTick()
+
+    await wrapper.get('[data-testid="documents-add-button"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="documents-new-html"]').trigger('click')
+    await flushPromises()
+
+    const call = createDocument.mock.calls[0] as unknown as [
+      string,
+      string,
+      string,
+      string | null,
+      string,
+    ]
+    expect(call[0]).toBe('ws_1')
+    expect(call[1]).toBe('Untitled page')
+    // A blank body would open an empty iframe, so the starter page is written
+    // at create time — the same reason an office document gets its envelope.
+    expect(call[2]).toContain('<!doctype html>')
+    expect(call[3]).toBeNull()
+    expect(call[4]).toBe('html')
+    wrapper.unmount()
+  })
 })
 
 describe('DocumentsList — URL contract', () => {

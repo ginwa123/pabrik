@@ -22,6 +22,7 @@ const run_session_mod = pabrikcore.run_session;
 // `view_session` — read ONE session's detail (cwd, worktree, task, running state).
 const view_session_mod = pabrikcore.view_session;
 const document_mod = pabrikcore.document_tool;
+const document_html_mod = pabrikcore.document_html_tool;
 const use_skill_mod = pabrikcore.skill_tools;
 const remove_skill_mod = pabrikcore.skill_tools;
 const add_skill_mod = pabrikcore.skill_tools;
@@ -120,6 +121,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         list_secrets_mod.list_secrets_tool,
                 // Workspace-scoped documents (Migration 098): one tool, four actions.
         document_mod.document_markdown_tool,
+        document_html_mod.document_html_tool,
         use_skill_mod.use_skill_tool,
         remove_skill_mod.remove_skill_tool,
         add_skill_mod.add_skill_tool,
@@ -245,6 +247,7 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "list_secrets", .exec = tools.execListSecrets, .tool_def = list_secrets_mod.list_secrets_tool },
         // Workspace-scoped documents (Migration 098): one tool, four actions.
         .{ .name = "document_markdown", .exec = tools.execDocumentMarkdown, .tool_def = document_mod.document_markdown_tool },
+        .{ .name = "document_html", .exec = tools.execDocumentHtml, .tool_def = document_html_mod.document_html_tool },
 
         // === FILE OPERATIONS ===
         .{ .name = "command", .exec = tools.execCommand, .tool_def = command_tool_mod.command_tool },
