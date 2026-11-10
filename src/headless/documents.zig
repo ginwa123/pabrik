@@ -252,10 +252,9 @@ fn documentBodyJson(
     }, .{});
 }
 
-/// `export`: write the document — or a zip of `--documents` — to a file and
-/// report where it landed. The bytes come from `documents_export`, the same
-/// module the HTTP endpoints answer with, so a CLI export and a browser
-/// download are the same file.
+/// `export`: write the document — or a zip of `--documents` — to a file and report where it
+/// landed. The bytes come from `documents_export`, the same module the HTTP endpoints answer
+/// with, so a CLI export and a browser download are the same file.
 fn exportJson(
     allocator: std.mem.Allocator,
     io: std.Io,

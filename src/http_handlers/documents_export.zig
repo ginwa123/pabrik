@@ -1,12 +1,6 @@
-//! Exporting documents as downloads.
-//!
-//! `GET  /api/workspaces/:workspace_id/documents/:document_id/export` — one
-//! document, as a file the browser saves.
-//! `POST /api/workspaces/:workspace_id/documents/export` — `{document_ids}`,
-//! answered with one zip holding every named document.
-//!
-//! Both go through `documents_export`, the same module the headless CLI uses,
-//! so a download and `pabrik headless documents export` cannot drift apart.
+//! Exporting documents as downloads: `GET .../documents/:id/export` answers one file,
+//! `POST .../documents/export` answers one zip. Both go through `documents_export`, the same
+//! module the headless CLI uses, so a download and `pabrik headless documents export` agree.
 
 const std = @import("std");
 const pabrikcore = @import("pabrikcore");

@@ -1,7 +1,6 @@
-//! Turning a stored document into a file a browser can download, and a set of
-//! documents into one zip. The HTTP handlers and the headless CLI both go
-//! through here, so a download and a `pabrik headless documents export` produce
-//! the same bytes.
+//! Turning a stored document into a file a browser can download, and a set of documents into
+//! one zip. The HTTP handlers and the headless CLI both go through here, so a download and a
+//! `pabrik headless documents export` produce the same bytes.
 
 const std = @import("std");
 const documents_store = @import("documents_store.zig");
@@ -57,11 +56,9 @@ fn isUnsafeNameByte(byte: u8) bool {
     };
 }
 
-/// `<title><ext>`, safe to hand to a filesystem and to a header. Unsafe bytes
-/// become `-`, runs of them collapse to one, and leading/trailing spaces and
-/// dots are dropped (Windows refuses a trailing dot, and a leading space is
-/// invisible in a download shelf). A title with nothing usable left becomes
-/// `document`.
+/// `<title><ext>`, safe to hand to a filesystem and to a header. Unsafe bytes become `-`, runs
+/// of them collapse to one, and leading/trailing spaces and dots are dropped. A title with
+/// nothing usable left becomes `document`.
 pub fn fileName(
     allocator: std.mem.Allocator,
     title: []const u8,
@@ -139,12 +136,9 @@ pub const Entry = struct {
     bytes: []const u8,
 };
 
-/// A stored-method (uncompressed) zip holding `entries`, in the order given.
-///
-/// Store, not deflate: the bodies are already small, and a compression
-/// dependency would be a new build input for a feature that only has to hand
-/// the user their own bytes back. The timestamp is fixed at 1980-01-01 so the
-/// same documents always produce the same archive — a test can compare bytes.
+/// A stored-method (uncompressed) zip holding `entries`, in the order given. Store, not deflate:
+/// the bodies are small, and a compression dependency would be a new build input. The timestamp
+/// is fixed at 1980-01-01, so the same documents always produce the same bytes.
 pub fn buildZip(allocator: std.mem.Allocator, entries: []const Entry) ExportError![]u8 {
     if (entries.len > std.math.maxInt(u16)) return error.TooManyEntries;
 
