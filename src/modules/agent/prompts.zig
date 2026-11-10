@@ -1763,18 +1763,22 @@ test "AutoMergeToolRule gates the merge on the note and on a green wait" {
     // The gate: no note, no merge. This is the whole point of the rule.
     try std.testing.expect(contains(prompt, "#Notes AutoMerge"));
     try std.testing.expect(contains(prompt, "Never merge"));
-    // The engine: the headless commands, in the order they must run.
-    const i_wait = std.mem.indexOf(u8, prompt, "headless pr wait").?;
-    const i_merge = std.mem.indexOf(u8, prompt, "headless pr merge").?;
+    // The forge CLI does the work — no bespoke command in between.
+    try std.testing.expect(contains(prompt, "gh pr checks"));
+    try std.testing.expect(contains(prompt, "--watch"));
+    try std.testing.expect(contains(prompt, "gh pr merge"));
+    try std.testing.expect(contains(prompt, "glab mr merge"));
+    try std.testing.expect(!contains(prompt, "headless"));
+    // Wait first, merge second.
+    const i_wait = std.mem.indexOf(u8, prompt, "gh pr checks").?;
+    const i_merge = std.mem.indexOf(u8, prompt, "gh pr merge").?;
     try std.testing.expect(i_wait < i_merge);
     // The method comes from the note, and squash is the fallback.
     try std.testing.expect(contains(prompt, "Method:"));
     try std.testing.expect(contains(prompt, "squash"));
-    // Exit codes are the contract, including the accepted-but-not-merged case
-    // that must never be reported as landed.
-    try std.testing.expect(contains(prompt, "exit"));
-    try std.testing.expect(contains(prompt, "never claim it landed"));
     // A red run stops the agent instead of merging anyway.
     try std.testing.expect(contains(prompt, "do NOT merge"));
+    // The branch the session stands on is not ours to delete.
+    try std.testing.expect(contains(prompt, "--delete-branch"));
     try std.testing.expect(contains(prompt, "Self-check"));
 }

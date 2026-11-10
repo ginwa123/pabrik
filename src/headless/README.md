@@ -84,27 +84,6 @@ including `totals.reported_input_tokens` and `cache_hit_rate`. `--range`
 defaults to the endpoint's own default (`30d`); a range the endpoint
 rejects exits non-zero with nothing on stdout.
 
-### `pr` — read CI, wait for green, merge
-
-```
-pabrik headless pr checks --path <dir> [--pr <n|url|branch>] [--provider github|gitlab|generic]
-pabrik headless pr wait   --path <dir> [--pr ...] [--interval-ms <n>] [--timeout-ms <n>]
-pabrik headless pr merge  --path <dir> [--pr ...] --method merge|squash|rebase
-                          [--title <t>] [--body <b>] [--head-sha <sha>] [--delete-branch]
-```
-
-`checks` prints the same payload `GET /api/git/pr/checks` returns. `wait` is
-the headless twin of the merge box's **Check CI** button: it polls until every
-check is green (default 10 s apart, 15 min budget) and prints
-`{outcome, polls, provider, pr_url, summary, checks, steps_truncated}` where
-`outcome` is `pass`, `fail` or `timeout`. `merge` runs the same use case as
-`POST /api/git/pr/merge`.
-
-Exit codes: `0` only when the run is green / the change request actually
-merged. `fail`, `timeout`, an accepted-but-not-merged merge, and a rejected
-argv all exit non-zero, so `if pabrik headless pr wait …; then …` works
-without parsing JSON.
-
 ### `help`
 
 ```
@@ -185,7 +164,6 @@ src/headless/
 ├── run.zig        `headless run` — one agentic turn
 ├── sessions.zig   `headless sessions` / `headless messages`
 ├── usage.zig      `headless usage` — the workspace usage payload
-├── pr.zig         `headless pr` — CI checks, wait-for-green, merge
 └── README.md      this file
 
 src/boot/headless_dispatch.zig   argv[1] == "headless" → dispatch

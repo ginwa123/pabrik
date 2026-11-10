@@ -376,7 +376,7 @@ fn buildResponse(
     };
 }
 
-pub fn useCase(
+fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,

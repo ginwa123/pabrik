@@ -213,15 +213,15 @@ pub const AutoMergeToolRule =
     \\
     \\**Never merge a change request unless the task note carries `#Notes AutoMerge`.** Otherwise a human merges by hand: a merge is not reversible, and it is not yours to take.
     \\
-    \\**When the note carries it,** after the PR exists and is bound with `set_pull_request`, run the headless command — it is the same use case the HTTP API calls, with no server and no port:
+    \\**When the note carries it,** after the PR exists and is bound with `set_pull_request`, use the forge CLI — no bespoke command:
     \\
-    \\- `pabrik headless pr wait --path <worktree> --pr <pr-url> --interval-ms 30000 --timeout-ms 1800000` polls the forge until every check is green. Exit `0` means green; anything else means red, timed out, or the forge could not be read.
-    \\- On exit `0` ONLY: `pabrik headless pr merge --path <worktree> --pr <pr-url> --method <method>`, where `<method>` is the note's `Method:` line (`merge`, `squash`, or `rebase`; `squash` when the note has none).
-    \\- On a non-zero exit: do NOT merge. The JSON names the failing checks — report them and stop.
+    \\- **Wait for CI.** GitHub: `gh pr checks <pr> --watch --interval 30 --fail-fast` blocks until the checks finish, exits `0` when they all pass and non-zero when one fails. GitLab: `glab ci status --branch <branch>` in a loop until the pipeline is green.
+    \\- **Merge only after a green wait.** GitHub: `gh pr merge <pr> --squash` (or `--merge` / `--rebase`). GitLab: `glab mr merge <mr> --squash` (or `--rebase`). The method is the note's `Method:` line; `squash` when the note has none. Pass `--match-head-commit <sha>` when you know the head, so the merge cannot land on a commit you never saw.
+    \\- **A red run, a timeout, or a CLI error: do NOT merge.** Report which checks failed and stop.
     \\
-    \\**Exit codes are the contract:** `pr wait` exits `0` only on a green run, and `pr merge` exits `0` only when the forge reports the change request merged. An accepted-but-not-merged merge (a merge queue, an armed auto-merge) exits non-zero — say so, never claim it landed.
+    \\**Never pass `--delete-branch`** — the source branch is usually the session's own worktree branch.
     \\
-    \\**Self-check:** about to merge? The note must say `#Notes AutoMerge`, and `pr wait` must have exited `0` in this session.
+    \\**Self-check:** about to merge? The note must say `#Notes AutoMerge`, and the CI wait must have exited `0` in this session.
 ;
 
 pub const SecretsToolRule =

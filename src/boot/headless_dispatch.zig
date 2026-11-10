@@ -62,9 +62,6 @@ pub fn dispatchHeadless(
         .invalid => |f| {
             headless.args.reportFailure(f);
             std.log.err("run `pabrik headless help` for usage", .{});
-            // A rejected argv is not a success: a script that branches on the
-            // exit code must not read "nothing ran" as "it worked".
-            std.process.exit(1);
         },
         .help => {
             const stdout = std.Io.File.stdout();
@@ -83,7 +80,6 @@ pub fn dispatchHeadless(
         .storage => |a| try runStorage(allocator, io, environment, a),
         .memories => |a| try runMemories(allocator, io, environment, a, log_file, db_request),
         .mcp_oauth => |a| try runMcpOAuth(allocator, io, environment, a, log_file, db_request),
-        .pr => |a| try runPr(allocator, io, a),
     }
     return true;
 }
@@ -462,25 +458,6 @@ fn writeStdout(io: std.Io, bytes: []const u8) !void {
     var w = stdout.writer(io, &buf);
     try w.interface.writeAll(bytes);
     try w.interface.flush();
-}
-
-/// Run one change-request op and print its JSON. Deliberately does NOT boot
-/// the backend: the forge CLI needs a repository and a token, not a database,
-/// so a broken `agent.db` cannot stop an agent from checking its own CI.
-fn runPr(allocator: std.mem.Allocator, io: std.Io, a: headless.args.PrArgs) !void {
-    const out = headless.pr.run(allocator, io, a) catch |err| {
-        std.log.err("headless: pr {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
-        std.process.exit(1);
-    };
-    defer allocator.free(out.json);
-
-    var buf: [4096]u8 = undefined;
-    var w = std.Io.File.stdout().writer(io, &buf);
-    try w.interface.writeAll(out.json);
-    try w.interface.writeAll("\n");
-    try w.interface.flush();
-
-    std.process.exit(out.exit_code);
 }
 
 fn runMcpOAuth(
