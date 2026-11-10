@@ -40,6 +40,13 @@ pub const DocumentMarkdownInput = struct {
     offset: ?i64 = null,
     /// Opt-in full bodies.
     include_content: ?bool = null,
+    /// `edit`: exact text to find in the current body. When set, `content` is
+    /// refused and the body is patched in place instead of replaced.
+    old_text: ?[]const u8 = null,
+    /// `edit`: the replacement for `old_text`. `""` deletes the match.
+    new_text: ?[]const u8 = null,
+    /// `edit`: replace every occurrence instead of requiring exactly one.
+    replace_all: ?bool = null,
 };
 
 // =====================================================================
@@ -53,7 +60,8 @@ pub const document_markdown_tool_system_prompt =
     \\- `search` first when you do not have an id. It is how you get a `document_id` — never invent one, and do not ask the user to paste an id you can look up yourself.
     \\- `create` needs `title`, which must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug. `content` is the markdown body and may be empty, so you can create a heading-only stub and fill it in with `edit`.
     \\- `format` is `markdown` (the default) or `office`. For `office`, `content` is a Univer snapshot: one JSON object with `sheets`, each sheet holding a `cellData` map of row index → column index → `{"v": value}`. A spreadsheet the user opens in the grid must be a valid snapshot, so build it from that shape rather than inventing keys.
-    \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` is rejected. `content` is the WHOLE new body, not a diff — read the existing body first (`search` with `include_content: true`) or you will silently discard what is there.
+    \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` nor `old_text` is rejected. `content` is the WHOLE new body, not a diff.
+    \\- `edit` with `old_text` + `new_text` patches the body IN PLACE — the cheap path for a large document, because you send only the changed text. `old_text` must match EXACTLY ONCE; a miss or an ambiguous match is refused and nothing is written, so include enough surrounding text to be unique, or set `replace_all: true`. `new_text: ""` deletes the match. `content` and `old_text` are mutually exclusive.
     \\- An `office` document's body is a Univer snapshot JSON. Replacing it with prose destroys the spreadsheet, so only write one when you can produce a valid snapshot; otherwise leave the document to the user's grid.
     \\- `search` takes `query`, a case-insensitive REGEX matched against each document's TITLE AND CONTENT. One pattern reaches a phrase that several words would: `release|launch`, `^Q3`, `\bTODO\b`. Set `literal: true` when the query is literal text (e.g. `*.md`, `fn(`) — otherwise its metacharacters are interpreted. An invalid pattern is not a failure: it is matched as a literal substring and the result carries `pattern_warning`. Read it instead of retrying blindly. Omitting `query` lists your documents, newest-updated first — the right first call when you do not know what you are looking for.
     \\- Results are PAGED: `limit` (default 20, max 100) caps how many rows you get back, `total` is the real match count, `offset` continues the listing, and `hint` names the exact next offset. Every row carries a short `excerpt` around the hit plus `content_length` (bytes) — enough to tell documents apart without dumping megabytes of markdown into your context. A document whose body lives in the object store is searched through its PREVIEW (the first 512 bytes); a row whose `content_length` is much larger than its excerpt may hold the match further in, so open it with `include_content: true`.
@@ -95,7 +103,22 @@ pub const document_markdown_tool = AgentTool{
                 .{
                     .name = "content",
                     .type = "string",
-                    .description = "`create`: the body, may be empty. `edit`: the COMPLETE new body (not a diff); omit to keep the current body, pass \"\" to clear it. Markdown text, or a Univer snapshot JSON when `format` is 'office'. Capped at 4 MiB.",
+                    .description = "`create`: the body, may be empty. `edit`: the COMPLETE new body (not a diff); omit to keep the current body, pass \"\" to clear it. Refused together with `old_text`. Markdown text, or a Univer snapshot JSON when `format` is 'office'. Capped at 4 MiB.",
+                },
+                .{
+                    .name = "old_text",
+                    .type = "string",
+                    .description = "`edit`: exact text to find in the current body and replace with `new_text`. Use this instead of `content` to patch a large document without re-sending it. Must match EXACTLY ONCE unless `replace_all` is true; a miss or an ambiguous match is refused and nothing is written.",
+                },
+                .{
+                    .name = "new_text",
+                    .type = "string",
+                    .description = "`edit`: the replacement for `old_text`. Pass \"\" to delete the matched text. Required whenever `old_text` is given.",
+                },
+                .{
+                    .name = "replace_all",
+                    .type = "boolean",
+                    .description = "`edit`: replace EVERY occurrence of `old_text` instead of requiring exactly one. Default false.",
                 },
                 .{
                     .name = "format",
@@ -271,40 +294,138 @@ pub fn executeEditDocumentWithFormat(
     if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
         return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action.");
     }
-    if (input.title == null and input.content == null) {
+    if (input.title == null and input.content == null and input.old_text == null) {
         // Silently succeeding here would teach the model that an empty
         // patch is a valid edit, which is how a document gets "updated"
         // without any change ever being made.
-        return errorJSON(allocator, "Nothing to change: supply `title`, `content`, or both. Omitted fields keep their current value.");
+        return errorJSON(allocator, "Nothing to change: supply `title`, `content`, or `old_text` + `new_text`. Omitted fields keep their current value.");
+    }
+    if (input.old_text != null and input.content != null) {
+        return errorJSON(allocator, "Supply either `content` (the whole new body) or `old_text` + `new_text` (a targeted replacement), not both.");
+    }
+    if (input.old_text == null and input.new_text != null) {
+        return errorJSON(allocator, "`new_text` only means something with `old_text`. Supply both, or use `content` for a whole-body replace.");
     }
 
     const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
         return scopeErrorJSON(allocator, caller_session_id);
     defer allocator.free(workspace_id);
 
+    var replaced: ?[]u8 = null;
+    defer if (replaced) |body| allocator.free(body);
+
+    if (input.old_text) |old_text| {
+        const new_text = input.new_text orelse
+            return errorJSON(allocator, "`new_text` is required when `old_text` is given. Pass \"\" to delete the matched text.");
+
+        const existing = store.getDocument(allocator, workspace_id, input.document_id) catch |err| {
+            return errorJSON(allocator, readErrorMessage(err));
+        };
+        defer documents_store.freeDocumentRow(allocator, existing);
+
+        if (require_format) |required| {
+            if (!std.mem.eql(u8, existing.format, required)) {
+                return errorJSON(allocator, formatMismatchMessage());
+            }
+        }
+
+        replaced = replaceInBody(
+            allocator,
+            existing.content,
+            old_text,
+            new_text,
+            input.replace_all orelse false,
+        ) catch |err| return errorJSON(allocator, replaceErrorMessage(err));
+    }
+
     const row = store.updateDocument(allocator, workspace_id, input.document_id, .{
         .title = input.title,
-        .content = input.content,
+        .content = replaced orelse input.content,
         .require_format = require_format,
     }) catch |err| {
-        const msg = switch (err) {
-            error.IdsRequired => "workspace_id and document_id required",
-            // One message for "no such id", "another workspace's id" and "you
-            // blanked the title" — the first two must be indistinguishable or
-            // the tool becomes an oracle for other workspaces' row ids.
-            error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
-            error.FormatMismatch => "That document is not an HTML document. Use `document_markdown` to edit it.",
-            error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
-            error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
-            error.FolderNotFound => "No such folder in this workspace.",
-            error.UpdateFailed => "Could not save the document (database error).",
-            error.QueryFailed => "Could not read the document (database error).",
-            error.OutOfMemory => "Out of memory",
-        };
-        return errorJSON(allocator, msg);
+        return errorJSON(allocator, updateErrorMessage(err));
     };
     defer documents_store.freeDocumentRow(allocator, row);
     return successJSON(allocator, row);
+}
+
+fn formatMismatchMessage() []const u8 {
+    return "That document is not an HTML document. Use `document_markdown` to edit it.";
+}
+
+fn readErrorMessage(err: anyerror) []const u8 {
+    return switch (err) {
+        error.IdsRequired => "workspace_id and document_id required",
+        error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
+        error.QueryFailed => "Could not read the document (database error).",
+        error.OutOfMemory => "Out of memory",
+        else => "Could not read the document.",
+    };
+}
+
+fn updateErrorMessage(err: anyerror) []const u8 {
+    return switch (err) {
+        error.IdsRequired => "workspace_id and document_id required",
+        // One message for "no such id", "another workspace's id" and "you
+        // blanked the title" — the first two must be indistinguishable or
+        // the tool becomes an oracle for other workspaces' row ids.
+        error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
+        error.FormatMismatch => formatMismatchMessage(),
+        error.ContentTooLarge => "content exceeds the 4 MiB per-document cap",
+        error.NoStorage => "No object store is configured, so the document body has nowhere to be stored. Nothing was written.",
+        error.FolderNotFound => "No such folder in this workspace.",
+        error.UpdateFailed => "Could not save the document (database error).",
+        error.QueryFailed => "Could not read the document (database error).",
+        error.OutOfMemory => "Out of memory",
+        else => "Could not save the document.",
+    };
+}
+
+fn replaceErrorMessage(err: anyerror) []const u8 {
+    return switch (err) {
+        error.EmptyPattern => "`old_text` must not be empty.",
+        error.NotFound => "`old_text` was not found in the document body. Read the document first and copy the exact text, including its whitespace.",
+        error.Ambiguous => "`old_text` matches more than once. Include more surrounding text so it is unique, or set `replace_all: true`.",
+        error.OutOfMemory => "Out of memory",
+        else => "Could not patch the document body.",
+    };
+}
+
+const ReplaceError = error{ EmptyPattern, NotFound, Ambiguous, OutOfMemory };
+
+/// `body` with `old_text` replaced by `new_text`. Exactly one occurrence is
+/// required unless `replace_all` is set, so a pattern that is not unique is
+/// refused rather than silently patching the wrong place.
+pub fn replaceInBody(
+    allocator: std.mem.Allocator,
+    body: []const u8,
+    old_text: []const u8,
+    new_text: []const u8,
+    replace_all: bool,
+) ReplaceError![]u8 {
+    if (old_text.len == 0) return error.EmptyPattern;
+
+    var matches: usize = 0;
+    var cursor: usize = 0;
+    while (std.mem.indexOfPos(u8, body, cursor, old_text)) |at| {
+        matches += 1;
+        cursor = at + old_text.len;
+    }
+    if (matches == 0) return error.NotFound;
+    if (matches > 1 and !replace_all) return error.Ambiguous;
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+
+    cursor = 0;
+    while (std.mem.indexOfPos(u8, body, cursor, old_text)) |at| {
+        try out.appendSlice(allocator, body[cursor..at]);
+        try out.appendSlice(allocator, new_text);
+        cursor = at + old_text.len;
+        if (!replace_all) break;
+    }
+    try out.appendSlice(allocator, body[cursor..]);
+    return out.toOwnedSlice(allocator);
 }
 
 /// Execute the `delete` action. Returns an inner JSON string the exec
@@ -731,6 +852,133 @@ test "document_markdown edit: a missing document_id is rejected before any DB wo
     defer p.deinit();
     try testing.expect(p.err != null);
     try testing.expect(std.mem.indexOf(u8, p.err.?, "document_id") != null);
+}
+
+test "document_markdown edit: old_text patches one occurrence and leaves the rest of the body intact" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const body = "# Plan\n\nShip on Friday.\n\nKeep the rest.\n";
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", body);
+    defer alloc.free(id);
+
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .old_text = "Friday",
+        .new_text = "Monday",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err == null);
+    try testing.expectEqualStrings("# Plan\n\nShip on Monday.\n\nKeep the rest.\n", p.content);
+}
+
+test "document_markdown edit: an old_text that matches twice is refused unless replace_all is set" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const body = "TODO one\nTODO two\n";
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", body);
+    defer alloc.free(id);
+
+    const refused = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .old_text = "TODO",
+        .new_text = "DONE",
+    });
+    defer alloc.free(refused);
+    var r = try parseJson(alloc, refused);
+    defer r.deinit();
+    try testing.expect(r.err != null);
+    try testing.expect(std.mem.indexOf(u8, r.err.?, "replace_all") != null);
+
+    const row = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
+    defer documents_store.freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings(body, row.content);
+
+    const all = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .old_text = "TODO",
+        .new_text = "DONE",
+        .replace_all = true,
+    });
+    defer alloc.free(all);
+    var a = try parseJson(alloc, all);
+    defer a.deinit();
+    try testing.expect(a.err == null);
+    try testing.expectEqualStrings("DONE one\nDONE two\n", a.content);
+}
+
+test "document_markdown edit: an old_text that is not in the body is refused and nothing is written" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const body = "# Plan\n\nShip it.\n";
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", body);
+    defer alloc.free(id);
+
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .old_text = "not in the body",
+        .new_text = "x",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+    try testing.expect(p.err != null);
+
+    const row = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
+    defer documents_store.freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings(body, row.content);
+}
+
+test "document_markdown edit: content and old_text together are refused" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "body");
+    defer alloc.free(id);
+
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .content = "whole new body",
+        .old_text = "body",
+        .new_text = "patched",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+    try testing.expect(p.err != null);
+    try testing.expect(std.mem.indexOf(u8, p.err.?, "not both") != null);
+}
+
+test "document_markdown edit: old_text with no new_text is refused rather than deleting silently" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "keep me");
+    defer alloc.free(id);
+
+    const out = try executeEditDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .old_text = "keep me",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+    try testing.expect(p.err != null);
+    try testing.expect(std.mem.indexOf(u8, p.err.?, "new_text") != null);
+
+    const row = try (documents_store.Store{ .db = &ctx.db, .storage = ctx.objects.asStorage() }).getDocument(alloc, "ws_1", id);
+    defer documents_store.freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("keep me", row.content);
 }
 
 test "document_markdown edit: workspace B cannot edit workspace A's document, and the error is identical to a missing one" {

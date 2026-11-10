@@ -167,7 +167,13 @@ fn runToolOp(
             .title = a.title,
             .content = a.content,
         }, .{}),
-        .doc_edit, .doc_html_edit => try std.json.Stringify.valueAlloc(allocator, .{
+        .doc_edit, .doc_html_edit => if (a.old_text) |old_text| try std.json.Stringify.valueAlloc(allocator, .{
+            .action = action,
+            .document_id = a.document_id.?,
+            .old_text = old_text,
+            .new_text = a.new_text orelse "",
+            .replace_all = a.replace_all,
+        }, .{}) else try std.json.Stringify.valueAlloc(allocator, .{
             .action = action,
             .document_id = a.document_id.?,
             .content = a.content,

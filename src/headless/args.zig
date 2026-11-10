@@ -158,6 +158,13 @@ pub const DocumentsArgs = struct {
     /// `doc-create` / `doc-add` / `doc-edit`: the body. Markdown text, or a
     /// Univer snapshot JSON when `format` is `office`.
     content: []const u8 = "",
+    /// `doc-edit` / `doc-html-edit`: exact text to patch in place instead of
+    /// replacing the whole body.
+    old_text: ?[]const u8 = null,
+    /// `doc-edit` / `doc-html-edit`: the replacement for `old_text`.
+    new_text: ?[]const u8 = null,
+    /// `doc-edit` / `doc-html-edit`: replace every occurrence of `old_text`.
+    replace_all: bool = false,
     /// `doc-create`: `markdown` (the default) or `office`.
     format: []const u8 = "",
     /// `doc-add` / `doc-edit` / `doc-get`: the calling session, which is what
@@ -276,6 +283,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      search flags: --query <text>\n" ++
     "      export flags: --document <id> | --documents <id,id,...> --out <path>\n" ++
     "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get, doc-html-add, doc-html-edit, doc-html-read)\n" ++
+    "      in-place patch flags: --old-text <t> --new-text <t> --replace-all (doc-edit, doc-html-edit)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
@@ -531,6 +539,16 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.content = argv[i];
+        } else if (std.mem.eql(u8, flag, "--old-text")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.old_text = argv[i];
+        } else if (std.mem.eql(u8, flag, "--new-text")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.new_text = argv[i];
+        } else if (std.mem.eql(u8, flag, "--replace-all")) {
+            got.replace_all = true;
         } else if (std.mem.eql(u8, flag, "--format")) {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
@@ -1113,6 +1131,18 @@ test "parse: documents doc-html-edit and doc-html-read need a document id" {
 
     const read = try parse(&.{ "documents", "doc-html-read", "--session", "task_1", "--document", "doc_a" });
     try testing.expectEqual(DocumentsOp.doc_html_read, read.documents.op);
+}
+
+test "parse: documents doc-html-edit takes an in-place patch instead of a whole body" {
+    const a = try parse(&.{
+        "documents", "doc-html-edit", "--session", "task_1", "--document", "doc_a",
+        "--old-text", "<h1>Old</h1>", "--new-text", "<h1>New</h1>", "--replace-all",
+    });
+    try testing.expectEqual(DocumentsOp.doc_html_edit, a.documents.op);
+    try testing.expectEqualStrings("<h1>Old</h1>", a.documents.old_text.?);
+    try testing.expectEqualStrings("<h1>New</h1>", a.documents.new_text.?);
+    try testing.expect(a.documents.replace_all);
+    try testing.expectEqualStrings("", a.documents.content);
 }
 
 test "parse: documents doc-get needs a session and a document id" {

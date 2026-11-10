@@ -18,6 +18,9 @@ pub const DocumentHtmlInput = struct {
     document_id: []const u8 = "",
     title: ?[]const u8 = null,
     content: ?[]const u8 = null,
+    old_text: ?[]const u8 = null,
+    new_text: ?[]const u8 = null,
+    replace_all: ?bool = null,
 };
 
 pub const document_html_tool_system_prompt =
@@ -26,7 +29,8 @@ pub const document_html_tool_system_prompt =
     \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. A `document_id` from another workspace reports "not found", exactly as a nonexistent id does.
     \\- `create` needs `title`, which must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug. `content` is the page source and may be empty.
     \\- `content` is a COMPLETE HTML page: `<!doctype html>`, `<html>`, `<head>` and `<body>`. The page renders in a sandboxed iframe with no access to the app, so it must carry its own styles and scripts inline — a relative `<link>` or `<script src>` has nothing to resolve against.
-    \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` is rejected. `content` is the WHOLE new page, not a diff — `read` the current body first or you will silently discard what is there.
+    \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` nor `old_text` is rejected. `content` is the WHOLE new page, not a diff.
+    \\- `edit` with `old_text` + `new_text` patches the page IN PLACE — the cheap path for a large page, because you send only the changed text. `old_text` must match EXACTLY ONCE; a miss or an ambiguous match is refused and nothing is written, so include enough surrounding markup to be unique, or set `replace_all: true`. `new_text: ""` deletes the match. `content` and `old_text` are mutually exclusive.
     \\- `edit` refuses a document that is not an HTML document. A markdown or office document is `document_markdown`'s to change; this tool will not overwrite it.
     \\- `read` returns the full page source plus its title and format. Use it before an `edit`, and to confirm what landed.
     \\- To SEARCH or DELETE documents of any format, use `document_markdown`. This tool does not duplicate those actions.
@@ -68,7 +72,22 @@ pub const document_html_tool = AgentTool{
                 .{
                     .name = "content",
                     .type = "string",
-                    .description = "`create`: the page source, may be empty. `edit`: the COMPLETE new page (not a diff); omit to keep the current body, pass \"\" to clear it. Capped at 4 MiB.",
+                    .description = "`create`: the page source, may be empty. `edit`: the COMPLETE new page (not a diff); omit to keep the current body, pass \"\" to clear it. Refused together with `old_text`. Capped at 4 MiB.",
+                },
+                .{
+                    .name = "old_text",
+                    .type = "string",
+                    .description = "`edit`: exact text to find in the current page and replace with `new_text`. Use this instead of `content` to patch a large page without re-sending it. Must match EXACTLY ONCE unless `replace_all` is true; a miss or an ambiguous match is refused and nothing is written.",
+                },
+                .{
+                    .name = "new_text",
+                    .type = "string",
+                    .description = "`edit`: the replacement for `old_text`. Pass \"\" to delete the matched text. Required whenever `old_text` is given.",
+                },
+                .{
+                    .name = "replace_all",
+                    .type = "boolean",
+                    .description = "`edit`: replace EVERY occurrence of `old_text` instead of requiring exactly one. Default false.",
                 },
             },
             .required = &.{"action"},
@@ -128,6 +147,9 @@ pub fn executeEditHtml(
         .document_id = input.document_id,
         .title = input.title,
         .content = input.content,
+        .old_text = input.old_text,
+        .new_text = input.new_text,
+        .replace_all = input.replace_all,
     }, documents_store.FORMAT_HTML);
 }
 
@@ -459,6 +481,63 @@ test "document_html edit: refuses a markdown document and leaves its body untouc
     defer documents_store.freeDocumentRow(alloc, row);
     try testing.expectEqualStrings("# keep me", row.content);
     try testing.expectEqualStrings("markdown", row.format);
+}
+
+test "document_html edit: old_text patches the page in place and keeps the rest" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const page = "<!doctype html><html><body><h1>Old title</h1><p>keep</p></body></html>";
+    const created = try executeCreateHtml(alloc, ctx.store(), "s1", .{ .title = "Page", .content = page });
+    defer alloc.free(created);
+    var c = try parseJson(alloc, created);
+    defer c.deinit();
+
+    const out = try executeEditHtml(alloc, ctx.store(), "s1", .{
+        .document_id = c.id,
+        .old_text = "Old title",
+        .new_text = "New title",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err == null);
+    try testing.expectEqualStrings(
+        "<!doctype html><html><body><h1>New title</h1><p>keep</p></body></html>",
+        p.content,
+    );
+    try testing.expectEqualStrings("html", p.format);
+}
+
+test "document_html edit: old_text on a markdown document is refused and leaves it untouched" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const created = try document_mod.executeAddDocument(alloc, ctx.store(), "s1", .{
+        .title = "Notes",
+        .content = "# keep me",
+    });
+    defer alloc.free(created);
+    var c = try parseJson(alloc, created);
+    defer c.deinit();
+
+    const out = try executeEditHtml(alloc, ctx.store(), "s1", .{
+        .document_id = c.id,
+        .old_text = "keep me",
+        .new_text = "clobbered",
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err != null);
+
+    const row = try ctx.store().getDocument(alloc, "ws_1", c.id);
+    defer documents_store.freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("# keep me", row.content);
 }
 
 test "document_html read: returns the full page source" {
