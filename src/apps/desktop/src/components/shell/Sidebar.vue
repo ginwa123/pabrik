@@ -32,6 +32,7 @@ import { buildAppUrl, buildProjectSettingsUrl, buildTaskAppUrl, parseAppPath } f
 import { parseItemIdWithChat } from '../../helpers/buildItemIdWithChat'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { openInNewTab } from '../../helpers/openInNewTab'
+import { useProjectsResize } from './useProjectsResize'
 
 const router = useRouter()
 const route = useRoute()
@@ -161,6 +162,14 @@ const resizeStartWidth = ref(0)
 
 // Ref to ChatsList component
 const chatsListRef = ref<InstanceType<typeof ChatsList> | null>(null)
+
+const projectsSectionRef = ref<HTMLElement | null>(null)
+const { startProjectsResize, resetProjectsHeight } = useProjectsResize(projectsSectionRef)
+
+const projectsSectionStyle = computed(() => {
+  const height = sidebarStore.projectsHeight
+  return height === null ? {} : { height: height + '%', minHeight: '80px' }
+})
 
 const startResize = (e: MouseEvent | TouchEvent) => {
   isResizing.value = true
@@ -1213,7 +1222,13 @@ defineExpose({
       <!-- Workspaces. `shrink-0`, NOT `flex-1`: the section must be as
            tall as its rows and no taller, so the next section starts
            directly under the last project row. -->
-      <div class="shrink-0">
+      <div
+        ref="projectsSectionRef"
+        class="shrink-0 flex flex-col"
+        :class="sidebarStore.projectsHeight === null ? '' : 'overflow-y-auto'"
+        :style="projectsSectionStyle"
+        data-testid="projects-section"
+      >
         <ProjectsList
           v-if="!isCollapsed"
           :workspace="workspacesStore.activeWorkspace ?? null"
@@ -1237,6 +1252,23 @@ defineExpose({
           @rename-design-page="handleRenameDesignPage"
           @open-design-page-in-background="handleOpenDesignPageInBackground"
           @go-to-settings="handleGoToSettings"
+        />
+      </div>
+
+      <!-- Resizes Projects, the section ABOVE the handle: a divider can only
+           move if the box above it changes height. -->
+      <div
+        v-if="!isCollapsed && sidebarStore.projectsExpanded"
+        class="h-3 cursor-row-resize flex items-center justify-center group/resize shrink-0"
+        :class="'bg-(--color-border)/20 hover:bg-(--color-border)/40 transition-colors'"
+        title="Drag to resize, double-click to reset"
+        data-testid="projects-resize-handle"
+        @mousedown="startProjectsResize"
+        @dblclick="resetProjectsHeight"
+      >
+        <div
+          class="w-2/3 h-0.5 transition-all duration-200 group-hover/resize:h-1 rounded"
+          style="background: var(--color-border)"
         />
       </div>
 
