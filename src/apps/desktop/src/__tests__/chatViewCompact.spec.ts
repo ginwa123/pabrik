@@ -150,9 +150,14 @@ describe('the one line a tool call shows', () => {
 })
 
 describe('the compact group', () => {
-  it('draws a lone call as one row, not as a group of one', () => {
+  it('draws a lone call as a card of one, with the call in the header', async () => {
     const wrapper = mountGroup(itemsOf([call('read_file', '{"path":"/x/y.ts"}')]))
-    expect(wrapper.find('[data-testid="compact-tool-group"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="compact-tool-group-count"]').text()).toBe('1 tool call')
+    expect(wrapper.get('[data-testid="compact-tool-group-summary"]').text()).toBe(
+      'read_file /x/y.ts',
+    )
+    expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(0)
+    await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
     expect(wrapper.get('[data-testid="compact-tool-row-name"]').text()).toBe('read_file')
     expect(wrapper.get('[data-testid="compact-tool-row-primary"]').text()).toBe('/x/y.ts')
   })

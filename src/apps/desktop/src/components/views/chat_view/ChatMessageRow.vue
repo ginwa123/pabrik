@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CompactionCard from '../../preview/CompactionCard.vue'
-import ShellTool from '../../preview/ShellTool.vue'
 import SkillInvocationCard from '../../preview/SkillInvocationCard.vue'
 import ChatAttachments from '../../chat/ChatAttachments.vue'
 import MermaidDiagram from '../../chat/MermaidDiagram.vue'
@@ -40,11 +39,8 @@ const props = defineProps<{
   cwd: string
   groupKey: (group: MessageGroup) => string
   isLastGroup: (index: number) => boolean
-  isBgOnlyGroup: (group: { role: string; messages: { content?: string }[] }) => boolean
   hasBubbleContent: (group: MessageGroup, groupIndex: number) => boolean
   isCompactionMessage: (msg: { role: string; content: string } | undefined) => boolean
-  bgShellData: (m: { content?: string }) => unknown
-  isBgUserMsg: (m: { content?: string }) => boolean
   openImagePreview: (url: string) => void
   asked: { question: AskUserQuestion; messageId: string } | null
   compactChains: Map<number, CompactChainItem[]>
@@ -83,7 +79,7 @@ const drawsContent = computed((): boolean => {
   >
     <div
       class="flex"
-      :class="group.role === 'user' && !isBgOnlyGroup(group) ? 'flex-row-reverse' : 'flex-row'"
+      :class="group.role === 'user' ? 'flex-row-reverse' : 'flex-row'"
     >
       <!-- Bubble / paragraph container.
            2026-08-23 paragraph-mode: the AI (assistant) side no
@@ -103,9 +99,7 @@ const drawsContent = computed((): boolean => {
       <div
         class="min-w-0"
         :class="
-          group.role === 'user' && !isBgOnlyGroup(group)
-            ? 'max-w-[90%] w-fit ml-auto'
-            : 'flex-1 w-full max-w-full'
+          group.role === 'user' ? 'max-w-[90%] w-fit ml-auto' : 'flex-1 w-full max-w-full'
         "
       >
         <!-- A shared thread names its author. Set only when the thread has
@@ -121,12 +115,12 @@ const drawsContent = computed((): boolean => {
           role="button"
           tabindex="0"
           :class="
-            group.role === 'user' && !isBgOnlyGroup(group)
+            group.role === 'user'
               ? 'px-4 py-2.5 rounded-2xl whitespace-pre-wrap break-words'
               : 'markdown-content'
           "
           :style="
-            group.role === 'user' && !isBgOnlyGroup(group)
+            group.role === 'user'
               ? 'background-color: var(--color-blue-1); color: var(--semantic-text); border-bottom-right-radius: 6px;'
               : 'color: var(--semantic-text);'
           "
@@ -139,21 +133,6 @@ const drawsContent = computed((): boolean => {
               v-if="isCompactionMessage(group.messages[0])"
               :content="group.messages[0]!.content"
             />
-            <!-- Background completions: role=user on the wire,
-                 tool card in pixels — transparent left-aligned
-                 tool-sequence, never the blue bubble. -->
-            <template v-else-if="isBgOnlyGroup(group)">
-              <div class="tool-sequence">
-                <div
-                  v-for="(bgMsg, bgIdx) in group.messages"
-                  :key="bgMsg.id || `bg-${bgIdx}`"
-                  class="tool-item"
-                  :class="bgIdx < group.messages.length - 1 ? 'tool-item-border' : ''"
-                >
-                  <ShellTool tool-name="command" :content="bgShellData(bgMsg)" :parameters="'{}'" />
-                </div>
-              </div>
-            </template>
             <!-- 2026-08-23 hidden-messages fix — v-for over ALL
                  messages in the group. The old template rendered
                  only group.messages[0], so consecutive user
@@ -180,17 +159,11 @@ const drawsContent = computed((): boolean => {
                   :file-attachments="userMsg.file_attachments"
                   @open-image="openImagePreview"
                 />
-                <template v-if="isBgUserMsg(userMsg)"
-                  ><ShellTool
-                    tool-name="command"
-                    :content="bgShellData(userMsg)"
-                    :parameters="'{}'" /></template
-                ><template v-else
-                  ><SkillInvocationCard
-                    v-if="hasSkillEnvelope(userMsg.content)"
-                    :content="userMsg.content || ''"
-                  /><span v-else-if="userMsg.content">{{ userMsg.content }}</span></template
-                >
+                <SkillInvocationCard
+                  v-if="hasSkillEnvelope(userMsg.content)"
+                  :content="userMsg.content || ''"
+                />
+                <span v-else-if="userMsg.content">{{ userMsg.content }}</span>
                   </div>
                   <MessageActions
                     v-if="userMsg.id"

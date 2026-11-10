@@ -51,19 +51,15 @@ describe('estimateViewportEnd', () => {
 
 describe('isPillGroup', () => {
   it('keeps real user turns', () => {
-    expect(isPillGroup('user', false, false)).toBe(true)
-  })
-
-  it('skips bg-command outputs (role=user on the wire, tool card in pixels)', () => {
-    expect(isPillGroup('user', true, false)).toBe(false)
+    expect(isPillGroup('user', false)).toBe(true)
   })
 
   it('skips compaction envelopes', () => {
-    expect(isPillGroup('user', false, true)).toBe(false)
+    expect(isPillGroup('user', true)).toBe(false)
   })
 
   it('skips non-user roles', () => {
-    expect(isPillGroup('assistant', false, false)).toBe(false)
-    expect(isPillGroup('tool', false, false)).toBe(false)
+    expect(isPillGroup('assistant', false)).toBe(false)
+    expect(isPillGroup('tool', false)).toBe(false)
   })
 })
