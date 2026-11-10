@@ -96,7 +96,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // 2026-08-28 — add_mcp_server agent tool (Task 5).
         add_mcp_server_mod.add_mcp_server_tool,
         // The edit + delete halves. `delete_mcp_server` is deliberately
-        // NOT in DEFAULT_AGENT_TOOLS (irreversible, like delete_document)
+        // NOT in DEFAULT_AGENT_TOOLS (irreversible)
         // but IS listed here so `filterAndMergeTools` can find it.
         edit_mcp_server_mod.edit_mcp_server_tool,
         delete_mcp_server_mod.delete_mcp_server_tool,
@@ -118,12 +118,8 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // no parameters and returns NAMES only — the value is substituted at
         // dispatch and never reaches a tool result.
         list_secrets_mod.list_secrets_tool,
-        // Workspace-scoped documents (Migration 098).
-        document_mod.add_document_tool,
-        document_mod.edit_document_tool,
-        document_mod.search_documents_tool,
-        // NOT default-on.
-        document_mod.delete_document_tool,
+                // Workspace-scoped documents (Migration 098): one tool, four actions.
+        document_mod.document_markdown_tool,
         use_skill_mod.use_skill_tool,
         remove_skill_mod.remove_skill_tool,
         add_skill_mod.add_skill_tool,
@@ -247,12 +243,8 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // name reaches the model and dispatch misses with `error.UnknownTool`
         // — which the UI renders as a tool that is still running.
         .{ .name = "list_secrets", .exec = tools.execListSecrets, .tool_def = list_secrets_mod.list_secrets_tool },
-        // Workspace-scoped documents (Migration 098).
-        .{ .name = "add_document", .exec = tools.execAddDocument, .tool_def = document_mod.add_document_tool },
-        .{ .name = "edit_document", .exec = tools.execEditDocument, .tool_def = document_mod.edit_document_tool },
-        .{ .name = "search_documents", .exec = tools.execSearchDocuments, .tool_def = document_mod.search_documents_tool },
-        // Irreversible.
-        .{ .name = "delete_document", .exec = tools.execDeleteDocument, .tool_def = document_mod.delete_document_tool },
+        // Workspace-scoped documents (Migration 098): one tool, four actions.
+        .{ .name = "document_markdown", .exec = tools.execDocumentMarkdown, .tool_def = document_mod.document_markdown_tool },
 
         // === FILE OPERATIONS ===
         .{ .name = "command", .exec = tools.execCommand, .tool_def = command_tool_mod.command_tool },
@@ -349,14 +341,8 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     view_session_mod.view_session_tool.function.name,
     // Credential discovery.
     list_secrets_mod.list_secrets_tool.function.name,
-    // Workspace-scoped documents (Migration 098).
-    document_mod.add_document_tool.function.name,
-    document_mod.edit_document_tool.function.name,
-    // Default-on: read-only, and an agent that cannot find the document it
-    // wrote three turns ago has no way to revise it — `edit_document`
-    // replaces the whole body, so finding the row is a prerequisite for every
-    document_mod.search_documents_tool.function.name,
-    // `delete_document` is deliberately NOT here.
+    // Workspace-scoped documents (Migration 098): one tool, four actions.
+    document_mod.document_markdown_tool.function.name,
 
     // skill tools
     use_skill_mod.use_skill_tool.function.name,

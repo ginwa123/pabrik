@@ -15,10 +15,10 @@ const io = testing.io;
 /// Mirrors `DEFAULT_KANBAN_SEEDED_TOOLS` — what a fresh kanban item is born
 /// with: `DEFAULT_AGENT_TOOLS` PLUS the kanban pair, sorted ASC.
 const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
-    "add_document",
     "add_skill",
     "command",
-    "edit_document",
+    "delegate_agent",
+    "document_markdown",
     "edit_skill",
     "get_plan",
     "glob",
@@ -38,7 +38,6 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "run_session",
     "save_memory",
     "search",
-    "search_documents",
     "search_skills",
     "search_tool",
     "set_skill_metadata",

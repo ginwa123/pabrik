@@ -99,9 +99,9 @@ pub const run_session = @import("modules/agent/tools/run_session.zig");
 pub const view_session = @import("modules/agent/tools/view_session.zig");
 // Workspace credential discovery: names only, never a value.
 pub const list_secrets = @import("modules/agent/tools/list_secrets.zig");
-/// `add_document` / `edit_document` agent tools (Migration 098). The
-/// module resolves its own workspace from the calling session, so the
-/// tool schema deliberately carries no `workspace_id` parameter.
+/// `document_markdown` agent tool (Migration 098): one tool, four actions.
+/// It resolves its own workspace from the calling session, so the schema
+/// deliberately carries no `workspace_id` parameter.
 pub const document_tool = @import("modules/agent/tools/document.zig");
 
 // `modules/http/HttpClient.zig` was removed — the project uses the

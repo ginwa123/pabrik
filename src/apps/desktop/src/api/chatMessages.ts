@@ -20,18 +20,10 @@ export const DEFAULT_CHAT_TOOLS = [
   // sub-agent-safe. Seeded here so plain chat, design mode, and routine sessions (which all use
   // this request body) get it; agent/kanban modes seed it via backend DEFAULT_AGENT_TOOLS.
   'used_tools',
-  // Workspace-scoped documents (Migration 095). Both resolve their own workspace server-side from
-  // the calling session, so a plain chat is as safe as a project task: outside a workspace-linked
-  // session they refuse rather than guessing a scope.
-  'add_document',
-  'edit_document',
-  // Read-only counterpart: `edit_document` replaces the WHOLE body, so a
-  // chat agent cannot revise a note it wrote earlier without a way to
-  // find the row first.
-  'search_documents',
-  // `delete_document` is intentionally omitted — irreversible, and it does not belong in the set
-  // every plain chat starts with. It stays one click away in Settings → Tools, and an agent can
-  // also reach it through search_tool → use_tool, which bypasses the allowlist.
+  // Workspace-scoped documents (Migration 095). One tool, four actions; it resolves its own
+  // workspace server-side from the calling session, so a plain chat is as safe as a project task:
+  // outside a workspace-linked session it refuses rather than guessing a scope.
+  'document_markdown',
 ].join(',')
 
 export async function sendChatMessage(

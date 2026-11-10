@@ -164,8 +164,8 @@ export function createUnifiedSseConnection(opts: UnifiedSseOptions): SseClient {
         return
       }
 
-      // Document mutations (agent tools only — `add_document` / `edit_document` /
-      // `delete_document`). All three granular names share one `DocumentEvent` payload.
+      // Document mutations (agent tool only — `document_markdown`). All three granular names
+      // share one `DocumentEvent` payload.
       if (
         eventType === 'document_created' ||
         eventType === 'document_updated' ||
