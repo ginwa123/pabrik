@@ -18,10 +18,16 @@ Run:
 
 from __future__ import annotations
 
+import sys
 import zipfile
 from pathlib import Path
 
 from ui_harness import UIHarness
+
+#: The modifier a user actually presses to add a row to a selection. On macOS that is Command:
+#: Control+click is a SECONDARY click there, so the browser opens the context menu instead of
+#: toggling the row — which is exactly how this test failed on the macOS runner.
+MULTI_SELECT_MODIFIER = "Meta" if sys.platform == "darwin" else "Control"
 
 
 def _create_workspace(h: UIHarness, name: str) -> str:
@@ -98,9 +104,9 @@ def test_export_a_selection_downloads_one_zip(ui_harness: UIHarness, page, artif
 
     _boot_documents(h, page, ws, first)
 
-    # Ctrl-click both rows: the selection is what the menu's count must describe.
-    page.locator(f'[data-testid="document-row-{first}"]').click(modifiers=["Control"])
-    page.locator(f'[data-testid="document-row-{second}"]').click(modifiers=["Control"])
+    # Multi-select both rows: the selection is what the menu's count must describe.
+    page.locator(f'[data-testid="document-row-{first}"]').click(modifiers=[MULTI_SELECT_MODIFIER])
+    page.locator(f'[data-testid="document-row-{second}"]').click(modifiers=[MULTI_SELECT_MODIFIER])
     _open_menu(page, second)
 
     label = page.locator('[data-testid="documents-context-menu-export"]').inner_text().strip()
