@@ -1,7 +1,6 @@
 //! `pabrik headless pr …` — the change-request backend with no server and no
-//! port. `checks` reads the forge's CI rollup, `wait` polls it until every
-//! check is green, and `merge` lands the change request with a chosen method.
-//! Every op goes through the same use case the HTTP handlers call.
+//! port: `checks` reads the forge's CI rollup, `wait` polls it until every check
+//! is green, `merge` lands it. Every op is the HTTP handler's own use case.
 
 const std = @import("std");
 const pabrik_core = @import("pabrikcore");
