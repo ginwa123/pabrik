@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, onUpdated, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ApiError, type GitFileChange, type GitFileStageEvent } from '../../../api'
+import { ApiError, type GitFileStageEvent } from '../../../api'
 import { openInNewTab } from '../../../helpers/openInNewTab'
 import { forgeWording } from '../../../helpers/forgeWording'
 import { forgetGitProbe } from '../../../helpers/gitProbeGate'
-import { isBackgroundOpenEvent } from '../../../helpers/tabTarget'
 import { useSseBus } from '../../../helpers/sseBus'
 import { useContextMenu } from '../../../composables/useContextMenu'
 import OpenInNewTabMenu from '../../shell/OpenInNewTabMenu.vue'
@@ -22,7 +21,7 @@ import SidebarPrNotices from './SidebarPrNotices.vue'
 import SidebarPrChanges from './SidebarPrChanges.vue'
 import SidebarWorktreeFileList from './SidebarWorktreeFileList.vue'
 import SidebarWorktreeChanges from './SidebarWorktreeChanges.vue'
-import type { DiffSelection, SplitDiffFile } from './parseUnifiedDiff'
+import type { DiffSelection } from './parseUnifiedDiff'
 import type { PanelEmit } from './sidebarDiffTypes'
 import {
   readConflictsParam,
@@ -33,6 +32,7 @@ import {
 } from './sidebarDiffUrl'
 import { useSidebarDiffGitData } from './useSidebarDiffGitData'
 import { useSidebarDiffPrData } from './useSidebarDiffPrData'
+import { useSidebarDiffRowOpen } from './useSidebarDiffRowOpen'
 
 const props = defineProps<{
   cwd: string
@@ -58,7 +58,6 @@ const emit = defineEmits<{
    * unchanged. */
   'show-diff-list': [files: DiffSelection[]]
 }>()
-
 
 const router = useRouter()
 const route = useRoute()
@@ -219,18 +218,6 @@ const {
   commitStaged,
 } = git
 
-
-// Clicking a conflicting file: if the PR diff has it, select it exactly like a normal row (the
-// centre column then shows that file's hunks).
-const onConflictFileClick = (path: string) => {
-  const file = prFiles.value.find((f) => f.path === path)
-  if (file) {
-    selectPrFile(file)
-    return
-  }
-  openFileInNewTab(path)
-}
-
 // Right-click "Open file in new tab" for a file row. Position state +
 // dismiss wiring live in useContextMenu; the row payload (file path)
 // lives here so the menu emit can target it (ChatsList pattern).
@@ -261,16 +248,6 @@ const openMenuFileInBackground = () => {
   openFileInNewTab(path)
 }
 
-// Ctrl/Cmd+click and middle-click open the code-editor URL in a real
-// browser tab (the browser gesture); plain click keeps panel behavior.
-const onFileRowClick = (event: MouseEvent, file: GitFileChange, staged: boolean) => {
-  if (isBackgroundOpenEvent(event)) {
-    openFileInNewTab(file.path)
-    return
-  }
-  selectFile(file, staged)
-}
-
 // ── The before/after, in the panel ──────────────────────────────────────── The list said WHICH file
 // changed and never WHAT changed: the −/+ lines lived in the centre column, across the chat. The
 // panel holds the request's whole diff, so the file you click shows its own change under its row.
@@ -282,14 +259,16 @@ const togglePreview = (path: string) => {
   previewPath.value = previewPath.value === path ? null : path
 }
 
-const onPrFileRowClick = (event: MouseEvent, file: SplitDiffFile) => {
-  if (isBackgroundOpenEvent(event)) {
-    openFileInNewTab(file.path)
-    return
-  }
-  selectPrFile(file)
-  togglePreview(file.path)
-}
+const { onFileRowClick, onPrFileRowClick, onCommitFileRowClick, onConflictFileClick } =
+  useSidebarDiffRowOpen({
+    cwd: () => props.cwd,
+    prFiles,
+    openInBrowserTab: openFileInNewTab,
+    selectFile,
+    selectPrFile,
+    togglePreview,
+    onCommitFileClick,
+  })
 
 const onFileRowAuxClick = (event: MouseEvent, path: string) => {
   if (event.button !== 1) return
@@ -490,7 +469,7 @@ defineExpose({
       <SkillEvalsPanel :session-id="sessionId" />
     </div>
     <div v-else-if="showCommits && !showPr" class="flex-1 min-h-0">
-      <GitCommits :cwd="cwd" :inline-file-diff="false" @commit-file-click="onCommitFileClick" />
+      <GitCommits :cwd="cwd" :inline-file-diff="false" @commit-file-click="onCommitFileRowClick" />
     </div>
     <div v-else class="flex-1 overflow-y-auto min-h-0">
       <SidebarPrFileList
@@ -583,7 +562,6 @@ defineExpose({
       :failed-checks="failedChecksCount"
       @merged="onMerged"
     />
-
 
     <OpenInNewTabMenu
       v-if="menuPos"
