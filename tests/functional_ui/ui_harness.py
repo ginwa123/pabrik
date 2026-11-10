@@ -1,20 +1,22 @@
-"""UI test harness — boots a pabrik backend + Vite dev server for Playwright.
+"""UI test harness — a shared Vite dev server plus a per-test pabrik backend.
 
-Extends the existing ``FunctionalHarness`` boot story by ALSO spawning a
-Vite dev server that:
+The suite used to boot a fresh Vite dev server for every test. Vite
+compiles its module graph lazily, so the first ``page.goto`` against a
+new server paid the whole compile: measured at 4.16 s cold against
+0.91 s warm on the same server. With 161 tests that was ~9 of the
+suite's ~12 minutes spent recompiling the same Vue app.
 
-  - Serves the Vue app from ``src/apps/desktop/``.
-  - Proxies ``/api/*`` to the harness's chosen backend port (via the
-    ``VITE_API_PROXY_TARGET`` env var, which ``src/apps/desktop/vite.config.ts``
-    reads). This is what makes the test isolated: the running web app
-    talks to the fixture's backend, not to the developer's always-on :8081.
-  - Runs on its own free port — picked RANDOMLY from the wide shared
-    range ``[20000, 32000]`` (see ``RANDOM_PORT_START`/`_END` and the
-    ephemeral-range note in ``find_free_port_random`` in
-    ``harness.py``). Skips Vite's default ``5173`` and the dev
-    backend ``8081`` via the reserved-port list. Random selection
-    avoids the CI pathology where the previous narrow sequential
-    scan (5180..5299) was consumed across rapid test runs.
+The split here is what removes that cost:
+
+* ``ViteServer`` — one per pytest worker, booted once, torn down once.
+  It is stateless with respect to the backend; the only thing it needs
+  is a proxy target, which is why the backend port is pinned per worker
+  (``FunctionalHarness.boot(port=..., pin_port=True)``) instead of being
+  redrawn per test.
+* ``UIHarness`` — one per test. Boots a fresh pabrik against an isolated
+  tmpdir HOME on that pinned port, and tears it down. It does NOT own
+  the Vite server unless it booted one itself (``run_quick`` and other
+  standalone callers), which is what ``owns_vite`` records.
 
 ⛔  SAFETY INVARIANTS — INHERITED + EXTENDED  ⛔
 
@@ -22,40 +24,33 @@ The UI harness inherits ALL safety invariants from ``FunctionalHarness``:
 ``is_safe_tmp``, captured ``temp_dir``, ``ORIG_HOME`` snapshot, etc. The
 new dimension is the **Vite process**.
 
-1. ``UIHarness.teardown()`` stops Vite FIRST, then the backend, then
-   rmtree's the tempdir. The order matters: if we killed the backend
-   first, Vite's HTTP requests would 502 mid-shutdown and could leak
-   dangling connections.
+1. ``UIHarness.teardown()`` stops Vite FIRST when it owns it, then the
+   backend, then rmtree's the tempdir. If we killed the backend first,
+   Vite's HTTP requests would 502 mid-shutdown and could leak dangling
+   connections.
 
 2. Vite is spawned with ``start_new_session=True`` so a single
    ``killpg(SIGTERM)`` kills the whole group (vite + esbuild + rollup
    children). Same pattern as the backend.
 
-3. Vite logs go to ``temp_dir/vite.log`` (the same tempdir the backend's
-   logs land in). Teardown rmtree's both via the existing
-   ``FunctionalHarness.teardown()`` path.
+3. Vite logs go to a file under the system tempdir, NOT the harness
+   tempdir: on Windows the child can still hold the handle when
+   ``rmtree`` runs, which fails with ``PermissionError``.
 
 4. Vite's own HOME / data dir is NOT shadowed — vite doesn't write to
    ``~/.cache`` or anything user-specific. We only shadow HOME for the
    backend; the frontend is stateless from a data perspective.
 
 5. **Cross-platform isolation** (macOS, Linux, Windows):
-   - **pnpm resolution** (2026-08-28 — pnpm migration): ``shutil.which('pnpm')``
-     falls back to ``shutil.which('pnpm.cmd')`` for Windows, where
-     ``pnpm`` is a batch script and ``subprocess.Popen(['pnpm', ...])``
-     would otherwise fail with ``FileNotFoundError``. Previously this
-     resolved ``npm``; npm was replaced by pnpm as the project's
-     package manager (see the workspace ``.npmrc``).
+   - **pnpm resolution**: ``shutil.which('pnpm')`` falls back to
+     ``shutil.which('pnpm.cmd')`` for Windows, where ``pnpm`` is a batch
+     script and ``subprocess.Popen(['pnpm', ...])`` would otherwise fail
+     with ``FileNotFoundError``.
    - **Vite signal handling**: POSIX uses ``os.killpg(SIGTERM)`` to
      signal the whole process group; Windows falls back to ``os.kill``
      (which calls ``TerminateProcess``).
-   - **Source path resolution**: ``Path`` objects work cross-platform;
-     the ``cwd=`` argument to ``subprocess.Popen`` accepts both
-     ``/`` and ``\\`` separators.
    - **Tempdir safety**: inherited from ``FunctionalHarness.teardown``
-     which now handles Windows paths via ``tempfile.gettempdir()``
-     (the parent fix in 2026-08-21 makes ``is_safe_tmp`` cross-platform
-     by using native backslashes on Windows).
+     which handles Windows paths via ``tempfile.gettempdir()``.
 
 6. **The UI harness NEVER calls ``shutil.rmtree`` itself.** All rmtree
    goes through ``FunctionalHarness.teardown`` which is gated by
@@ -63,7 +58,7 @@ new dimension is the **Vite process**.
    path be deleted" — same as the parent harness.
 
 Run quick:
-    from harness import UIHarness
+    from ui_harness import UIHarness
     with UIHarness.boot() as h:
         print(h.web_url())  # http://127.0.0.1:<vite-port>/
 """
@@ -75,7 +70,6 @@ import dataclasses
 import os
 import shutil
 import signal
-import socket
 import subprocess
 import tempfile
 import time
@@ -84,7 +78,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-# Reuse the existing harness — battle-tested for boot + teardown.
 from harness import (
     DEFAULT_PORT,
     RANDOM_PORT_END,
@@ -131,255 +124,133 @@ VITE_POLL_INTERVAL_S = 0.2
 
 
 # ============================================================================
-# UIHarness
+# ViteServer
 # ============================================================================
 
 
 @dataclasses.dataclass
-class UIHarness:
-    """A booted pabrik backend + Vite dev server, both bound to the same
-    isolated tmpdir as the backend's HOME.
+class ViteServer:
+    """A running Vite dev server whose ``/api`` proxy targets ``backend_port``.
 
-    The frontend (Vite) is spawned AFTER the backend is ready, with
-    ``VITE_API_PROXY_TARGET`` pointing at the backend's chosen port.
-    This makes the running web app's ``/api/*`` calls land on the
-    fixture's backend, not on the developer's always-running :8081.
-
-    Lifecycle:
-        h = UIHarness.boot()
-        try:
-            page = browser.new_page()
-            page.goto(h.web_url())
-            ... drive the UI ...
-        finally:
-            h.teardown()
-
-    The teardown order is:
-      1. SIGTERM the Vite process group (5s budget).
-      2. SIGTERM the backend process group (handled by
-         ``FunctionalHarness.teardown``).
-      3. Restore HOME (handled by ``FunctionalHarness.teardown``).
-      4. ``is_safe_tmp`` validate the tempdir (handled by
-         ``FunctionalHarness.teardown``).
-      5. ``shutil.rmtree`` the tempdir (handled by
-         ``FunctionalHarness.teardown``).
+    Booted once per pytest worker and shared by every test in it. The
+    proxy target is fixed at process start (``vite.config.ts`` reads
+    ``VITE_API_PROXY_TARGET`` at config load), which is why the backend
+    port is pinned per worker rather than redrawn per test.
     """
 
-    backend: FunctionalHarness
-    vite_port: int
-    vite_pid: int | None
-    vite_log_path: Path
-    vite_proc: subprocess.Popen[bytes] | None
+    port: int
+    backend_port: int
+    pid: int | None
+    log_path: Path
+    proc: subprocess.Popen[bytes] | None
     project_root: Path
-    vite_killed: bool = False
-
-    # ---- bootstrap --------------------------------------------------------
+    killed: bool = False
 
     @classmethod
     def boot(
         cls,
-        pabrik_bin: Path | None = None,
+        backend_port: int,
         *,
-        port: int | None = None,
         vite_port: int | None = None,
-        ready_timeout_s: float = 30.0,
-        vite_ready_timeout_s: float = VITE_READY_TIMEOUT_S,
-        stub_llm_profile: bool = False,
         project_root: Path | None = None,
-        extra_args: Sequence[str] = (),
-    ) -> "UIHarness":
-        """Boot backend + vite against an isolated tmpdir HOME.
+        ready_timeout_s: float = VITE_READY_TIMEOUT_S,
+    ) -> "ViteServer":
+        """Spawn Vite against ``backend_port`` and wait until it serves.
 
         Args:
-            pabrik_bin: Path to the pabrik binary (default: $PABRIK_BIN or
-                zig-out/bin/pabrik).
-            port: Backend port. ``None`` (the default) picks a **random**
-                free port from the wide shared ``[RANDOM_PORT_START,
-                RANDOM_PORT_END]`` range. Pass an explicit integer to
-                fall back to a sequential scan starting from that port
-                (legacy behaviour, mainly for debugging).
-            vite_port: Vite port. ``None`` (the default) picks a random
-                free port from the same wide range, with reserved ports
-                = ``(5173, 8081)``. Pass a value to skip the random pick.
-            ready_timeout_s: Seconds to wait for pabrik to become ready.
-            vite_ready_timeout_s: Seconds to wait for vite to serve a 200
-                on its root URL.
-            stub_llm_profile: If True, pre-create a stub LLM profile so
-                the backend boots without a real API key. Same as the
-                functional/ harness.
-            project_root: Path to the frontend source tree (default:
-                walk up from cwd until we find package.json + vite.config.ts).
-                The harness will cwd to this directory when spawning vite.
-            extra_args: Extra backend CLI flags appended after `--port`
-                (e.g. ``("--auth",)``). Defaults to none.
+            backend_port: The port Vite's ``/api`` proxy forwards to.
+            vite_port: Vite's own port. ``None`` picks a random free port
+                from the shared range, skipping ``VITE_RESERVED_PORTS``.
+            project_root: The frontend source tree. Defaults to walking
+                up from cwd for ``package.json`` + ``vite.config.ts``.
+            ready_timeout_s: Seconds to wait for a 200 on Vite's root.
 
         Raises:
-            FunctionalHarnessError: If the backend OR vite fails to boot,
-                the tempdir fails the safety check, or the project root
-                is missing.
+            FunctionalHarnessError: if the project root is missing, pnpm
+                is not on PATH, or Vite does not become ready in time.
         """
-        # 1. Boot the backend (inherited harness). If this fails, the
-        #    tempdir is cleaned up by FunctionalHarness.boot internally.
-        backend = FunctionalHarness.boot(
-            pabrik_bin,
-            port=port,
-            ready_timeout_s=ready_timeout_s,
-            stub_llm_profile=stub_llm_profile,
-            extra_args=extra_args,
-        )
-
-        # 2. Resolve the frontend project root.
         if project_root is None:
             project_root = cls._find_project_root()
         if not (project_root / "package.json").exists():
-            backend.teardown()
             raise FunctionalHarnessError(
                 f"project_root {project_root} does not contain package.json"
             )
         if not (project_root / "vite.config.ts").exists():
-            backend.teardown()
             raise FunctionalHarnessError(
                 f"project_root {project_root} does not contain vite.config.ts"
             )
 
-        # 3. Pick a free vite port.
-        chosen_vite_port = _find_free_vite_port(vite_port)
+        chosen_port = _find_free_vite_port(vite_port)
 
-        # 4. Resolve the pnpm binary. On Windows, ``pnpm`` is a batch
-        #    script (``pnpm.cmd``) and ``subprocess.Popen(["pnpm", ...])``
-        #    fails with FileNotFoundError because Windows won't
-        #    auto-execute .cmd files from a list-form argv. shutil.which
-        #    resolves to the correct executable for the platform.
-        #    (pnpm replaced npm as the project's package manager on
-        #    2026-08-28 — see the workspace .npmrc.)
         pnpm_bin = shutil.which("pnpm") or shutil.which("pnpm.cmd")
         if pnpm_bin is None:
-            backend.teardown()
             raise FunctionalHarnessError(
                 "pnpm not found in PATH. Install Node.js (https://nodejs.org/) "
                 "and pnpm (https://pnpm.io/installation) or activate via "
                 "corepack (`corepack enable && corepack prepare pnpm@latest --activate`)."
             )
 
-        # 5. Spawn vite. We use pnpm + --port + --strictPort so vite
-        #    fails fast if it can't bind (instead of silently picking
-        #    the next port and breaking our env wiring).
-        #
-        #    ⚠️  NO ``--`` SEPARATOR before the vite flags. The previous
-        #    version used ``pnpm run dev -- --port 5190 --strictPort``
-        #    and observed in the CI log that vite actually received
-        #    ``vite -- --port 5190 --strictPort --host 127.0.0.1`` — the
-        #    ``--`` was forwarded literally, and vite 8's CLI parser
-        #    treats ``--`` as "end of named options", silently dropping
-        #    ``--port`` / ``--strictPort`` and falling back to its
-        #    default 5173. We saw 13 test errors with vite ending up on
-        #    5189 (sequential scan) instead of the harness's chosen
-        #    5190, and the harness's ``_wait_vite_ready`` then timed
-        #    out waiting for 5190 to respond. Dropping the ``--`` lets
-        #    pnpm forward the flags as proper options.
         env = os.environ.copy()
-        env["VITE_API_PROXY_TARGET"] = f"http://127.0.0.1:{backend.port}"
-        # Vite reads .env files; we set BROWSER=none so vite doesn't try
-        # to open a browser tab on the developer's display.
+        env["VITE_API_PROXY_TARGET"] = f"http://127.0.0.1:{backend_port}"
         env["BROWSER"] = "none"
-        # Vite log outside temp_dir so backend's rmtree doesn't fail on
-        # Windows when vite child still holds the file (PermissionError).
-        # Use a separate temp file that we clean up explicitly.
-        vite_log_path = Path(tempfile.gettempdir()) / f"pabrik-vite-{backend.temp_dir.name}.log"
-        vite_log_file = vite_log_path.open("wb")
-        vite_proc = subprocess.Popen(
+        log_path = Path(tempfile.gettempdir()) / f"pabrik-vite-{os.getpid()}-{chosen_port}.log"
+        log_file = log_path.open("wb")
+        # ⚠️  NO ``--`` SEPARATOR before the vite flags. The previous
+        # version used ``pnpm run dev -- --port 5190 --strictPort`` and
+        # observed in the CI log that vite actually received
+        # ``vite -- --port 5190 --strictPort --host 127.0.0.1`` — the
+        # ``--`` was forwarded literally, and vite 8's CLI parser treats
+        # ``--`` as "end of named options", silently dropping ``--port`` /
+        # ``--strictPort`` and falling back to its default 5173.
+        proc = subprocess.Popen(
             [
                 pnpm_bin,
                 "run",
                 "dev",
                 "--port",
-                str(chosen_vite_port),
+                str(chosen_port),
                 "--strictPort",
                 "--host",
                 "127.0.0.1",
             ],
             cwd=str(project_root),
-            stdout=vite_log_file,
+            stdout=log_file,
             stderr=subprocess.STDOUT,
             env=env,
             start_new_session=True,
         )
-        # Parent can close its handle — child has duped it. On Windows, keeping
-        # it open prevents shutil.rmtree (PermissionError: file in use) on teardown.
         try:
-            vite_log_file.close()
+            log_file.close()
         except Exception:
             pass
 
         instance = cls(
-            backend=backend,
-            vite_port=chosen_vite_port,
-            vite_pid=vite_proc.pid,
-            vite_log_path=vite_log_path,
-            vite_proc=vite_proc,
+            port=chosen_port,
+            backend_port=backend_port,
+            pid=proc.pid,
+            log_path=log_path,
+            proc=proc,
             project_root=project_root,
         )
-
-        # 5. Wait for vite to be ready. If this fails, tear down everything.
         try:
-            instance._wait_vite_ready(vite_ready_timeout_s)
+            instance._wait_ready(ready_timeout_s)
         except Exception:
             with contextlib.suppress(ProcessLookupError):
-                vite_proc.kill()
-            backend.teardown()
+                proc.kill()
+            instance._unlink_log()
             raise
-
         return instance
 
-    # ---- re-exported accessors --------------------------------------------
-
-    @property
-    def port(self) -> int:
-        """The backend's port (= the proxy target)."""
-        return self.backend.port
-
-    @property
-    def temp_dir(self) -> Path:
-        """The isolated tmpdir; the frontend and backend both log here."""
-        return self.backend.temp_dir
-
-    @property
-    def orig_home(self) -> str:
-        """The real $HOME that was snapshotted at boot."""
-        return self.backend.orig_home
-
-    @property
-    def pid(self) -> int | None:
-        """The backend's PID. Use ``backend_pid`` for explicit access."""
-        return self.backend.pid
-
-    @property
-    def backend_pid(self) -> int | None:
-        return self.backend.pid
-
-    @property
-    def log_path(self) -> Path:
-        """The backend's log path. Use ``backend_log_path`` for explicit access."""
-        return self.backend.log_path
-
-    @property
-    def backend_log_path(self) -> Path:
-        return self.backend.log_path
-
-    def http(self, *args: Any, **kwargs: Any) -> Response:
-        """Delegate to the backend's HTTP client. See FunctionalHarness.http."""
-        return self.backend.http(*args, **kwargs)
-
-    def health(self) -> bool:
-        return self.backend.health()
+    def url(self, path: str = "/") -> str:
+        """The URL a browser should load to see the running web app."""
+        if not path.startswith("/"):
+            path = "/" + path
+        return f"http://127.0.0.1:{self.port}{path}"
 
     def tail_log(self, n: int = 50) -> str:
-        return self.backend.tail_log(n)
-
-    def tail_vite_log(self, n: int = 50) -> str:
         """Tail the vite dev server log. Useful for debugging browser-test failures."""
         try:
-            with self.vite_log_path.open("rb") as f:
+            with self.log_path.open("rb") as f:
                 f.seek(0, os.SEEK_END)
                 size = f.tell()
                 f.seek(max(0, size - 65536))
@@ -388,71 +259,32 @@ class UIHarness:
         except FileNotFoundError:
             return ""
 
-    def web_url(self, path: str = "/") -> str:
-        """The URL a browser should load to see the running web app.
-
-        Example::
-
-            page.goto(h.web_url("/"))
-
-        Path is joined with a leading slash if missing.
-        """
-        if not path.startswith("/"):
-            path = "/" + path
-        return f"http://127.0.0.1:{self.vite_port}{path}"
-
-    # ---- teardown --------------------------------------------------------
-
     def teardown(self) -> None:
-        """Stop vite, then teardown the backend (which cleans the tempdir).
+        """Stop Vite and remove its log. Idempotent."""
+        self._stop()
+        self._unlink_log()
 
-        Order matters:
-          1. Stop vite — so the frontend stops proxying requests to a
-             backend that may be about to die.
-          2. Backend teardown — SIGTERM, restore HOME, validate tmpdir,
-             rmtree.
-        """
-        # 1. Stop vite. Idempotent.
-        self._stop_vite()
-
-        # 2. Backend teardown. This handles HOME restore, SIGTERM/SIGKILL
-        #    the binary, is_safe_tmp validation, and rmtree.
-        self.backend.teardown()
-        # Vite log is now outside temp_dir (to avoid Windows PermissionError
-        # on rmtree when child still holds the file). Clean it separately
-        # with retries.
+    def _unlink_log(self) -> None:
         if os.name == "nt":
             for _ in range(5):
                 try:
-                    if self.vite_log_path.exists():
-                        self.vite_log_path.unlink()
-                    break
+                    if self.log_path.exists():
+                        self.log_path.unlink()
+                    return
                 except OSError:
                     time.sleep(0.5)
-        else:
-            try:
-                if self.vite_log_path.exists():
-                    self.vite_log_path.unlink()
-            except OSError:
-                pass
+            return
+        try:
+            if self.log_path.exists():
+                self.log_path.unlink()
+        except OSError:
+            pass
 
-    def __enter__(self) -> "UIHarness":
-        return self
-
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        self.teardown()
-
-    # ---- private helpers -------------------------------------------------
-
-    def _stop_vite(self) -> None:
+    def _stop(self) -> None:
         """SIGTERM the vite process group, fall back to SIGKILL after 5s.
 
-        Mirrors the backend's teardown pattern but uses shorter timeouts
-        (vite doesn't have a graceful shutdown endpoint — it's fine to
-        be aggressive here).
-
         ``_reap_port_listener`` runs unconditionally at the end, on every
-        platform's teardown path. Waiting for ``vite_proc`` to exit is a
+        platform's teardown path. Waiting for ``proc`` to exit is a
         necessary but NOT sufficient condition: the pid Popen returned is
         a launcher, and a launcher that exits while the dev server it
         started keeps running is exactly the leak that made this suite
@@ -460,43 +292,40 @@ class UIHarness:
         being free is the postcondition callers actually depend on, so it
         is asserted rather than inferred.
         """
-        if self.vite_proc is None or self.vite_killed:
+        if self.proc is None or self.killed:
             return
-        self.vite_killed = True
-        # Send SIGTERM to the whole process group.
+        self.killed = True
         try:
-            self._signal_vite_group(signal.SIGTERM)
+            self._signal_group(signal.SIGTERM)
         except Exception:
             pass
-        if not self._wait_vite_dead(5.0):
-            # Last resort — SIGKILL.
+        if not self._wait_dead(5.0):
             try:
-                self._signal_vite_group(signal.SIGKILL)
+                self._signal_group(signal.SIGKILL)
             except Exception:
                 pass
-            self._wait_vite_dead(1.0)  # best-effort final wait
-        self._reap_port_listener(self.vite_port)
+            self._wait_dead(1.0)
+        self._reap_port_listener(self.port)
 
     def _reap_port_listener(self, port: int) -> None:
         """Kill whatever is still LISTENING on ``port`` (Windows only).
 
-        Why this exists, concretely. ``_signal_vite_group`` signals the
-        pid ``subprocess.Popen`` returned for ``pnpm run dev``, which on
-        Windows is the ``pnpm.cmd`` / ``cmd.exe`` launcher — not the
-        ``node`` process that actually binds the vite port. When the
-        launcher has already handed off, or ``taskkill /T`` cannot walk
-        from it to the live child, the signal kills nothing that matters
-        and the dev server survives teardown. Measured on this repo: a
-        4-test run left 4-5 ``node.exe`` processes (≈500 MB each) still
-        listening on the harness's 20000-31999 range although every
-        harness tmpdir had been rmtree'd, and the accumulated leak
+        ``_signal_group`` signals the pid ``subprocess.Popen`` returned for
+        ``pnpm run dev``, which on Windows is the ``pnpm.cmd`` / ``cmd.exe``
+        launcher — not the ``node`` process that actually binds the vite
+        port. When the launcher has already handed off, or ``taskkill /T``
+        cannot walk from it to the live child, the signal kills nothing
+        that matters and the dev server survives teardown. Measured on
+        this repo: a 4-test run left 4-5 ``node.exe`` processes (≈500 MB
+        each) still listening on the harness's 20000-31999 range although
+        every harness tmpdir had been rmtree'd, and the accumulated leak
         exhausted a 6 GB host — the suite wedged on the fifth test with
         pytest alive, vite alive and the backend dead. Resolving the pid
         from the listening socket is the one handle that cannot be stale,
         and it is also the invariant the caller wants: nothing left bound
         to our port.
 
-        POSIX is untouched — ``_signal_vite_group`` there signals the real
+        POSIX is untouched — ``_signal_group`` there signals the real
         process group with ``killpg`` and does reap the tree.
         """
         if os.name != "nt":
@@ -526,38 +355,38 @@ class UIHarness:
                     timeout=10,
                 )
 
-    def _wait_vite_dead(self, timeout: float) -> bool:
+    def _wait_dead(self, timeout: float) -> bool:
         """Return True iff the vite process exited within ``timeout`` seconds."""
-        if self.vite_proc is None:
+        if self.proc is None:
             return True
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.vite_proc.poll() is not None:
+            if self.proc.poll() is not None:
                 return True
             time.sleep(0.05)
         return False
 
-    def _signal_vite_group(self, sig: int) -> None:
+    def _signal_group(self, sig: int) -> None:
         """Signal the vite process group on POSIX, or the pid on Windows."""
-        if self.vite_pid is None:
+        if self.pid is None:
             return
         if hasattr(os, "killpg"):
             try:
-                pgid = os.getpgid(self.vite_pid)
+                pgid = os.getpgid(self.pid)
             except OSError:
-                pgid = self.vite_pid
+                pgid = self.pid
             try:
                 os.killpg(pgid, sig)
             except OSError:
                 pass
         else:
             # Windows: TerminateProcess only kills the parent; vite spawns
-            # node/esbuild children that may hold vite.log. Use taskkill /T
+            # node/esbuild children that may hold the log. Use taskkill /T
             # to kill the whole tree when available, fall back to os.kill.
             if sig in (signal.SIGTERM, signal.SIGKILL):
                 try:
                     subprocess.run(
-                        ["taskkill", "/PID", str(self.vite_pid), "/T", "/F"],
+                        ["taskkill", "/PID", str(self.pid), "/T", "/F"],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         timeout=5,
@@ -566,31 +395,26 @@ class UIHarness:
                 except Exception:
                     pass
             try:
-                os.kill(self.vite_pid, sig)
+                os.kill(self.pid, sig)
             except OSError:
                 pass
 
-    def _wait_vite_ready(self, timeout_s: float) -> None:
+    def _wait_ready(self, timeout_s: float) -> None:
         """Poll vite's HTTP root until it returns 200 or timeout.
 
         Raising 200 means vite has compiled the bundle and is serving.
         Until then, requests may hang or 404 on module imports.
         """
-        assert self.vite_proc is not None
+        assert self.proc is not None
         deadline = time.monotonic() + timeout_s
-        url = f"http://127.0.0.1:{self.vite_port}/"
+        url = f"http://127.0.0.1:{self.port}/"
         last_err: str = ""
         while time.monotonic() < deadline:
-            if self.vite_proc.poll() is not None:
-                log = (
-                    self.vite_log_path.read_text(errors="replace")
-                    if self.vite_log_path.exists()
-                    else ""
-                )
+            if self.proc.poll() is not None:
                 raise FunctionalHarnessError(
-                    f"vite exited rc={self.vite_proc.returncode} during boot\n"
+                    f"vite exited rc={self.proc.returncode} during boot\n"
                     f"--- last 30 lines of vite.log ---\n"
-                    + "\n".join(log.splitlines()[-30:])
+                    + "\n".join(self.tail_log(30).splitlines()[-30:])
                 )
             try:
                 with urllib.request.urlopen(url, timeout=1.0) as resp:
@@ -599,15 +423,10 @@ class UIHarness:
             except (urllib.error.URLError, ConnectionError, OSError) as e:
                 last_err = str(e)
             time.sleep(VITE_POLL_INTERVAL_S)
-        log = (
-            self.vite_log_path.read_text(errors="replace")
-            if self.vite_log_path.exists()
-            else ""
-        )
         raise FunctionalHarnessError(
             f"vite did not become ready in {timeout_s}s (last_err={last_err})\n"
             f"--- last 30 lines of vite.log ---\n"
-            + "\n".join(log.splitlines()[-30:])
+            + "\n".join(self.tail_log(30).splitlines()[-30:])
         )
 
     @staticmethod
@@ -623,12 +442,10 @@ class UIHarness:
         """
         cwd = Path.cwd().resolve()
         for candidate in (cwd, *cwd.parents):
-            # 1. Both files in the SAME directory (monorepo-style).
             if (candidate / "package.json").exists() and (
                 candidate / "vite.config.ts"
             ).exists():
                 return candidate
-            # 2. Standard project layout: vite lives in src/apps/desktop/.
             standard = candidate / "src" / "apps" / "desktop"
             if (standard / "package.json").exists() and (
                 standard / "vite.config.ts"
@@ -638,6 +455,208 @@ class UIHarness:
             f"Could not find a project_root with package.json + vite.config.ts "
             f"starting from {cwd}. Pass project_root= explicitly."
         )
+
+
+# ============================================================================
+# UIHarness
+# ============================================================================
+
+
+@dataclasses.dataclass
+class UIHarness:
+    """A booted pabrik backend, plus the Vite server that proxies to it.
+
+    Lifecycle:
+        h = UIHarness.boot()
+        try:
+            page.goto(h.web_url())
+            ... drive the UI ...
+        finally:
+            h.teardown()
+
+    ``owns_vite`` records whether this instance booted the Vite server
+    itself. When the suite passes a shared ``vite=``, teardown stops only
+    the backend and leaves Vite running for the next test.
+    """
+
+    backend: FunctionalHarness
+    vite: ViteServer
+    owns_vite: bool = False
+
+    @classmethod
+    def boot(
+        cls,
+        pabrik_bin: Path | None = None,
+        *,
+        port: int | None = None,
+        pin_port: bool = False,
+        vite: ViteServer | None = None,
+        vite_port: int | None = None,
+        ready_timeout_s: float = 30.0,
+        vite_ready_timeout_s: float = VITE_READY_TIMEOUT_S,
+        stub_llm_profile: bool = False,
+        project_root: Path | None = None,
+        extra_args: Sequence[str] = (),
+    ) -> "UIHarness":
+        """Boot a backend, and a Vite server unless one is supplied.
+
+        Args:
+            pabrik_bin: Path to the pabrik binary (default: $PABRIK_BIN or
+                zig-out/bin/pabrik).
+            port: Backend port. ``None`` (the default) picks a **random**
+                free port from the wide shared ``[RANDOM_PORT_START,
+                RANDOM_PORT_END]`` range. Ignored when ``vite`` is given —
+                the backend then binds ``vite.backend_port``.
+            pin_port: With ``port``, bind that exact port instead of
+                scanning upward from it.
+            vite: A shared, already-booted Vite server. When given, this
+                instance does not own it and teardown leaves it running.
+            vite_port: Vite port for the private server this call boots.
+                Ignored when ``vite`` is given.
+            ready_timeout_s: Seconds to wait for pabrik to become ready.
+            vite_ready_timeout_s: Seconds to wait for vite to serve a 200
+                on its root URL.
+            stub_llm_profile: If True, pre-create a stub LLM profile so
+                the backend boots without a real API key. Same as the
+                functional/ harness.
+            project_root: Path to the frontend source tree (default:
+                walk up from cwd until we find package.json + vite.config.ts).
+            extra_args: Extra backend CLI flags appended after `--port`
+                (e.g. ``("--auth",)``). Defaults to none.
+
+        Raises:
+            FunctionalHarnessError: If the backend OR vite fails to boot,
+                the tempdir fails the safety check, or the project root
+                is missing.
+        """
+        if vite is not None:
+            backend = FunctionalHarness.boot(
+                pabrik_bin,
+                port=vite.backend_port,
+                pin_port=True,
+                ready_timeout_s=ready_timeout_s,
+                stub_llm_profile=stub_llm_profile,
+                extra_args=extra_args,
+            )
+            backend.record_extra_pid(vite.pid or 0)
+            return cls(backend=backend, vite=vite, owns_vite=False)
+
+        backend = FunctionalHarness.boot(
+            pabrik_bin,
+            port=port,
+            pin_port=pin_port,
+            ready_timeout_s=ready_timeout_s,
+            stub_llm_profile=stub_llm_profile,
+            extra_args=extra_args,
+        )
+        try:
+            private_vite = ViteServer.boot(
+                backend.port,
+                vite_port=vite_port,
+                project_root=project_root,
+                ready_timeout_s=vite_ready_timeout_s,
+            )
+        except Exception:
+            backend.teardown()
+            raise
+        backend.record_extra_pid(private_vite.pid or 0)
+        return cls(backend=backend, vite=private_vite, owns_vite=True)
+
+    # ---- re-exported accessors --------------------------------------------
+
+    @property
+    def port(self) -> int:
+        """The backend's port (= the proxy target)."""
+        return self.backend.port
+
+    @property
+    def temp_dir(self) -> Path:
+        """The isolated tmpdir; the backend logs here."""
+        return self.backend.temp_dir
+
+    @property
+    def orig_home(self) -> str:
+        """The real $HOME that was snapshotted at boot."""
+        return self.backend.orig_home
+
+    @property
+    def pid(self) -> int | None:
+        """The backend's PID. Use ``backend_pid`` for explicit access."""
+        return self.backend.pid
+
+    @property
+    def backend_pid(self) -> int | None:
+        return self.backend.pid
+
+    @property
+    def log_path(self) -> Path:
+        """The backend's log path. Use ``backend_log_path`` for explicit access."""
+        return self.backend.log_path
+
+    @property
+    def backend_log_path(self) -> Path:
+        return self.backend.log_path
+
+    @property
+    def vite_port(self) -> int:
+        return self.vite.port
+
+    @property
+    def vite_pid(self) -> int | None:
+        return self.vite.pid
+
+    @property
+    def vite_log_path(self) -> Path:
+        return self.vite.log_path
+
+    @property
+    def vite_proc(self) -> subprocess.Popen[bytes] | None:
+        return self.vite.proc
+
+    @property
+    def project_root(self) -> Path:
+        return self.vite.project_root
+
+    def http(self, *args: Any, **kwargs: Any) -> Response:
+        """Delegate to the backend's HTTP client. See FunctionalHarness.http."""
+        return self.backend.http(*args, **kwargs)
+
+    def health(self) -> bool:
+        return self.backend.health()
+
+    def tail_log(self, n: int = 50) -> str:
+        return self.backend.tail_log(n)
+
+    def tail_vite_log(self, n: int = 50) -> str:
+        """Tail the vite dev server log. Useful for debugging browser-test failures."""
+        return self.vite.tail_log(n)
+
+    def web_url(self, path: str = "/") -> str:
+        """The URL a browser should load to see the running web app.
+
+        Example::
+
+            page.goto(h.web_url("/"))
+        """
+        return self.vite.url(path)
+
+    # ---- teardown --------------------------------------------------------
+
+    def teardown(self) -> None:
+        """Stop the backend (and Vite, if this instance owns it).
+
+        Order matters: Vite first, so the frontend stops proxying requests
+        to a backend that is about to die.
+        """
+        if self.owns_vite:
+            self.vite.teardown()
+        self.backend.teardown()
+
+    def __enter__(self) -> "UIHarness":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.teardown()
 
 
 # ============================================================================
@@ -681,10 +700,6 @@ def _find_free_vite_port(suggested: int | None) -> int:
     return find_free_port_random(reserved=VITE_RESERVED_PORTS)
 
 
-# Back-compat alias — older internal callers used the local helper.
-# The shared ``port_is_free_with_reuse`` (with SO_REUSEADDR, identical
-# semantics) supersedes it but the name is kept so any future diffs
-# that touch the local helper don't break.
 _port_is_free = port_is_free_with_reuse
 
 
@@ -717,6 +732,7 @@ def run_quick(
 
 __all__ = [
     "UIHarness",
+    "ViteServer",
     "VITE_PORT_END",
     "VITE_PORT_START",
     "VITE_READY_TIMEOUT_S",

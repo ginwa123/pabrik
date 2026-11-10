@@ -3467,12 +3467,27 @@ pub fn build(b: *std.Build) void {
     install_playwright_browsers.setCwd(b.path(""));
     install_playwright_browsers.step.dependOn(&install_ui_requirements.step);
 
-    const argv_functional_ui = [_][]const u8{
+    // `-n` is safe for the port picker (`_xdist_port_slot`). Default 1: the
+    // firecracker-guest tests collide when two run at once. Opt in with
+    // `-Dfunc-ui-workers=4`.
+    const func_ui_workers: u32 = b.option(
+        u32,
+        "func-ui-workers",
+        "pytest-xdist workers for the Playwright UI suite (default 1 = serial; 4 is the measured sweet spot)",
+    ) orelse 1;
+
+    var argv_functional_ui: std.ArrayList([]const u8) = .empty;
+    argv_functional_ui.appendSlice(b.allocator, &.{
         b.fmt("{s}/{s}", .{ venv_bin, python_venv_exe }), "-m", "pytest", "tests/functional_ui/", "-v", "--tb=short",
-    };
+    }) catch @panic("build.zig: appendSlice of the UI pytest argv failed");
+    if (func_ui_workers > 1) {
+        argv_functional_ui.appendSlice(b.allocator, &.{
+            "-n", b.fmt("{d}", .{func_ui_workers}),
+        }) catch @panic("build.zig: append of the UI worker count failed");
+    }
     const functional_test_ui_step = b.step("functional-test-ui", "Run UI functional tests (Playwright Python) against pabrik + Vite dev server");
     for (python_shard_indices) |maybe_shard| {
-        const run_functional_ui = addPythonSuiteRun(b, &argv_functional_ui, func_pabrik_bin, python_shards, maybe_shard);
+        const run_functional_ui = addPythonSuiteRun(b, argv_functional_ui.items, func_pabrik_bin, python_shards, maybe_shard);
         run_functional_ui.step.dependOn(&install_playwright_browsers.step);
         run_functional_ui.step.dependOn(&python_probe.step);
         // Depend on the same binary install as the API suite.
