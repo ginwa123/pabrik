@@ -73,7 +73,7 @@ const makeRouter = async () => {
 
 /** Mount the panel under a host that provides `openInCodeEditor`, the way AppLayout does. */
 const mountWithEditor = async (
-  props: Record<string, unknown>,
+  props: { cwd: string; prUrl?: string },
   openInEditor: OpenInCodeEditorFn,
 ) => {
   const router = await makeRouter()
