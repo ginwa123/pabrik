@@ -440,6 +440,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         worktreePath: '',
         // No base ref — no `Base:` line in the queue_message.
         worktreeBaseBranch: '',
+        // Default OFF — the dialog's auto-merge toggle was not flipped.
+        autoMerge: false,
+        autoMergeMethod: 'squash',
         tags: [],
         // NEW (plan: 2026-08-06-kanban-task-profile-selector)
         selectedAgent: '',
@@ -484,6 +487,9 @@ describe('KanbanTaskDetailDialog — create mode', () => {
         worktreePath: '',
         // No base ref — no `Base:` line in the queue_message.
         worktreeBaseBranch: '',
+        // Default OFF — the dialog's auto-merge toggle was not flipped.
+        autoMerge: false,
+        autoMergeMethod: 'squash',
         tags: [],
         // NEW (plan: 2026-08-06-kanban-task-profile-selector)
         selectedAgent: '',

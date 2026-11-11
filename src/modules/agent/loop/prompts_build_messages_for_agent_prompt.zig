@@ -134,6 +134,8 @@ pub fn buildMessages(
     // Session VCS binding: a worktree and a pull request.
     try final_system.appendSlice(allocator, prompts_const.GitWorktreeToolRule);
     try final_system.appendSlice(allocator, prompts_const.PullRequestToolRule);
+    // The `#Notes AutoMerge` flag: wait for CI, then merge.
+    try final_system.appendSlice(allocator, prompts_const.AutoMergeToolRule);
     // The `<ask_user>` block IS the desktop question card: without this rule
     // the model answers in prose. A sub-agent cannot reach the human — the loop
     // strips its block — so it gets no rule.

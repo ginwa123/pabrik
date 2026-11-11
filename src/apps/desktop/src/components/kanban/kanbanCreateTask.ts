@@ -20,6 +20,12 @@ export interface CreateTaskPayload {
   // (undefined/empty = no `Base:` line, so the agent branches from the
   // repo HEAD). Only consumed on create_and_run.
   worktreeBaseBranch?: string
+  // Create-mode auto-merge flag from the dialog (undefined = off). Bakes
+  // `#Notes AutoMerge` into the create_and_run queue_message, which is what
+  // tells the agent to wait for CI and merge. Only consumed on create_and_run.
+  autoMerge?: boolean
+  // The `Method:` line under that note: merge | squash | rebase.
+  autoMergeMethod?: string
   tags?: string[]
   // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default / "Default
   // (top-level config)". Threaded through to runAgentOnNewTask only (Path A — plain create doesn't
@@ -72,6 +78,8 @@ export const submitKanbanTask = async ({
           payload.useGitWorktree ?? false,
           payload.worktreePath ?? '',
           payload.worktreeBaseBranch ?? '',
+          payload.autoMerge ?? false,
+          payload.autoMergeMethod ?? '',
         )
       : undefined
 

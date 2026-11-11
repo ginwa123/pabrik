@@ -45,6 +45,8 @@ pub const SkillWriteToolRule = prompts.SkillWriteToolRule;
 // after `SkillWriteToolRule` and before the gated Secrets rule.
 pub const GitWorktreeToolRule = prompts.GitWorktreeToolRule;
 pub const PullRequestToolRule = prompts.PullRequestToolRule;
+// The `#Notes AutoMerge` flag: wait for CI, then merge — only when the note says so.
+pub const AutoMergeToolRule = prompts.AutoMergeToolRule;
 // The `<ask_user>` question card — appended by `buildMessages` for the main
 // agent only, because a sub-agent cannot reach the human.
 pub const AskUserRule = prompts.AskUserRule;
@@ -1492,6 +1494,7 @@ const mandate_order = [_][]const u8{
     SkillWriteToolRule,
     GitWorktreeToolRule,
     PullRequestToolRule,
+    AutoMergeToolRule,
 };
 
 /// Assemble one session's system prompt through the live path and hand
@@ -1843,5 +1846,31 @@ test "PullRequestToolRule mandates the binding, keeps creation with the forge CL
     // The escape hatch, same reasoning as the worktree rule above.
     try std.testing.expect(contains(prompt, "search_tool"));
     try std.testing.expect(contains(prompt, "use_tool"));
+    try std.testing.expect(contains(prompt, "Self-check"));
+}
+
+test "AutoMergeToolRule gates the merge on the note and on a green wait" {
+    const prompt: []const u8 = AutoMergeToolRule;
+
+    // The gate: no note, no merge. This is the whole point of the rule.
+    try std.testing.expect(contains(prompt, "#Notes AutoMerge"));
+    try std.testing.expect(contains(prompt, "Never merge"));
+    // The forge CLI does the work — no bespoke command in between.
+    try std.testing.expect(contains(prompt, "gh pr checks"));
+    try std.testing.expect(contains(prompt, "--watch"));
+    try std.testing.expect(contains(prompt, "gh pr merge"));
+    try std.testing.expect(contains(prompt, "glab mr merge"));
+    try std.testing.expect(!contains(prompt, "headless"));
+    // Wait first, merge second.
+    const i_wait = std.mem.indexOf(u8, prompt, "gh pr checks").?;
+    const i_merge = std.mem.indexOf(u8, prompt, "gh pr merge").?;
+    try std.testing.expect(i_wait < i_merge);
+    // The method comes from the note, and squash is the fallback.
+    try std.testing.expect(contains(prompt, "Method:"));
+    try std.testing.expect(contains(prompt, "squash"));
+    // A red run stops the agent instead of merging anyway.
+    try std.testing.expect(contains(prompt, "do NOT merge"));
+    // The branch the session stands on is not ours to delete.
+    try std.testing.expect(contains(prompt, "--delete-branch"));
     try std.testing.expect(contains(prompt, "Self-check"));
 }

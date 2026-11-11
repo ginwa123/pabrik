@@ -24,6 +24,8 @@ export function useTaskDetailActions(
     useGitWorktree,
     worktreePath,
     worktreeBaseBranch,
+    autoMerge,
+    autoMergeMethod,
     tags,
     dependsOn,
     selectedAgent,
@@ -159,6 +161,10 @@ const handleSave = () => {
       useGitWorktree: useGitWorktree.value,
       worktreePath: expandWorktreePath(worktreePath.value),
       worktreeBaseBranch: worktreeBaseBranch.value.trim(),
+      // Forwarded for the create-and-run path (baked into queue_message as
+      // `#Notes AutoMerge` + `Method:`). Plain create ignores it.
+      autoMerge: autoMerge.value,
+      autoMergeMethod: autoMergeMethod.value,
       // NEW (Migration 067 — kanban task tags): forward the
       // current tags array. The KanbanTagsInput already
       // validates + dedupes, so the array is ready to persist.
@@ -224,6 +230,8 @@ const handleRunAgent = () => {
     useGitWorktree: useGitWorktree.value,
     worktreePath: expandWorktreePath(worktreePath.value),
     worktreeBaseBranch: worktreeBaseBranch.value.trim(),
+    autoMerge: autoMerge.value,
+    autoMergeMethod: autoMergeMethod.value,
     tags: tags.value,
     // NEW (plan: 2026-08-06-kanban-task-profile-selector). Empty string = backend default. Host
     // threads through to runAgentOnNewTask which sets selected_profile_model on the session at
@@ -273,6 +281,14 @@ const handleUseGitWorktreeToggle = (event: Event) => {
   }
 }
 
+
+// Create-mode only: read at Create / Create-&-run click time, like the worktree
+// toggle. Turning it on does not touch the worktree flag — the two are
+// independent, and a task can auto-merge without a worktree.
+const handleAutoMergeToggle = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  autoMerge.value = target.checked
+}
 
 const toggleAgentPicker = () => {
   isAgentPickerOpen.value = !isAgentPickerOpen.value
@@ -332,6 +348,7 @@ const handleImagePopupKeydown = (e: KeyboardEvent) => {
     handleKeydown,
     handleUnattendedToggle,
     handleUseGitWorktreeToggle,
+  handleAutoMergeToggle,
     toggleAgentPicker,
     selectAgent,
     toggleSkillPicker,

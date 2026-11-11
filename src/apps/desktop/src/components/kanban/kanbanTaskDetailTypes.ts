@@ -6,6 +6,7 @@ import type { Task, KanbanColumn } from '../../stores/workspaces'
 import type { PreviewFile } from '../file/FilePreview.vue'
 import type { FolderEntry } from '../../api'
 import type { useKanbanTagSuggestions } from '../../composables/useKanbanTagSuggestions'
+import type { MergeMethod } from '../../helpers/mergeWording'
 
 export interface TaskDetailProps {
   show: boolean
@@ -77,6 +78,11 @@ export interface TaskDetailEmits {
       // the worktree toggle is ON; empty string = no `Base:` line, so the agent branches from the
       // repo's current HEAD (the pre-existing behavior).
       worktreeBaseBranch: string
+      // Create-mode only. `true` = the agent waits for CI and merges the PR itself (host bakes
+      // `#Notes AutoMerge` into the create_and_run queue_message; plain create ignores it).
+      autoMerge: boolean
+      // Create-mode only. The `Method:` line under that note: merge | squash | rebase.
+      autoMergeMethod: string
       // NEW (kanban task tags, Migration 067): array of free-form
       // tag strings. Empty array = no tags. Host forwards via
       // api.createTask's `tags` param; backend validates + persists.
@@ -114,6 +120,10 @@ export interface TaskDetailEmits {
       // Mirror of `worktreeBaseBranch` on the `create` emit (the
       // `Base:` line).
       worktreeBaseBranch: string
+      // Mirror of `autoMerge` on the `create` emit (the `#Notes AutoMerge` line).
+      autoMerge: boolean
+      // Mirror of `autoMergeMethod` on the `create` emit (the `Method:` line).
+      autoMergeMethod: string
       tags: string[]
       // NEW (plan: 2026-08-06-kanban-task-profile-selector). See note on the `create` emit above.
       // Threaded through to runAgentOnNewTask so the agent runs with the chosen agent.
@@ -163,6 +173,8 @@ export interface TaskDetailContext {
   description: Ref<string>
   unattended: Ref<'0' | '1'>
   useGitWorktree: Ref<boolean>
+  autoMerge: Ref<boolean>
+  autoMergeMethod: Ref<MergeMethod>
   homeDir: Ref<string>
   worktreePath: Ref<string>
   worktreeBaseBranch: Ref<string>
@@ -217,6 +229,7 @@ export interface TaskDetailContext {
   handleKeydown: (event: KeyboardEvent) => void
   handleUnattendedToggle: (event: Event) => void
   handleUseGitWorktreeToggle: (event: Event) => void
+  handleAutoMergeToggle: (event: Event) => void
   toggleAgentPicker: () => void
   selectAgent: (name: string) => void
   toggleSkillPicker: () => void

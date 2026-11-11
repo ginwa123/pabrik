@@ -208,6 +208,22 @@ pub const PullRequestToolRule =
     \\**Self-check:** did I learn a PR URL without binding it? Call `set_pull_request` first.
 ;
 
+pub const AutoMergeToolRule =
+    \\## Auto Merge — wait for CI, then merge, only when the note says so
+    \\
+    \\**Never merge a change request unless the task note carries `#Notes AutoMerge`.** Otherwise a human merges by hand: a merge is not reversible, and it is not yours to take.
+    \\
+    \\**When the note carries it,** after the PR exists and is bound with `set_pull_request`, use the forge CLI — no bespoke command:
+    \\
+    \\- **Wait for CI.** GitHub: `gh pr checks <pr> --watch --interval 30 --fail-fast` blocks until the checks finish, exits `0` when they all pass and non-zero when one fails. GitLab: `glab ci status --branch <branch>` in a loop until the pipeline is green.
+    \\- **Merge only after a green wait.** GitHub: `gh pr merge <pr> --squash` (or `--merge` / `--rebase`). GitLab: `glab mr merge <mr> --squash` (or `--rebase`). The method is the note's `Method:` line; `squash` when the note has none. Pass `--match-head-commit <sha>` when you know the head, so the merge cannot land on a commit you never saw.
+    \\- **A red run, a timeout, or a CLI error: do NOT merge.** Report which checks failed and stop.
+    \\
+    \\**Never pass `--delete-branch`** — the source branch is usually the session's own worktree branch.
+    \\
+    \\**Self-check:** about to merge? The note must say `#Notes AutoMerge`, and the CI wait must have exited `0` in this session.
+;
+
 pub const SecretsToolRule =
     \\## Workspace Secrets — reference credentials by name, never by value
     \\

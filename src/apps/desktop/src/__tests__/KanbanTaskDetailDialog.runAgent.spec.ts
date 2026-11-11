@@ -6,6 +6,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 
 import KanbanTaskDetailDialog from '@/components/kanban/KanbanTaskDetailDialog.vue'
+import { buildTaskCreateMessage } from '@/components/kanban/buildTaskCreateMessage'
 import type { Task } from '@/stores/workspaces'
 
 function findInDom<T extends Element = Element>(selector: string): T | null {
@@ -111,6 +112,9 @@ describe('KanbanTaskDetailDialog — Create task & run agent', () => {
         worktreePath: '',
         // No base ref — no `Base:` line in the queue_message.
         worktreeBaseBranch: '',
+        // Default OFF — the dialog's auto-merge toggle was not flipped.
+        autoMerge: false,
+        autoMergeMethod: 'squash',
         tags: [],
         // NEW (plan: 2026-08-06-kanban-task-profile-selector)
         selectedAgent: '',
@@ -123,6 +127,62 @@ describe('KanbanTaskDetailDialog — Create task & run agent', () => {
         skillNames: [],
       },
     ])
+  })
+
+  it('bakes `#Notes AutoMerge` and the picked method into the queue message', async () => {
+    mountDialog()
+    await flushPromises()
+    const input = findInDom<HTMLInputElement>('[data-testid="kanban-task-detail-create-name"]')
+    if (!input) throw new Error('name input missing')
+    input.value = 'Ship it'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    // Off by default: no note, and no method picker to pick from.
+    expect(findInDom('[data-testid="kanban-task-detail-auto-merge-method"]')).toBeNull()
+
+    const toggle = findInDom<HTMLInputElement>(
+      '[data-testid="kanban-task-detail-auto-merge-toggle"]',
+    )
+    if (!toggle) throw new Error('auto-merge toggle missing')
+    toggle.checked = true
+    toggle.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    const method = findInDom<HTMLSelectElement>(
+      '[data-testid="kanban-task-detail-auto-merge-method"]',
+    )
+    if (!method) throw new Error('method picker missing after the toggle went on')
+    method.value = 'rebase'
+    method.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    findInDom<HTMLButtonElement>('[data-testid="kanban-task-detail-create-and-run"]')?.click()
+    await flushPromises()
+
+    const payload = wrapper!.emitted('create-and-run')![0]![0] as {
+      name: string
+      description: string
+      useGitWorktree: boolean
+      worktreePath: string
+      worktreeBaseBranch: string
+      autoMerge: boolean
+      autoMergeMethod: string
+    }
+    expect(payload.autoMerge).toBe(true)
+    expect(payload.autoMergeMethod).toBe('rebase')
+
+    // The note the agent actually reads, built from that payload.
+    const message = buildTaskCreateMessage(
+      payload.name,
+      payload.description,
+      payload.useGitWorktree,
+      payload.worktreePath,
+      payload.worktreeBaseBranch,
+      payload.autoMerge,
+      payload.autoMergeMethod,
+    )
+    expect(message).toContain('#Notes AutoMerge\nMethod: rebase')
   })
 
   it('forwards unattended toggle value into the emit payload', async () => {

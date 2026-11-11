@@ -9,6 +9,7 @@ import {
   writeSkillDefaults,
 } from '../../helpers/kanbanSkillDefaults'
 import type { PreviewFile } from '../file/FilePreview.vue'
+import type { MergeMethod } from '../../helpers/mergeWording'
 import type {
   AgentEntry,
   SkillEntry,
@@ -57,6 +58,11 @@ const worktreePath = ref('')
 // = no `Base:` line in the queue_message, so the agent branches from the repo's current HEAD (the
 // pre-existing behavior).
 const worktreeBaseBranch = ref('')
+// "Auto merge" toggle (create mode only, default OFF). When ON, the host bakes
+// `#Notes AutoMerge` + `Method:` into the create_and_run queue_message, which is
+// what tells the agent to wait for CI and merge the PR itself.
+const autoMerge = ref(false)
+const autoMergeMethod = ref<MergeMethod>('squash')
 const slugifyWorktreeName = (raw: string): string => {
   const slug = raw
     .trim()
@@ -284,6 +290,8 @@ const isMediaLoading = computed<boolean>(() => {
     homeDir,
     worktreePath,
     worktreeBaseBranch,
+    autoMerge,
+    autoMergeMethod,
     tags,
     dependsOn,
     tagsInputRef,

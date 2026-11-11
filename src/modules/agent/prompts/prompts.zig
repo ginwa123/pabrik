@@ -29,6 +29,7 @@ pub const SkillWriteToolRule = core.SkillWriteToolRule;
 // command only does the git half.
 pub const GitWorktreeToolRule = core.GitWorktreeToolRule;
 pub const PullRequestToolRule = core.PullRequestToolRule;
+pub const AutoMergeToolRule = core.AutoMergeToolRule;
 pub const ReadWorkspaceSessionToolRule = core.ReadWorkspaceSessionToolRule;
 // Workspace credentials: the `{{SECRETS:NAME}}` placeholder and the
 // never-echo-the-value rule.

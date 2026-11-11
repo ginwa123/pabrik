@@ -132,3 +132,45 @@ describe('buildTaskCreateMessage - no #Skill directive (Migration 112)', () => {
     expect(message).not.toContain('#Skill')
   })
 })
+
+// The `#Notes AutoMerge` flag — the note that tells the agent to wait for CI
+// and merge the pull request itself.
+describe('buildTaskCreateMessage - #Notes AutoMerge', () => {
+  it('emits nothing when the flag is off', () => {
+    expect(buildTaskCreateMessage('My task', 'desc', false, '', '', false, 'squash')).toBe(
+      'Task : My task\nDescription: desc',
+    )
+  })
+
+  it('emits the note and the method when the flag is on', () => {
+    expect(buildTaskCreateMessage('My task', 'desc', false, '', '', true, 'squash')).toBe(
+      'Task : My task\nDescription: desc\n\n#Notes AutoMerge\nMethod: squash',
+    )
+  })
+
+  it('carries whichever method the dialog picked', () => {
+    expect(buildTaskCreateMessage('My task', '', false, '', '', true, 'rebase')).toBe(
+      'Task : My task\n\n#Notes AutoMerge\nMethod: rebase',
+    )
+  })
+
+  it('omits the Method line when none was given, so the agent falls back to squash', () => {
+    expect(buildTaskCreateMessage('My task', '', false, '', '', true, '   ')).toBe(
+      'Task : My task\n\n#Notes AutoMerge',
+    )
+  })
+
+  it('sits under the worktree note without a blank line between them', () => {
+    expect(
+      buildTaskCreateMessage('My task', 'desc', true, '/tmp/wt/x', 'origin/main', true, 'squash'),
+    ).toBe(
+      'Task : My task\nDescription: desc\n\n#Notes UseGitWorktree\nPath: /tmp/wt/x\nBase: origin/main\n#Notes AutoMerge\nMethod: squash',
+    )
+  })
+
+  it('works without a worktree, which is the common case', () => {
+    const message = buildTaskCreateMessage('My task', '', false, '', '', true, 'merge')
+    expect(message).not.toContain('UseGitWorktree')
+    expect(message).toContain('#Notes AutoMerge\nMethod: merge')
+  })
+})
