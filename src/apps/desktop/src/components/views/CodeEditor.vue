@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUpdated, ref } from 'vue'
-import { detectLanguage, highlightLine, highlightLines, type Token } from '@/helpers/codeHighlight'
+import { detectLanguage, highlightLine } from '@/helpers/codeHighlight'
 import { displayPathFor } from '@/composables/useCodeEditorSession'
 import { getGitBlame, getGitWholeFileDiff } from '@/api'
 import { formatRelativeTime } from '@/helpers/relativeTime'
 import { parseUnifiedDiff } from './chat_right_sidebar/parseUnifiedDiff'
 import { buildLineGutter, type GutterKind } from '@/helpers/lineGutter'
+import { readDiffMode, writeDiffMode, type DiffMode } from '@/stores/diffModePreference'
+import CodeEditorDiff from './CodeEditorDiff.vue'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
 
@@ -130,6 +132,11 @@ const blameTextFor = (lineNumber: number): string | null => {
 
 // Code/Diff toggle + change navigator state.
 const showDiff = ref(props.initialDiff === true)
+const diffMode = ref<DiffMode>(readDiffMode())
+const setDiffMode = (next: DiffMode) => {
+  diffMode.value = next
+  writeDiffMode(next)
+}
 const navIndex = ref(0)
 const navTarget = ref<number | null>(null)
 const navLabel = computed(() =>
@@ -143,36 +150,6 @@ const isTarget = (lineNumber: number) =>
 
 /** Split one line into colored token spans (plaintext ⇒ one plain span). */
 const tokensFor = (line: string) => highlightLine(line, detectedLanguage.value)
-
-// Token spans for the Diff view's rows — computed once per parsed diff
-// rather than per render, and colored with the same palette as the code view.
-const diffTokens = computed<Token[][]>(() => {
-  const lines = parsedDiff.value?.lines ?? []
-  const tokens = highlightLines(
-    lines.map((line) => line.content),
-    detectedLanguage.value,
-  )
-  // A hunk header is diff METADATA, not code. Tokenizing `@@ -12,7 +12,9 @@`
-  // paints its numbers with `.tok-number` over the row's own hunk colour;
-  // every other unified surface renders hunks plain, so this one does too.
-  return lines.map((line, i) =>
-    line.type === 'hunk' ? [{ text: line.content, type: 'plain' }] : tokens[i]!,
-  )
-})
-
-const signFor = (type: string): string => {
-  if (type === 'add') return '+'
-  if (type === 'remove') return '-'
-  if (type === 'context' || type === 'empty') return ' '
-  return ''
-}
-
-const diffRowClass = (type: string): string => {
-  if (type === 'add') return 'diff-row-add'
-  if (type === 'remove') return 'diff-row-remove'
-  if (type === 'hunk') return 'diff-row-hunk'
-  return ''
-}
 
 /** Bring a line into view. Best-effort: jsdom has no
  * `scrollIntoView`, and a `?line=` beyond EOF is simply ignored. */
@@ -381,6 +358,28 @@ const handleClose = () => {
           <span :class="{ on: !showDiff }">Code</span>
           <span :class="{ on: showDiff }">Diff</span>
         </div>
+        <!-- Unified / Split: the layout of the diff above. -->
+        <div
+          v-if="showDiff && parsedDiff"
+          data-testid="code-diff-mode"
+          class="seg-toggle"
+          role="tablist"
+        >
+          <span
+            :class="{ on: diffMode === 'unified' }"
+            data-testid="code-diff-mode-unified"
+            title="Unified — one column, git-style hunks"
+            @click="setDiffMode('unified')"
+            >Unified</span
+          >
+          <span
+            :class="{ on: diffMode === 'split' }"
+            data-testid="code-diff-mode-split"
+            title="Split — side by side, before | after"
+            @click="setDiffMode('split')"
+            >Split</span
+          >
+        </div>
         <!-- Language indicator -->
         <span
           class="text-dense px-2 py-1 rounded"
@@ -412,32 +411,13 @@ const handleClose = () => {
         This file is empty
       </div>
 
-      <!-- Unified diff view (changed hunks only) -->
-      <div
+      <!-- Diff view: unified hunks or side-by-side, per the header's toggle. -->
+      <CodeEditorDiff
         v-else-if="showDiff && parsedDiff"
-        data-testid="code-diff-view"
-        class="diff-view"
-        style="font-size: var(--text-dense); line-height: 20px"
-      >
-        <div
-          v-for="(dl, dlIdx) in parsedDiff.lines"
-          :key="dlIdx"
-          class="diff-row"
-          :class="diffRowClass(dl.type)"
-        >
-          <span class="diff-old">{{ dl.oldLineNum ?? '' }}</span>
-          <span class="diff-new">{{ dl.newLineNum ?? '' }}</span>
-          <span class="diff-text"
-            >{{ signFor(dl.type)
-            }}<span
-              v-for="(tok, tIdx) in diffTokens[dlIdx]"
-              :key="tIdx"
-              :class="`tok-${tok.type}`"
-              >{{ tok.text || '\u00a0' }}</span
-            ></span
-          >
-        </div>
-      </div>
+        :lines="parsedDiff.lines"
+        :path="fileName"
+        :mode="diffMode"
+      />
 
       <table
         v-else

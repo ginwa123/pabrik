@@ -19,7 +19,7 @@ export function useSidebarDiffRowOpen(deps: Deps) {
 
   const openFileInEditor = (path: string): boolean => {
     if (!openInEditor || !deps.cwd()) return false
-    void openInEditor({ filePath: path, cwd: deps.cwd() })
+    void openInEditor({ filePath: path, cwd: deps.cwd(), diff: true })
     return true
   }
 
