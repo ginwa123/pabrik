@@ -80,6 +80,7 @@ pub fn dispatchHeadless(
         .storage => |a| try runStorage(allocator, io, environment, a),
         .memories => |a| try runMemories(allocator, io, environment, a, log_file, db_request),
         .mcp_oauth => |a| try runMcpOAuth(allocator, io, environment, a, log_file, db_request),
+        .mcp_add => |a| try runMcpAdd(allocator, io, environment, a, log_file, db_request),
     }
     return true;
 }
@@ -458,6 +459,33 @@ fn writeStdout(io: std.Io, bytes: []const u8) !void {
     var w = stdout.writer(io, &buf);
     try w.interface.writeAll(bytes);
     try w.interface.flush();
+}
+
+fn runMcpAdd(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.McpAddArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const output = headless.mcp.addServer(allocator, &backend, a) catch |err| {
+        std.log.err("headless: mcp-add failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+    defer allocator.free(output);
+
+    try writeStdout(io, output);
+    try writeStdout(io, "\n");
+
+    const ok = std.mem.indexOf(u8, output, "\"success\":true") != null;
+    backend.finish(if (ok) 0 else 1);
 }
 
 fn runMcpOAuth(

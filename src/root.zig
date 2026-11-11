@@ -73,6 +73,7 @@ pub const shell_tool = @import("modules/agent/tools/shell.zig");
 pub const process_tool = @import("modules/agent/tools/process.zig");
 pub const tool_models = @import("modules/agent/tools/schemas.zig");
 pub const tools = @import("modules/agent/tools/tools.zig");
+pub const agent_loop_tools = @import("modules/agent/loop/tools.zig");
 
 pub const skill_tools = @import("modules/agent/tools/skill_tools.zig");
 pub const use_skill_tool = skill_tools;

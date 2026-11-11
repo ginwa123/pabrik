@@ -762,7 +762,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // Publish for all future runs. On error (`fresh == null`) pass
         // mark_init=false so the next run retries instead of caching
         // the failure forever.
-        di.di.storeMcpToolsCache(fresh, fresh != null);
+        di.di.storeMcpToolsCache(fresh, if (fresh) |f| f.len > 0 else false);
     }
 
     // Per-turn arena: every allocation inside the while loop below uses
@@ -818,7 +818,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             // `fresh` is consumed by `storeMcpToolsCache` (which deep-dupes
             // onto the singleton), so it is safe for this to live in the
             // per-turn arena.
-            di.di.storeMcpToolsCache(fresh, fresh != null);
+            di.di.storeMcpToolsCache(fresh, if (fresh) |f| f.len > 0 else false);
         }
 
         // ─── MCP tools for THIS TURN ONLY ─── The snapshot is owned by the

@@ -29,6 +29,16 @@ pub const SessionsArgs = struct {
     limit: u32 = 20,
 };
 
+/// `pabrik headless mcp-add` — the agent tool's own input shape.
+pub const McpAddArgs = struct {
+    session_id: []const u8,
+    name: []const u8,
+    transport: []const u8 = "stdio",
+    command: []const u8 = "",
+    args: []const []const u8 = &.{},
+    url: []const u8 = "",
+};
+
 pub const MessagesArgs = struct {
     session_id: []const u8,
     limit: u32 = 50,
@@ -309,6 +319,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
     "      flags: --url <mcp-url> --workspace <id> --server <name> --redirect-uri <uri>\n" ++
     "             --scope <s> --client-id <id> --code <c> --state <s>\n" ++
+    "  pabrik headless mcp-add [flags]           Register an MCP server via the agent tool's path\n" ++
+    "      flags: --session <id> --name <n> --transport stdio|http\n" ++
+    "             --command <c> --args a,b --url <u>\n" ++
     "  pabrik headless help                      Show this help\n" ++
     "\n" ++
     "Flags for `run`:\n" ++
@@ -335,6 +348,7 @@ pub const Outcome = union(enum) {
     message: MessageArgs,
     memories: MemoriesArgs,
     mcp_oauth: McpOAuthArgs,
+    mcp_add: McpAddArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -366,8 +380,66 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
     if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
     if (std.mem.eql(u8, verb, "mcp-oauth")) return try parseMcpOAuth(rest);
+    if (std.mem.eql(u8, verb, "mcp-add")) return try parseMcpAdd(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
+}
+
+fn parseMcpAdd(argv: []const []const u8) ParseError!Outcome {
+    var session_id: []const u8 = "";
+    var name: []const u8 = "";
+    var transport: []const u8 = "stdio";
+    var command: []const u8 = "";
+    var url: []const u8 = "";
+    var arg_list: std.ArrayList([]const u8) = .empty;
+    defer arg_list.deinit(std.heap.page_allocator);
+
+    var i: usize = 0;
+    while (i < argv.len) : (i += 1) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--session")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            session_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--name")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            name = argv[i];
+        } else if (std.mem.eql(u8, flag, "--transport")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            transport = argv[i];
+        } else if (std.mem.eql(u8, flag, "--command")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            command = argv[i];
+        } else if (std.mem.eql(u8, flag, "--url")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            url = argv[i];
+        } else if (std.mem.eql(u8, flag, "--args")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            var it = std.mem.splitScalar(u8, argv[i], ',');
+            while (it.next()) |part| {
+                if (part.len > 0) try arg_list.append(std.heap.page_allocator, part);
+            }
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+    }
+
+    if (session_id.len == 0) return fail(.{ .kind = .messages_requires_session });
+    if (name.len == 0) return fail(.{ .kind = .unknown_subcommand, .value = "--name" });
+
+    return .{ .mcp_add = .{
+        .session_id = session_id,
+        .name = name,
+        .transport = transport,
+        .command = command,
+        .args = try arg_list.toOwnedSlice(std.heap.page_allocator),
+        .url = url,
+    } };
 }
 
 fn parseMcpOAuth(argv: []const []const u8) ParseError!Outcome {

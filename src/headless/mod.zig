@@ -6,6 +6,7 @@ pub const args = @import("args.zig");
 pub const boot = @import("boot.zig");
 pub const run = @import("run.zig");
 pub const sessions = @import("sessions.zig");
+pub const mcp = @import("mcp.zig");
 pub const documents = @import("documents.zig");
 pub const storage = @import("storage.zig");
 pub const usage = @import("usage.zig");
@@ -37,6 +38,8 @@ pub const Command = union(enum) {
     memories: args.MemoriesArgs,
     /// Authorize a remote MCP server over OAuth 2.1.
     mcp_oauth: args.McpOAuthArgs,
+    /// Register an MCP server through the agent tool's own path.
+    mcp_add: args.McpAddArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -57,6 +60,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .storage => |a| .{ .storage = a },
         .memories => |a| .{ .memories = a },
         .mcp_oauth => |a| .{ .mcp_oauth = a },
+        .mcp_add => |a| .{ .mcp_add = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };
