@@ -171,6 +171,22 @@ describe('parseReadFile', () => {
     expect(r.path).toBe('/x')
     expect(r.content).toBe('hi')
   })
+  it('reads the mime and byte size of an image read', () => {
+    const r = parseReadFile({
+      path: '/shot.png',
+      mime: 'image/png',
+      bytes: 48211,
+      attached_as: 'image_url',
+    })
+    expect(r.mime).toBe('image/png')
+    expect(r.bytes).toBe(48211)
+    expect(r.content).toBe('')
+  })
+  it('reports no mime and no byte size for a text read', () => {
+    const r = parseReadFile({ path: '/x.txt', content: 'hi' })
+    expect(r.mime).toBeNull()
+    expect(r.bytes).toBeNull()
+  })
 })
 
 describe('parseWriteFile', () => {
