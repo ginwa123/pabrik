@@ -517,6 +517,41 @@ fn reapBoundedPosix(io: std.Io, pid: c_int, grace_ns: u64) void {
     }
 }
 
+/// `execve` semantics for one literal path: exists, is a file AND is
+/// executable.
+fn pathIsExecutable(io: std.Io, path: []const u8) bool {
+    // `access(X_OK)` is true for a directory, which `execve` then refuses with
+    // EACCES — a refusal is exactly the leak this guard exists to prevent.
+    const stat = std.Io.Dir.cwd().statFile(io, path, .{}) catch return false;
+    if (stat.kind == .directory) return false;
+    std.Io.Dir.cwd().access(io, path, .{ .execute = true }) catch return false;
+    return true;
+}
+
+/// Would `execvpe` find `argv[0]`? A name containing '/' is a literal path,
+/// anything else is searched in `PATH` (with std's fallback), so this cannot
+/// reject a command `spawn` would execute.
+
+// Why: Zig 0.16's `processSpawnPosix` returns a pre-exec child error after
+// the fork without closing the three stdio pipes or reaping the pid, so each
+// attempt at a missing command leaks 3 fds + 1 zombie. `access(2)` cannot.
+
+// Windows is exempt: `CreateProcess` fails before any child exists.
+fn commandResolves(io: std.Io, cmd: []const u8) bool {
+    if (comptime builtin.os.tag == .windows) return true;
+    if (cmd.len == 0) return false;
+    if (std.mem.indexOfScalar(u8, cmd, '/') != null) return pathIsExecutable(io, cmd);
+
+    const search: []const u8 = if (std.c.getenv("PATH")) |path| std.mem.span(path) else std.Io.Threaded.default_PATH;
+    var buf: [std.posix.PATH_MAX]u8 = undefined;
+    var dirs = std.mem.tokenizeScalar(u8, search, ':');
+    while (dirs.next()) |dir| {
+        const candidate = std.fmt.bufPrint(&buf, "{s}/{s}", .{ dir, cmd }) catch continue;
+        if (pathIsExecutable(io, candidate)) return true;
+    }
+    return false;
+}
+
 pub const StdioClient = struct {
     /// Allocator for response bodies.
     arena: std.heap.ArenaAllocator,
@@ -543,6 +578,13 @@ pub const StdioClient = struct {
         io: std.Io,
         argv: []const []const u8,
     ) StdioError!StdioClient {
+        // Reject a command the kernel would refuse BEFORE forking: a failed
+        // exec leaks fds and a zombie in Zig 0.16 (see `commandResolves`), and
+        // a stale MCP `command` is retried on every agent turn.
+
+        // On macOS that drained the 256-fd soft limit and surfaced as
+        // unrelated DNS/TLS failures (`socketpair failed 24`).
+        if (argv.len == 0 or !commandResolves(io, argv[0])) return StdioError.ChildSpawnFailed;
         // Zig 0.16's process.spawn takes `io` + a SpawnOptions struct. env
         // override — Zig 0.16's std.process.spawn has no clean .env_map
         // setter. v1 inherits the parent's env; a future v2 can pre-fork +
@@ -1742,6 +1784,83 @@ test "StdioClient.init returns ChildSpawnFailed for missing binary" {
         return;
     };
     try testing.expect(false); // unreachable
+}
+
+/// Entries in this process's fd table. POSIX exposes it as a directory;
+/// counting before and after keeps the census's own fd in both numbers.
+fn openFdCount(io: std.Io) !usize {
+    const dir_path = switch (builtin.os.tag) {
+        .linux => "/proc/self/fd",
+        else => "/dev/fd",
+    };
+    const dir = try std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true });
+    defer std.Io.Dir.close(dir, io);
+    var it = dir.iterate();
+    var n: usize = 0;
+    while (try it.next(io)) |_| n += 1;
+    return n;
+}
+
+test "repeated spawns of a missing MCP command leak no fds and no zombies" {
+    // Regression test for the macOS fd exhaustion. Zig 0.16 leaks the three
+    // stdio pipes and the forked pid when a child fails before exec, so each
+    // attempt at a nonexistent MCP `command` cost 3 fds + 1 zombie.
+
+    // Before the preflight this loop took pabrik to EMFILE, where unrelated
+    // code failed with `socketpair failed 24 (Too many open files)`.
+    const missing: []const []const u8 = &.{"/no/such/mcp-server/xyzzy"};
+    const attempts = 32;
+
+    const before = if (comptime builtin.os.tag == .windows) 0 else try openFdCount(testing.io);
+    for (0..attempts) |_| {
+        try testing.expectError(
+            StdioError.ChildSpawnFailed,
+            StdioClient.init(testing.allocator, testing.io, missing),
+        );
+    }
+
+    switch (builtin.os.tag) {
+        // No fork, no stdio pipes of ours, no zombie: Windows fails inside
+        // CreateProcess. The contract exercised here is that the failure is
+        // still reported on every attempt.
+        .windows => {},
+        .linux, .macos => {
+            const after = try openFdCount(testing.io);
+            // Only probe for zombies when the fd count moved: a healthy run
+            // has nothing to reap, and `waitpid(-1)` must not steal another
+            // test's child.
+            var zombies: usize = 0;
+            if (after != before) {
+                var status: c_int = 0;
+                while (std.c.waitpid(-1, &status, std.c.W.NOHANG) > 0) zombies += 1;
+            }
+            try testing.expectEqual(@as(usize, 0), zombies);
+            try testing.expectEqual(before, after);
+        },
+        else => return error.TestUnexpectedResult,
+    }
+}
+
+test "commandResolves mirrors exec lookup: literal path vs PATH" {
+    switch (builtin.os.tag) {
+        // The guard is deliberately unconditional on Windows: CreateProcess
+        // fails before a child exists, so there is nothing to protect.
+        .windows => {
+            try testing.expect(commandResolves(testing.io, "/no/such/binary/xyzzy"));
+            try testing.expect(commandResolves(testing.io, "pabrik-no-such-command-xyzzy"));
+        },
+        .linux, .macos => {
+            // A bare name is searchable in PATH — rejecting these would break
+            // every `cat`/`node`/`npx` MCP server.
+            try testing.expect(commandResolves(testing.io, "cat"));
+            try testing.expect(!commandResolves(testing.io, "/no/such/binary/xyzzy"));
+            try testing.expect(!commandResolves(testing.io, "pabrik-no-such-command-xyzzy"));
+            // A directory is executable but not a program: `execve` would
+            // still fail, so the guard must not wave it through.
+            try testing.expect(!commandResolves(testing.io, "/tmp"));
+        },
+        else => return error.TestUnexpectedResult,
+    }
 }
 
 test "StdioClient.deinit kills child without error" {
