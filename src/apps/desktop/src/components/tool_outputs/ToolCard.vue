@@ -43,6 +43,9 @@ export interface ToolCardMessage {
   id: string
   role: string
   content: string
+  /** When the call started, as the chat knows it — the compact header counts
+   * an in-flight call's elapsed time from here. */
+  timestamp?: Date
   tool_name?: string
   tool_call_id?: string
   diffview_before?: string

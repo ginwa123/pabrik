@@ -20,6 +20,7 @@ const session_cancel_probe = @import("session_cancel_probe.zig");
 const agentic_loop_mod = @import("workflow.zig");
 const wrapToolOutput = agentic_loop_mod.tools.wrapToolOutput;
 const withDurationMs = agentic_loop_mod.tools.withDurationMs;
+const withPending = agentic_loop_mod.tools.withPending;
 const xmlUnescape = @import("helpers").xmlUnescape;
 const helpers = @import("helpers");
 const on_event_sent = @import("on_event_sent.zig");
@@ -335,10 +336,22 @@ pub fn runToolDirect(ctx: ToolContext, tool_call: agent.ToolCall) ![]const u8 {
     return result.output;
 }
 
+/// The one place a tool call is timed: every envelope that leaves here carries
+/// its `duration_ms`, whichever path produced it (pre-hook short-circuit,
+/// secret-substitution error, registry, MCP, post-hook replacement).
+fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
+    const started_ns = std.Io.Timestamp.now(ctx.io, .real).nanoseconds;
+    var result = try dispatchToolInner(ctx, tool_call);
+    const stamped = try withDurationMs(ctx.allocator, result.output, elapsedMsSince(ctx.io, started_ns));
+    ctx.allocator.free(result.output);
+    result.output = stamped;
+    return result;
+}
+
 /// Lookup a tool by name and execute it using unified registry Refactored:
 /// Uses entry.exec() directly instead of double lookup Lua hooks
 /// (`hooks/register_hook.lua :: init(event, data)`) wrap every dispatch: the
-fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
+fn dispatchToolInner(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     var effective_call = tool_call;
     var modified_args: ?[]const u8 = null;
     defer if (modified_args) |a| ctx.allocator.free(a);
@@ -408,6 +421,7 @@ fn dispatchTool(ctx: ToolContext, tool_call: agent.ToolCall) !ToolResult {
     };
 
     if (runPostHookOverride(ctx, effective_call.function.name, effective_call.function.arguments, result.output)) |replacement| {
+        ctx.allocator.free(result.output);
         result.output = replacement;
     }
 
@@ -511,15 +525,11 @@ fn dispatchFromRegistry(ctx: ToolContext, tool_call: agent.ToolCall, exec: tools
         // Only a tool that blocks needs it, and only `command` reads it.
         .cancel_hook = cancel_probe.hook(),
     };
-    const started_ns = std.Io.Timestamp.now(ctx.io, .real).nanoseconds;
     const exec_result = try exec(ctx_local, tool_call);
-    const elapsed_ms = elapsedMsSince(ctx.io, started_ns);
-
-    var output = exec_result.output;
-    if (exec_result.output_allocated) {
-        output = try withDurationMs(ctx.allocator, exec_result.output, elapsed_ms);
-        ctx.allocator.free(exec_result.output);
-    }
+    const output = if (exec_result.output_allocated)
+        exec_result.output
+    else
+        try ctx.allocator.dupe(u8, exec_result.output);
 
     return ToolResult{
         .output = output,
@@ -835,9 +845,9 @@ pub fn handle_tool(
         var list_id_that_was_loaded: std.ArrayList([]const u8) = .empty;
 
         for (tc) |tool_call| {
-            // Phase 1 placeholder content: build the canonical
-            // `<tool>...</tool>` envelope via `wrapToolOutput` so the
-            // frontend's `tryUnwrapToolOutput` can parse it on
+            // Phase 1 placeholder content: the canonical envelope, so the
+            // frontend's `tryUnwrapToolOutput` can parse it. A call that will
+            // run is marked `pending`; an unknown tool is already a verdict.
             const placeholder = if (!isKnownToolOrMCP(tool_call.function.name, config)) blk: {
                 // Same actionable text Phase 3 writes.
                 const msg = try unknownToolMessage(allocator, tool_call.function.name);
@@ -850,14 +860,18 @@ pub fn handle_tool(
                     msg,
                     "",
                 );
-            } else try wrapToolOutput(
-                allocator,
-                tool_call.function.name,
-                tool_call.function.arguments,
-                true,
-                null,
-                "",
-            );
+            } else blk: {
+                const bare = try wrapToolOutput(
+                    allocator,
+                    tool_call.function.name,
+                    tool_call.function.arguments,
+                    true,
+                    null,
+                    "",
+                );
+                defer allocator.free(bare);
+                break :blk try withPending(allocator, bare);
+            };
             // `insertLLMHistories` duplicates the content slice internally
             // (line 123 of insert_llm_histories.zig), so we own and free the
             // envelope string after the call returns — the DB row holds its
@@ -2035,6 +2049,60 @@ test "hook dispatch: post replace swaps real output" {
     const result = try dispatchTool(ctx, tc);
     try std.testing.expectEqualStrings("REDACTED BY HOOK", result.output);
     try std.testing.expect(std.mem.indexOf(u8, result.output, "TOP SECRET") == null);
+}
+
+test "hook dispatch: a pre-hook deny carries the call's duration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const dispatch_alloc = arena.allocator();
+    var lg = logger_mod.Logger.init(dispatch_alloc, std.testing.io, .{});
+    var setup = try hookDispatchSetup();
+    defer setup.threaded.deinit();
+    defer setup.db.deinit();
+
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    var fx = try hookFixture(dispatch_alloc, "function init(event, data) if event == 'pre_tool_use' then return { deny = 'reads blocked' } end return nil end\n", &path_buf);
+    defer fx.deinit();
+
+    const ctx = hookDispatchCtx(dispatch_alloc, &setup, &lg, &fx.env_map);
+    const tc = try readFileCall(dispatch_alloc, "/tmp/pabrik-hook-test-does-not-exist-12345.txt");
+    const result = try dispatchTool(ctx, tc);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, dispatch_alloc, result.output, .{});
+    defer parsed.deinit();
+    const env = parsed.value.object;
+    try std.testing.expectEqualStrings("reads blocked", env.get("error").?.string);
+    try std.testing.expect(env.get("duration_ms") != null);
+}
+
+test "hook dispatch: a post-hook replacement envelope keeps the call's duration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const dispatch_alloc = arena.allocator();
+    var lg = logger_mod.Logger.init(dispatch_alloc, std.testing.io, .{});
+    var setup = try hookDispatchSetup();
+    defer setup.threaded.deinit();
+    defer setup.db.deinit();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "secret.txt", .data = "TOP SECRET" });
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try tmp.dir.realPath(std.testing.io, &path_buf);
+    const abs = try std.fs.path.join(dispatch_alloc, &.{ path_buf[0..n], "secret.txt" });
+
+    var fx = try hookFixture(dispatch_alloc, "function init(event, data) if event == 'post_tool_use' then return { output = '{\"tool\":\"read_file\",\"parameters\":{},\"success\":true,\"data\":{},\"error\":null,\"v\":1}' } end return nil end\n", &path_buf);
+    defer fx.deinit();
+
+    const ctx = hookDispatchCtx(dispatch_alloc, &setup, &lg, &fx.env_map);
+    const tc = try readFileCall(dispatch_alloc, abs);
+    const result = try dispatchTool(ctx, tc);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, dispatch_alloc, result.output, .{});
+    defer parsed.deinit();
+    const env = parsed.value.object;
+    try std.testing.expectEqual(@as(usize, 0), env.get("data").?.object.count());
+    try std.testing.expect(env.get("duration_ms") != null);
 }
 
 test "jsonEscapePath escapes backslashes and quotes for JSON embedding" {

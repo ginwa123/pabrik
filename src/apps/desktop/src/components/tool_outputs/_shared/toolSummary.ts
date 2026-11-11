@@ -106,7 +106,7 @@ export function summarizeToolCall(
 
   const envelope = tryUnwrapToolOutput(content)
   const failed = envelope !== null && !envelope.success
-  const running = envelope === null && content.trim() === ''
+  const running = envelope !== null ? envelope.pending === true : content.trim() === ''
   const exitCode = exitCodeOf(envelope?.data)
 
   let status: ToolCallSummary['status'] = 'ok'

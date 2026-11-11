@@ -52,6 +52,17 @@ pub fn withDurationMs(allocator: std.mem.Allocator, envelope: []const u8, durati
     return std.fmt.allocPrint(allocator, "{s},\"duration_ms\":{d}{s}", .{ head, duration_ms, suffix });
 }
 
+/// Mark a placeholder envelope as a call that has not answered yet, so the
+/// chat can name the call in flight instead of drawing it as a finished one.
+pub fn withPending(allocator: std.mem.Allocator, envelope: []const u8) ![]u8 {
+    const prefix = "{\"tool\":";
+    const suffix = ",\"v\":1}";
+    if (!std.mem.startsWith(u8, envelope, prefix)) return allocator.dupe(u8, envelope);
+    if (!std.mem.endsWith(u8, envelope, suffix)) return allocator.dupe(u8, envelope);
+    const head = envelope[0 .. envelope.len - suffix.len];
+    return std.fmt.allocPrint(allocator, "{s},\"pending\":true{s}", .{ head, suffix });
+}
+
 // Every `execX` function below MUST end by calling `wrapToolOutput` so the
 // LLM sees a single consistent envelope: {"tool":…, "parameters":…,
 // "success":true|false, "data":{…} | null, "error":"…" | null, "v":1} The
