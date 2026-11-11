@@ -401,19 +401,24 @@ export const useDocumentsStore = defineStore('documents', () => {
     if (!workspaceId || !documentId) return null
     error.value = null
     const cached = findById(documentId)
-    if (cached && typeof cached.content === 'string') return cached
     try {
       const { document } = await api.getDocument(workspaceId, documentId)
       // Merge rather than replace: the list row may carry a newer position or
       // folder than the single read, and the sidebar must not jump.
       const merged: Document = cached ? { ...cached, ...document } : document
-      documents.value = documents.value.map((d) => (d.id === merged.id ? merged : d))
+      documents.value = cached
+        ? documents.value.map((d) => (d.id === merged.id ? merged : d))
+        : [merged, ...documents.value]
       // Write through so an offline reload of an OPENED document still has its
       // body. A document never opened has no cached body, and that is fine.
       await runSyncVoid(documentEngineDb.putDocument(workspaceId, merged), 'documents.put')
       return merged
     } catch (e) {
+      // Offline: a cached body is still better than a blank page. The list is
+      // cache-first, but the OPEN document must be the server's — a cached body
+      // is what made an agent edit invisible and a cleared body render blank.
       error.value = toMessage(e)
+      if (cached && typeof cached.content === 'string') return cached
       return null
     }
   }

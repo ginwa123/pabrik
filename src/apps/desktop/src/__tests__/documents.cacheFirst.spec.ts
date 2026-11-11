@@ -233,4 +233,29 @@ describe('useDocumentsStore — cache-first contract', () => {
     expect(store.error).toContain('HTTP 500')
     expect(store.loaded).toBe(false)
   })
+
+  it('opening a document revalidates the body instead of trusting the cached one', async () => {
+    // The regression: `loadDelta` merges a previously cached body into every
+    // list row, so a cache-first single read served that body forever — an
+    // agent edit never reached the page, and a cached "" rendered blank.
+    const store = useDocumentsStore()
+    store.documents = [doc({ content: 'stale body' })]
+    vi.spyOn(api, 'getDocument').mockResolvedValue({ document: doc({ content: 'fresh body' }) })
+
+    const opened = await store.loadDocument(WS, 'doc_1')
+
+    expect(opened?.content).toBe('fresh body')
+    expect(store.findById('doc_1')?.content).toBe('fresh body')
+  })
+
+  it('opening a document offline falls back to the cached body', async () => {
+    const store = useDocumentsStore()
+    store.documents = [doc({ content: 'cached body' })]
+    vi.spyOn(api, 'getDocument').mockRejectedValue(new Error('offline'))
+
+    const opened = await store.loadDocument(WS, 'doc_1')
+
+    expect(opened?.content).toBe('cached body')
+    expect(store.error).toContain('offline')
+  })
 })

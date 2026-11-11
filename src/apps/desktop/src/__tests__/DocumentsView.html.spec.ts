@@ -51,6 +51,7 @@ beforeEach(() => {
   getDocument.mockReset()
   updateDocument.mockReset()
   deleteDocument.mockReset()
+  getDocument.mockResolvedValue({ document: HTML_DOC })
   useWorkspacesStore().workspaces = [
     { id: 'ws_1', name: 'agentic coding', icon: '📁', expanded: true, items: [] },
   ]
@@ -113,6 +114,160 @@ describe('DocumentsView — html documents', () => {
 
     expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('srcdoc')).toBe(
       '<p>live</p>',
+    )
+    wrapper.unmount()
+  })
+
+  it('shows a loading state until the body arrives, never a blank page', async () => {
+    let release: (value: unknown) => void = () => {}
+    getDocument.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+    // A list row: metadata only, no body. This is what the sidebar holds
+    // before the single-document read lands.
+    const { content: _omit, ...listRow } = HTML_DOC
+    useDocumentsStore().documents = [listRow]
+
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="documents-html-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="documents-html-preview"]').exists()).toBe(false)
+
+    release({ document: HTML_DOC })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="documents-html-loading"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('srcdoc')).toBe(PAGE)
+    wrapper.unmount()
+  })
+})
+
+describe('DocumentsView — html viewport switcher', () => {
+  it('offers Desktop, Tablet and Mobile, and starts on Desktop', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="documents-viewport-switcher"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="documents-viewport-desktop"]').attributes('aria-pressed')).toBe(
+      'true',
+    )
+    expect(wrapper.get('[data-testid="documents-viewport-tablet"]').attributes('aria-pressed')).toBe(
+      'false',
+    )
+    expect(wrapper.get('[data-testid="documents-viewport-mobile"]').attributes('aria-pressed')).toBe(
+      'false',
+    )
+    wrapper.unmount()
+  })
+
+  it('choosing Mobile narrows the frame to a phone width', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-mobile"]').trigger('click')
+    await nextTick()
+
+    const frame = wrapper.get('[data-testid="documents-html-preview"]')
+    expect(frame.attributes('style')).toContain('width: 390px')
+    expect(wrapper.get('[data-testid="documents-viewport-mobile"]').attributes('aria-pressed')).toBe(
+      'true',
+    )
+    wrapper.unmount()
+  })
+
+  it('choosing Tablet narrows the frame to a tablet width', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-tablet"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 768px',
+    )
+    wrapper.unmount()
+  })
+
+  it('going back to Desktop lets the frame fill the stage again', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-mobile"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="documents-viewport-desktop"]').trigger('click')
+    await nextTick()
+
+    const style = wrapper.get('[data-testid="documents-html-preview"]').attributes('style') ?? ''
+    expect(style).toContain('width: 100%')
+    expect(style).not.toContain('390px')
+    wrapper.unmount()
+  })
+
+  it('a markdown document has no viewport switcher', async () => {
+    const markdown = { ...HTML_DOC, format: 'markdown', content: '# hi' }
+    getDocument.mockResolvedValue({ document: markdown })
+    useDocumentsStore().documents = [markdown]
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="documents-viewport-switcher"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('Custom reveals a width field and starts at 400px', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="documents-viewport-custom-width"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="documents-viewport-custom"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="documents-viewport-custom-width"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 400px',
+    )
+    wrapper.unmount()
+  })
+
+  it('typing a custom width resizes the frame to it', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-custom"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="documents-viewport-custom-width"]').setValue('512')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 512px',
+    )
+    wrapper.unmount()
+  })
+
+  it('a custom width outside the range is clamped, not rendered as-is', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="documents-viewport-custom"]').trigger('click')
+    await nextTick()
+
+    const field = wrapper.get('[data-testid="documents-viewport-custom-width"]')
+    await field.setValue('10')
+    await field.trigger('change')
+    await nextTick()
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 240px',
+    )
+
+    await field.setValue('9999')
+    await field.trigger('change')
+    await nextTick()
+    expect(wrapper.get('[data-testid="documents-html-preview"]').attributes('style')).toContain(
+      'width: 2560px',
     )
     wrapper.unmount()
   })
