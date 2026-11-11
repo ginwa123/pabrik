@@ -718,11 +718,6 @@
       "count": 2
     }
   },
-  "src/components/views/chat_view/useChatDiffView.ts": {
-    "local/no-try-catch": {
-      "count": 2
-    }
-  },
   "src/components/views/chat_view/useChatMessagePresentation.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1

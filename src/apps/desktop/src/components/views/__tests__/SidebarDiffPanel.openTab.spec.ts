@@ -156,7 +156,7 @@ describe('SidebarDiffPanel file rows open an editor tab', () => {
     await flushPromises()
 
     expect(openInEditor).toHaveBeenCalledTimes(1)
-    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'dirty.txt', cwd: '/repo' })
+    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'dirty.txt', cwd: '/repo', diff: true })
     expect(panelOf(wrapper).emitted('show-diff')).toBeUndefined()
   })
 
@@ -171,7 +171,7 @@ describe('SidebarDiffPanel file rows open an editor tab', () => {
     await flushPromises()
 
     expect(openInEditor).toHaveBeenCalledTimes(1)
-    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'dirty.txt', cwd: '/repo' })
+    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'dirty.txt', cwd: '/repo', diff: true })
     expect(panelOf(wrapper).emitted('show-diff')).toBeUndefined()
   })
 
@@ -189,7 +189,7 @@ describe('SidebarDiffPanel file rows open an editor tab', () => {
     await flushPromises()
 
     expect(openInEditor).toHaveBeenCalledTimes(1)
-    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'src/main.zig', cwd: '/repo' })
+    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'src/main.zig', cwd: '/repo', diff: true })
     expect(getGitCommitFileDiffMock).not.toHaveBeenCalled()
     expect(panelOf(wrapper).emitted('show-diff')).toBeUndefined()
   })

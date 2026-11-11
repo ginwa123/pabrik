@@ -1,6 +1,7 @@
 import { computed, nextTick, reactive, ref, type ComputedRef, type Ref } from 'vue'
 import type { LocationQueryRaw, RouteLocationNormalizedLoaded, Router } from 'vue-router'
 import { useInjectCodeViewer, type CodeViewerView } from '@/composables/useCodeEditor'
+import { readDiffMode, writeDiffMode } from '../../../stores/diffModePreference'
 import { isChatRouteStaleForSession } from '../../../helpers/appUrl'
 import { encodePathParam, scrollToSectionElement } from '../chat_right_sidebar/parseUnifiedDiff'
 import type { DiffSelection } from '../chat_right_sidebar/parseUnifiedDiff'
@@ -32,18 +33,8 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
 
   // ── Centre-diff view state: two axes, one owner ─────────────────────────── mode          — LAYOUT
   // (unified | split). Global, so it lives in the URL (?diffmode=) with a localStorage fallback for
-  // "I always read split".
-  const DIFF_MODE_STORAGE_KEY = 'pabrik.centerdiff.mode'
-
-  const readStoredDiffMode = (): 'unified' | 'split' => {
-    try {
-      const stored = localStorage.getItem(DIFF_MODE_STORAGE_KEY)
-      if (stored === 'unified' || stored === 'split') return stored
-    } catch {
-      // No storage (private mode / jsdom) — the documented default stands.
-    }
-    return 'unified'
-  }
+  // "I always read split". The code editor's diff tab reads the same stored preference.
+  const readStoredDiffMode = readDiffMode
 
   /** Read `?diffmode=` at SETUP time, unlike `syncDiffParam` (a click handler). That makes the read
    * optional-router-safe: ~30 specs mount with no router, where a bare `route.query` would throw
@@ -112,11 +103,7 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
 
   function setDiffMode(next: 'unified' | 'split') {
     diffMode.value = next
-    try {
-      localStorage.setItem(DIFF_MODE_STORAGE_KEY, next)
-    } catch {
-      // Storage unavailable — the URL still carries the choice.
-    }
+    writeDiffMode(next)
     syncDiffQuery((query) => {
       query.diffmode = next
     })
