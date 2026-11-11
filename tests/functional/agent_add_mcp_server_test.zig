@@ -7,6 +7,7 @@ const builtin = @import("builtin");
 const testing = std.testing;
 const harness = @import("harness.zig");
 const Harness = harness.Harness;
+const ask_user = @import("ask_user_test.zig");
 
 const gpa = testing.allocator;
 const io = testing.io;
@@ -339,4 +340,88 @@ test "add_mcp_server_persists_stdio_server_via_put_round_trip" {
         std.debug.print("second stdio server missing after the second PUT\n", .{});
         return error.TestUnexpectedResult;
     }
+}
+
+// ============================================================================
+// Where the agent tool PERSISTS: a workspace session writes the OVERLAY
+// ============================================================================
+
+// `mcp_servers` is workspace-scoped, so `scopedBaseConfigText` strips it from
+// config.json. A server written there is invisible to the session that added
+// it; this drives the real `execAddMcpServer` path and asserts the overlay.
+test "add_mcp_server_from_a_workspace_session_writes_the_workspace_overlay" {
+    try harness.requirePabrikBin(io, gpa);
+    const sqlite = ask_user.requireSqlite3Cli() catch |err| switch (err) {
+        error.SkipZigTest => return error.SkipZigTest,
+        else => return err,
+    };
+    defer gpa.free(sqlite);
+
+    const home = try harness.makeScratchDir(gpa);
+    defer {
+        harness.cleanupExtraDir(io, gpa, home);
+        gpa.free(home);
+    }
+
+    // 1. Boot the DB (the migration chain) with no server and no port.
+    var boot = try harness.runPabrikCommand(io, gpa, home, &.{ "headless", "sessions" }, 120_000);
+    defer boot.deinit(gpa);
+    try testing.expectEqual(@as(?u8, 0), boot.exit_code);
+
+    // 2. A workspace, and a session that belongs to it.
+    try ask_user.execSql(home, "INSERT INTO workspaces (id) VALUES ('ws_mcp');");
+    try ask_user.execSql(home, "INSERT INTO sessions (id, name, cwd, workspace_id, user_id) " ++
+        "VALUES ('sess_mcp','t','/tmp','ws_mcp','');");
+
+    // 3. The agent tool, through the same exec path the loop dispatches.
+    var add = try harness.runPabrikCommand(io, gpa, home, &.{
+        "headless", "mcp-add",
+        "--session", "sess_mcp",
+        "--name",    "alpha",
+        "--command", "/bin/true",
+    }, 120_000);
+    defer add.deinit(gpa);
+    try testing.expectEqual(@as(?u8, 0), add.exit_code);
+    try testing.expect(std.mem.indexOf(u8, add.stdout, "\"persisted\":\"true\"") != null);
+
+    // 4. The server is in the WORKSPACE OVERLAY ...
+    const overlay_len = try ask_user.scalarCount(home,
+        "SELECT length(config_json) AS n FROM workspace_settings WHERE workspace_id = 'ws_mcp';");
+    try testing.expect(overlay_len > 0);
+
+    // ... and NOT in config.json, which a workspace session strips.
+    const config_dir = try platformConfigDir(home);
+    defer gpa.free(config_dir);
+    const config_file = try std.fs.path.join(gpa, &.{ config_dir, "config.json" });
+    defer gpa.free(config_file);
+    const body = blk: {
+        const f = std.Io.Dir.openFileAbsolute(io, config_file, .{}) catch |err| {
+            std.debug.print("config.json unreadable: {s}\n", .{@errorName(err)});
+            return error.TestUnexpectedResult;
+        };
+        defer f.close(io);
+        var buf: [4096]u8 = undefined;
+        var reader = f.reader(io, &buf);
+        break :blk reader.interface.allocRemaining(gpa, .limited(1 << 20)) catch |err| {
+            std.debug.print("config.json read failed: {s}\n", .{@errorName(err)});
+            return error.TestUnexpectedResult;
+        };
+    };
+    defer gpa.free(body);
+    try testing.expect(std.mem.indexOf(u8, body, "\"mcp_servers\"") == null);
+
+    // 5. A second server merges in and the first survives: the overlay grows.
+    var add2 = try harness.runPabrikCommand(io, gpa, home, &.{
+        "headless", "mcp-add",
+        "--session", "sess_mcp",
+        "--name",    "beta",
+        "--command", "/bin/echo",
+        "--args",    "hello,world",
+    }, 120_000);
+    defer add2.deinit(gpa);
+    try testing.expectEqual(@as(?u8, 0), add2.exit_code);
+
+    const grown_len = try ask_user.scalarCount(home,
+        "SELECT length(config_json) AS n FROM workspace_settings WHERE workspace_id = 'ws_mcp';");
+    try testing.expect(grown_len > overlay_len);
 }
