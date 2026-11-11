@@ -17,8 +17,9 @@ import {
 import { DEFAULT_HTML_BODY, HTML_FORMAT } from '../../helpers/htmlDocument'
 import DocumentsNewMenu from './DocumentsNewMenu.vue'
 import DocumentsContextMenu from './DocumentsContextMenu.vue'
+import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
-import { useDocumentSelectionExport } from '../../composables/useDocumentSelectionExport'
+import { useDocumentSelectionActions } from '../../composables/useDocumentSelectionActions'
 import { useDocumentDragDrop } from '../../composables/useDocumentDragDrop'
 import type { DocumentRow } from '../../helpers/documentRow'
 import type { DocumentFolder } from '../../api'
@@ -126,19 +127,42 @@ const selectDocument = (id: string) => {
   navigationStore.clearActiveChat()
 }
 
+const onDocumentKeydown = (event: KeyboardEvent, id: string) => {
+  if (event.target !== event.currentTarget) return
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  selectDocument(id)
+}
+
 const {
   selectedIds,
   isSelected,
   onDocumentClick,
   onDocumentContextMenu,
-  exporting,
+  busy,
   exportNotice,
+  actionNotice,
   menuPos,
+  contextMenuTitle,
+  singleSelectedId,
+  openSelected,
+  renamingDocId,
+  renameDocValue,
+  setRenameDocInput,
+  commitRenameDocument,
+  renameSelected,
+  duplicateSelected,
+  copyLinkSelected,
+  deleteTargets,
+  deleteMessage,
+  requestDelete,
+  cancelDelete,
+  confirmDelete,
   exportSelected,
   exportAll,
   selectAllDocuments,
   clearSelectionFromMenu,
-} = useDocumentSelectionExport({
+} = useDocumentSelectionActions({
   documents,
   rows,
   workspaceId: activeWorkspaceId,
@@ -423,10 +447,7 @@ onUpdated(() => {
               v-if="renamingId === row.folder.id"
               v-model="renameValue"
               class="flex-1 min-w-0 bg-transparent text-dense outline-none"
-              style="
-                color: inherit;
-                border-bottom: 1px solid var(--color-violet);
-              "
+              style="color: inherit; border-bottom: 1px solid var(--color-violet)"
               data-testid="document-folder-rename-input"
               :ref="setRenameInput"
               @click.stop
@@ -461,12 +482,12 @@ onUpdated(() => {
             </button>
           </div>
 
-          <!-- Document row: unchanged from the shipped list, plus its indent. -->
-          <button
+          <div
             v-else
             class="relative w-full flex items-center h-[var(--sb-row)] rounded-lg text-dense transition-all duration-150 border-t border-transparent overflow-hidden text-left"
             :data-testid="`document-row-${row.document.id}`"
             role="treeitem"
+            tabindex="0"
             :aria-level="row.depth + 1"
             :aria-selected="isSelected(row.document.id)"
             :style="
@@ -478,10 +499,24 @@ onUpdated(() => {
             "
             @click="onDocumentClick($event, row.document.id)"
             @contextmenu.prevent="onDocumentContextMenu($event, row.document.id)"
+            @keydown="onDocumentKeydown($event, row.document.id)"
           >
             <span class="w-[var(--sb-mark)] shrink-0" aria-hidden="true"></span>
-            <span class="flex-1 min-w-0 truncate">{{ row.document.title }}</span>
-          </button>
+            <input
+              v-if="renamingDocId === row.document.id"
+              v-model="renameDocValue"
+              class="flex-1 min-w-0 bg-transparent text-dense outline-none"
+              style="color: inherit; border-bottom: 1px solid var(--color-violet)"
+              data-testid="document-rename-input"
+              :ref="setRenameDocInput"
+              @click.stop
+              @keydown.stop
+              @keydown.enter.prevent="commitRenameDocument(row.document)"
+              @keydown.esc.prevent="renamingDocId = null"
+              @blur="commitRenameDocument(row.document)"
+            />
+            <span v-else class="flex-1 min-w-0 truncate">{{ row.document.title }}</span>
+          </div>
         </li>
         <!-- Drop here to move a row back to the root. -->
         <li
@@ -502,19 +537,45 @@ onUpdated(() => {
       >
         {{ exportNotice }}
       </p>
+
+      <p
+        v-if="actionNotice"
+        class="px-[var(--sb-gutter)] text-meta py-1 truncate"
+        style="color: var(--semantic-success)"
+        data-testid="documents-action-notice"
+        :title="actionNotice"
+      >
+        {{ actionNotice }}
+      </p>
     </div>
 
     <DocumentsContextMenu
       v-if="menuPos"
       :x="menuPos.x"
       :y="menuPos.y"
+      :title="contextMenuTitle"
       :selected-count="selectedIds.size"
       :total-count="documents.length"
-      :busy="exporting"
+      :single-selected="singleSelectedId !== null"
+      :busy="busy"
+      @open="openSelected"
+      @rename="renameSelected"
+      @duplicate="duplicateSelected"
+      @copy-link="copyLinkSelected"
+      @remove="requestDelete"
       @export-selected="exportSelected"
       @export-all="exportAll"
       @select-all="selectAllDocuments"
       @clear-selection="clearSelectionFromMenu"
+    />
+
+    <ConfirmDialog
+      :show="deleteTargets.length > 0"
+      title="Delete documents"
+      :message="deleteMessage"
+      confirm-text="Delete"
+      @close="cancelDelete"
+      @confirm="confirmDelete"
     />
   </div>
 </template>
