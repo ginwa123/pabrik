@@ -6,6 +6,8 @@ import type { SplitDiffFile } from './parseUnifiedDiff'
 
 type Deps = {
   cwd: () => string
+  /** The attached pull request, when there is one — a PR row's diff is the request's. */
+  prUrl: () => string
   prFiles: Ref<SplitDiffFile[]>
   openInBrowserTab: (path: string) => void
   selectFile: (file: GitFileChange, staged: boolean) => void
@@ -17,9 +19,9 @@ type Deps = {
 export function useSidebarDiffRowOpen(deps: Deps) {
   const openInEditor = useInjectOpenInCodeEditor()
 
-  const openFileInEditor = (path: string): boolean => {
+  const openFileInEditor = (path: string, source: { rev?: string; pr?: string } = {}): boolean => {
     if (!openInEditor || !deps.cwd()) return false
-    void openInEditor({ filePath: path, cwd: deps.cwd(), diff: true })
+    void openInEditor({ filePath: path, cwd: deps.cwd(), diff: true, ...source })
     return true
   }
 
@@ -37,7 +39,7 @@ export function useSidebarDiffRowOpen(deps: Deps) {
       deps.openInBrowserTab(file.path)
       return
     }
-    if (openFileInEditor(file.path)) return
+    if (openFileInEditor(file.path, { pr: deps.prUrl() })) return
     deps.selectPrFile(file)
     deps.togglePreview(file.path)
   }
@@ -45,12 +47,12 @@ export function useSidebarDiffRowOpen(deps: Deps) {
   const onCommitFileRowClick = (payload: { commit: GitCommit; file: GitCommitFile }) => {
     const raw = payload.file.path
     const path = raw.includes(' -> ') ? (raw.split(' -> ').pop() ?? raw) : raw
-    if (openFileInEditor(path)) return
+    if (openFileInEditor(path, { rev: payload.commit.sha })) return
     deps.onCommitFileClick(payload)
   }
 
   const onConflictFileClick = (path: string) => {
-    if (openFileInEditor(path)) return
+    if (openFileInEditor(path, { pr: deps.prUrl() })) return
     const file = deps.prFiles.value.find((candidate) => candidate.path === path)
     if (file) {
       deps.selectPrFile(file)

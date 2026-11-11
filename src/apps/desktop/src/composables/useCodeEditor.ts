@@ -13,6 +13,12 @@ export type OpenInCodeEditorOptions = {
   /**    * Open the same file on its changes: `?mode=diff`. A file and its diff are two entries in a
    * session's strip, not one entry with a toggle. */
   diff?: boolean
+  /**    * The commit whose changes the diff shows (`?rev=`). A commit row's diff is that commit's, not
+   * the worktree's. */
+  rev?: string
+  /**    * The pull request whose changes the diff shows (`?pr=`). A PR row's diff is the request's, not
+   * the worktree's. */
+  pr?: string
 }
 
 export type OpenInCodeEditorFn = (opts: OpenInCodeEditorOptions) => Promise<void> | void
@@ -39,6 +45,10 @@ export type CodeViewerState = {
   cwd: Ref<string>
   /** True when this target is the file's changes rather than the file. */
   diff: Ref<boolean>
+  /** The commit whose changes the diff shows. Empty = the worktree's. */
+  rev: Ref<string>
+  /** The pull request whose changes the diff shows. Empty = the worktree's. */
+  pr: Ref<string>
   /** Close the viewer: clear the session and strip the URL keys. */
   close: () => void
 }
@@ -65,5 +75,7 @@ export type CodeViewerView = {
   line: number | null
   cwd: string
   diff: boolean
+  rev: string
+  pr: string
   close: () => void
 }

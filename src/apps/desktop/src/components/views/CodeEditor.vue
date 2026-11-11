@@ -2,9 +2,9 @@
 import { computed, nextTick, onMounted, onUpdated, ref } from 'vue'
 import { detectLanguage, highlightLine } from '@/helpers/codeHighlight'
 import { displayPathFor } from '@/composables/useCodeEditorSession'
-import { getGitBlame, getGitWholeFileDiff } from '@/api'
+import { getGitBlame, getGitCommitFileDiff, getGitWholeFileDiff, getPrDiff } from '@/api'
 import { formatRelativeTime } from '@/helpers/relativeTime'
-import { parseUnifiedDiff } from './chat_right_sidebar/parseUnifiedDiff'
+import { parseUnifiedDiff, splitDiffByFile } from './chat_right_sidebar/parseUnifiedDiff'
 import { buildLineGutter, type GutterKind } from '@/helpers/lineGutter'
 import { readDiffMode, writeDiffMode, type DiffMode } from '@/stores/diffModePreference'
 import CodeEditorDiff from './CodeEditorDiff.vue'
@@ -38,6 +38,10 @@ const props = defineProps<{
   blame?: LineBlame[]
   /** Open on the changes instead of the file — the diff tab's own view. */
   initialDiff?: boolean
+  /** The commit whose changes the diff shows. Empty = the worktree's changes. */
+  rev?: string
+  /** The pull request whose changes the diff shows. Empty = the worktree's changes. */
+  pr?: string
 }>()
 
 const emit = defineEmits<{
@@ -82,17 +86,27 @@ const effectiveBlame = computed(() => props.blame ?? fetchedBlame.value ?? undef
 async function loadDiff(): Promise<void> {
   if (props.diffText !== undefined || !props.cwd) return
   try {
-    const res = await getGitWholeFileDiff(props.cwd, relativeFilePath.value, false)
-    if (res.whole_file_refused) {
-      fetchedDiff.value = null
-      return
-    }
-    fetchedDiff.value =
-      res.diffs.find((d) => d.path === relativeFilePath.value)?.diff_content ?? null
+    fetchedDiff.value = await fetchDiffText(props.cwd)
   } catch (err) {
     console.error('Failed to load whole-file diff:', err)
     fetchedDiff.value = null
   }
+}
+
+/** The changes this tab is about: a commit's, a pull request's, or the worktree's. */
+async function fetchDiffText(cwd: string): Promise<string | null> {
+  const path = relativeFilePath.value
+  if (props.rev) {
+    const res = await getGitCommitFileDiff(cwd, props.rev, path)
+    return res?.diff_content ?? null
+  }
+  if (props.pr) {
+    const res = await getPrDiff(cwd, props.pr)
+    return splitDiffByFile(res.diff_content).find((f) => f.path === path)?.text ?? null
+  }
+  const res = await getGitWholeFileDiff(cwd, path, false)
+  if (res.whole_file_refused) return null
+  return res.diffs.find((d) => d.path === path)?.diff_content ?? null
 }
 
 async function loadBlame(): Promise<void> {
@@ -182,7 +196,7 @@ function goToBlock(direction: 1 | -1): void {
 // and re-fetches (prev-value guard on update — same pattern the line/content scroll uses; mount
 // covers the initial load).
 const annoKey = () =>
-  `${props.filePath}|${props.cwd ?? ''}|${props.content?.length ?? 0}|${props.diffText ?? ''}|${props.blame ? 'b' : ''}`
+  `${props.filePath}|${props.cwd ?? ''}|${props.content?.length ?? 0}|${props.diffText ?? ''}|${props.blame ? 'b' : ''}|${props.rev ?? ''}|${props.pr ?? ''}`
 
 onMounted(() => {
   prevAnnoKey = annoKey()
@@ -455,10 +469,12 @@ const handleClose = () => {
                 v-for="(token, tokenIdx) in tokensFor(line)"
                 :key="tokenIdx"
                 :class="`tok-${token.type}`"
-                >{{ token.text || '\u00a0' }}</span
-              ><span v-if="blameTextFor(idx + 1)" data-testid="line-blame" class="blame-chip">{{
-                blameTextFor(idx + 1)
-              }}</span>
+                >{{ token.text || '\u00a0' }}</span><span
+                v-if="blameTextFor(idx + 1)"
+                data-testid="line-blame"
+                class="blame-chip"
+                >{{ blameTextFor(idx + 1) }}</span
+              >
             </td>
           </tr>
         </tbody>
@@ -555,39 +571,8 @@ const handleClose = () => {
   font-weight: 600;
 }
 
-/* Unified diff rows. */
-.diff-view {
-  white-space: pre-wrap;
-  word-break: break-word;
-  /* The code view gets its colour from `td.code-content`; the Diff view has
-     no such cell, so the row colour is set here — `.tok-plain` inherits it
-     instead of falling back to the (black) initial value. */
-  color: var(--semantic-text);
-}
-.diff-row {
-  display: flex;
-  gap: 8px;
-  padding: 0 12px 0 0;
-}
-.diff-old,
-.diff-new {
-  width: 3rem;
-  flex-shrink: 0;
-  text-align: right;
-  color: var(--semantic-text-dim);
-  opacity: 0.55;
-  user-select: none;
-}
-.diff-row-add {
-  background-color: var(--tint-success);
-}
-.diff-row-remove {
-  background-color: var(--tint-error);
-}
-.diff-row-hunk {
-  color: var(--color-blue);
-  background-color: var(--tint-info);
-}
+/* Unified diff rows live in CodeEditorDiff.vue — its own scoped styles, so the
+   rows it renders actually match them. */
 
 .code-row:hover {
   background-color: var(--semantic-wash);

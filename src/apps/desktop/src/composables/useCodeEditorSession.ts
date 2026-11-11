@@ -93,7 +93,14 @@ export function resolveFileParam(raw: string): string {
 
 export type CodeEditorSessionDeps = {
   readFile: (cwd: string, path: string) => Promise<{ content: string }>
-  syncUrl: (args: { path: string; cwd: string; line: number | null; diff: boolean }) => void
+  syncUrl: (args: {
+    path: string
+    cwd: string
+    line: number | null
+    diff: boolean
+    rev: string
+    pr: string
+  }) => void
 }
 
 export type RestoreArgs = {
@@ -103,6 +110,10 @@ export type RestoreArgs = {
   lineParam?: unknown
   /** `?mode=` — `'diff'` restores the changes view of the same file. */
   modeParam?: unknown
+  /** `?rev=` — the commit whose changes the diff shows. */
+  revParam?: unknown
+  /** `?pr=` — the pull request whose changes the diff shows. */
+  prParam?: unknown
 }
 
 export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
@@ -113,6 +124,9 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
   const requestedLine = ref<number | null>(null)
   // True when the target is the file's changes. Carried in the URL as `?mode=diff`.
   const diff = ref(false)
+  // WHICH changes: a commit sha (`?rev=`) or a pull request URL (`?pr=`). Empty means the worktree.
+  const rev = ref('')
+  const pr = ref('')
   // The cwd the file was opened with, stored explicitly. Reads always
   // use this — never a recomputed sidebar value that may have changed
   // or resolved to '' since the file was opened.
@@ -127,6 +141,8 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
 
   function clear(): void {
     diff.value = false
+    rev.value = ''
+    pr.value = ''
     file.value = null
     content.value = ''
     error.value = null
@@ -139,6 +155,8 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
   async function openFile(opts: OpenInCodeEditorOptions): Promise<void> {
     const line = typeof opts.line === 'number' && opts.line > 0 ? opts.line : null
     diff.value = opts.diff === true
+    rev.value = opts.rev ?? ''
+    pr.value = opts.pr ?? ''
     if (!opts.filePath) {
       clear()
       error.value = 'No file path'
@@ -176,7 +194,14 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
       if (file.value?.path !== opts.filePath) return
       content.value = response.content
       loadedKey.value = sessionKey(opts.filePath, opts.cwd, line)
-      deps.syncUrl({ path: opts.filePath, cwd: opts.cwd, line, diff: diff.value })
+      deps.syncUrl({
+        path: opts.filePath,
+        cwd: opts.cwd,
+        line,
+        diff: diff.value,
+        rev: rev.value,
+        pr: pr.value,
+      })
     } catch {
       if (file.value?.path !== opts.filePath) return
       content.value = ''
@@ -193,6 +218,8 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
   async function restoreFromUrl(args: RestoreArgs): Promise<void> {
     const line = parseRequestedLine(args.lineParam)
     diff.value = args.modeParam === 'diff'
+    rev.value = typeof args.revParam === 'string' ? args.revParam : ''
+    pr.value = typeof args.prParam === 'string' ? args.prParam : ''
     let path: string
     try {
       path = resolveFileParam(args.fileParam)
@@ -252,6 +279,8 @@ export function useCodeEditorSession(deps: CodeEditorSessionDeps) {
     requestedLine,
     cwd,
     diff,
+    rev,
+    pr,
     openFile,
     restoreFromUrl,
     clear,

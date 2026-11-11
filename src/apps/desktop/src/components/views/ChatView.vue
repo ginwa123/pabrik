@@ -964,6 +964,8 @@ const compactSession = async () => {
           :cwd="codeViewerModel.cwd"
           :line="codeViewerModel.line"
           :diff="codeViewerModel.diff"
+          :rev="codeViewerModel.rev"
+          :pr="codeViewerModel.pr"
           @close="codeViewerModel.close()"
         />
       </div>
