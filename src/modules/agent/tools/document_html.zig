@@ -21,6 +21,10 @@ pub const DocumentHtmlInput = struct {
     old_text: ?[]const u8 = null,
     new_text: ?[]const u8 = null,
     replace_all: ?bool = null,
+    /// `read`: byte offset to start the slice at.
+    offset: ?i64 = null,
+    /// `read`: maximum bytes to return.
+    limit: ?i64 = null,
 };
 
 pub const document_html_tool_system_prompt =
@@ -33,7 +37,7 @@ pub const document_html_tool_system_prompt =
     \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` nor `old_text` is rejected. `content` is the WHOLE new page, not a diff.
     \\- `edit` with `old_text` + `new_text` patches the page IN PLACE — the cheap path for a large page, because you send only the changed text. `old_text` must match EXACTLY ONCE; a miss or an ambiguous match is refused and nothing is written, so include enough surrounding markup to be unique, or set `replace_all: true`. `new_text: ""` deletes the match. `content` and `old_text` are mutually exclusive.
     \\- `edit` refuses a document that is not an HTML document. A markdown or office document is `document_markdown`'s to change; this tool will not overwrite it.
-    \\- `read` returns the full page source plus its title and format. Use it before an `edit`, and to confirm what landed.
+    \\- `read` returns the page source as a bounded SLICE: `limit` bytes (default 20000, max 200000) starting at `offset` (default 0). The result carries `content_bytes` (the whole page's length), `offset`, `next_offset` and `truncated` — pass `next_offset` as the next `offset` to continue, and stop when `next_offset` is null. Read a slice, not the whole page: a 4 MiB page is 200 pages, and you rarely need more than the part you are about to change.
     \\- To SEARCH or DELETE documents of any format, use `document_markdown`. This tool does not duplicate those actions.
     \\- A human can also create and edit HTML documents from the UI; both paths write the same table, so a document you write appears in their sidebar immediately.
     \\
@@ -90,6 +94,16 @@ pub const document_html_tool = AgentTool{
                     .name = "replace_all",
                     .type = "boolean",
                     .description = "`edit`: replace EVERY occurrence of `old_text` instead of requiring exactly one. Default false.",
+                },
+                .{
+                    .name = "offset",
+                    .type = "number",
+                    .description = "`read`: the BYTE offset to start the slice at (default 0). Pass the previous read's `next_offset` to continue.",
+                },
+                .{
+                    .name = "limit",
+                    .type = "number",
+                    .description = "`read`: maximum BYTES of the page to return (default 20000, max 200000). The result reports the whole body's `content_bytes` and a `next_offset` — page with it instead of raising this.",
                 },
             },
             .required = &.{"action"},
@@ -161,31 +175,11 @@ pub fn executeReadHtml(
     caller_session_id: []const u8,
     input: DocumentHtmlInput,
 ) ![]const u8 {
-    if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
-        return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action.");
-    }
-    if (caller_session_id.len == 0) {
-        return errorJSON(allocator, "Missing caller session — cannot resolve which workspace to read from.");
-    }
-    const workspace_id = (workspace_scope.resolveWorkspaceId(allocator, store.db, caller_session_id) catch null) orelse
-        return errorJSON(
-        allocator,
-        "This session is not linked to any workspace, so there is no document to read. " ++
-            "Run from a workspace chat (a project task or a workspace-scoped chat).",
-    );
-    defer allocator.free(workspace_id);
-
-    const row = store.getDocument(allocator, workspace_id, input.document_id) catch |err| {
-        const msg = switch (err) {
-            error.IdsRequired => "workspace_id and document_id required",
-            error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
-            error.QueryFailed => "Could not read the document (database error).",
-            error.OutOfMemory => "Out of memory",
-        };
-        return errorJSON(allocator, msg);
-    };
-    defer documents_store.freeDocumentRow(allocator, row);
-    return successJSON(allocator, row);
+    return document_mod.executeReadDocument(allocator, store, caller_session_id, .{
+        .document_id = input.document_id,
+        .offset = input.offset,
+        .limit = input.limit,
+    });
 }
 
 const exec_pabrikcore = @import("pabrikcore");
@@ -354,6 +348,10 @@ const Parsed = struct {
     title: []const u8 = "",
     content: []const u8 = "",
     format: []const u8 = "",
+    content_bytes: usize = 0,
+    offset: usize = 0,
+    next_offset: ?usize = null,
+    truncated: bool = false,
     err: ?[]const u8 = null,
 
     fn deinit(self: *Parsed) void {
@@ -374,6 +372,10 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
         title: []const u8 = "",
         content: []const u8 = "",
         format: []const u8 = "",
+        content_bytes: usize = 0,
+        offset: usize = 0,
+        next_offset: ?usize = null,
+        truncated: bool = false,
         @"error": ?[]const u8 = null,
     };
     const p = try std.json.parseFromSlice(Wire, allocator, raw, .{
@@ -388,6 +390,10 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
         .title = try allocator.dupe(u8, p.value.title),
         .content = try allocator.dupe(u8, p.value.content),
         .format = try allocator.dupe(u8, p.value.format),
+        .content_bytes = p.value.content_bytes,
+        .offset = p.value.offset,
+        .next_offset = p.value.next_offset,
+        .truncated = p.value.truncated,
         .err = if (p.value.@"error") |e| try allocator.dupe(u8, e) else null,
     };
 }
@@ -561,6 +567,32 @@ test "document_html read: returns the full page source" {
     try testing.expect(p.err == null);
     try testing.expectEqualStrings(page, p.content);
     try testing.expectEqualStrings("html", p.format);
+}
+
+test "document_html read: returns a bounded slice of the page, not the whole thing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const page = "<!doctype html><html><body><h1>Hello</h1></body></html>";
+    const created = try executeCreateHtml(alloc, ctx.store(), "s1", .{ .title = "Page", .content = page });
+    defer alloc.free(created);
+    var c = try parseJson(alloc, created);
+    defer c.deinit();
+
+    const out = try executeReadHtml(alloc, ctx.store(), "s1", .{
+        .document_id = c.id,
+        .limit = 15,
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err == null);
+    try testing.expectEqualStrings("<!doctype html>", p.content);
+    try testing.expectEqual(page.len, p.content_bytes);
+    try testing.expectEqual(@as(?usize, 15), p.next_offset);
+    try testing.expect(p.truncated);
 }
 
 test "document_html read: another workspace's document reports not found" {

@@ -131,7 +131,7 @@ pub fn run(
     a: args.DocumentsArgs,
 ) ![]u8 {
     switch (a.op) {
-        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_html_add, .doc_html_edit, .doc_html_read => return runToolOp(allocator, backend, a),
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_read => return runToolOp(allocator, backend, a),
         .doc_get => return documentBodyJson(allocator, backend, a),
         else => {},
     }
@@ -154,7 +154,7 @@ fn runToolOp(
         .doc_edit, .doc_html_edit => "edit",
         .doc_delete => "delete",
         .doc_search => "search",
-        .doc_html_read => "read",
+        .doc_read, .doc_html_read => "read",
         else => unreachable,
     };
     const tool_name: []const u8 = switch (a.op) {
@@ -187,10 +187,12 @@ fn runToolOp(
             .query = a.query,
             .limit = if (a.limit == 0) null else @as(i64, @intCast(a.limit)),
         }, .{ .emit_null_optional_fields = false }),
-        .doc_html_read => try std.json.Stringify.valueAlloc(allocator, .{
+        .doc_read, .doc_html_read => try std.json.Stringify.valueAlloc(allocator, .{
             .action = action,
             .document_id = a.document_id.?,
-        }, .{}),
+            .offset = if (a.offset == 0) null else @as(i64, @intCast(a.offset)),
+            .limit = if (a.limit == 0) null else @as(i64, @intCast(a.limit)),
+        }, .{ .emit_null_optional_fields = false }),
         else => unreachable,
     };
     defer allocator.free(arguments);
@@ -353,7 +355,7 @@ pub fn runWithDb(
 
         // These need the process singleton (the tool dispatch resolves the
         // object store from it), so they only run through `run`.
-        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get, .doc_html_add, .doc_html_edit, .doc_html_read => return error.RequiresBackend,
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_read => return error.RequiresBackend,
 
         .export_file => return exportJson(allocator, io, store, a),
 
