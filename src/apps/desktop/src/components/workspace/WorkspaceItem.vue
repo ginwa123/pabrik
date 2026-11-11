@@ -202,8 +202,7 @@ const openItemMenuDelete = () => {
 }
 
 // ─── Project icon (Migration 147) ────────────────────────────────────────
-// The glyph is a NAME stored on the row, so it follows the user to every
-// device; `projectIconFor` owns the override-vs-fallback rule.
+// The glyph is a NAME stored on the server row, not in this browser.
 const projectIcon = computed(() => projectIconFor(props.item, isExpanded.value))
 
 // Where the flyout anchors. Captured from the menu BEFORE it closes, so the
@@ -212,10 +211,13 @@ const iconPickerPos = ref<{ x: number; y: number } | null>(null)
 
 const openItemMenuChangeIcon = () => {
   const anchor = menuPos.value
+  // Measured, not assumed: the menu's width is content-driven, so a
+  // hardcoded offset would mis-anchor the flyout.
+  const menu = document.querySelector('[data-testid="open-new-tab-menu"]')
+  const right = menu?.getBoundingClientRect().right ?? (anchor ? anchor.x + 220 : 0)
   closeItemMenu()
   if (!anchor) return
-  // The menu is ~220px wide; the picker flies out past its right edge.
-  iconPickerPos.value = { x: anchor.x + 220, y: anchor.y }
+  iconPickerPos.value = { x: right, y: anchor.y }
 }
 
 const closeIconPicker = () => {
@@ -531,17 +533,8 @@ const handlePinnedDrop = (event: DragEvent) => {
           <!-- Processing slider (LLM worker is running on one of this
                item's tasks). Mounted at the bottom edge of the row,
                self-positioning (absolute bottom-0). -->
-          <!-- Chevron — bare text, exactly like the section headers
-               (Pinned / Recent / Projects / Documents). It used to sit in
-               a 24px hit box, which centred the glyph at x=20 while every
-               section-header chevron rendered at x=12 — three chevrons at
-               three different left edges. Bare text puts this one at 12
-               too, and the project name at 28, matching the section
-               titles. Rotates when expanded. -->
-          <!-- Chevron — a real `chevron-down` glyph in the same 12px mark
-               column the section headers use, so every chevron in the panel
-               shares one left edge. The rotation FLIPS relative to the old
-               `▶`: `chevron-down` already points down, so expanded is
+          <!-- Chevron — a `chevron-down` glyph in the same mark column the
+               section headers use. It already points down, so expanded is
                rotate(0deg) and collapsed is rotate(-90deg). -->
           <span
             class="w-[var(--sb-mark)] shrink-0 flex items-center transition-transform duration-200"
@@ -555,8 +548,6 @@ const handlePinnedDrop = (event: DragEvent) => {
           >
             <UiIcon name="chevron-down" :size="12" />
           </span>
-          <!-- Project glyph — the row's own icon when it has one, otherwise
-               `folder` / `folder-open` from the expanded state. -->
           <span
             class="shrink-0 flex items-center mr-1.5"
             data-testid="item-row-icon"

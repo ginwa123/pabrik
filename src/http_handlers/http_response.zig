@@ -14,7 +14,6 @@ pub const WorkspaceItemFullResponse = struct {
     created_at: ?[]const u8 = null,
     updated_at: ?[]const u8 = null,
     is_default: i64 = 0,
-    /// Migration 147 — the project's own glyph name, or null for "no override".
     icon: ?[]const u8 = null,
 };
 
@@ -89,7 +88,6 @@ pub const WorkspaceItemGetResponse = struct {
     created_at: ?[]const u8 = null,
     updated_at: ?[]const u8 = null,
     is_default: i64 = 0,
-    /// Migration 147 — the project's own glyph name, or null for "no override".
     icon: ?[]const u8 = null,
 };
 

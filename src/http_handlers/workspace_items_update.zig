@@ -68,9 +68,9 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     // handler uses this to decide whether to UPDATE or 400.
     const name_valid: bool = name_present and name_value != null;
 
-    // Optional icon (Migration 147). Same presence-vs-absence contract as
-    // `path`: a string sets the override, `null` or "" clears it back to the
-    // `folder` / `folder-open` default.
+    // Optional icon (Migration 147). A string sets the override, `null` or ""
+    // clears it. Unlike `path`, a non-string is a 400 rather than a silent
+    // clear.
     const icon_present = root.get("icon") != null;
     const icon_value: ?[]const u8 = blk: {
         const v = root.get("icon") orelse break :blk null;
@@ -239,8 +239,6 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             };
         }
     } else if (!icon_present) {
-        // Neither name, path nor icon in body → legacy item_type-only update
-        // path keeps the existing columns untouched.
         ai_mod.workspace_items.updateWorkspaceItem(
             allocator,
             sqlite_db,
@@ -290,8 +288,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             .created_at = null,
             .updated_at = null,
             // Echo the icon the caller asked for, so a client that only sent
-            // `{icon}` sees its own value back. Absent from the body → null,
-            // matching the `path` convention above.
+            // `{icon}` sees its own value back. Absent from the body → null.
             .icon = icon_value,
         }),
     });

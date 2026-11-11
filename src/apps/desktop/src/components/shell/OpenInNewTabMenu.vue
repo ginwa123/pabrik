@@ -34,8 +34,8 @@ withDefaults(
     /** Show "Delete project" for a workspace-item row. Same reason as
      * `showAddTask`: the row's `×` is hover-reveal only. */
     showDeleteItem?: boolean
-    /** Show "Change icon…" for a workspace-item row. The row's glyph is the
-     * only affordance for it, so the menu is where the action lives. */
+    /** Show "Change icon…" for a workspace-item row. The glyph itself is
+     * decorative, so the menu is the only route to the action. */
     showChangeIcon?: boolean
     /**      * Show "Rename task" for a sidebar task row. The row's pencil was one of three hover buttons
      * migrated into this menu, so the menu is now the only route to the action. */

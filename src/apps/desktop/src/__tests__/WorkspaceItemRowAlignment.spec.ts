@@ -85,8 +85,8 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
 
   it('renders the chevron as a glyph in the mark column, with no hit box', () => {
     // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at x=20 while every
-    // section-header chevron rendered at x=12. A bare glyph in the mark column puts this one at 12
-    // too, and the project name at 28 — matching the section titles.
+    // section-header chevron started at the gutter. A bare glyph in the mark column starts there
+    // too, and the project name at gutter + mark — matching the section titles.
     wrapper = mountItem(makeItem())
 
     const chevron = wrapper.find('[data-testid="item-row-chevron"]')

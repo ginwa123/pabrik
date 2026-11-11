@@ -437,8 +437,6 @@ fn runWorkspaceItems(
     log_file: ?[]const u8,
     db_request: db_target.Request,
 ) !void {
-    // Declared HERE, not returned by value: `App.db` / `.event_bus`
-    // point into this struct, so it must live in the caller's frame.
     var backend: headless.boot.Backend = undefined;
     headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
         std.log.err("headless: boot failed: {s}", .{@errorName(err)});
@@ -446,7 +444,6 @@ fn runWorkspaceItems(
     };
 
     const json = headless.workspace_items.run(allocator, &backend, a) catch |err| {
-        // stdout is the machine channel: a failure never prints a half object.
         std.log.err("headless: workspace-items {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
         std.process.exit(1);
     };

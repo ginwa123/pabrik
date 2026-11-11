@@ -32,8 +32,6 @@ const panel = ref<HTMLElement | null>(null)
 const search = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
 
-/** Flip to the left of the anchor when the panel would run off the right
- * edge, then clamp both axes so it never leaves the viewport. */
 const position = computed(() => {
   const flipLeft = props.x + PANEL_WIDTH > window.innerWidth - VIEWPORT_MARGIN
   const rawX = flipLeft ? props.x - PANEL_WIDTH - 6 : props.x + 6

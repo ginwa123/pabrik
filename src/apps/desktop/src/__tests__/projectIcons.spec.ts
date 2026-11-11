@@ -1,6 +1,5 @@
-/** Behaviour of the per-project icon: which glyph a row draws, and what the
- * row looks like after the server accepts or rejects the write. The icon lives
- * on `workspace_items.icon` (Migration 147). */
+/** Behaviour of the per-project icon: which glyph a row resolves to, and what
+ * the store's row holds after the server accepts or rejects the write. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -41,8 +40,7 @@ describe('projectIconFor', () => {
   })
 
   it('falls back to the folder pair when the stored name is not one this build can draw', () => {
-    // A row written by a build that had an icon this one dropped. Rendering
-    // nothing would leave a blank row, so the fallback is the behaviour.
+    // A row written by a build that had an icon this one dropped.
     expect(projectIconFor({ icon: 'icon-from-a-future-build' }, false)).toBe('folder')
     expect(projectIconFor({ icon: 'icon-from-a-future-build' }, true)).toBe('folder-open')
   })
@@ -77,6 +75,15 @@ describe('PROJECT_ICON_NAMES', () => {
   it('is sorted, so the picker grid does not reshuffle between builds', () => {
     const sorted = [...PROJECT_ICON_NAMES].sort()
     expect(PROJECT_ICON_NAMES).toEqual(sorted)
+  })
+
+  it('offers only names the server will accept', () => {
+    // The server rejects anything outside [a-z0-9-]{1,64} (workspace_items_update.zig
+    // isValidIconName). A registry key like `chevron_down` would be offered by the
+    // picker and 400'd on save, so the two shapes have to stay in step.
+    const serverAccepts = /^[a-z0-9-]{1,64}$/
+    const rejected = PROJECT_ICON_NAMES.filter((name) => !serverAccepts.test(name))
+    expect(rejected).toEqual([])
   })
 })
 
@@ -114,7 +121,6 @@ describe('workspacesStore.setItemIcon', () => {
 
     await expect(store.setItemIcon(WORKSPACE_ID, ITEM_ID, 'tree')).rejects.toThrow('offline')
 
-    // The row must not keep a glyph the database never stored.
     expect(store.workspaces[0]!.items[0]!.icon).toBe('box')
   })
 })

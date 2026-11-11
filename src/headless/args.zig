@@ -199,8 +199,8 @@ pub const DocumentsArgs = struct {
     out: ?[]const u8 = null,
 };
 
-/// The project-row verbs. `set-icon` is the write the `Change icon…` menu
-/// makes; `list` is the read that proves it persisted.
+/// The project-row verbs. `set-icon` writes the same column the `Change icon…`
+/// menu writes over HTTP; `list` is the read that proves it persisted.
 pub const WorkspaceItemsOp = enum {
     list,
     set_icon,
@@ -212,8 +212,8 @@ pub const WorkspaceItemsArgs = struct {
     workspace_id: []const u8 = "",
     /// `set-icon`: the project row being changed.
     item_id: []const u8 = "",
-    /// `set-icon`: the glyph name. Empty means "clear the override", which is
-    /// what `Reset to default` writes.
+    /// `set-icon`: the glyph name. Empty clears the override — the same effect
+    /// as `Reset to default`, which sends JSON null instead.
     icon: []const u8 = "",
 };
 
@@ -925,9 +925,6 @@ fn parseMemories(argv: []const []const u8) ParseError!Outcome {
     return .{ .memories = got };
 }
 
-/// `workspace-items` parses its own flag set for the same reason `documents`
-/// does: the shared table describes the server CLI, and these three flags
-/// exist only in this verb.
 fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return fail(.{ .kind = .workspace_items_unknown_op });
 

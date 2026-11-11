@@ -580,7 +580,6 @@ pub const allMigrations: []const Migration = &.{
     // Migration 145 — one pending delegation per session, set by `delegate_agent`.
     .{ .version = Migration145AddPendingDelegate.version, .name = Migration145AddPendingDelegate.name, .up = Migration145AddPendingDelegate.up },
     .{ .version = Migration146AddMcpOAuth.version, .name = Migration146AddMcpOAuth.name, .up = Migration146AddMcpOAuth.up },
-    // Migration 147 — a project row can carry its own glyph (`workspace_items.icon`).
     .{ .version = Migration147AddWorkspaceItemIcon.version, .name = Migration147AddWorkspaceItemIcon.name, .up = Migration147AddWorkspaceItemIcon.up },
 };
 

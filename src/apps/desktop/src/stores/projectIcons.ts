@@ -1,6 +1,6 @@
 /** The project-row glyph rules: is a stored name drawable, and what a row with
  * no override draws. The name lives on `workspace_items.icon` (Migration 147),
- * so it follows the user to every device. */
+ * on the server, so it is not per-browser state. */
 import { ICON_PATHS, type UiIconName } from '../components/ui/icons'
 
 /** Every name the picker offers, sorted so the grid order is stable across
