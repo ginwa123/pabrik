@@ -259,6 +259,77 @@ pub const Held = union(enum) {
     }
 };
 
+/// The three MCP request bodies, in wire order.
+pub const initialize_body = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"pabrik\",\"version\":\"0.0.1\"}}}";
+pub const initialized_body = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
+pub const tools_list_body = "{\"jsonrpc\":\"2.0\",\"id\":\"2\",\"method\":\"tools/list\",\"params\":{}}";
+
+/// A transport seen as three calls, so the handshake can be driven by a
+/// recording fake in a test instead of a spawned child.
+pub const Wire = struct {
+    ctx: *anyopaque,
+    send_fn: *const fn (ctx: *anyopaque, body: []const u8, deadline_ns: u64, cancel: ?*const fn () bool) anyerror!void,
+    recv_fn: *const fn (ctx: *anyopaque, deadline_ns: u64, cancel: ?*const fn () bool) anyerror![]u8,
+    free_fn: *const fn (ctx: *anyopaque, body: []u8) void,
+
+    pub fn send(self: Wire, body: []const u8, deadline_ns: u64, cancel: ?*const fn () bool) !void {
+        return self.send_fn(self.ctx, body, deadline_ns, cancel);
+    }
+
+    pub fn recv(self: Wire, deadline_ns: u64, cancel: ?*const fn () bool) ![]u8 {
+        return self.recv_fn(self.ctx, deadline_ns, cancel);
+    }
+
+    pub fn free(self: Wire, body: []u8) void {
+        self.free_fn(self.ctx, body);
+    }
+};
+
+fn wireSend(ctx: *anyopaque, body: []const u8, deadline_ns: u64, cancel: ?*const fn () bool) anyerror!void {
+    const t: *const Transport = @ptrCast(@alignCast(ctx));
+    return t.send(body, deadline_ns, cancel);
+}
+
+fn wireRecv(ctx: *anyopaque, deadline_ns: u64, cancel: ?*const fn () bool) anyerror![]u8 {
+    const t: *const Transport = @ptrCast(@alignCast(ctx));
+    return t.recv(deadline_ns, cancel);
+}
+
+fn wireFree(ctx: *anyopaque, body: []u8) void {
+    const t: *const Transport = @ptrCast(@alignCast(ctx));
+    t.allocator().free(body);
+}
+
+/// `transport` must outlive the returned `Wire`.
+pub fn wireOf(transport: *const Transport) Wire {
+    return .{
+        .ctx = @constCast(@ptrCast(transport)),
+        .send_fn = wireSend,
+        .recv_fn = wireRecv,
+        .free_fn = wireFree,
+    };
+}
+
+/// initialize -> notifications/initialized -> tools/list. Returns the
+/// tools/list response body, allocated by the transport.
+pub fn handshakeAndListTools(wire: Wire, deadline_ns: u64, cancel: ?*const fn () bool) ![]u8 {
+    try wire.send(initialize_body, deadline_ns, cancel);
+    try wire.send(initialized_body, deadline_ns, cancel);
+    try wire.send(tools_list_body, deadline_ns, cancel);
+    const init_resp = try wire.recv(deadline_ns, cancel);
+    wire.free(init_resp);
+    return wire.recv(deadline_ns, cancel);
+}
+
+/// initialize -> notifications/initialized, for a call that only needs the
+/// session live before `tools/call`.
+pub fn handshake(wire: Wire, deadline_ns: u64, cancel: ?*const fn () bool) !void {
+    try wire.send(initialize_body, deadline_ns, cancel);
+    try wire.send(initialized_body, deadline_ns, cancel);
+    const init_resp = try wire.recv(deadline_ns, cancel);
+    wire.free(init_resp);
+}
+
 pub const LeaseOptions = struct {
     /// How long to wait for another caller's in-flight transaction. Never 0:
     /// `AcquireOptions`' 0 means "wait forever", which parks a neighbour.
@@ -421,4 +492,59 @@ test "an opener with no workspace, no socket or no argv refuses before any RPC" 
         Error.GuestOpenRefused,
         openChannel(testing.allocator, testing.io, .{ .workspace_id = "ws_1", .socket = "/tmp/s.sock" }, "s", &.{}),
     );
+}
+
+const RecordingWire = struct {
+    sent: std.ArrayList([]const u8) = .empty,
+    recv_count: usize = 0,
+
+    fn send(ctx: *anyopaque, body: []const u8, _: u64, _: ?*const fn () bool) anyerror!void {
+        const self: *RecordingWire = @ptrCast(@alignCast(ctx));
+        try self.sent.append(std.testing.allocator, body);
+    }
+
+    fn recv(ctx: *anyopaque, _: u64, _: ?*const fn () bool) anyerror![]u8 {
+        const self: *RecordingWire = @ptrCast(@alignCast(ctx));
+        self.recv_count += 1;
+        return std.testing.allocator.dupe(u8, "{}");
+    }
+
+    fn free(_: *anyopaque, body: []u8) void {
+        std.testing.allocator.free(body);
+    }
+
+    fn wire(self: *RecordingWire) Wire {
+        return .{
+            .ctx = self,
+            .send_fn = RecordingWire.send,
+            .recv_fn = RecordingWire.recv,
+            .free_fn = RecordingWire.free,
+        };
+    }
+};
+
+test "handshakeAndListTools sends initialize before tools/list" {
+    var rec = RecordingWire{};
+    defer rec.sent.deinit(std.testing.allocator);
+
+    const resp = try handshakeAndListTools(rec.wire(), 1000, null);
+    std.testing.allocator.free(resp);
+
+    try std.testing.expectEqual(@as(usize, 3), rec.sent.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, rec.sent.items[0], "\"initialize\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rec.sent.items[1], "notifications/initialized") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rec.sent.items[2], "\"tools/list\"") != null);
+    try std.testing.expectEqual(@as(usize, 2), rec.recv_count);
+}
+
+test "handshake sends initialize and initialized, and reads one reply" {
+    var rec = RecordingWire{};
+    defer rec.sent.deinit(std.testing.allocator);
+
+    try handshake(rec.wire(), 1000, null);
+
+    try std.testing.expectEqual(@as(usize, 2), rec.sent.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, rec.sent.items[0], "\"initialize\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rec.sent.items[1], "notifications/initialized") != null);
+    try std.testing.expectEqual(@as(usize, 1), rec.recv_count);
 }

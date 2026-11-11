@@ -1453,6 +1453,8 @@ pub const LlmConfig = struct {
         args: ?[]const []const u8 = null,
         /// Optional working directory. `null` means inherit from the parent.
         cwd: ?[]const u8 = null,
+        /// Whether the agent may use this server. Defaults to true.
+        enabled: bool = true,
     };
 
     /// Add a new stdio MCP server to the live config in-place.
@@ -1472,7 +1474,7 @@ pub const LlmConfig = struct {
             .command = try self.allocator.dupe(u8, input.command),
             .args = null,
             .cwd = if (input.cwd) |c| try self.allocator.dupe(u8, c) else null,
-            .enabled = true,
+            .enabled = input.enabled,
         };
         errdefer freeMcpServerConfig(&entry, self.allocator);
 
@@ -1519,6 +1521,8 @@ pub const LlmConfig = struct {
         /// Optional request headers (e.g. `Authorization`). Each entry's
         /// `name` + `value` are deep-copied into the new headers map.
         headers: ?[]const McpHeaderInput = null,
+        /// Whether the agent may use this server. Defaults to true.
+        enabled: bool = true,
     };
 
     /// One header entry for `addMcpServerHttp` / `editMcpServer`.
@@ -1544,7 +1548,7 @@ pub const LlmConfig = struct {
             .command = null,
             .args = null,
             .cwd = null,
-            .enabled = true,
+            .enabled = input.enabled,
         };
         errdefer freeMcpServerConfig(&entry, self.allocator);
 

@@ -47,6 +47,9 @@ pub const AddMcpServerInput = struct {
     /// HTTP headers. Optional. Each entry is `{name, value}`; the array
     /// shape mirrors the frontend `McpServerModal`.
     headers: ?[]const Header = null,
+
+    /// Whether the agent may use this server. Omit for enabled.
+    enabled: ?bool = null,
 };
 
 /// Tool definition for the LLM. The description is the agent's primary
@@ -105,6 +108,11 @@ pub const add_mcp_server_tool = AgentTool{
                     .name = "headers",
                     .type = "array",
                     .description = "HTTP headers (optional). An array of `{name,value}` objects, e.g. `[{\"name\":\"Authorization\",\"value\":\"Bearer ...\"}]`.",
+                },
+                .{
+                    .name = "enabled",
+                    .type = "boolean",
+                    .description = "Whether the agent may use this server (optional, default true). `false` registers it without exposing its tools.",
                 },
             },
             .required = &.{ "name", "transport" },
@@ -308,6 +316,7 @@ pub fn executeAddMcpServerToJSON(
             .name = input.name,
             .url = input.url,
             .headers = hdr_inputs,
+            .enabled = input.enabled orelse true,
         }) catch |err| {
             const owned_msg = addErrMessage(allocator, err, input.name);
             defer if (owned_msg) |m| allocator.free(m);
@@ -318,6 +327,7 @@ pub fn executeAddMcpServerToJSON(
             .name = input.name,
             .command = input.command,
             .args = input.args,
+            .enabled = input.enabled orelse true,
         }) catch |err| {
             const owned_msg = addErrMessage(allocator, err, input.name);
             defer if (owned_msg) |m| allocator.free(m);
@@ -552,6 +562,7 @@ fn successJSON(
         .command = clean_command,
         .url = clean_url,
         .args = clean_args.items,
+        .enabled = input.enabled orelse true,
         .persisted = "false",
         .tools = @as(?[]const u8, null),
         .note = "MCP server registered in the live config. Its tools will appear as mcp_<server>_<tool> in your next system-prompt rebuild. Disk persistence + live-reload are performed by the exec wrapper.",
@@ -651,6 +662,7 @@ const agent = exec_pabrikcore.agent;
 const exec_config_mod = exec_pabrikcore.config;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
+const guest_mcp = @import("../loop/guest_mcp.zig");
 
 pub fn execAddMcpServer(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResult {
     const parsed = std.json.parseFromSlice(
@@ -1165,31 +1177,16 @@ fn listAndAppendToolsStdio(
 
     const reg = exec_pabrikcore.mcpStdioRegistry(ctx.allocator);
     var lease = reg.acquire(server_name, argv, .{
-        // Bounded: this runs on a session's loop thread and shares the
-        // per-server child with every other session, so `AcquireOptions{}`
-        // (wait forever) would park the session with no deadline at all.
         .wait_ns = 60 * std.time.ns_per_s,
     }) catch return inner_json;
     defer lease.release();
-    const client = lease.client();
-    const req = ctx.allocator.dupe(u8,
-        \\\\{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}
-    ) catch return inner_json;
-    defer ctx.allocator.free(req);
-    // 60s deadline matches `handle_mcp_tool.zig` and
-    // `prompts_build_messages_for_agent_prompt.zig`. Without a deadline,
-    // a hung child blocks the tool-exec handler indefinitely.
+
+    var transport = guest_mcp.Transport{ .stdio = lease.client() };
     const deadline_ns: u64 = 60 * std.time.ns_per_s;
-    client.send(req, deadline_ns) catch |err| {
-        if (err == error.SendTimeout) lease.markStale();
+    const resp = guest_mcp.handshakeAndListTools(guest_mcp.wireOf(&transport), deadline_ns, null) catch |err| {
+        if (err == error.RecvTimeout or err == error.SendTimeout) lease.markStale();
         return inner_json;
     };
-    const resp = client.recv(deadline_ns, null) catch |err| {
-        if (err == error.RecvTimeout) lease.markStale();
-        return inner_json;
-    };
-    // No `free` for `resp`: it came from `client.recv`, which allocates
-    // in the client's own arena, not in `ctx.allocator`.
 
     return appendToolNames(ctx, inner_json, server_name, resp);
 }
@@ -1915,7 +1912,7 @@ test "add_mcp_server_tool JSON schema: name=add_mcp_server, required is name+tra
     try testing.expectEqualStrings("transport", tool.function.parameters.required[1]);
 
     // 6 properties: name, transport, command, args, url, headers.
-    try testing.expectEqual(@as(usize, 6), tool.function.parameters.properties.len);
+    try testing.expectEqual(@as(usize, 7), tool.function.parameters.properties.len);
 
     // `headers` is an ARRAY of {name,value} objects (the frontend
     // McpServerModal shape), not the on-disk {key:value} object.
