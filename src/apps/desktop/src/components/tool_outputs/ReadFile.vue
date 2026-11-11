@@ -2,7 +2,13 @@
 import { computed, ref } from 'vue'
 import ToolCardHeader from './_shared/ToolCardHeader.vue'
 import ToolParameters from './_shared/ToolParameters.vue'
-import { parseReadFile, normalizeToolContent } from './_shared/toolOutputParser'
+import ImagePreview from '../preview/ImagePreview.vue'
+import {
+  parseReadFile,
+  normalizeToolContent,
+  basenameOfPath,
+  formatBytes,
+} from './_shared/toolOutputParser'
 import { extractParam } from '@/helpers/extractParam'
 import { detectLanguage, highlightLine, type Token } from '@/helpers/codeHighlight'
 
@@ -11,9 +17,12 @@ const props = defineProps<{
   expanded?: boolean
   cwd?: string
   parameters?: string
+  /** The picture the backend attached to this tool result (`llm_history.image_url`, decoded
+   * into a list by the chat view). An image read carries no text content at all, so this is
+   * the only place the bytes exist. */
+  imageUrls?: string[]
 }>()
 
-const isExpanded = ref(props.expanded ?? false)
 const normalized = computed(() => normalizeToolContent(props.content))
 const parsed = computed(() => {
   const p = parseReadFile(normalized.value.data)
@@ -65,6 +74,50 @@ const isRunning = computed(() => {
   return isEmpty && displayPath.value !== null
 })
 
+// The picture itself. The backend inlines it as a `data:` URL on the tool result, so no
+// download round-trip is needed (and none would work: the download endpoint sandboxes to
+// the session cwd, while a screenshot often lives outside it).
+const imageSrc = computed((): string | null => {
+  for (const url of props.imageUrls ?? []) {
+    if (typeof url === 'string' && url.trim() !== '') return url
+  }
+  return null
+})
+
+// The payload declares an image even when the data URL never arrived (a row persisted
+// before the backend attached it). The card must say so instead of claiming "(empty)".
+const declaredImageMime = computed((): string | null => {
+  const mime = parsed.value.mime
+  return mime && mime.toLowerCase().startsWith('image/') ? mime : null
+})
+
+const isImageRead = computed(() => imageSrc.value !== null || declaredImageMime.value !== null)
+
+const imageMeta = computed((): string => {
+  const mime = declaredImageMime.value ?? 'image'
+  const bytes = parsed.value.bytes
+  return bytes === null ? mime : `${mime} · ${formatBytes(bytes)}`
+})
+
+const imageAlt = computed((): string => {
+  const path = displayPath.value
+  return path ? basenameOfPath(path) : 'image'
+})
+
+// An image read has no text to read, so the picture IS the answer: the card opens itself
+// when one arrives. A user toggle wins from then on — derived, never watched (the desktop
+// app bans `watch`).
+const userExpanded = ref<boolean | null>(null)
+const isExpanded = computed(
+  () => userExpanded.value ?? (isImageRead.value || (props.expanded ?? false)),
+)
+
+// An inline image has no intrinsic size until it decodes, so the card would pop taller
+// mid-scroll. Reserve the space until load (an error counts as arrived — the img hides
+// itself and the reserve must drop too).
+const imageLoaded = ref(false)
+const fullscreenSrc = ref<string | null>(null)
+
 // Language for code coloring, derived from the file path. Unknown
 // extensions fall back to plaintext (plain-text rendering, exactly as before).
 const fileLanguage = computed(() => detectLanguage(displayPath.value ?? ''))
@@ -76,8 +129,32 @@ const highlightedLines = computed((): Token[][] => {
   return contentLines.value.map((line) => highlightLine(line, lang))
 })
 
+const rightMeta = computed((): string => {
+  if (isRunning.value) return 'running…'
+  if (parsed.value.error) return 'Error'
+  if (isImageRead.value) return imageMeta.value
+  return `${lineCount.value}L`
+})
+
 const handleToggle = (next: boolean) => {
-  isExpanded.value = next
+  userExpanded.value = next
+}
+
+const openFullscreen = () => {
+  fullscreenSrc.value = imageSrc.value
+}
+
+const closeFullscreen = () => {
+  fullscreenSrc.value = null
+}
+
+const onImageLoad = () => {
+  imageLoaded.value = true
+}
+
+const onImageError = (e: Event) => {
+  ;(e.target as HTMLImageElement).style.display = 'none'
+  imageLoaded.value = true
 }
 </script>
 
@@ -93,14 +170,33 @@ const handleToggle = (next: boolean) => {
       :expanded="isExpanded"
       :expandable="true"
       :cwd="cwd"
-      :right-meta="isRunning ? 'running…' : parsed.error ? 'Error' : `${lineCount}L`"
+      :right-meta="rightMeta"
       @update:expanded="handleToggle"
     />
 
     <div v-if="isExpanded" class="border-t border-[var(--color-border)]">
-      <div v-if="parsed.error" class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense">
+      <div
+        v-if="parsed.error"
+        class="flex gap-2 px-2 py-1.5 text-[var(--semantic-error)] text-dense"
+      >
         <span class="font-semibold shrink-0">Error:</span>
         <span class="whitespace-pre-wrap break-all">{{ parsed.error }}</span>
+      </div>
+      <div
+        v-else-if="imageSrc"
+        class="flex justify-center rounded bg-[var(--semantic-wash-strong)] p-1.5"
+        :class="{ 'min-h-40 items-center animate-pulse': !imageLoaded }"
+        data-testid="read-file-image"
+      >
+        <img
+          :src="imageSrc"
+          :alt="imageAlt"
+          class="max-h-96 w-full cursor-zoom-in rounded object-contain"
+          data-testid="read-file-image-img"
+          @click="openFullscreen"
+          @load="onImageLoad"
+          @error="onImageError"
+        />
       </div>
       <div
         v-else-if="contentLines.length > 0"
@@ -117,11 +213,17 @@ const handleToggle = (next: boolean) => {
           >
           <span class="rf-line whitespace-pre"
             ><span v-for="(tok, tIdx) in tokens" :key="tIdx" :class="'tok-' + tok.type">{{
-              tok.text || ' '
+              tok.text || ' '
             }}</span></span
           >
         </div>
       </div>
+      <pre
+        v-else-if="declaredImageMime"
+        class="p-2 m-0 bg-[var(--semantic-wash)] whitespace-pre-wrap leading-relaxed text-[var(--semantic-text-dim)] text-dense"
+        data-testid="read-file-image-missing"
+        >{{ imageMeta }} — the picture was not attached to this result. Read the file again to see
+        it.</pre>
       <pre
         v-else
         class="p-2 m-0 bg-[var(--semantic-wash)] whitespace-pre overflow-x-visible leading-relaxed text-[var(--semantic-text)] text-dense hover:bg-[var(--tint-accent)]"
@@ -129,5 +231,7 @@ const handleToggle = (next: boolean) => {
 (empty)</pre>
       <ToolParameters :parameters="parameters" />
     </div>
+
+    <ImagePreview :src="fullscreenSrc ?? ''" @close="closeFullscreen" />
   </div>
 </template>

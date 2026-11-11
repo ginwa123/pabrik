@@ -49,6 +49,9 @@ export interface ToolCardMessage {
   diffview_after?: string
   tool_calls_json?: string
   finish_reason?: string
+  /** Pictures the backend attached to this tool result (`llm_history.image_url`, decoded by
+   * the chat view). A `read_file` of an image carries its bytes here and nowhere else. */
+  image_urls?: string[]
 }
 
 export interface ToolCardData {
@@ -89,6 +92,7 @@ const emit = defineEmits<{
       :expanded="expanded"
       :cwd="cwd"
       :parameters="parameters"
+      :image-urls="message.image_urls"
     />
     <WriteFile
       v-else-if="message.tool_name === 'write_file'"
@@ -142,11 +146,7 @@ const emit = defineEmits<{
         message.tool_name === 'command'
       "
       :tool-name="
-        message.tool_name === 'pwsh'
-          ? 'pwsh'
-          : message.tool_name === 'command'
-            ? 'command'
-            : 'bash'
+        message.tool_name === 'pwsh' ? 'pwsh' : message.tool_name === 'command' ? 'command' : 'bash'
       "
       :content="content"
       :expanded="expanded"
