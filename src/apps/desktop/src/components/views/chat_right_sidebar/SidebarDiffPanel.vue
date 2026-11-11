@@ -262,6 +262,7 @@ const togglePreview = (path: string) => {
 const { onFileRowClick, onPrFileRowClick, onCommitFileRowClick, onConflictFileClick } =
   useSidebarDiffRowOpen({
     cwd: () => props.cwd,
+    prUrl: () => props.prUrl ?? '',
     prFiles,
     openInBrowserTab: openFileInNewTab,
     selectFile,

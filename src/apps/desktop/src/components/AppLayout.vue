@@ -22,6 +22,7 @@ import {
   CODE_VIEWER_STATE_KEY, OPEN_IN_CODE_EDITOR_KEY, type CodeViewerState, type OpenInCodeEditorFn,
 } from '../composables/useCodeEditor'
 import { useCodeEditorSession } from '../composables/useCodeEditorSession'
+import { buildCodeViewerState } from './appLayout/codeViewerState'
 import { useDesignHandlers } from '../composables/useDesignHandlers'
 import { useCurrentMainView } from '../composables/useCurrentMainView'
 import { mount as mountFpsOverlay, unmount as unmountFpsOverlay } from '../helpers/fpsOverlay'
@@ -107,8 +108,8 @@ onUnmounted(() => unmountFpsOverlay())
 // error / requested line / cwd).
 const codeEditorSession = useCodeEditorSession({
   readFile: (cwd, path) => api.readFileContent(cwd, path),
-  syncUrl: ({ path, cwd, line, diff }) => {
-    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line, diff, cwd) })
+  syncUrl: ({ path, cwd, line, diff, rev, pr }) => {
+    router.replace({ path: route.path, query: codeEditorQuery(route.query, path, line, diff, cwd, rev, pr) })
   },
 })
 
@@ -135,16 +136,7 @@ provide<OpenInCodeEditorFn>(OPEN_IN_CODE_EDITOR_KEY, openInCodeEditor)
 
 // The open file itself, so a SURFACE can render it: ChatView paints it in its center column next to
 // the chat-owned right sidebar (the user opened the file FROM that sidebar.
-const codeViewerState: CodeViewerState = {
-  file: codeEditorSession.file,
-  content: codeEditorSession.content,
-  loading: codeEditorSession.loading,
-  error: codeEditorSession.error,
-  requestedLine: codeEditorSession.requestedLine,
-  cwd: codeEditorSession.cwd,
-  diff: codeEditorSession.diff,
-  close: closeCodeEditor,
-}
+const codeViewerState: CodeViewerState = buildCodeViewerState(codeEditorSession, closeCodeEditor)
 provide<CodeViewerState>(CODE_VIEWER_STATE_KEY, codeViewerState)
 
 const { handleBootUrl } = useAppLayoutBootUrl({

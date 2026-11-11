@@ -313,6 +313,14 @@ jobs:
         # clean), so without this step the job is red for an environmental
         # reason rather than a code one.
         #
+        # The pinned release tarball, NOT `apt-get install ripgrep`. The
+        # Ubuntu mirrors are not reliably reachable from a hosted runner —
+        # `Temporary failure resolving 'security.ubuntu.com'` — and that
+        # turned this job red on every PR for a reason no diff could fix.
+        # `stage-bundled-ripgrep.sh` is the same sha256-verified download the
+        # release build already uses, and it comes from github.com, which
+        # this job reaches anyway to clone the repo.
+        #
         # The other jobs that need rg install it too — see the
         # "install ripgrep" steps in ci-backend.yml and ci-functional.yml,
         # which need it because src/modules/agent/tools/search.zig spawns
@@ -323,8 +331,13 @@ jobs:
           if command -v rg >/dev/null 2>&1; then
             echo "ok ripgrep already at $(command -v rg)"
           else
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq ripgrep
+            dest="${RUNNER_TEMP}/rg-bin"
+            mkdir -p "$dest"
+            bash scripts/stage-bundled-ripgrep.sh x86_64-linux-gnu "$dest/rg"
+            # GITHUB_PATH covers the steps after this one; the export covers
+            # the check on the next line.
+            echo "$dest" >> "$GITHUB_PATH"
+            export PATH="$dest:$PATH"
           fi
           command -v rg >/dev/null 2>&1 || { echo "x ripgrep still missing after install" >&2; exit 1; }
           rg --version | head -1

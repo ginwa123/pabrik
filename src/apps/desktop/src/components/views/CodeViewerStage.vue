@@ -13,6 +13,10 @@ defineProps<{
   line?: number | null
   /** The target is the file's changes: open the diff view. */
   diff?: boolean
+  /** The commit whose changes the diff shows. Empty = the worktree's. */
+  rev?: string
+  /** The pull request whose changes the diff shows. Empty = the worktree's. */
+  pr?: string
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +78,8 @@ const emit = defineEmits<{
       :cwd="cwd"
       :line="line ?? undefined"
       :initial-diff="diff === true"
+      :rev="rev"
+      :pr="pr"
       @close="emit('close')"
     />
   </div>

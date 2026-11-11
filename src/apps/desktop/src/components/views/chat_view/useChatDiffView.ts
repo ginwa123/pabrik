@@ -124,6 +124,8 @@ export function useChatDiffView(deps: ChatDiffViewDeps) {
     line: codeViewer?.requestedLine.value ?? null,
     cwd: codeViewer?.cwd.value ?? '',
     diff: codeViewer?.diff.value ?? false,
+    rev: codeViewer?.rev.value ?? '',
+    pr: codeViewer?.pr.value ?? '',
     close: () => codeViewer?.close(),
   }))
   const showCodeViewer = computed(() => codeViewerModel.value.file !== null)
