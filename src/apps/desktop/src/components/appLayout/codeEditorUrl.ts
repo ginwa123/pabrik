@@ -6,6 +6,8 @@ export function codeEditorQuery(
   line: number | null,
   diff = false,
   cwd = '',
+  rev = '',
+  pr = '',
 ): Record<string, string> {
   const next: Record<string, string> = {}
   for (const [k, v] of Object.entries(query)) {
@@ -17,7 +19,9 @@ export function codeEditorQuery(
       k === 'line' ||
       k === 'cwd' ||
       k === 'mode' ||
-      k === 'tab'
+      k === 'tab' ||
+      k === 'rev' ||
+      k === 'pr'
     ) {
       continue
     }
@@ -31,6 +35,10 @@ export function codeEditorQuery(
   if (inherited.length > 0) next.cwd = inherited
   // The mode is the tab's identity for a diff: it must never be inherited from the URL it replaced.
   if (diff) next.mode = 'diff'
+  // WHICH diff. A commit row's changes are that commit's and a PR row's are the request's — neither
+  // is the worktree's, so the source travels with the tab instead of being guessed from the cwd.
+  if (rev.length > 0) next.rev = rev
+  if (pr.length > 0) next.pr = pr
   if (line !== null) {
     next.line = String(line)
   }

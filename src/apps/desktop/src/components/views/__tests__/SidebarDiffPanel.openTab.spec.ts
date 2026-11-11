@@ -171,7 +171,12 @@ describe('SidebarDiffPanel file rows open an editor tab', () => {
     await flushPromises()
 
     expect(openInEditor).toHaveBeenCalledTimes(1)
-    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'dirty.txt', cwd: '/repo', diff: true })
+    expect(openInEditor).toHaveBeenCalledWith({
+      filePath: 'dirty.txt',
+      cwd: '/repo',
+      diff: true,
+      pr: 'https://github.com/acme/app/pull/1',
+    })
     expect(panelOf(wrapper).emitted('show-diff')).toBeUndefined()
   })
 
@@ -189,7 +194,12 @@ describe('SidebarDiffPanel file rows open an editor tab', () => {
     await flushPromises()
 
     expect(openInEditor).toHaveBeenCalledTimes(1)
-    expect(openInEditor).toHaveBeenCalledWith({ filePath: 'src/main.zig', cwd: '/repo', diff: true })
+    expect(openInEditor).toHaveBeenCalledWith({
+      filePath: 'src/main.zig',
+      cwd: '/repo',
+      diff: true,
+      rev: COMMIT.sha,
+    })
     expect(getGitCommitFileDiffMock).not.toHaveBeenCalled()
     expect(panelOf(wrapper).emitted('show-diff')).toBeUndefined()
   })

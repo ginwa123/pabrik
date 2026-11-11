@@ -66,3 +66,40 @@ const rowClass = (type: string): string => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.diff-view {
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* The code view gets its colour from `td.code-content`; the Diff view has no such cell, so the
+     row colour is set here — `.tok-plain` inherits it instead of falling back to the initial value. */
+  color: var(--semantic-text);
+}
+.diff-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 0 0;
+}
+.diff-old,
+.diff-new {
+  width: 3rem;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--semantic-text-dim);
+  opacity: 0.55;
+  user-select: none;
+}
+/* `--tint-success` is a 5% wash — too faint to read as "this line was added" next to a syntax
+   palette. The diff rows carry their own, stronger tint; SplitDiffTable uses the same values so the
+   two layouts agree. */
+.diff-row-add {
+  background-color: color-mix(in srgb, var(--color-green) 18%, transparent);
+}
+.diff-row-remove {
+  background-color: color-mix(in srgb, var(--color-red) 18%, transparent);
+}
+.diff-row-hunk {
+  color: var(--color-blue);
+  background-color: var(--tint-info);
+}
+</style>

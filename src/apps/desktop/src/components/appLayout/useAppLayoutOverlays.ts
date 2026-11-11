@@ -196,6 +196,8 @@ export function useAppLayoutOverlays(deps: OverlaysDeps): UseAppLayoutOverlaysRe
       fallbackCwd: cwd,
       lineParam: q.line,
       modeParam: q.mode,
+      revParam: q.rev,
+      prParam: q.pr,
     })
   }
 

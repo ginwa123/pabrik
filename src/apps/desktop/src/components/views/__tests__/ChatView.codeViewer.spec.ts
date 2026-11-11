@@ -7,6 +7,11 @@ import { readChatViewSource as readChatViewBundle } from '../../../__tests__/hel
 
 const chatViewSrc = readChatViewBundle()
 const appLayoutSrc = readFileSync(resolve(__dirname, '..', '..', 'AppLayout.vue'), 'utf8')
+// The state object itself lives in its own module so AppLayout stays under its line ceiling.
+const codeViewerStateSrc = readFileSync(
+  resolve(__dirname, '..', '..', 'appLayout', 'codeViewerState.ts'),
+  'utf8',
+)
 
 describe('ChatView — code viewer in the center column', () => {
   it('injects the open-file state AppLayout provides', () => {
@@ -42,7 +47,7 @@ describe('ChatView — code viewer in the center column', () => {
 
   it('closes through AppLayout (one owner for session + URL)', () => {
     expect(chatViewSrc).toMatch(/@close="codeViewerModel\.close\(\)"/)
-    expect(appLayoutSrc).toMatch(/close: closeCodeEditor,/)
+    expect(appLayoutSrc).toMatch(/buildCodeViewerState\(codeEditorSession, closeCodeEditor\)/)
   })
 
   it('renders nothing when no file is open (or no provider)', () => {
@@ -59,8 +64,8 @@ describe('AppLayout — the overlay is only a fallback', () => {
       /provide<CodeViewerState>\(CODE_VIEWER_STATE_KEY, codeViewerState\)/,
     )
     // Same objects, no copies.
-    expect(appLayoutSrc).toMatch(/file: codeEditorSession\.file,/)
-    expect(appLayoutSrc).toMatch(/content: codeEditorSession\.content,/)
+    expect(codeViewerStateSrc).toMatch(/file: session\.file,/)
+    expect(codeViewerStateSrc).toMatch(/content: session\.content,/)
   })
 
   it('yields the whole <main> only when no chat surface is on screen', () => {

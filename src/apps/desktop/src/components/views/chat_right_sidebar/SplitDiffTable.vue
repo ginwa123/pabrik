@@ -70,7 +70,7 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
               :class="{ 'split-blank': row.oldText === null }"
               :style="
                 row.isChanged && row.oldText !== null
-                  ? { background: 'color-mix(in srgb, var(--color-red) 15%, transparent)' }
+                  ? { background: 'color-mix(in srgb, var(--color-red) 18%, transparent)' }
                   : {}
               "
             >
@@ -82,7 +82,7 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
               :style="
                 row.isChanged && row.oldText !== null
                   ? {
-                      background: 'color-mix(in srgb, var(--color-red) 15%, transparent)',
+                      background: 'color-mix(in srgb, var(--color-red) 18%, transparent)',
                       borderLeft: '3px solid var(--color-red)',
                     }
                   : {}
@@ -106,7 +106,7 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
               :class="{ 'split-blank': row.newText === null }"
               :style="
                 row.isChanged && row.newText !== null
-                  ? { background: 'color-mix(in srgb, var(--color-green) 15%, transparent)' }
+                  ? { background: 'color-mix(in srgb, var(--color-green) 18%, transparent)' }
                   : {}
               "
             >
@@ -118,7 +118,7 @@ const onRowClick = (event: MouseEvent, row: SplitRow) => {
               :style="
                 row.isChanged && row.newText !== null
                   ? {
-                      background: 'color-mix(in srgb, var(--color-green) 15%, transparent)',
+                      background: 'color-mix(in srgb, var(--color-green) 18%, transparent)',
                       borderLeft: '3px solid var(--color-green)',
                     }
                   : {}
