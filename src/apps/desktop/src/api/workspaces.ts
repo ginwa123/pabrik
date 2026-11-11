@@ -27,6 +27,10 @@ export interface WorkspaceItem {
   // their path on each child, and test fixtures omit it. `null` is allowed so the SQLite NULL →
   // JSON null round-trip type-checks; `v-if="!item.path"` treats null/undefined/"" alike.
   path?: string | null
+  // Migration 147 — the project's own glyph name, or null/absent for "no
+  // override" (the row then derives `folder` / `folder-open`). Optional so
+  // legacy item literals in tests keep type-checking.
+  icon?: string | null
   entries?: FolderEntry[]
   isLoaded?: boolean
   isLoading?: boolean
@@ -169,6 +173,9 @@ export async function updateWorkspaceItem(
     item_type?: string
     path?: string | null
     name?: string
+    /** Migration 147 — a glyph name sets the override, `null` clears it back to
+     * the `folder` / `folder-open` default. */
+    icon?: string | null
   },
 ): Promise<WorkspaceItem> {
   return await apiFetch<WorkspaceItem>(`/workspaces/${workspaceId}/items/${itemId}`, {

@@ -79,6 +79,7 @@ pub fn dispatchHeadless(
         .group => |a| try runGroup(allocator, io, environment, a, log_file, db_request),
         .storage => |a| try runStorage(allocator, io, environment, a),
         .memories => |a| try runMemories(allocator, io, environment, a, log_file, db_request),
+        .workspace_items => |a| try runWorkspaceItems(allocator, io, environment, a, log_file, db_request),
         .mcp_oauth => |a| try runMcpOAuth(allocator, io, environment, a, log_file, db_request),
         .mcp_add => |a| try runMcpAdd(allocator, io, environment, a, log_file, db_request),
     }
@@ -414,6 +415,39 @@ fn runMemories(
 
     const json = headless.memories.run(allocator, &backend, a) catch |err| {
         std.log.err("headless: memories {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
+        std.process.exit(1);
+    };
+    defer allocator.free(json);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.Io.File.stdout().writer(io, &buf);
+    try w.interface.writeAll(json);
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+
+    backend.finish(0);
+}
+
+/// Boot the backend, run one project-row op, print its JSON, tear down.
+fn runWorkspaceItems(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.WorkspaceItemsArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    // Declared HERE, not returned by value: `App.db` / `.event_bus`
+    // point into this struct, so it must live in the caller's frame.
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const json = headless.workspace_items.run(allocator, &backend, a) catch |err| {
+        // stdout is the machine channel: a failure never prints a half object.
+        std.log.err("headless: workspace-items {s} failed: {s}", .{ @tagName(a.op), @errorName(err) });
         std.process.exit(1);
     };
     defer allocator.free(json);

@@ -92,7 +92,9 @@ describe('ProjectsList — expanded section has NO active background', () => {
   it('section chevron is rotated while expanded (visual cue)', async () => {
     const wrapper = mountList()
     await nextTick()
-    const chevrons = wrapper.findAll('span[style*="rotate(90deg)"]')
+    // `chevron-down` already points down, so the expanded state is the
+    // unrotated one and the collapsed state is rotate(-90deg).
+    const chevrons = wrapper.findAll('span[style*="rotate(0deg)"]')
     expect(chevrons.length).toBeGreaterThan(0)
     wrapper.unmount()
   })

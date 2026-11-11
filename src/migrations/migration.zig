@@ -159,6 +159,7 @@ const migration_143 = @import("migration_143.zig");
 const migration_144 = @import("migration_144.zig");
 const migration_145 = @import("migration_145.zig");
 const migration_146 = @import("migration_146.zig");
+const migration_147 = @import("migration_147.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -307,6 +308,7 @@ pub const Migration143AddDocumentContentKey = migration_143.Migration143AddDocum
 pub const Migration144DropDocumentContent = migration_144.Migration144DropDocumentContent;
 pub const Migration145AddPendingDelegate = migration_145.Migration145AddPendingDelegate;
 pub const Migration146AddMcpOAuth = migration_146.Migration146AddMcpOAuth;
+pub const Migration147AddWorkspaceItemIcon = migration_147.Migration147AddWorkspaceItemIcon;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -578,6 +580,8 @@ pub const allMigrations: []const Migration = &.{
     // Migration 145 — one pending delegation per session, set by `delegate_agent`.
     .{ .version = Migration145AddPendingDelegate.version, .name = Migration145AddPendingDelegate.name, .up = Migration145AddPendingDelegate.up },
     .{ .version = Migration146AddMcpOAuth.version, .name = Migration146AddMcpOAuth.name, .up = Migration146AddMcpOAuth.up },
+    // Migration 147 — a project row can carry its own glyph (`workspace_items.icon`).
+    .{ .version = Migration147AddWorkspaceItemIcon.version, .name = Migration147AddWorkspaceItemIcon.name, .up = Migration147AddWorkspaceItemIcon.up },
 };
 
 /// Register all migrations with a MigrationManager

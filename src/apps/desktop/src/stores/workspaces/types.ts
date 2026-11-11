@@ -27,6 +27,9 @@ export interface WorkspaceItem {
   // kanbans have no path (the API returns `null` for unset rows), folder items never set it, test
   // fixtures may omit it.
   path?: string | null
+  // Migration 147 — the project's own glyph name, or null/absent for "no
+  // override". Mirrors the API interface so fixtures and the store agree.
+  icon?: string | null
   lastAccessed?: Date
   entries?: FolderEntry[] // Nested folder contents
   isLoaded?: boolean // Whether contents have been fetched

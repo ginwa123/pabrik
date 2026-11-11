@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { Effect, Either } from 'effect'
 import * as api from '../api'
 import { createAgentRuns } from './workspaces/agentRuns'
 import { createDesignElements } from './workspaces/designElements'
@@ -274,6 +275,33 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     }
   }
 
+  /** Set (or clear) a project row's glyph; `null` is "Reset to default".
+   * Optimistic, with a rollback on failure — a sidebar that keeps a glyph the
+   * database never stored is worse than one that flickers. */
+  async function setItemIcon(
+    workspaceId: string,
+    itemId: string,
+    icon: string | null,
+  ): Promise<void> {
+    const item = findItem(workspaceId, itemId)
+    const previous = item?.icon ?? null
+    if (item) item.icon = icon
+
+    const outcome = await Effect.runPromise(
+      Effect.either(
+        Effect.tryPromise({
+          try: () => api.updateWorkspaceItem(workspaceId, itemId, { icon }),
+          catch: (cause) => cause,
+        }),
+      ),
+    )
+    if (Either.isLeft(outcome)) {
+      if (item) item.icon = previous
+      console.error('[workspacesStore.setItemIcon] API call failed:', outcome.left)
+      throw outcome.left
+    }
+  }
+
   const taskCache = createTaskCache()
   const media = createMediaActions({
     workspaces,
@@ -454,6 +482,7 @@ export const useWorkspacesStore = defineStore('workspaces', () => {
     activeWorkspaceId,
     ...itemCrud,
     updateWorkspaceItemPath,
+    setItemIcon,
     ...taskCrud,
     ...kanbanTasks,
     ...taskEdit,

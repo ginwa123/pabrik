@@ -13,6 +13,7 @@ pub const usage = @import("usage.zig");
 pub const messages_admin = @import("messages_admin.zig");
 pub const group = @import("group.zig");
 pub const memories = @import("memories.zig");
+pub const workspace_items = @import("workspace_items.zig");
 pub const mcp_oauth = @import("mcp_oauth.zig");
 
 /// The subcommand to run, with its arguments already parsed. `help` is a
@@ -36,6 +37,8 @@ pub const Command = union(enum) {
     storage: args.StorageArgs,
     /// Read or change a workspace's saved memories.
     memories: args.MemoriesArgs,
+    /// Read or change a project row's icon (Migration 147).
+    workspace_items: args.WorkspaceItemsArgs,
     /// Authorize a remote MCP server over OAuth 2.1.
     mcp_oauth: args.McpOAuthArgs,
     /// Register an MCP server through the agent tool's own path.
@@ -59,6 +62,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .group => |a| .{ .group = a },
         .storage => |a| .{ .storage = a },
         .memories => |a| .{ .memories = a },
+        .workspace_items => |a| .{ .workspace_items = a },
         .mcp_oauth => |a| .{ .mcp_oauth = a },
         .mcp_add => |a| .{ .mcp_add = a },
         .help => .help,

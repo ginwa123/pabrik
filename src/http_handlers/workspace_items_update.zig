@@ -68,6 +68,30 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     // handler uses this to decide whether to UPDATE or 400.
     const name_valid: bool = name_present and name_value != null;
 
+    // Optional icon (Migration 147). Same presence-vs-absence contract as
+    // `path`: a string sets the override, `null` or "" clears it back to the
+    // `folder` / `folder-open` default.
+    const icon_present = root.get("icon") != null;
+    const icon_value: ?[]const u8 = blk: {
+        const v = root.get("icon") orelse break :blk null;
+        if (v == .null) break :blk null;
+        if (v == .string and v.string.len == 0) break :blk null;
+        if (v == .string) break :blk v.string;
+        break :blk null;
+    };
+    // A non-string, non-null `icon` is a caller bug, not a clear.
+    if (icon_present) {
+        const v = root.get("icon").?;
+        if (v != .null and v != .string) {
+            return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "icon, when present, must be a string or null" }) });
+        }
+        if (icon_value) |name| {
+            if (!isValidIconName(name)) {
+                return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "icon must be 1-64 lowercase letters, digits or hyphens" }) });
+            }
+        }
+    }
+
     // Check if item exists first
     const existing = ai_mod.workspace_items.getWorkspaceItem(allocator, sqlite_db, item_id) catch {
         return res.jsonResponse(.{ .status_code = 500, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "Failed to fetch workspace item" }) });
@@ -104,10 +128,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     // If the caller sent NOTHING updatable, return 400. Without this, the
     // handler would silently no-op when the body is `{name: ""}` (rejected
     // earlier anyway) or completely empty.
-    if (!item_type_present and !name_valid and !path_present) {
+    if (!item_type_present and !name_valid and !path_present and !icon_present) {
         return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(
             allocator,
-            .{ .@"error" = "At least one of item_type, name, or path is required" },
+            .{ .@"error" = "At least one of item_type, name, path, or icon is required" },
         ) });
     }
 
@@ -118,7 +142,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         // Caller wants BOTH path + name updated. We update name first
         // (separate SQL) then path (separate SQL).
         ai_mod.workspace_items.updateWorkspaceItemName(
-            allocator, sqlite_db, item_id, name_value.?,
+            allocator,
+            sqlite_db,
+            item_id,
+            name_value.?,
         ) catch {
             return res.jsonResponse(.{
                 .status_code = 500,
@@ -130,7 +157,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         };
         if (path_clear or path_value == null) {
             ai_mod.workspace_items.updateWorkspaceItemPath(
-                allocator, sqlite_db, item_id, null,
+                allocator,
+                sqlite_db,
+                item_id,
+                null,
             ) catch {
                 return res.jsonResponse(.{
                     .status_code = 500,
@@ -142,7 +172,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             };
         } else {
             ai_mod.workspace_items.updateWorkspaceItemPath(
-                allocator, sqlite_db, item_id, path_value.?,
+                allocator,
+                sqlite_db,
+                item_id,
+                path_value.?,
             ) catch {
                 return res.jsonResponse(.{
                     .status_code = 500,
@@ -157,7 +190,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         // Name-only update (the rename path). Common case for the
         // KanbanSettingsDialog and KanbanView pencil.
         ai_mod.workspace_items.updateWorkspaceItemName(
-            allocator, sqlite_db, item_id, name_value.?,
+            allocator,
+            sqlite_db,
+            item_id,
+            name_value.?,
         ) catch {
             return res.jsonResponse(.{
                 .status_code = 500,
@@ -173,7 +209,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         // as the old code, but renamed for readability and inlined.
         if (path_clear or path_value == null) {
             ai_mod.workspace_items.updateWorkspaceItemPath(
-                allocator, sqlite_db, item_id, null,
+                allocator,
+                sqlite_db,
+                item_id,
+                null,
             ) catch {
                 return res.jsonResponse(.{
                     .status_code = 500,
@@ -185,7 +224,10 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             };
         } else {
             ai_mod.workspace_items.updateWorkspaceItemPath(
-                allocator, sqlite_db, item_id, path_value.?,
+                allocator,
+                sqlite_db,
+                item_id,
+                path_value.?,
             ) catch {
                 return res.jsonResponse(.{
                     .status_code = 500,
@@ -196,11 +238,14 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
                 });
             };
         }
-    } else {
-        // Neither name nor path in body → legacy item_type-only update path
-        // keeps the existing columns untouched.
+    } else if (!icon_present) {
+        // Neither name, path nor icon in body → legacy item_type-only update
+        // path keeps the existing columns untouched.
         ai_mod.workspace_items.updateWorkspaceItem(
-            allocator, sqlite_db, item_id, current_workspace_id,
+            allocator,
+            sqlite_db,
+            item_id,
+            current_workspace_id,
             effective_item_type,
         ) catch {
             return res.jsonResponse(.{
@@ -213,16 +258,53 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
         };
     }
 
-    return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeWorkspaceItemGetResponse(allocator, .{
-        .id = item_id,
-        .workspace_id = current_workspace_id,
-        .item_type = effective_item_type,
-        // When the body didn't mention path, leave the response field as
-        // `null` so callers can distinguish "field not in body" from "field
-        // cleared to NULL".
-        .path = null,
-        .created_at = null,
-        .updated_at = null,
-    }) });
+    // Icon is its own column and its own statement, so it composes with any
+    // of the branches above (rename + icon in one PUT is a normal call).
+    if (icon_present) {
+        ai_mod.workspace_items.updateWorkspaceItemIcon(
+            allocator,
+            sqlite_db,
+            item_id,
+            icon_value,
+        ) catch {
+            return res.jsonResponse(.{
+                .status_code = 500,
+                .data = try http_response.makeErrorResponse(
+                    allocator,
+                    .{ .@"error" = "Failed to update workspace item icon" },
+                ),
+            });
+        };
+    }
+
+    return res.jsonResponse(.{
+        .status_code = 200,
+        .data = try http_response.makeWorkspaceItemGetResponse(allocator, .{
+            .id = item_id,
+            .workspace_id = current_workspace_id,
+            .item_type = effective_item_type,
+            // When the body didn't mention path, leave the response field as
+            // `null` so callers can distinguish "field not in body" from "field
+            // cleared to NULL".
+            .path = null,
+            .created_at = null,
+            .updated_at = null,
+            // Echo the icon the caller asked for, so a client that only sent
+            // `{icon}` sees its own value back. Absent from the body → null,
+            // matching the `path` convention above.
+            .icon = icon_value,
+        }),
+    });
 }
 
+/// A project icon is a NAME from the frontend's `ICON_PATHS` registry, so the
+/// accepted shape is that registry's key shape: 1-64 lowercase letters, digits
+/// or hyphens. The registry is not duplicated here; the UI degrades unknowns.
+fn isValidIconName(name: []const u8) bool {
+    if (name.len == 0 or name.len > 64) return false;
+    for (name) |c| {
+        const ok = (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '-';
+        if (!ok) return false;
+    }
+    return true;
+}

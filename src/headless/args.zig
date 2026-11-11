@@ -199,6 +199,24 @@ pub const DocumentsArgs = struct {
     out: ?[]const u8 = null,
 };
 
+/// The project-row verbs. `set-icon` is the write the `Change icon…` menu
+/// makes; `list` is the read that proves it persisted.
+pub const WorkspaceItemsOp = enum {
+    list,
+    set_icon,
+};
+
+pub const WorkspaceItemsArgs = struct {
+    op: WorkspaceItemsOp,
+    /// `list`: which workspace's projects to print.
+    workspace_id: []const u8 = "",
+    /// `set-icon`: the project row being changed.
+    item_id: []const u8 = "",
+    /// `set-icon`: the glyph name. Empty means "clear the override", which is
+    /// what `Reset to default` writes.
+    icon: []const u8 = "",
+};
+
 /// The object-store verbs. One per `Storage` method, so an agent can exercise
 /// the whole interface with no server and no bucket.
 pub const StorageOp = enum {
@@ -261,6 +279,8 @@ pub const FailureKind = enum {
     message_requires_flag,
     memories_unknown_op,
     memories_requires_flag,
+    workspace_items_unknown_op,
+    workspace_items_requires_flag,
 };
 
 pub const Failure = struct {
@@ -315,6 +335,9 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
+    "  pabrik headless workspace-items <op> [flags]  Read or change a project row's icon\n" ++
+    "      ops: list | set-icon\n" ++
+    "      flags: --workspace <id> (list) --item <id> --icon <name> (set-icon; empty clears)\n" ++
     "  pabrik headless mcp-oauth <op> [flags]    Authorize a remote MCP server over OAuth 2.1\n" ++
     "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
     "      flags: --url <mcp-url> --workspace <id> --server <name> --redirect-uri <uri>\n" ++
@@ -347,6 +370,7 @@ pub const Outcome = union(enum) {
     storage: StorageArgs,
     message: MessageArgs,
     memories: MemoriesArgs,
+    workspace_items: WorkspaceItemsArgs,
     mcp_oauth: McpOAuthArgs,
     mcp_add: McpAddArgs,
     help,
@@ -379,6 +403,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "storage")) return try parseStorage(rest);
     if (std.mem.eql(u8, verb, "message")) return try parseMessage(rest);
     if (std.mem.eql(u8, verb, "memories")) return try parseMemories(rest);
+    if (std.mem.eql(u8, verb, "workspace-items")) return try parseWorkspaceItems(rest);
     if (std.mem.eql(u8, verb, "mcp-oauth")) return try parseMcpOAuth(rest);
     if (std.mem.eql(u8, verb, "mcp-add")) return try parseMcpAdd(rest);
 
@@ -900,6 +925,53 @@ fn parseMemories(argv: []const []const u8) ParseError!Outcome {
     return .{ .memories = got };
 }
 
+/// `workspace-items` parses its own flag set for the same reason `documents`
+/// does: the shared table describes the server CLI, and these three flags
+/// exist only in this verb.
+fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
+    if (argv.len == 0) return fail(.{ .kind = .workspace_items_unknown_op });
+
+    const op: WorkspaceItemsOp = blk: {
+        const word = argv[0];
+        if (std.mem.eql(u8, word, "list")) break :blk .list;
+        if (std.mem.eql(u8, word, "set-icon")) break :blk .set_icon;
+        return fail(.{ .kind = .workspace_items_unknown_op, .value = word });
+    };
+
+    var got = WorkspaceItemsArgs{ .op = op };
+    var i: usize = 1;
+    while (i < argv.len) {
+        const flag = argv[i];
+        if (std.mem.eql(u8, flag, "--workspace")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.workspace_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--item")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.item_id = argv[i];
+        } else if (std.mem.eql(u8, flag, "--icon")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.icon = argv[i];
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        }
+        i += 1;
+    }
+
+    switch (op) {
+        .list => {
+            if (got.workspace_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--workspace" });
+        },
+        .set_icon => {
+            if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
+        },
+    }
+
+    return .{ .workspace_items = got };
+}
+
 /// `group` parses its own flag set for the same reason `documents` does: the
 /// shared table describes the server CLI, and these five flags exist only in
 /// this verb.
@@ -1015,6 +1087,8 @@ pub fn reportFailure(f: Failure) void {
         .message_requires_flag => std.log.err("headless: message needs {s}", .{f.value}),
         .memories_unknown_op => std.log.err("headless: unknown memories op '{s}'", .{f.value}),
         .memories_requires_flag => std.log.err("headless: memories needs {s}", .{f.value}),
+        .workspace_items_unknown_op => std.log.err("headless: unknown workspace-items op '{s}'", .{f.value}),
+        .workspace_items_requires_flag => std.log.err("headless: workspace-items needs {s}", .{f.value}),
     }
 }
 
@@ -1220,8 +1294,8 @@ test "parse: documents doc-html-edit and doc-html-read need a document id" {
 
 test "parse: documents doc-html-edit takes an in-place patch instead of a whole body" {
     const a = try parse(&.{
-        "documents", "doc-html-edit", "--session", "task_1", "--document", "doc_a",
-        "--old-text", "<h1>Old</h1>", "--new-text", "<h1>New</h1>", "--replace-all",
+        "documents",  "doc-html-edit", "--session",  "task_1",       "--document",    "doc_a",
+        "--old-text", "<h1>Old</h1>",  "--new-text", "<h1>New</h1>", "--replace-all",
     });
     try testing.expectEqual(DocumentsOp.doc_html_edit, a.documents.op);
     try testing.expectEqualStrings("<h1>Old</h1>", a.documents.old_text.?);
@@ -1233,7 +1307,7 @@ test "parse: documents doc-html-edit takes an in-place patch instead of a whole 
 test "parse: documents doc-read takes a byte offset and a limit" {
     const a = try parse(&.{
         "documents", "doc-read", "--session", "task_1", "--document", "doc_a",
-        "--offset", "20000", "--limit", "5000",
+        "--offset",  "20000",    "--limit",   "5000",
     });
     try testing.expectEqual(DocumentsOp.doc_read, a.documents.op);
     try testing.expectEqual(@as(usize, 20000), a.documents.offset);
@@ -1454,6 +1528,36 @@ test "parse: documents search reads the query and needs a workspace" {
 
 test "parse: documents search refuses to run with no query" {
     try expectFailure(&.{ "documents", "search", "--workspace", "ws_1" }, .documents_requires_flag);
+}
+
+test "parse: workspace-items list needs only a workspace" {
+    const a = try parse(&.{ "workspace-items", "list", "--workspace", "ws_1" });
+    try testing.expectEqual(WorkspaceItemsOp.list, a.workspace_items.op);
+    try testing.expectEqualStrings("ws_1", a.workspace_items.workspace_id);
+}
+
+test "parse: workspace-items set-icon reads the item and the glyph" {
+    const a = try parse(&.{ "workspace-items", "set-icon", "--item", "item_a", "--icon", "tree" });
+    try testing.expectEqual(WorkspaceItemsOp.set_icon, a.workspace_items.op);
+    try testing.expectEqualStrings("item_a", a.workspace_items.item_id);
+    try testing.expectEqualStrings("tree", a.workspace_items.icon);
+}
+
+test "parse: workspace-items set-icon accepts an empty --icon, which clears the override" {
+    const a = try parse(&.{ "workspace-items", "set-icon", "--item", "item_a", "--icon", "" });
+    try testing.expectEqualStrings("", a.workspace_items.icon);
+}
+
+test "parse: workspace-items names the flag each op is missing" {
+    try expectFailure(&.{"workspace-items"}, .workspace_items_unknown_op);
+    try expectFailure(&.{ "workspace-items", "explode" }, .workspace_items_unknown_op);
+    try expectFailure(&.{ "workspace-items", "list" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "set-icon", "--icon", "tree" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "set-icon", "--item" }, .missing_value);
+}
+
+test "parse: workspace-items refuses a flag it does not own" {
+    try expectFailure(&.{ "workspace-items", "list", "--workspace", "ws_1", "--session", "s_1" }, .unknown_subcommand);
 }
 
 test "the help text lists every flag the table gives this scope" {

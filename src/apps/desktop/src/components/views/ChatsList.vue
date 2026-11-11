@@ -28,6 +28,7 @@ import { sessionEngineDb, toSessionRow } from '../../sync/SessionEngineDb'
 import { runSyncEffect, runSyncEffectOr, runSyncVoid } from '../../sync/runtime'
 import * as api from '../../api'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
+import UiIcon from '../ui/UiIcon.vue'
 import ChatRowContextMenu from '../shell/ChatRowContextMenu.vue'
 import RenameTaskModal from '../dialogs/RenameTaskModal.vue'
 import GitBranchMenu from '../shell/GitBranchMenu.vue'
@@ -815,13 +816,15 @@ defineExpose({
           @click.stop="sidebarStore.togglePinnedExpanded()"
         >
           <span
-            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            class="w-[var(--sb-mark)] shrink-0 flex items-center transition-transform duration-200"
             :style="{
-              transform: sidebarStore.pinnedExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transform: sidebarStore.pinnedExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
             }"
             style="color: var(--semantic-text-dim)"
-            >▶</span
+            aria-hidden="true"
           >
+            <UiIcon name="chevron-down" :size="12" />
+          </span>
           <span
             class="text-micro font-semibold uppercase tracking-[0.08em]"
             style="color: var(--semantic-text-dim)"
@@ -906,13 +909,15 @@ defineExpose({
         @click.stop="toggleNavSection"
       >
         <span
-          class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+          class="w-[var(--sb-mark)] shrink-0 flex items-center transition-transform duration-200"
           :style="{
-            transform: sidebarStore.navExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transform: sidebarStore.navExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
           }"
           style="color: var(--semantic-text-dim)"
-          >▶</span
+          aria-hidden="true"
         >
+          <UiIcon name="chevron-down" :size="12" />
+        </span>
         <span
           class="text-micro font-semibold uppercase tracking-[0.08em]"
           style="color: var(--semantic-text-dim)"

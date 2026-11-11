@@ -83,10 +83,10 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
     expect(wrapper.findAll('.item-action')).toHaveLength(0)
   })
 
-  it('renders the chevron as bare text, with no hit box', () => {
+  it('renders the chevron as a glyph in the mark column, with no hit box', () => {
     // The chevron used to sit in a 24px `--sb-hit` box, centring its glyph at x=20 while every
-    // section-header chevron rendered at x=12. Bare text puts this one at 12 too, and the project
-    // name at 28 — matching the section titles.
+    // section-header chevron rendered at x=12. A bare glyph in the mark column puts this one at 12
+    // too, and the project name at 28 — matching the section titles.
     wrapper = mountItem(makeItem())
 
     const chevron = wrapper.find('[data-testid="item-row-chevron"]')
@@ -95,7 +95,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
     const cls = chevron.classes().join(' ')
     expect(cls).not.toContain('w-[var(--sb-hit)]')
     expect(cls).not.toContain('h-[var(--sb-hit)]')
-    expect(chevron.text()).toContain('▶')
+    expect(chevron.find('[data-icon="chevron-down"]').exists()).toBe(true)
   })
 
   it('puts its label at the gutter plus the mark column, and on no other offset', () => {
@@ -108,7 +108,7 @@ describe('WorkspaceItem row — one padded box owns both edges', () => {
     expect(row.classes()).not.toContain('gap-2')
     const mark = row.find('span')
     expect(mark.classes()).toContain('w-[var(--sb-mark)]')
-    expect(mark.text()).toContain('▶')
+    expect(mark.find('[data-icon="chevron-down"]').exists()).toBe(true)
   })
 
   it('offers Add task and Delete project in the right-click menu', async () => {

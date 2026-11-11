@@ -463,10 +463,12 @@ const handleAuxClick = (entry: FolderEntry, event: MouseEvent): void => {
         <!-- Expand icon for folders -->
         <span
           v-if="entry.is_directory"
-          class="w-3 text-dense flex justify-center transition-transform duration-150"
-          :style="{ transform: isExpanded(path) ? 'rotate(90deg)' : 'rotate(0deg)' }"
-          >▶</span
+          class="w-3 flex justify-center transition-transform duration-150"
+          :style="{ transform: isExpanded(path) ? 'rotate(0deg)' : 'rotate(-90deg)' }"
+          aria-hidden="true"
         >
+          <UiIcon name="chevron-down" :size="12" />
+        </span>
         <span v-else class="w-3"></span>
 
         <!-- File-type icon -->
