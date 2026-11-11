@@ -4,16 +4,12 @@ import { computed, ref } from 'vue'
 
 import { createFunnel } from './tabFunnel'
 import {
-  MAX_CLOSED,
-  MAX_TABS,
   fallbackTitle,
-  groupPayload,
   homeTab,
   kindOf,
   ownerOf,
   ownerOfTarget,
   newTabId,
-  parseTabList,
   sameTabTarget,
   tabKeyOf,
   tabKeyVariants,
@@ -24,6 +20,7 @@ import {
   type TabKind,
   type TabQuery,
 } from '../helpers/tabTarget'
+import { MAX_CLOSED, MAX_TABS, groupPayload, parseTabList } from '../helpers/tabPersistence'
 import { getWindowId } from '../helpers/windowId'
 import { parseItemIdWithChat } from '../helpers/buildItemIdWithChat'
 import { dropDraft, readDraft, writeDraft } from './tabDrafts'
