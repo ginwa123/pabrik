@@ -744,9 +744,7 @@ pub fn execDeleteMcpServer(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecRe
     };
     defer ctx.allocator.free(inner);
 
-    // No tools listing on the delete path: the server is gone, so there
-    // is nothing to list.
-    const output = try finishMcpServerExec(ctx, tc, "delete_mcp_server", inner, "");
+    const output = try finishMcpServerExec(ctx, tc, "delete_mcp_server", inner, parsed.value.name);
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
@@ -773,10 +771,8 @@ fn finishMcpServerExec(
         }
     }
 
-    // ── 2. Persist to disk + hot-reload `di.llm_config` ────────────────
-    // On any failure here the in-memory config is already updated (the
-    // agent's iteration will see the change regardless), so we capture
-    const persist_status_owned = persistAndReloadStatus(ctx) catch |err| blk: {
+    const is_delete = std.mem.eql(u8, tool_name, "delete_mcp_server");
+    const persist_status_owned = persistAndReloadStatus(ctx, server_name, is_delete) catch |err| blk: {
         std.log.warn(
             "{s}: in-memory mutation succeeded but disk write failed: {s}",
             .{ tool_name, @errorName(err) },
@@ -796,7 +792,7 @@ fn finishMcpServerExec(
     // ── 4. Best-effort tools listing (process-level registry is OK here)
     // SKIP when the exec context has no environment — that's our signal
     // that we're in a unit test, where calling `StdioRegistry.global`
-    const inner_final = if (server_name.len == 0 or ctx.environment == null)
+    const inner_final = if (is_delete or server_name.len == 0 or ctx.environment == null)
         inner_with_status
     else
         listAndAppendTools(ctx, inner_with_status, server_name) catch inner_with_status;
@@ -841,17 +837,17 @@ fn substitutePersistedStatus(
 // Disk persistence + live-reload
 // ───────────────────────────────────────────────────────────────────────
 
-/// Persist the live config to `~/.config/pabrik/config.json` and hot-reload
-/// `di.llm_config` via `setLlmConfig` so subsequent agent iterations see
-/// the change through `buildMCPToolsRun`.
-fn persistAndReloadStatus(ctx: ToolExecContext) ![]u8 {
+fn persistAndReloadStatus(ctx: ToolExecContext, server_name: []const u8, is_delete: bool) ![]u8 {
     const di = exec_pabrikcore.getSingleton() catch return ctx.allocator.dupe(u8, "false: getSingleton failed") catch return ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server failure status");
-    // Auth mode: persist into the session owner's users.config_json
-    // (Migration 092) instead of config.json, and skip the global
-    // live-reload (config is per-user). config.json is never touched.
-    if (di.auth_enabled) {
-        return persistAuthModeStatus(ctx, di);
+
+    const resolved_ws = exec_pabrikcore.session_llm_config.sessionWorkspace(ctx.allocator, ctx.db, ctx.session_id) catch null;
+    defer if (resolved_ws) |w| ctx.allocator.free(w);
+    if (resolved_ws) |w| {
+        if (w.len > 0) return persistWorkspaceOverlayStatus(ctx, di, w, server_name, is_delete);
     }
+
+    if (di.auth_enabled) return persistUserConfigStatus(ctx, di);
+
     const env_ptr = di.environment orelse return std.fmt.allocPrint(ctx.allocator, "false: environment unavailable", .{}) catch ctx.allocator.dupe(u8, "false") catch @panic("allocPrint failed for the mcp_server failure status");
     // getDefaultConfigDir takes a non-const pointer but doesn't mutate.
     const environment: *std.process.Environ.Map = @ptrCast(@constCast(env_ptr));
@@ -933,68 +929,116 @@ fn persistAndReloadStatus(ctx: ToolExecContext) ![]u8 {
     return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server success status");
 }
 
-/// Auth-mode persist. MCP servers are workspace-scoped, so the session's own
-/// workspace row is the target. A session with no workspace falls back to the
-/// owner's `users.config_json`.
-fn persistAuthModeStatus(ctx: ToolExecContext, di: *exec_pabrikcore.App) ![]u8 {
-    const user_config_store = exec_pabrikcore.user_config_store;
-    var owner: ?[]u8 = null;
-    defer if (owner) |o| ctx.allocator.free(o);
-    {
-        var q = ctx.db.query(
-            ctx.allocator,
-            "SELECT COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?",
-            &[_][]const u8{ctx.session_id},
-        ) catch |err| {
-            return failStatus(ctx.allocator, "session lookup", @errorName(err));
-        };
-        defer q.deinit();
-        const row = q.next() catch |err| {
-            return failStatus(ctx.allocator, "session lookup", @errorName(err));
-        };
-        const r = row orelse return failStatus(ctx.allocator, "session lookup", "unknown session");
-        defer r.deinit(ctx.allocator);
-        if (r.values.len < 1 or r.values[0].len == 0) {
-            return failStatus(ctx.allocator, "session lookup", "session has no owner");
-        }
-        owner = ctx.allocator.dupe(u8, r.values[0]) catch {
-            return failStatus(ctx.allocator, "OOM", "dupe owner");
-        };
-    }
-
+fn sessionOwner(ctx: ToolExecContext, di: *exec_pabrikcore.App) ![]u8 {
     const store = exec_pabrikcore.workspace_settings_store;
-    const resolved_ws = exec_pabrikcore.session_llm_config.sessionWorkspace(ctx.allocator, ctx.db, ctx.session_id) catch null;
-    defer if (resolved_ws) |w| ctx.allocator.free(w);
-    const in_workspace = if (resolved_ws) |w| w.len > 0 else false;
+    var q = try ctx.db.query(
+        ctx.allocator,
+        "SELECT COALESCE(CAST(user_id AS TEXT), '') FROM sessions WHERE id = ?",
+        &[_][]const u8{ctx.session_id},
+    );
+    defer q.deinit();
+    const row = (try q.next()) orelse return error.UnknownSession;
+    defer row.deinit(ctx.allocator);
+    const user_id = if (row.values.len > 0) row.values[0] else "";
+    return ctx.allocator.dupe(u8, store.ownerKey(di.auth_enabled, user_id));
+}
 
-    const existing = if (in_workspace)
-        store.loadRaw(ctx.allocator, ctx.db, owner.?, resolved_ws.?) catch |err| {
-            return failStatus(ctx.allocator, "load workspace config", @errorName(err));
-        }
-    else
-        user_config_store.loadRaw(ctx.allocator, ctx.db, owner.?) catch |err| {
-            return failStatus(ctx.allocator, "load user config", @errorName(err));
-        };
+fn persistUserConfigStatus(ctx: ToolExecContext, di: *exec_pabrikcore.App) ![]u8 {
+    const user_config_store = exec_pabrikcore.user_config_store;
+    const owner = sessionOwner(ctx, di) catch |err|
+        return failStatus(ctx.allocator, "session lookup", @errorName(err));
+    defer ctx.allocator.free(owner);
+    if (owner.len == 0) return failStatus(ctx.allocator, "session lookup", "session has no owner");
+
+    const existing = user_config_store.loadRaw(ctx.allocator, ctx.db, owner) catch |err|
+        return failStatus(ctx.allocator, "load user config", @errorName(err));
     defer if (existing) |e| ctx.allocator.free(e);
 
-    const new_body = buildUpdatedConfigJson(ctx, existing) catch |err| {
+    const new_body = buildUpdatedConfigJson(ctx, existing) catch |err|
         return failStatus(ctx.allocator, "merge config", @errorName(err));
-    };
     defer ctx.allocator.free(new_body);
 
-    if (in_workspace) {
-        store.saveRaw(ctx.allocator, ctx.db, owner.?, resolved_ws.?, new_body) catch |err| {
-            return failStatus(ctx.allocator, "save workspace config", @errorName(err));
-        };
-    } else {
-        user_config_store.saveRaw(ctx.allocator, ctx.db, owner.?, new_body) catch |err| {
-            return failStatus(ctx.allocator, "save user config", @errorName(err));
-        };
-    }
+    user_config_store.saveRaw(ctx.allocator, ctx.db, owner, new_body) catch |err|
+        return failStatus(ctx.allocator, "save user config", @errorName(err));
 
     di.clearMcpToolsCache();
     invalidateRegistries(ctx);
-    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server auth-mode status");
+    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server user-config status");
+}
+
+fn persistWorkspaceOverlayStatus(
+    ctx: ToolExecContext,
+    di: *exec_pabrikcore.App,
+    workspace_id: []const u8,
+    server_name: []const u8,
+    is_delete: bool,
+) ![]u8 {
+    const store = exec_pabrikcore.workspace_settings_store;
+    const owner = sessionOwner(ctx, di) catch |err|
+        return failStatus(ctx.allocator, "session lookup", @errorName(err));
+    defer ctx.allocator.free(owner);
+
+    const existing = store.loadRaw(ctx.allocator, ctx.db, owner, workspace_id) catch |err|
+        return failStatus(ctx.allocator, "load workspace config", @errorName(err));
+    defer if (existing) |e| ctx.allocator.free(e);
+
+    const entry: ?std.json.Value = if (is_delete) null else blk: {
+        const live = ctx.config.mcpServers() orelse
+            return failStatus(ctx.allocator, "merge workspace config", "server not in config");
+        break :blk switch (live) {
+            .object => |o| o.get(server_name),
+            else => null,
+        } orelse return failStatus(ctx.allocator, "merge workspace config", "server not in config");
+    };
+
+    const body = overlayWithServer(ctx.allocator, existing, server_name, entry) catch |err|
+        return failStatus(ctx.allocator, "merge workspace config", @errorName(err));
+    defer ctx.allocator.free(body);
+
+    store.saveRaw(ctx.allocator, ctx.db, owner, workspace_id, body) catch |err|
+        return failStatus(ctx.allocator, "save workspace config", @errorName(err));
+
+    di.clearMcpToolsCache();
+    invalidateRegistries(ctx);
+    return ctx.allocator.dupe(u8, "true") catch ctx.allocator.dupe(u8, "false") catch @panic("dupe failed for the mcp_server workspace status");
+}
+
+fn overlayWithServer(
+    allocator: std.mem.Allocator,
+    existing_overlay: ?[]const u8,
+    server_name: []const u8,
+    entry: ?std.json.Value,
+) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const text = existing_overlay orelse "{}";
+    var parsed = std.json.parseFromSlice(std.json.Value, a, text, .{}) catch
+        try std.json.parseFromSlice(std.json.Value, a, "{}", .{});
+    defer parsed.deinit();
+
+    var root: std.json.ObjectMap = switch (parsed.value) {
+        .object => |o| o,
+        else => try std.json.ObjectMap.init(a, &.{}, &.{}),
+    };
+
+    var servers: std.json.ObjectMap = blk: {
+        if (root.get("mcp_servers")) |v| {
+            if (v == .object) break :blk v.object;
+        }
+        break :blk try std.json.ObjectMap.init(a, &.{}, &.{});
+    };
+
+    if (entry) |e| {
+        try servers.put(a, try a.dupe(u8, server_name), e);
+    } else {
+        _ = servers.swapRemove(server_name);
+    }
+
+    try root.put(a, try a.dupe(u8, "mcp_servers"), .{ .object = servers });
+
+    return std.json.Stringify.valueAlloc(allocator, std.json.Value{ .object = root }, .{ .whitespace = .indent_tab });
 }
 
 /// Force the stdio + HTTP registries to drop their cached clients.
@@ -1767,6 +1811,91 @@ test "executeDeleteMcpServerToJSON: empty name → error payload" {
 }
 
 // ─── JSON schema shapes ────────────────────────────────────────────────
+
+fn serverEntry(alloc: std.mem.Allocator, command: []const u8) !std.json.Value {
+    var obj = try std.json.ObjectMap.init(alloc, &.{}, &.{});
+    try obj.put(alloc, "command", .{ .string = command });
+    return .{ .object = obj };
+}
+
+test "overlayWithServer: a workspace with no overlay gets exactly the added server" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const body = try overlayWithServer(testing.allocator, null, "agent-browser", try serverEntry(a, "agent-browser"));
+    defer testing.allocator.free(body);
+
+    var parsed = try parseTestJson(testing.allocator, body);
+    defer parsed.deinit();
+    const servers = parsed.value.object.get("mcp_servers").?.object;
+    try testing.expectEqual(@as(usize, 1), servers.count());
+    try testing.expectEqualStrings("agent-browser", servers.get("agent-browser").?.object.get("command").?.string);
+}
+
+test "overlayWithServer: adding a server keeps the workspace's other servers and scoped keys" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const existing = "{\"mcp_servers\":{\"rea\":{\"command\":\"rea\"}},\"tools\":[\"read_file\"]}";
+    const body = try overlayWithServer(testing.allocator, existing, "agent-browser", try serverEntry(a, "agent-browser"));
+    defer testing.allocator.free(body);
+
+    var parsed = try parseTestJson(testing.allocator, body);
+    defer parsed.deinit();
+    const root = parsed.value.object;
+    const servers = root.get("mcp_servers").?.object;
+    try testing.expectEqual(@as(usize, 2), servers.count());
+    try testing.expect(servers.get("rea") != null);
+    try testing.expect(servers.get("agent-browser") != null);
+    try testing.expectEqual(@as(usize, 1), root.get("tools").?.array.items.len);
+}
+
+test "overlayWithServer: deleting a server removes only that server" {
+    const existing = "{\"mcp_servers\":{\"rea\":{\"command\":\"rea\"},\"gone\":{\"command\":\"gone\"}}}";
+    const body = try overlayWithServer(testing.allocator, existing, "gone", null);
+    defer testing.allocator.free(body);
+
+    var parsed = try parseTestJson(testing.allocator, body);
+    defer parsed.deinit();
+    const servers = parsed.value.object.get("mcp_servers").?.object;
+    try testing.expectEqual(@as(usize, 1), servers.count());
+    try testing.expect(servers.get("rea") != null);
+    try testing.expect(servers.get("gone") == null);
+}
+
+test "overlayWithServer: the overlay never absorbs servers it was not given" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const existing = "{\"mcp_servers\":{\"rea\":{\"command\":\"rea\"}}}";
+    const body = try overlayWithServer(testing.allocator, existing, "agent-browser", try serverEntry(a, "agent-browser"));
+    defer testing.allocator.free(body);
+
+    var parsed = try parseTestJson(testing.allocator, body);
+    defer parsed.deinit();
+    const servers = parsed.value.object.get("mcp_servers").?.object;
+    try testing.expectEqual(@as(usize, 2), servers.count());
+    try testing.expect(servers.get("context7") == null);
+    try testing.expect(servers.get("github") == null);
+}
+
+test "overlayWithServer: a malformed overlay is replaced rather than propagated" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const body = try overlayWithServer(testing.allocator, "{oops", "agent-browser", try serverEntry(a, "agent-browser"));
+    defer testing.allocator.free(body);
+
+    var parsed = try parseTestJson(testing.allocator, body);
+    defer parsed.deinit();
+    const servers = parsed.value.object.get("mcp_servers").?.object;
+    try testing.expectEqual(@as(usize, 1), servers.count());
+    try testing.expect(servers.get("agent-browser") != null);
+}
 
 test "add_mcp_server_tool JSON schema: name=add_mcp_server, required is name+transport" {
     const tool = add_mcp_server_tool;
