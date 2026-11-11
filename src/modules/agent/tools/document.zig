@@ -55,7 +55,7 @@ pub const DocumentMarkdownInput = struct {
 
 pub const document_markdown_tool_system_prompt =
     \\## Document Tool — Behavior
-    \\`document_markdown` is the ONE tool for documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `search`, `delete`.
+    \\`document_markdown` is the ONE tool for documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `read`, `search`, `delete`.
     \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. You can only read and write the workspace your session belongs to; a `document_id` from another workspace reports "not found", exactly as a nonexistent id does, so you cannot probe or enumerate another workspace.
     \\- `search` first when you do not have an id. It is how you get a `document_id` — never invent one, and do not ask the user to paste an id you can look up yourself.
     \\- `create` needs `title`, which must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug. `content` is the markdown body and may be empty, so you can create a heading-only stub and fill it in with `edit`.
@@ -63,6 +63,7 @@ pub const document_markdown_tool_system_prompt =
     \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` nor `old_text` is rejected. `content` is the WHOLE new body, not a diff.
     \\- `edit` with `old_text` + `new_text` patches the body IN PLACE — the cheap path for a large document, because you send only the changed text. `old_text` must match EXACTLY ONCE; a miss or an ambiguous match is refused and nothing is written, so include enough surrounding text to be unique, or set `replace_all: true`. `new_text: ""` deletes the match. `content` and `old_text` are mutually exclusive.
     \\- An `office` document's body is a Univer snapshot JSON. Replacing it with prose destroys the spreadsheet, so only write one when you can produce a valid snapshot; otherwise leave the document to the user's grid.
+    \\- `read` returns ONE document's body as a bounded SLICE: `limit` bytes (default 20000, max 200000) starting at `offset` (default 0). The result carries `content_bytes` (the whole body's length), `offset`, `next_offset` and `truncated` — pass `next_offset` as the next `offset` to continue, and stop when `next_offset` is null. Read a slice, not the whole document: a 4 MiB body is 200 pages, and you rarely need more than the part you are about to change.
     \\- `search` takes `query`, a case-insensitive REGEX matched against each document's TITLE AND CONTENT. One pattern reaches a phrase that several words would: `release|launch`, `^Q3`, `\bTODO\b`. Set `literal: true` when the query is literal text (e.g. `*.md`, `fn(`) — otherwise its metacharacters are interpreted. An invalid pattern is not a failure: it is matched as a literal substring and the result carries `pattern_warning`. Read it instead of retrying blindly. Omitting `query` lists your documents, newest-updated first — the right first call when you do not know what you are looking for.
     \\- Results are PAGED: `limit` (default 20, max 100) caps how many rows you get back, `total` is the real match count, `offset` continues the listing, and `hint` names the exact next offset. Every row carries a short `excerpt` around the hit plus `content_length` (bytes) — enough to tell documents apart without dumping megabytes of markdown into your context. A document whose body lives in the object store is searched through its PREVIEW (the first 512 bytes); a row whose `content_length` is much larger than its excerpt may hold the match further in, so open it with `include_content: true`.
     \\- `delete` is IRREVERSIBLE. There is no trash, no undo, and no archive. Once the row is gone the body is unrecoverable — not through this tool, and not from the sidebar. Delete only what the user asked you to delete: "find the doc about X" is not permission to remove X, and a document the user has since revised is still their work. To revise a document instead of removing it, use `action: "edit"`.
@@ -88,7 +89,7 @@ pub const document_markdown_tool = AgentTool{
                 .{
                     .name = "action",
                     .type = "string",
-                    .description = "'create', 'edit', 'search' or 'delete'. Any other value is refused.",
+                    .description = "'create', 'edit', 'read', 'search' or 'delete'. Any other value is refused.",
                 },
                 .{
                     .name = "document_id",
@@ -138,12 +139,12 @@ pub const document_markdown_tool = AgentTool{
                 .{
                     .name = "limit",
                     .type = "number",
-                    .description = "`search`: maximum matches in THIS response (default 20, max 100). The result always reports the true `total` — raise limit, or page with `offset`, only when you need more.",
+                    .description = "`search`: maximum matches in THIS response (default 20, max 100). `read`: maximum BYTES of the body to return (default 20000, max 200000). The result always reports the true `total` / `content_bytes` — raise limit, or page with `offset`, only when you need more.",
                 },
                 .{
                     .name = "offset",
                     .type = "number",
-                    .description = "`search`: skip the first N matches (default 0). The previous page's `hint` names the offset that continues it.",
+                    .description = "`search`: skip the first N matches (default 0). `read`: the BYTE offset to start the slice at (default 0) — pass the previous read's `next_offset` to continue. The previous page's `hint` / `next_offset` names the value that continues it.",
                 },
                 .{
                     .name = "include_content",
@@ -184,6 +185,71 @@ pub const DeleteDocumentSuccess = struct {
     title: []const u8,
     deleted: bool,
 };
+
+/// Bytes a `read` returns when the caller names no `limit`. A 4 MiB body is
+/// 200 pages at this size, which is the point: the model asks for the slice it
+/// needs instead of paying for the whole document.
+pub const DEFAULT_READ_LIMIT: usize = 20_000;
+
+/// Hard cap on one `read`. Above this the caller pages.
+pub const MAX_READ_LIMIT: usize = 200_000;
+
+/// Success payload for `read`. `content` is a SLICE of the body, and
+/// `next_offset` is how the caller continues — null means the end.
+pub const DocumentReadSuccess = struct {
+    id: []const u8,
+    workspace_id: []const u8,
+    title: []const u8,
+    format: []const u8,
+    updated_at: []const u8,
+    content: []const u8,
+    /// The WHOLE body's length, so the caller can size the document without
+    /// reading it.
+    content_bytes: usize,
+    offset: usize,
+    next_offset: ?usize,
+    truncated: bool,
+};
+
+const BodySlice = struct {
+    content: []const u8,
+    offset: usize,
+    next_offset: ?usize,
+};
+
+/// `body[offset..]` cut to at most `limit` bytes, on a UTF-8 boundary so a
+/// multi-byte character is never split across two pages.
+pub fn sliceBody(body: []const u8, offset: usize, limit: usize) BodySlice {
+    const start = @min(offset, body.len);
+    var end = @min(start + limit, body.len);
+    while (end > start and end < body.len and (body[end] & 0xC0) == 0x80) end -= 1;
+    return .{
+        .content = body[start..end],
+        .offset = start,
+        .next_offset = if (end < body.len) end else null,
+    };
+}
+
+fn readSuccessJSON(
+    allocator: std.mem.Allocator,
+    row: documents_store.DocumentRow,
+    offset: usize,
+    limit: usize,
+) ![]u8 {
+    const slice = sliceBody(row.content, offset, limit);
+    return std.json.Stringify.valueAlloc(allocator, DocumentReadSuccess{
+        .id = row.id,
+        .workspace_id = row.workspace_id,
+        .title = row.title,
+        .format = row.format,
+        .updated_at = row.updated_at,
+        .content = slice.content,
+        .content_bytes = row.content.len,
+        .offset = slice.offset,
+        .next_offset = slice.next_offset,
+        .truncated = slice.next_offset != null,
+    }, .{});
+}
 
 fn successJSON(allocator: std.mem.Allocator, row: documents_store.DocumentRow) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, DocumentToolSuccess{
@@ -477,6 +543,58 @@ pub fn executeDeleteDocument(
     }, .{});
 }
 
+/// Execute the `read` action: one document, body included, cut to a bounded
+/// slice. Returns an inner JSON string the exec wrapper embeds. Caller owns
+/// the returned slice and must free it.
+pub fn executeReadDocument(
+    allocator: std.mem.Allocator,
+    store: documents_store.Store,
+    caller_session_id: []const u8,
+    input: DocumentMarkdownInput,
+) ![]const u8 {
+    if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
+        return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action or a `search` row.");
+    }
+
+    const limit: usize = blk: {
+        const raw = input.limit orelse @as(i64, @intCast(DEFAULT_READ_LIMIT));
+        if (raw < 1) {
+            const msg = try std.fmt.allocPrint(allocator, "limit must be at least 1 (got {d})", .{raw});
+            defer allocator.free(msg);
+            return errorJSON(allocator, msg);
+        }
+        if (raw > @as(i64, @intCast(MAX_READ_LIMIT))) {
+            const msg = try std.fmt.allocPrint(
+                allocator,
+                "limit must be at most {d} bytes (got {d}) — page with `offset` instead",
+                .{ MAX_READ_LIMIT, raw },
+            );
+            defer allocator.free(msg);
+            return errorJSON(allocator, msg);
+        }
+        break :blk @intCast(raw);
+    };
+    const offset: usize = blk: {
+        const raw = input.offset orelse 0;
+        if (raw < 0) {
+            const msg = try std.fmt.allocPrint(allocator, "offset must not be negative (got {d})", .{raw});
+            defer allocator.free(msg);
+            return errorJSON(allocator, msg);
+        }
+        break :blk @intCast(raw);
+    };
+
+    const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
+        return scopeErrorJSON(allocator, caller_session_id);
+    defer allocator.free(workspace_id);
+
+    const row = store.getDocument(allocator, workspace_id, input.document_id) catch |err| {
+        return errorJSON(allocator, readErrorMessage(err));
+    };
+    defer documents_store.freeDocumentRow(allocator, row);
+    return readSuccessJSON(allocator, row, offset, limit);
+}
+
 const TestCtx = struct {
     db: database.Db,
     threaded: std.Io.Threaded,
@@ -548,6 +666,10 @@ const Parsed = struct {
     title: []const u8 = "",
     content: []const u8 = "",
     format: []const u8 = "",
+    content_bytes: usize = 0,
+    offset: usize = 0,
+    next_offset: ?usize = null,
+    truncated: bool = false,
     err: ?[]const u8 = null,
 
     fn deinit(self: *Parsed) void {
@@ -568,6 +690,10 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
         title: []const u8 = "",
         content: []const u8 = "",
         format: []const u8 = "",
+        content_bytes: usize = 0,
+        offset: usize = 0,
+        next_offset: ?usize = null,
+        truncated: bool = false,
         @"error": ?[]const u8 = null,
     };
     const p = try std.json.parseFromSlice(Wire, allocator, raw, .{
@@ -582,6 +708,10 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
         .title = try allocator.dupe(u8, p.value.title),
         .content = try allocator.dupe(u8, p.value.content),
         .format = try allocator.dupe(u8, p.value.format),
+        .content_bytes = p.value.content_bytes,
+        .offset = p.value.offset,
+        .next_offset = p.value.next_offset,
+        .truncated = p.value.truncated,
         .err = if (p.value.@"error") |e| try allocator.dupe(u8, e) else null,
     };
 }
@@ -981,6 +1111,96 @@ test "document_markdown edit: old_text with no new_text is refused rather than d
     try testing.expectEqualStrings("keep me", row.content);
 }
 
+test "document_markdown read: returns a bounded slice and the offset that continues it" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "0123456789");
+    defer alloc.free(id);
+
+    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .offset = 2,
+        .limit = 4,
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err == null);
+    try testing.expectEqualStrings("2345", p.content);
+    // The whole body's length, so the caller can size the document without
+    // reading the rest of it.
+    try testing.expectEqual(@as(usize, 10), p.content_bytes);
+    try testing.expectEqual(@as(usize, 2), p.offset);
+    try testing.expectEqual(@as(?usize, 6), p.next_offset);
+    try testing.expect(p.truncated);
+}
+
+test "document_markdown read: the last page reports no next_offset" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "0123456789");
+    defer alloc.free(id);
+
+    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .offset = 8,
+        .limit = 100,
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expectEqualStrings("89", p.content);
+    try testing.expectEqual(@as(?usize, null), p.next_offset);
+    try testing.expect(!p.truncated);
+}
+
+test "document_markdown read: a slice never splits a multi-byte character" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    // "a" is 1 byte, "é" is 2. A 2-byte limit lands inside the é.
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "aébc");
+    defer alloc.free(id);
+
+    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .limit = 2,
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expectEqualStrings("a", p.content);
+    try testing.expectEqual(@as(?usize, 1), p.next_offset);
+}
+
+test "document_markdown read: a limit above the cap is refused, not silently clamped" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.deinit();
+
+    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "body");
+    defer alloc.free(id);
+
+    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
+        .document_id = id,
+        .limit = @as(i64, @intCast(MAX_READ_LIMIT)) + 1,
+    });
+    defer alloc.free(out);
+    var p = try parseJson(alloc, out);
+    defer p.deinit();
+
+    try testing.expect(p.err != null);
+    try testing.expect(std.mem.indexOf(u8, p.err.?, "offset") != null);
+}
+
 test "document_markdown edit: workspace B cannot edit workspace A's document, and the error is identical to a missing one" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
@@ -1185,12 +1405,13 @@ pub fn execDocumentMarkdown(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecR
     const input = parsed.value;
     if (std.mem.eql(u8, input.action, "create")) return runCreate(ctx, tc, input);
     if (std.mem.eql(u8, input.action, "edit")) return runEdit(ctx, tc, input);
+    if (std.mem.eql(u8, input.action, "read")) return runRead(ctx, tc, input);
     if (std.mem.eql(u8, input.action, "search")) return runSearch(ctx, tc, input);
     if (std.mem.eql(u8, input.action, "delete")) return runDelete(ctx, tc, input);
 
     const msg = try std.fmt.allocPrint(
         ctx.allocator,
-        "action must be one of create, edit, search, delete (got \"{s}\")",
+        "action must be one of create, edit, read, search, delete (got \"{s}\")",
         .{input.action},
     );
     defer ctx.allocator.free(msg);
@@ -1218,6 +1439,26 @@ fn runEdit(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.Documen
     ) catch |err| return execFailure(ctx, tc, err);
     defer ctx.allocator.free(inner);
     return finishMutation(ctx, tc, inner, "updated");
+}
+
+fn runRead(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
+    const inner = document_mod.executeReadDocument(
+        ctx.allocator,
+        .{ .db = ctx.db, .storage = ctx.storage },
+        ctx.session_id,
+        input,
+    ) catch |err| return execFailure(ctx, tc, err);
+    defer ctx.allocator.free(inner);
+
+    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
+        defer probe.deinit();
+        if (probe.value.@"error") |err_msg| {
+            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, inner);
+            return ToolExecResult{ .output = output, .output_allocated = true };
+        }
+    }
+    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, true, null, inner);
+    return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
 fn runDelete(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {

@@ -127,6 +127,10 @@ pub const DocumentsOp = enum {
     doc_delete,
     /// `document_markdown` with `action: "search"`, through the same dispatch.
     doc_search,
+    /// `document_markdown` with `action: "read"`, through the same dispatch.
+    /// Returns a bounded slice of the body, so a 4 MiB document is readable
+    /// without paying for all of it.
+    doc_read,
     /// `document_html` with `action: "create"`, through the real agent tool
     /// dispatch, so the HTML page's round trip is exercised with no server.
     doc_html_add,
@@ -172,6 +176,8 @@ pub const DocumentsArgs = struct {
     session: []const u8 = "",
     /// `backfill`: stop after this many rows. 0 means no cap.
     limit: usize = 0,
+    /// `doc-read` / `doc-html-read`: the byte offset the slice starts at.
+    offset: usize = 0,
     /// `backfill`: report what would move without writing anything.
     dry_run: bool = false,
     /// `search`: the literal substring to look for.
@@ -277,13 +283,14 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      doc-create flags: --content <body> --format markdown|office|html\n" ++
     "      search flags: --query <text>\n" ++
     "      export flags: --document <id> | --documents <id,id,...> --out <path>\n" ++
     "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get, doc-html-add, doc-html-edit, doc-html-read)\n" ++
     "      in-place patch flags: --old-text <t> --new-text <t> --replace-all (doc-edit, doc-html-edit)\n" ++
+    "      bounded read flags: --offset <bytes> --limit <bytes> (doc-read, doc-html-read; default 20000, max 200000)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
@@ -498,6 +505,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-edit")) break :blk .doc_edit;
         if (std.mem.eql(u8, word, "doc-delete")) break :blk .doc_delete;
         if (std.mem.eql(u8, word, "doc-search")) break :blk .doc_search;
+        if (std.mem.eql(u8, word, "doc-read")) break :blk .doc_read;
         if (std.mem.eql(u8, word, "doc-html-add")) break :blk .doc_html_add;
         if (std.mem.eql(u8, word, "doc-html-edit")) break :blk .doc_html_edit;
         if (std.mem.eql(u8, word, "doc-html-read")) break :blk .doc_html_read;
@@ -562,6 +570,11 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.limit = std.fmt.parseInt(usize, argv[i], 10) catch
                 return fail(.{ .kind = .invalid_number, .value = argv[i] });
+        } else if (std.mem.eql(u8, flag, "--offset")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.offset = std.fmt.parseInt(usize, argv[i], 10) catch
+                return fail(.{ .kind = .invalid_number, .value = argv[i] });
         } else if (std.mem.eql(u8, flag, "--dry-run")) {
             got.dry_run = true;
         } else if (std.mem.eql(u8, flag, "--query")) {
@@ -583,7 +596,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     }
 
     const tool_op = op == .doc_add or op == .doc_edit or op == .doc_delete or op == .doc_search or op == .doc_get or
-        op == .doc_html_add or op == .doc_html_edit or op == .doc_html_read;
+        op == .doc_read or op == .doc_html_add or op == .doc_html_edit or op == .doc_html_read;
     if (tool_op) {
         if (got.session.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--session" });
     } else if (got.workspace_id.len == 0 and op != .backfill) {
@@ -611,7 +624,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         .doc_create, .doc_add, .doc_html_add => {
             if (got.title.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--title" });
         },
-        .doc_move, .doc_edit, .doc_delete, .doc_get, .doc_html_edit, .doc_html_read => {
+        .doc_move, .doc_edit, .doc_delete, .doc_get, .doc_read, .doc_html_edit, .doc_html_read => {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
         .doc_search => {},
@@ -1143,6 +1156,16 @@ test "parse: documents doc-html-edit takes an in-place patch instead of a whole 
     try testing.expectEqualStrings("<h1>New</h1>", a.documents.new_text.?);
     try testing.expect(a.documents.replace_all);
     try testing.expectEqualStrings("", a.documents.content);
+}
+
+test "parse: documents doc-read takes a byte offset and a limit" {
+    const a = try parse(&.{
+        "documents", "doc-read", "--session", "task_1", "--document", "doc_a",
+        "--offset", "20000", "--limit", "5000",
+    });
+    try testing.expectEqual(DocumentsOp.doc_read, a.documents.op);
+    try testing.expectEqual(@as(usize, 20000), a.documents.offset);
+    try testing.expectEqual(@as(usize, 5000), a.documents.limit);
 }
 
 test "parse: documents doc-get needs a session and a document id" {
