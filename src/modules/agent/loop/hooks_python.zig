@@ -99,10 +99,9 @@ pub fn resolveInterpreter(
     return allocator.dupe(u8, try scanForPython3(io));
 }
 
-/// Run one Python hook. Returns the hook's JSON return value (caller frees),
-/// or null when the hook produced nothing usable. Every failure mode — no
-/// interpreter, non-zero exit, timeout, empty stdout — is a null, never an
-/// error: a broken hook must not break the run.
+/// Run one Python hook. Returns its JSON return value (caller frees), or null
+/// when it produced nothing usable. Every failure mode — no interpreter,
+/// non-zero exit, timeout, empty stdout — is a null, never an error.
 pub fn runPythonHook(
     allocator: std.mem.Allocator,
     io: std.Io,
