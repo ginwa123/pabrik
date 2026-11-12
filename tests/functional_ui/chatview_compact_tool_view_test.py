@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from chatview_boot import (
@@ -1076,3 +1077,132 @@ def test_a_background_completion_folds_into_the_run(ui_harness: UIHarness, page)
     assert names.count("command") == 2, (
         f"the completion draws as a `command` row, got {names}"
     )
+
+
+# ─── The run that is still going: the in-flight call, and its time ──────────────────────────────
+
+# How long ago the in-flight call started. The header must count at least this much on top of the
+# answered calls, so the assertion cannot pass on the answered sum alone.
+IN_FLIGHT_AGE_SECONDS = 7
+ANSWERED_CALL_MS = 2_000
+
+
+def _pending_envelope(tool: str, parameters: object) -> str:
+    return json.dumps(
+        {
+            "tool": tool,
+            "parameters": parameters,
+            "success": True,
+            "data": None,
+            "error": None,
+            "pending": True,
+            "v": 1,
+        }
+    )
+
+
+def _seed_turn_with_a_running_call(
+    h: UIHarness, workspace_id: str, session_id: str
+) -> None:
+    """One turn: two answered calls, then a call that has not answered yet."""
+    seed = DbSeed(_seed_db_path(h))
+    with seed.connect() as conn:
+        seed.seed_session(conn, session_id, "Compact View", cwd=str(h.temp_dir))
+        bind_session_workspace(conn, workspace_id, session_id)
+        seed.seed_user_message(conn, session_id, text="run the suite")
+
+        for index, (tool, parameters) in enumerate(CALLS[:2]):
+            call_id = f"tc_answered_{index}"
+            seed.seed_assistant_message(
+                conn,
+                session_id,
+                text="",
+                finish_reason="tool_calls",
+                tool_calls=[
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": tool, "arguments": json.dumps(parameters)},
+                    }
+                ],
+            )
+            seed.seed_tool_result(
+                conn,
+                session_id,
+                tool_call_id=call_id,
+                tool_name=tool,
+                content=_envelope(tool, parameters, {}, duration_ms=ANSWERED_CALL_MS),
+            )
+
+        running_tool, running_parameters = CALLS[1]
+        started = datetime.now(timezone.utc) - timedelta(seconds=IN_FLIGHT_AGE_SECONDS)
+        seed.seed_assistant_message(
+            conn,
+            session_id,
+            text="",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "tc_running",
+                    "type": "function",
+                    "function": {
+                        "name": running_tool,
+                        "arguments": json.dumps(running_parameters),
+                    },
+                }
+            ],
+        )
+        running_msg_id = seed.seed_tool_result(
+            conn,
+            session_id,
+            tool_call_id="tc_running",
+            tool_name=running_tool,
+            content=_pending_envelope(running_tool, running_parameters),
+        )
+        # `created_at_nano` is NANOSECONDS in production (the placeholder is
+        # written with `Timestamp.now(...).nanoseconds`), so the row's start
+        # time is set here rather than through the ISO helper.
+        conn.execute(
+            "UPDATE llm_history SET created_at_nano = ? WHERE id = ?",
+            (str(int(started.timestamp() * 1_000_000_000)), running_msg_id),
+        )
+
+
+def _seconds_of(label: str) -> float:
+    """The run here is seconds long, so minutes never appear."""
+    return float(label.strip().rstrip("s"))
+
+
+def test_the_header_names_the_running_call_and_counts_its_time(
+    ui_harness: UIHarness, page, artifacts_dir: Path
+) -> None:
+    """A call in flight is named beside the count, and its time is in the run's total."""
+    h = ui_harness
+    session_id = "sess_compact_view_running_001"
+    workspace_id = create_workspace(h)
+    _write_config(h, "compact")
+    _seed_turn_with_a_running_call(h, workspace_id, session_id)
+
+    open_chatview(page, h, workspace_id, session_id)
+    page.locator('[data-testid="compact-tool-group"]').first.wait_for(timeout=20000)
+
+    count = page.locator('[data-testid="compact-tool-group-count"]').first.inner_text()
+    assert count.strip() == f"{len(CALLS[:2]) + 1} tool calls", (
+        f"the card must count the call in flight too, got {count!r}"
+    )
+
+    running = page.locator('[data-testid="compact-tool-group-running"]').first
+    running.wait_for(timeout=10000)
+    assert running.inner_text().strip() == "running: command ls -la", (
+        "the header must name the call that has not answered, got "
+        f"{running.inner_text()!r}"
+    )
+
+    label = page.locator('[data-testid="compact-tool-group-duration"]').first.inner_text()
+    answered_seconds = (ANSWERED_CALL_MS * 2) / 1000
+    assert _seconds_of(label) >= answered_seconds + IN_FLIGHT_AGE_SECONDS - 1, (
+        f"the run's time must include the call in flight ({IN_FLIGHT_AGE_SECONDS}s so far) on top "
+        f"of the answered {answered_seconds}s, got {label!r}"
+    )
+
+    page.screenshot(path=str(artifacts_dir / "compact-header-running.png"))

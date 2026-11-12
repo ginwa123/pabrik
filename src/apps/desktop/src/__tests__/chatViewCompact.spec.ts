@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PabrikGeneralSection, {
   type PabrikGeneralSettings,
@@ -23,6 +24,8 @@ interface CardOptions {
   durationMs?: number
   content?: string
   toolCallId?: string
+  startedAt?: Date
+  pending?: boolean
 }
 
 /** One tool call of a run, with the envelope the backend wrote. */
@@ -36,12 +39,17 @@ function card(tool: string, options: CardOptions = {}): ToolCardData {
     v: 1,
   }
   if (options.durationMs !== undefined) envelope.duration_ms = options.durationMs
+  if (options.pending) {
+    envelope.data = null
+    envelope.pending = true
+  }
   const content = options.content ?? JSON.stringify(envelope)
   return {
     message: {
       id: `${tool}-1`,
       role: 'tool',
       content,
+      timestamp: options.startedAt,
       tool_name: tool,
       tool_call_id: options.toolCallId,
     },
@@ -185,10 +193,79 @@ describe('the compact group', () => {
     expect(wrapper.find('[data-testid="compact-tool-group-duration"]').exists()).toBe(false)
   })
 
+  it('names the call that has not answered yet, beside the count', () => {
+    const wrapper = mountGroup(
+      itemsOf([
+        card('read_file', { durationMs: 40 }),
+        call('command', '{"command":"ls -la"}', { pending: true }),
+      ]),
+    )
+    expect(wrapper.get('[data-testid="compact-tool-group-count"]').text()).toBe('2 tool calls')
+    expect(wrapper.get('[data-testid="compact-tool-group-running"]').text()).toBe(
+      'running: command ls -la',
+    )
+  })
+
+  it('stops naming a call once it answers', () => {
+    const wrapper = mountGroup(
+      itemsOf([card('read_file', { durationMs: 40 }), card('command', { durationMs: 20 })]),
+    )
+    expect(wrapper.find('[data-testid="compact-tool-group-running"]').exists()).toBe(false)
+  })
+
   it('unfolds the run into one row per call', async () => {
     const wrapper = mountGroup(itemsOf([card('read_file'), card('command')]))
     await wrapper.get('[data-testid="compact-tool-group-header"]').trigger('click')
     expect(wrapper.findAll('[data-testid="compact-tool-row"]')).toHaveLength(2)
+  })
+})
+
+describe('the time of a run that is still going', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:10Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("counts the in-flight call's elapsed time in the run's total", async () => {
+    const wrapper = mountGroup(
+      itemsOf([
+        card('read_file', { durationMs: 2_000 }),
+        call('command', '{"command":"sleep 60"}', {
+          pending: true,
+          startedAt: new Date('2026-01-01T00:00:07Z'),
+        }),
+      ]),
+    )
+    expect(wrapper.get('[data-testid="compact-tool-group-duration"]').text()).toBe('5.0s')
+
+    vi.advanceTimersByTime(2_000)
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="compact-tool-group-duration"]').text()).toBe('7.0s')
+  })
+
+  it('stops counting once the call answers', async () => {
+    const wrapper = mountGroup(
+      itemsOf([
+        call('command', '{"command":"sleep 60"}', {
+          pending: true,
+          startedAt: new Date('2026-01-01T00:00:07Z'),
+        }),
+      ]),
+    )
+    expect(wrapper.get('[data-testid="compact-tool-group-duration"]').text()).toBe('3.0s')
+
+    await wrapper.setProps({
+      items: itemsOf([card('command', { durationMs: 3_000 })]),
+    })
+    vi.advanceTimersByTime(5_000)
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="compact-tool-group-duration"]').text()).toBe('3.0s')
   })
 })
 

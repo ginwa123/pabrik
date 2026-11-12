@@ -2,7 +2,7 @@
 /** CompactToolGroup — a run of tool calls, the thoughts between them and the narration the agent
  * wrote on the way to each call. Every run is one card that unfolds into the rows, a run of one
  * included: the count and the duration are what the reader scans for. */
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, onUpdated, ref } from 'vue'
 
 import { tryUnwrapToolOutput } from '@/helpers/unwrapToolOutput'
 import { summarizeToolCall } from '../_shared/toolSummary'
@@ -40,8 +40,38 @@ const writeCount = computed(
       ['write_file', 'text_replace', 'remove_file'].includes(card.message.tool_name ?? ''),
     ).length,
 )
-const durationMs = computed(() =>
-  envelopes.value.reduce((total, envelope) => total + (envelope?.duration_ms ?? 0), 0),
+const summaries = computed(() =>
+  cards.value.map((card) =>
+    summarizeToolCall(card.message.tool_name ?? 'tool', card.parameters, card.message.content),
+  ),
+)
+
+const runningIndex = computed(() =>
+  summaries.value.findIndex((summary) => summary.status === 'running'),
+)
+
+const runningLabel = computed(() => {
+  const index = runningIndex.value
+  if (index < 0) return ''
+  const summary = summaries.value[index]!
+  return `${summary.name} ${summary.primary}`.trim()
+})
+
+const now = ref(Date.now())
+
+/** The in-flight call's own time, so the run's total keeps counting instead of freezing. */
+const runningElapsedMs = computed(() => {
+  const index = runningIndex.value
+  if (index < 0) return 0
+  const started = cards.value[index]?.message.timestamp
+  if (!started) return 0
+  return Math.max(0, now.value - started.getTime())
+})
+
+const durationMs = computed(
+  () =>
+    envelopes.value.reduce((total, envelope) => total + (envelope?.duration_ms ?? 0), 0) +
+    runningElapsedMs.value,
 )
 
 const durationLabel = computed(() => formatDuration(durationMs.value))
@@ -50,8 +80,10 @@ const countLabel = computed(() =>
   cards.value.length === 1 ? '1 tool call' : `${cards.value.length} tool calls`,
 )
 
-/** A run of one has no count to scan, so the header carries the call itself. */
+/** A run of one has no count to scan, so the header carries the call itself. A running call
+ * already names itself beside the count, so it is not named twice. */
 const summaryLabel = computed(() => {
+  if (runningIndex.value >= 0) return ''
   const only = cards.value.length === 1 ? cards.value[0] : undefined
   if (!only) return ''
   const summary = summarizeToolCall(
@@ -61,6 +93,32 @@ const summaryLabel = computed(() => {
   )
   return `${summary.name} ${summary.primary}`.trim()
 })
+
+let ticker: ReturnType<typeof setInterval> | null = null
+
+function stopTicker(): void {
+  if (ticker === null) return
+  clearInterval(ticker)
+  ticker = null
+}
+
+function tick(): void {
+  if (runningIndex.value < 0) {
+    stopTicker()
+    return
+  }
+  now.value = Date.now()
+}
+
+function ensureTicker(): void {
+  if (ticker !== null || runningIndex.value < 0) return
+  now.value = Date.now()
+  ticker = setInterval(tick, 1000)
+}
+
+onMounted(ensureTicker)
+onUpdated(ensureTicker)
+onUnmounted(stopTicker)
 
 /** A call the user opened: the full card, not a row. */
 function isFullCard(card: ToolCardData): boolean {
@@ -94,6 +152,13 @@ function toggle(): void {
           >
             {{ countLabel }}
           </span>
+          <span
+            v-if="runningLabel"
+            class="min-w-0 max-w-[45%] truncate text-dense"
+            style="color: var(--color-orange)"
+            data-testid="compact-tool-group-running"
+            >running: {{ runningLabel }}</span
+          >
           <span
             class="flex-1 min-w-0 truncate text-left text-dense"
             style="color: var(--semantic-text-dim)"
