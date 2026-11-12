@@ -10,8 +10,10 @@ const props = withDefaults(
     owner: string
     title: string
     showSidebarToggle?: boolean
+    /** The window's own row has no chat to close, so its strip hides the ✕. */
+    showClose?: boolean
   }>(),
-  { showSidebarToggle: true },
+  { showSidebarToggle: true, showClose: true },
 )
 
 const emit = defineEmits<{
@@ -228,6 +230,7 @@ function openDiff(): void {
       </button>
 
       <button
+        v-if="showClose"
         type="button"
         class="shrink-0 w-7 h-7 rounded flex items-center justify-center text-title-sm hover:opacity-70 transition-opacity"
         style="color: var(--semantic-text-dim)"
