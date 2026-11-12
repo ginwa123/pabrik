@@ -4275,6 +4275,9 @@ pub const WorkspaceItemInfo = struct {
     updated_at: ?[]u8 = null,
     /// Migration 094 — 1 when this item is the workspace's default project.
     is_default: i64 = 0,
+    /// Migration 147 — the project's own glyph name. NULL means "no override":
+    /// the UI derives `folder` / `folder-open` from the expanded state.
+    icon: ?[]u8 = null,
 
     pub fn deinit(self: WorkspaceItemInfo, allocator: std.mem.Allocator) void {
         allocator.free(self.id);
@@ -4284,6 +4287,7 @@ pub const WorkspaceItemInfo = struct {
         if (self.path) |p| allocator.free(p);
         if (self.created_at) |ca| allocator.free(ca);
         if (self.updated_at) |ua| allocator.free(ua);
+        if (self.icon) |i| allocator.free(i);
     }
 };
 
@@ -4311,7 +4315,7 @@ pub fn getWorkspaceItem(
     db: *database.Db,
     id: []const u8,
 ) !?WorkspaceItemInfo {
-    const sql = "SELECT id, workspace_id, item_type, name, path, created_at, updated_at, is_default FROM workspace_items WHERE id = ?";
+    const sql = "SELECT id, workspace_id, item_type, name, path, created_at, updated_at, is_default, icon FROM workspace_items WHERE id = ?";
 
     var rows = try db.query(allocator, sql, &.{id});
     defer rows.deinit();
@@ -4326,6 +4330,7 @@ pub fn getWorkspaceItem(
             .created_at = if (row.values[5].len > 0) try allocator.dupe(u8, row.values[5]) else null,
             .updated_at = if (row.values[6].len > 0) try allocator.dupe(u8, row.values[6]) else null,
             .is_default = std.fmt.parseInt(i64, row.values[7], 10) catch 0,
+            .icon = if (row.values[8].len > 0) try allocator.dupe(u8, row.values[8]) else null,
         };
         row.deinit(allocator);
         return item;
@@ -4373,6 +4378,24 @@ pub fn updateWorkspaceItemName(
     try db.exec(allocator, sql, &.{ name, id });
 }
 
+/// Update only the `icon` column of a workspace item (Migration 147). `null`
+/// clears the override — what "Reset to default" writes — so the row falls back
+/// to `folder` / `folder-open`.
+pub fn updateWorkspaceItemIcon(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    id: []const u8,
+    icon: ?[]const u8,
+) !void {
+    if (icon) |value| {
+        const sql = "UPDATE workspace_items SET icon = ?, updated_at = datetime('now') WHERE id = ?";
+        try db.exec(allocator, sql, &.{ value, id });
+    } else {
+        const sql = "UPDATE workspace_items SET icon = NULL, updated_at = datetime('now') WHERE id = ?";
+        try db.exec(allocator, sql, &.{id});
+    }
+}
+
 /// Delete a workspace item by id
 pub fn deleteWorkspaceItem(
     allocator: std.mem.Allocator,
@@ -4390,7 +4413,7 @@ pub fn listWorkspaceItems(
     db: *database.Db,
     workspace_id: []const u8,
 ) ![]WorkspaceItemInfo {
-    const sql = "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at, wi.is_default FROM workspace_items wi WHERE wi.workspace_id = ? ORDER BY wi.position DESC, wi.id ASC";
+    const sql = "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at, wi.is_default, wi.icon FROM workspace_items wi WHERE wi.workspace_id = ? ORDER BY wi.position DESC, wi.id ASC";
 
     var rows = try db.query(allocator, sql, &.{workspace_id});
     defer rows.deinit();
@@ -4411,6 +4434,7 @@ pub fn listWorkspaceItems(
             .created_at = if (row.values[5].len > 0) try allocator.dupe(u8, row.values[5]) else null,
             .updated_at = if (row.values[6].len > 0) try allocator.dupe(u8, row.values[6]) else null,
             .is_default = std.fmt.parseInt(i64, row.values[7], 10) catch 0,
+            .icon = if (row.values[8].len > 0) try allocator.dupe(u8, row.values[8]) else null,
         };
         try items.append(allocator, item);
         row.deinit(allocator);
@@ -4425,7 +4449,7 @@ pub fn listAllWorkspaceItems(
     allocator: std.mem.Allocator,
     db: *database.Db,
 ) ![]WorkspaceItemInfo {
-    const sql = "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at FROM workspace_items wi ORDER BY wi.position DESC, wi.id ASC";
+    const sql = "SELECT wi.id, wi.workspace_id, wi.item_type, wi.name, wi.path, wi.created_at, wi.updated_at, wi.icon FROM workspace_items wi ORDER BY wi.position DESC, wi.id ASC";
 
     var rows = try db.query(allocator, sql, &.{});
     defer rows.deinit();
@@ -4445,6 +4469,7 @@ pub fn listAllWorkspaceItems(
             .path = if (row.values[4].len > 0) try allocator.dupe(u8, row.values[4]) else null,
             .created_at = if (row.values[5].len > 0) try allocator.dupe(u8, row.values[5]) else null,
             .updated_at = if (row.values[6].len > 0) try allocator.dupe(u8, row.values[6]) else null,
+            .icon = if (row.values[7].len > 0) try allocator.dupe(u8, row.values[7]) else null,
         };
         try items.append(allocator, item);
         row.deinit(allocator);

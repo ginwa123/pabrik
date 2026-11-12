@@ -158,7 +158,7 @@ describe('ProjectsList section-header running indicator', () => {
     await nextTick()
     const header = wrapper.find('[data-testid="projects-section-header"]')
     const html = header.html()
-    const chevronIdx = html.indexOf('▶')
+    const chevronIdx = html.indexOf('data-icon="chevron-down"')
     const indIdx = html.indexOf('workspace-running-indicator')
     const chipIdx = html.indexOf('workspace-elapsed-chip')
     expect(chevronIdx).toBeGreaterThan(-1)

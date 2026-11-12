@@ -34,6 +34,9 @@ withDefaults(
     /** Show "Delete project" for a workspace-item row. Same reason as
      * `showAddTask`: the row's `×` is hover-reveal only. */
     showDeleteItem?: boolean
+    /** Show "Change icon…" for a workspace-item row. The glyph itself is
+     * decorative, so the menu is the only route to the action. */
+    showChangeIcon?: boolean
     /**      * Show "Rename task" for a sidebar task row. The row's pencil was one of three hover buttons
      * migrated into this menu, so the menu is now the only route to the action. */
     showRename?: boolean
@@ -54,6 +57,7 @@ const emit = defineEmits<{
   runAgent: []
   addTask: []
   deleteItem: []
+  changeIcon: []
   rename: []
   deleteTask: []
 }>()
@@ -215,6 +219,16 @@ const emit = defineEmits<{
         @click="emit('addTask')"
       >
         <span aria-hidden="true" class="mr-2 opacity-70">&#43;</span>Add task
+      </button>
+      <button
+        v-if="showChangeIcon"
+        type="button"
+        role="menuitem"
+        data-testid="change-icon-menu-item"
+        class="block w-full text-left px-3 py-1.5 hover:opacity-80"
+        @click="emit('changeIcon')"
+      >
+        <UiIcon name="palette" class="mr-2 opacity-70" />Change icon…
       </button>
       <button
         v-if="showDeleteItem"

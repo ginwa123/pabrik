@@ -5,7 +5,17 @@ pub const WorkspaceResponse = struct { id: []const u8, name: []const u8, created
 
 pub const WorkspaceItemResponse = struct { id: []const u8, success: bool = true };
 
-pub const WorkspaceItemFullResponse = struct { id: []const u8, workspace_id: []const u8, item_type: []const u8, name: ?[]const u8 = null, path: ?[]const u8 = null, created_at: ?[]const u8 = null, updated_at: ?[]const u8 = null, is_default: i64 = 0 };
+pub const WorkspaceItemFullResponse = struct {
+    id: []const u8,
+    workspace_id: []const u8,
+    item_type: []const u8,
+    name: ?[]const u8 = null,
+    path: ?[]const u8 = null,
+    created_at: ?[]const u8 = null,
+    updated_at: ?[]const u8 = null,
+    is_default: i64 = 0,
+    icon: ?[]const u8 = null,
+};
 
 // ─── Kanban column types ───────────────────────────────────────────────────
 // Wire shape for `GET /api/workspaces/:wsId/items/:itemId/kanban/columns`
@@ -69,7 +79,17 @@ pub const LlmRunResponse = struct { status: []const u8, session_id: []const u8 }
 
 pub const WorkspaceItemUpdateResponse = struct { id: []const u8, workspace_id: []const u8, item_type: []const u8, success: bool = true };
 
-pub const WorkspaceItemGetResponse = struct { id: []const u8, workspace_id: []const u8, item_type: []const u8, name: ?[]const u8 = null, path: ?[]const u8 = null, created_at: ?[]const u8 = null, updated_at: ?[]const u8 = null, is_default: i64 = 0 };
+pub const WorkspaceItemGetResponse = struct {
+    id: []const u8,
+    workspace_id: []const u8,
+    item_type: []const u8,
+    name: ?[]const u8 = null,
+    path: ?[]const u8 = null,
+    created_at: ?[]const u8 = null,
+    updated_at: ?[]const u8 = null,
+    is_default: i64 = 0,
+    icon: ?[]const u8 = null,
+};
 
 pub const SystemFolderErrorResponse = struct { @"error": []const u8, details: ?[]const u8 = null };
 
@@ -415,6 +435,7 @@ pub fn makeWorkspaceItemListResponse(allocator: std.mem.Allocator, items: anytyp
             .created_at = item.created_at,
             .updated_at = item.updated_at,
             .is_default = item.is_default,
+            .icon = item.icon,
         }, .{});
         defer allocator.free(json_str);
         try list.appendSlice(allocator, json_str);

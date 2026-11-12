@@ -112,6 +112,7 @@ pub fn workspaceItemsGetHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReq
         .created_at = item.created_at,
         .updated_at = item.updated_at,
         .is_default = item.is_default,
+        .icon = item.icon,
     }) });
 }
 

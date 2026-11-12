@@ -10,6 +10,9 @@ import DesignPageRow from './DesignPageRow.vue'
 import type { DesignPage } from '../../api'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
+import UiIcon from '../ui/UiIcon.vue'
+import ProjectIconPicker from './ProjectIconPicker.vue'
+import { projectIconFor } from '../../stores/projectIcons'
 
 const workspacesStore = useWorkspacesStore()
 
@@ -196,6 +199,36 @@ const openItemMenuAddTask = () => {
 const openItemMenuDelete = () => {
   closeItemMenu()
   emit('delete', props.item)
+}
+
+// ─── Project icon (Migration 147) ────────────────────────────────────────
+// The glyph is a NAME stored on the server row, not in this browser.
+const projectIcon = computed(() => projectIconFor(props.item, isExpanded.value))
+
+// Where the flyout anchors. Captured from the menu BEFORE it closes, so the
+// picker still lands beside the row the user right-clicked.
+const iconPickerPos = ref<{ x: number; y: number } | null>(null)
+
+const openItemMenuChangeIcon = () => {
+  const anchor = menuPos.value
+  // Measured, not assumed: the menu's width is content-driven, so a
+  // hardcoded offset would mis-anchor the flyout.
+  const menu = document.querySelector('[data-testid="open-new-tab-menu"]')
+  const right = menu?.getBoundingClientRect().right ?? (anchor ? anchor.x + 220 : 0)
+  closeItemMenu()
+  if (!anchor) return
+  iconPickerPos.value = { x: right, y: anchor.y }
+}
+
+const closeIconPicker = () => {
+  iconPickerPos.value = null
+}
+
+const applyIcon = (icon: string | null) => {
+  iconPickerPos.value = null
+  // The store rolls the row back and logs on failure; the sidebar then shows
+  // the glyph the database actually holds, which is the honest state.
+  void workspacesStore.setItemIcon(props.workspaceId, props.item.id, icon).catch(() => {})
 }
 
 // Add-task is hidden for kanban + routine (board/scheduler own
@@ -500,24 +533,30 @@ const handlePinnedDrop = (event: DragEvent) => {
           <!-- Processing slider (LLM worker is running on one of this
                item's tasks). Mounted at the bottom edge of the row,
                self-positioning (absolute bottom-0). -->
-          <!-- Chevron — bare text, exactly like the section headers
-               (Pinned / Recent / Projects / Documents). It used to sit in
-               a 24px hit box, which centred the glyph at x=20 while every
-               section-header chevron rendered at x=12 — three chevrons at
-               three different left edges. Bare text puts this one at 12
-               too, and the project name at 28, matching the section
-               titles. Rotates when expanded. -->
+          <!-- Chevron — a `chevron-down` glyph in the same mark column the
+               section headers use. It already points down, so expanded is
+               rotate(0deg) and collapsed is rotate(-90deg). -->
           <span
-            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            class="w-[var(--sb-mark)] shrink-0 flex items-center transition-transform duration-200"
             data-testid="item-row-chevron"
             :style="{
-              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
               color: 'var(--semantic-text-dim)',
             }"
             aria-hidden="true"
             @click="item.item_type === 'design' ? handleChevronToggle($event) : null"
-            >▶</span
           >
+            <UiIcon name="chevron-down" :size="12" />
+          </span>
+          <span
+            class="shrink-0 flex items-center mr-1.5"
+            data-testid="item-row-icon"
+            :data-icon="projectIcon"
+            :style="{ color: 'var(--semantic-text-dim)' }"
+            aria-hidden="true"
+          >
+            <UiIcon :name="projectIcon" :size="14" />
+          </span>
           <!-- Item Name. Fall back to "Untitled project" for legacy
                empty-name rows (plan 2026-07-10). Title carries the full
                name so truncated rows recover on hover (wireframe R4).
@@ -760,11 +799,23 @@ const handlePinnedDrop = (event: DragEvent) => {
       :y="menuPos.y"
       :show-settings="showItemSettings"
       :show-add-task="showItemAddTask"
+      :show-change-icon="true"
       :show-delete-item="true"
       @open="openItemMenuInBackground"
       @settings="openItemMenuSettings"
       @add-task="openItemMenuAddTask"
+      @change-icon="openItemMenuChangeIcon"
       @delete-item="openItemMenuDelete"
+    />
+    <ProjectIconPicker
+      v-if="iconPickerPos"
+      :x="iconPickerPos.x"
+      :y="iconPickerPos.y"
+      :current="projectIcon"
+      :workspace-name="item.name || 'Untitled project'"
+      @pick="applyIcon"
+      @reset="applyIcon(null)"
+      @close="closeIconPicker"
     />
   </li>
 </template>

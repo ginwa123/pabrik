@@ -8,6 +8,7 @@ import WorkspaceItemComponent from './WorkspaceItem.vue'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept for diff readability.
 import * as api from '../../api'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
+import UiIcon from '../ui/UiIcon.vue'
 
 // The single SELECTED workspace (header dropdown + Projects section). null = no workspace
 // selected/exists — the template renders an empty-state hint instead of rows.
@@ -302,13 +303,15 @@ const handleItemDragEnd = () => {
           @click.stop="toggleProjectsSection"
         >
           <span
-            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            class="w-[var(--sb-mark)] shrink-0 flex items-center transition-transform duration-200"
             :style="{
-              transform: sidebarStore.projectsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transform: sidebarStore.projectsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
             }"
             style="color: var(--semantic-text-dim)"
-            >▶</span
+            aria-hidden="true"
           >
+            <UiIcon name="chevron-down" :size="12" />
+          </span>
           <span
             class="text-micro font-semibold uppercase tracking-[0.08em]"
             style="color: var(--semantic-text-dim)"
