@@ -1,14 +1,3 @@
-<!--
-  DocumentsContextMenu — the right-click action menu for a document row in the
-  sidebar's Documents section.
-
-  Teleported to body so the sidebar's own scroll container can never clip it.
-  Visibility is `v-if` on the host's menu state; the host owns the position and
-  the selection, this component only reports intent.
-
-  The export row's label carries the count, because the whole point of the
-  multi-select is that the user can see how many files they are about to get.
--->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 
@@ -16,17 +5,21 @@ const props = withDefaults(
   defineProps<{
     x: number
     y: number
-    /** How many documents the export row will write. */
+    title?: string
     selectedCount?: number
-    /** Total documents in the section, for the "export all" row. */
     totalCount?: number
-    /** True while an export is in flight — the rows are disabled. */
+    singleSelected?: boolean
     busy?: boolean
   }>(),
-  { selectedCount: 0, totalCount: 0, busy: false },
+  { title: '', selectedCount: 0, totalCount: 0, singleSelected: false, busy: false },
 )
 
 const emit = defineEmits<{
+  open: []
+  rename: []
+  duplicate: []
+  copyLink: []
+  remove: []
   exportSelected: []
   exportAll: []
   selectAll: []
@@ -39,10 +32,16 @@ const exportLabel = computed(() =>
   props.selectedCount === 1 ? 'Export document' : `Export ${props.selectedCount} documents`,
 )
 
+const duplicateLabel = computed(() =>
+  props.selectedCount === 1 ? 'Duplicate' : `Duplicate ${props.selectedCount} documents`,
+)
+
+const deleteLabel = computed(() =>
+  props.selectedCount === 1 ? 'Delete' : `Delete ${props.selectedCount} documents`,
+)
+
 const canExportAll = computed(() => props.totalCount > 0)
 
-/** Focus the first row so the menu is usable from the keyboard the moment it opens. The host
- * mounts a fresh menu per open, so mount is the only moment this has to run. */
 onMounted(async () => {
   await nextTick()
   rootRef.value?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
@@ -86,6 +85,102 @@ const focusRow = (event: MouseEvent) => {
       @contextmenu.prevent
       @keydown="onKeydown"
     >
+      <div
+        v-if="title"
+        class="px-3 pt-1 pb-1.5 mb-1 border-b truncate max-w-[240px]"
+        style="border-color: var(--color-border); color: var(--semantic-text-dim)"
+        data-testid="documents-context-menu-title"
+        :title="title"
+      >
+        {{ title }}
+      </div>
+
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="documents-context-menu-open"
+        class="menu-row"
+        :disabled="busy || !singleSelected"
+        @click="emit('open')"
+        @mouseenter="focusRow"
+      >
+        <span class="menu-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M14 3h7v7m0-7L10 14M19 14v5a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h5"
+            />
+          </svg>
+        </span>
+        <span class="menu-lb">Open</span>
+      </button>
+
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="documents-context-menu-rename"
+        class="menu-row"
+        :disabled="busy || !singleSelected"
+        @click="emit('rename')"
+        @mouseenter="focusRow"
+      >
+        <span class="menu-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+            />
+          </svg>
+        </span>
+        <span class="menu-lb">Rename</span>
+      </button>
+
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="documents-context-menu-duplicate"
+        class="menu-row"
+        :disabled="busy || selectedCount === 0"
+        @click="emit('duplicate')"
+        @mouseenter="focusRow"
+      >
+        <span class="menu-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M8 8V5a2 2 0 012-2h9a2 2 0 012 2v9a2 2 0 01-2 2h-3M5 8h9a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2v-9a2 2 0 012-2z"
+            />
+          </svg>
+        </span>
+        <span class="menu-lb">{{ duplicateLabel }}</span>
+      </button>
+
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="documents-context-menu-copy-link"
+        class="menu-row"
+        :disabled="busy || !singleSelected"
+        @click="emit('copyLink')"
+        @mouseenter="focusRow"
+      >
+        <span class="menu-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11 4.93M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L13 19.07"
+            />
+          </svg>
+        </span>
+        <span class="menu-lb">Copy link</span>
+      </button>
+
+      <div class="menu-sep" role="separator" />
+
       <button
         type="button"
         role="menuitem"
@@ -155,6 +250,29 @@ const focusRow = (event: MouseEvent) => {
         <span class="menu-ic" aria-hidden="true">&#10005;</span>
         <span class="menu-lb">Clear selection</span>
       </button>
+
+      <div class="menu-sep" role="separator" />
+
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="documents-context-menu-delete"
+        class="menu-row menu-row--danger"
+        :disabled="busy || selectedCount === 0"
+        @click="emit('remove')"
+        @mouseenter="focusRow"
+      >
+        <span class="menu-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M4 7h16M10 11v6m4-6v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"
+            />
+          </svg>
+        </span>
+        <span class="menu-lb">{{ deleteLabel }}</span>
+      </button>
     </div>
   </Teleport>
 </template>
@@ -184,6 +302,15 @@ const focusRow = (event: MouseEvent) => {
 .menu-row:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.menu-row--danger {
+  color: var(--color-red);
+}
+
+.menu-row--danger:hover:not(:disabled),
+.menu-row--danger:focus-visible:not(:disabled) {
+  background: var(--tint-error);
 }
 
 .menu-ic {
