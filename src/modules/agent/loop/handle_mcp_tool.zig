@@ -362,6 +362,10 @@ fn callViaSpawnedServer(
             // wait budget and pin this session (and its neighbours) three times
             // as long. Report it and let the model decide.
             if (err == error.LeaseTimeout) return error.MCPServerBusy;
+            // A command the OS cannot exec will not start working two
+            // iterations later; retrying only logs the same failure three
+            // times (and, before the spawn preflight, leaked fds each time).
+            if (err == error.ChildSpawnFailed) return error.FailedToCallMCPServer;
             if (attempt + 1 < 3) {
                 continue;
             }
