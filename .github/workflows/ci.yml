@@ -709,9 +709,18 @@ jobs:
         # installs; a psql client belongs to this cell only. The service
         # container publishes 5432 on the runner's loopback, so the client
         # talks to it exactly as the app does.
+        #
+        # `Acquire::Retries` + the update loop: the runner's Azure mirror
+        # intermittently fails to resolve, and a red cell for that reason
+        # tells nobody anything about the diff.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client
+          APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          for attempt in 1 2 3; do
+            sudo apt-get "${APT_OPTS[@]}" update && break
+            echo "apt-get update failed (attempt ${attempt}/3); retrying" >&2
+            sleep $((attempt * 10))
+          done
+          sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends postgresql-client
 
       - name: "Boot on postgres: every migration applies, full text search answers"
         # The end-to-end half of the contract this job exists for. `--database=
