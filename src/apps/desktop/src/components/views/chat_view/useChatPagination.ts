@@ -715,7 +715,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         // waits for it. A cached mount is still a "not known yet" state.
         isLoading.value = false
         await nextTick()
-        scrollToBottom(true, 'cached-mount')
+        await placeInitialScroll('cached-mount')
         try {
           const delta = await runSyncEffect(
             chatEngineDb.loadDelta(sid, PAGE_SIZE, liveMessageIds),
@@ -850,24 +850,7 @@ export function useChatPagination(deps: ChatPaginationDeps) {
       // alone only waits for Vue's DOM update, not for layout/paint).
       await new Promise<void>((r) => requestAnimationFrame(() => r()))
 
-      // Try to restore the user's previous scroll position (set by useChatScrollRestore when they
-      // last closed this task).
-      if (chatScrollRestore.hasSavedPosition()) {
-        await waitForScrollerMeasured()
-      }
-      const savedScrollTop = chatScrollRestore.restore()
-      if (savedScrollTop !== null) {
-        logger().markProgrammatic()
-        virtualScrollerRef.value?.scrollToPosition(savedScrollTop, 'auto')
-        logger().info({
-          ...initialCtx,
-          caller: 'loadChatHistory',
-          reason: 'scroll-position-restored',
-          extra: { savedScrollTop, trigger: 'initial-load' },
-        })
-      } else {
-        scrollToBottom(true, 'initial-load')
-      }
+      await placeInitialScroll('initial-load', initialCtx)
 
       setupCodeBlockCopyButtons()
       void rehydrateSubAgentProgress()
@@ -980,6 +963,38 @@ export function useChatPagination(deps: ChatPaginationDeps) {
         virtualScrollerRef.value.scrollToBottom('auto')
       }
     }
+  }
+
+  const placeInitialScroll = async (
+    trigger: string,
+    ctx?: ReturnType<typeof buildScrollContext>,
+  ): Promise<void> => {
+    if (chatScrollRestore.hasSavedPosition()) {
+      await waitForScrollerMeasured()
+    }
+    const savedScrollTop = chatScrollRestore.restore()
+    if (savedScrollTop === null) {
+      await scrollToBottom(true, trigger)
+      return
+    }
+    const context =
+      ctx ??
+      buildScrollContext(virtualScrollerRef.value?.containerRef, {
+        chatId: sessionId.value || props.chatId,
+        messages: messages.value.length,
+        isAtBottom: isAtBottom.value,
+        virtualScrollerRef,
+        wrapperRef: messagesWrapperRef,
+      })
+    isAtBottom.value = false
+    logger().markProgrammatic()
+    virtualScrollerRef.value?.scrollToPosition(savedScrollTop, 'auto')
+    logger().info({
+      ...context,
+      caller: 'loadChatHistory',
+      reason: 'scroll-position-restored',
+      extra: { savedScrollTop, trigger },
+    })
   }
 
   const getIsInitialLoad = () => isInitialLoad

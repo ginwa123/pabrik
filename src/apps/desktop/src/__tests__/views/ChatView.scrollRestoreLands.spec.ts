@@ -269,6 +269,19 @@ describe('ChatView — reopening a chat lands where the reader left it', () => {
     expect(container.scrollTop).toBe(REAL_BOTTOM)
   })
 
+  it('restores the saved position for a host that prefixes the chat id with `chat-`', async () => {
+    // StandardTaskChatView and AppLayout's standalone branch both pass `chat-<sessionId>`; the
+    // kanban branch passes the bare id. The storage key must not depend on which one it is.
+    localStorage.setItem('chat-scroll-task_prefixed', String(SAVED_POSITION))
+    installApiMocks()
+
+    wrapper = await mountChatView('chat-task_prefixed')
+    const container = findScrollerContainer(wrapper)
+    await settleScroller(container)
+
+    expect(container.scrollTop).toBe(SAVED_POSITION)
+  })
+
   it('a first-time visitor with nothing saved still lands at the bottom', async () => {
     // The wait must be gated on there being something to restore. A reader with
     // no saved position should not sit through it — and must not be parked at

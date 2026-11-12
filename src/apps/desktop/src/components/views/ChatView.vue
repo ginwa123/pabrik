@@ -191,7 +191,7 @@ const scrollerContainerRef = computed<HTMLElement | null>(
 // resolves after mount and swaps on chat switch, so the slider takes
 // a function (re-resolved on its interval) instead of a raw element.
 const getChatScrollContainer = (): HTMLElement | null => scrollerContainerRef.value
-const chatScrollStorageKey = computed(() => `chat-scroll-${sessionId.value || props.chatId}`)
+const chatScrollStorageKey = computed(() => `chat-scroll-${props.chatId.replace(/^chat-/, '')}`)
 // The restore composable's "is the saved position still at the bottom?" test has to use the SAME
 // bottom edge the auto-stick uses, or a position saved while the reader sat on the last message
 // (which lives at the real content bottom, up to `maxTailGap` above the DOM edge) reads as.
