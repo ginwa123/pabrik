@@ -1,5 +1,5 @@
 /** Per-user browser-storage namespacing (plan 2026-09-25, W5). */
-import { getAuthMeCached } from './authMe'
+import { getAuthMeCached, readCachedAuthMe } from './authMe'
 
 /** Separator between the logical key and the user id. */
 const USER_SUFFIX = '::u:'
@@ -27,6 +27,17 @@ export function getCurrentUserId(): string | null {
 /** True once the identity has been resolved at least once this page load. */
 export function isIdentityResolved(): boolean {
   return resolved
+}
+
+/** Adopt the identity the cached `/me` already names, synchronously: a store reads its
+ * user-scoped keys at creation, before the guard's first `await` returns. No cache means
+ * "not known yet" — leave `resolved` false so the guard still resolves it. */
+export function seedIdentityFromCache(): void {
+  if (resolved) return
+  const data = readCachedAuthMe()
+  if (!data) return
+  const id = data.auth_enabled !== false && data.authenticated === true ? data.user?.id : null
+  setCurrentUserId(id)
 }
 
 /** Resolve the identity from the cached `/api/auth/me` and store it. Returns the id (or null). */

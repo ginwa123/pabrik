@@ -1,10 +1,16 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 
 import { type Tab } from '../helpers/tabTarget'
 import { MAX_TABS } from '../helpers/tabPersistence'
 import { __resetWindowIdForTests } from '../helpers/windowId'
+import { getAuthMeCached } from '../helpers/authMe'
+import {
+  resetUserScopeForTest,
+  seedIdentityFromCache,
+  setCurrentUserId,
+} from '../helpers/userScope'
 import { __dispatchSseBus, __resetSseBus, installSseBus, useSseBus } from '../helpers/sseBus'
 import { useTabsStore } from '../stores/tabs'
 import { makeLocalStorageStub } from './helpers'
@@ -64,7 +70,12 @@ describe('tabs store', () => {
   beforeEach(() => {
     installStorage()
     __resetWindowIdForTests()
+    resetUserScopeForTest()
     setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('boots with exactly one home tab, active, tab mode on by default', () => {
@@ -307,6 +318,43 @@ describe('tabs store', () => {
     expect(reloaded.activeTabId).toBe(a.id)
     expect(reloaded.tabCount).toBe(3)
     expect(reloaded.tabs.find((t) => t.id === b.id)?.kind).toBe('workspace')
+  })
+
+  it("restores the signed-in user's tabs when the store is created before the guard resolves", async () => {
+    // Signed in: the list is written under the user-scoped key.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          authenticated: true,
+          auth_enabled: true,
+          user: { id: 'user_a', email: 'a@example.com', name: 'A', role: 'admin' },
+        }),
+      })),
+    )
+    await getAuthMeCached()
+    setCurrentUserId('user_a')
+    const tabs = useTabsStore()
+    tabs.ensureRow('sa')
+    const file = tabs.openInSession('sa', {
+      path: '/app/ws_1/chat/sa',
+      query: fileIn('sa', 'src/a.ts'),
+    })
+    const anchor = tabs.stripOf('sa')[0] as Tab
+
+    // A reload: fresh pinia, fresh window-id cache, identity not resolved yet.
+    __resetWindowIdForTests()
+    resetUserScopeForTest()
+    setActivePinia(createPinia())
+
+    // `main.ts` seeds the identity from the cached /me before the first store exists.
+    seedIdentityFromCache()
+
+    const reloaded = useTabsStore()
+    expect(reloaded.stripOf('sa').map((t) => t.id)).toEqual([anchor.id, file.id])
+    expect(reloaded.activeTabId).toBe(file.id)
   })
 
   it('does not share a tab list with a different window', () => {

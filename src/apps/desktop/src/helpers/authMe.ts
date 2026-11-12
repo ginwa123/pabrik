@@ -68,6 +68,13 @@ function readEntry(): CacheEntry | null {
   }
 }
 
+/** The cached `/me` body, or null when nothing is cached. Synchronous on purpose: the
+ * identity has to be known before the first store is created, and the router guard's
+ * `await` is too late for that (see `seedIdentityFromCache`). */
+export function readCachedAuthMe(): AuthMeData | null {
+  return readEntry()?.data ?? null
+}
+
 function writeEntry(status: number, data: AuthMeData | null): void {
   try {
     const entry: CacheEntry = { status, data, at: Date.now() }
