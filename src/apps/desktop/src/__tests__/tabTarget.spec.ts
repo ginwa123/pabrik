@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
-  MAX_CLOSED,
-  TABS_VERSION,
   fallbackTitle,
-  groupPayload,
   hasTabIdentity,
   homeTab,
   isBackgroundOpenEvent,
@@ -12,7 +9,6 @@ import {
   migrateLegacySettingsTab,
   newTabId,
   ownerOfTarget,
-  parseTabList,
   shouldTabify,
   stripTabParam,
   tabKeyOf,
@@ -23,6 +19,7 @@ import {
   type Tab,
   type TabKind,
 } from '../helpers/tabTarget'
+import { MAX_CLOSED, TABS_VERSION, groupPayload, parseTabList } from '../helpers/tabPersistence'
 import { __resetWindowIdForTests, getWindowId } from '../helpers/windowId'
 import { makeLocalStorageStub } from './helpers'
 
@@ -347,9 +344,17 @@ describe('path-form targets', () => {
     expect(tabKeyOf('/app/ws_1/projects/item_7/settings', {})).toBe('ks:item_7')
   })
 
-  it('leaves a document page without an identity, so it never becomes a home tab', () => {
+  it('gives a document page its own identity, in the window row', () => {
+    // A document is picked from the rail, not from a session, so it belongs to the window's row.
     expect(ownerOfTarget('/app/ws_1/doc/doc_7', {})).toBe('')
-    expect(hasTabIdentity('/app/ws_1/doc/doc_7', {})).toBe(false)
+    // Its own key — NOT the `home` fall-through that used to make the funnel skip documents.
+    expect(tabKeyOf('/app/ws_1/doc/doc_7', {})).toBe('doc:doc_7')
+    expect(kindOf('/app/ws_1/doc/doc_7', {})).toBe('document')
+    expect(hasTabIdentity('/app/ws_1/doc/doc_7', {})).toBe(true)
+  })
+
+  it('gives two documents two keys, so they are two tabs', () => {
+    expect(tabKeyOf('/app/ws_1/doc/doc_7', {})).not.toBe(tabKeyOf('/app/ws_1/doc/doc_8', {}))
   })
 })
 

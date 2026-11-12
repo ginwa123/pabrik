@@ -6,6 +6,7 @@ import { useSidebarStore } from '../../stores/sidebar'
 import { useDocumentsStore } from '../../stores/documents'
 import { useNavigationStore } from '../../stores/navigation'
 import { useWorkspacesStore } from '../../stores/workspaces'
+import { useTabsStore } from '../../stores/tabs'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
 import { buildAppUrl } from '../../helpers/appUrl'
 import {
@@ -37,6 +38,7 @@ const sidebarStore = useSidebarStore()
 const documentsStore = useDocumentsStore()
 const navigationStore = useNavigationStore()
 const workspacesStore = useWorkspacesStore()
+const tabsStore = useTabsStore()
 const router = useRouter()
 const currentMainView = useCurrentMainView()
 
@@ -117,11 +119,25 @@ const selectDocument = (id: string) => {
     // a stale list surviving a workspace switch, not a normal path.
     return
   }
+  const target = buildAppUrl({ workspaceId: wsId, documentId: id })
+  // The document is a PAGE, so it opens as its own tab in the window's row — the same strip a
+  // board or Settings lands in. The URL carries only the id, so the name is set here, at open time.
+  const doc = documentsStore.documents.find((candidate) => candidate.id === id)
+  const tab = tabsStore.enabled
+    ? tabsStore.open({
+        path: target.path,
+        query: target.query,
+        title: doc?.title,
+        kind: 'document',
+      })
+    : null
   // `replace`, not `push`: clicking through five documents should not bury the previous four under
   // Back. The document is a PAGE, so this replaces whatever main view was open.
-  router.replace(buildAppUrl({ workspaceId: wsId, documentId: id })).catch(() => {
-    // A duplicate navigation (clicking the already-open row) rejects.
-  })
+  router
+    .replace({ path: target.path, query: tab ? { ...target.query, tab: tab.id } : target.query })
+    .catch(() => {
+      // A duplicate navigation (clicking the already-open row) rejects.
+    })
   workspacesStore.setActiveWorkspaceItem(null)
   workspacesStore.setActiveTask(null)
   navigationStore.clearActiveChat()

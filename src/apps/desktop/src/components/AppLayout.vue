@@ -45,6 +45,7 @@ import { useAppLayoutRouteSync } from './appLayout/useAppLayoutRouteSync'
 import { useAppLayoutPumps } from './appLayout/useAppLayoutPumps'
 import AppSkillOverlay from './appLayout/AppSkillOverlay.vue'
 import AppDocumentsBranch from './appLayout/AppDocumentsBranch.vue'
+import WindowTabStrip from './appLayout/WindowTabStrip.vue'
 import AppKanbanSettingsBranch from './appLayout/AppKanbanSettingsBranch.vue'
 import AppKanbanBoardBranch from './appLayout/AppKanbanBoardBranch.vue'
 import AppKanbanChatBranch from './appLayout/AppKanbanChatBranch.vue'
@@ -294,6 +295,9 @@ defineExpose({
       @resize="handleSidebarResize"
     />
     <main class="flex-1 flex flex-col overflow-hidden relative">
+      <!-- The window's own row, above the page that renders it. A chat surface draws its own. -->
+      <WindowTabStrip :view="currentView" :chat-surface-active="chatSurfaceActive" />
+
       <!-- Git File Viewer (shown when view is gitfile) -->
       <GitFileViewer
         v-if="currentView === 'gitfile' && gitViewerFile && rightSidebarCwd"

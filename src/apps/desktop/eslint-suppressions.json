@@ -955,11 +955,6 @@
       "count": 4
     }
   },
-  "src/helpers/tabTarget.ts": {
-    "local/no-try-catch": {
-      "count": 1
-    }
-  },
   "src/helpers/taskMediaCache.ts": {
     "local/no-silent-fallback-catch": {
       "count": 1
@@ -1146,6 +1141,11 @@
   "src/views/LoginView.vue": {
     "local/no-try-catch": {
       "count": 3
+    }
+  },
+  "src/helpers/tabPersistence.ts": {
+    "local/no-try-catch": {
+      "count": 1
     }
   }
 }

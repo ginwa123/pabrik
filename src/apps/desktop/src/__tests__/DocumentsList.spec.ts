@@ -10,6 +10,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import DocumentsList from '../components/workspace/DocumentsList.vue'
 import { makeLocalStorageStub } from './helpers'
 import { useDocumentsStore } from '../stores/documents'
+import { useTabsStore } from '../stores/tabs'
 
 const listDocuments = vi.hoisted(() => vi.fn())
 const createDocument = vi.hoisted(() => vi.fn())
@@ -282,6 +283,25 @@ describe('DocumentsList — URL contract', () => {
     restored.unmount()
   })
 
+  it('a row click opens the document as a tab named after it', async () => {
+    const router = await makeRouter()
+    const wrapper = mountList(router)
+    await settle()
+
+    await wrapper.get('[data-testid="document-row-doc_2"]').trigger('click')
+    await flushPromises()
+
+    const tabs = useTabsStore()
+    const tab = tabs.tabs.find((candidate) => candidate.key === 'doc:doc_2')
+    expect(tab).toBeTruthy()
+    expect(tab!.kind).toBe('document')
+    // The URL carries only the id, so the name is set at open time.
+    expect(tab!.title).toBe('Meeting notes')
+    // The URL names the tab, so a reload restores the same one instead of a second copy.
+    expect(router.currentRoute.value.query.tab).toBe(tab!.id)
+    wrapper.unmount()
+  })
+
   it('clicking a row clears the chat and project selection so only one row is active', async () => {
     const router = await makeRouter()
     const wrapper = mountList(router)
@@ -377,9 +397,27 @@ describe('DocumentsList — failure is not emptiness', () => {
 
 describe('DocumentsList — drag to reorder', () => {
   const THREE = [
-    { ...DOCS[0]!, id: 'doc_1', title: 'Release plan', position: 0, updated_at: '2026-09-03 10:00:00' },
-    { ...DOCS[1]!, id: 'doc_2', title: 'Meeting notes', position: 1, updated_at: '2026-09-02 10:00:00' },
-    { ...DOCS[0]!, id: 'doc_3', title: 'Invoice draft', position: 2, updated_at: '2026-09-01 10:00:00' },
+    {
+      ...DOCS[0]!,
+      id: 'doc_1',
+      title: 'Release plan',
+      position: 0,
+      updated_at: '2026-09-03 10:00:00',
+    },
+    {
+      ...DOCS[1]!,
+      id: 'doc_2',
+      title: 'Meeting notes',
+      position: 1,
+      updated_at: '2026-09-02 10:00:00',
+    },
+    {
+      ...DOCS[0]!,
+      id: 'doc_3',
+      title: 'Invoice draft',
+      position: 2,
+      updated_at: '2026-09-01 10:00:00',
+    },
   ]
 
   beforeEach(async () => {
@@ -394,10 +432,15 @@ describe('DocumentsList — drag to reorder', () => {
     createDocument.mockReset()
     reorderDocuments.mockReset()
     listDocuments.mockResolvedValue({ documents: THREE, count: THREE.length })
-    reorderDocuments.mockImplementation(async (_ws: string, _folderId: string | null, orderedIds: string[]) => ({
-      documents: orderedIds.map((id, position) => ({ ...THREE.find((d) => d.id === id)!, position })),
-      count: orderedIds.length,
-    }))
+    reorderDocuments.mockImplementation(
+      async (_ws: string, _folderId: string | null, orderedIds: string[]) => ({
+        documents: orderedIds.map((id, position) => ({
+          ...THREE.find((d) => d.id === id)!,
+          position,
+        })),
+        count: orderedIds.length,
+      }),
+    )
   })
 
   /** JSDOM has no `DataTransfer`, so the drag carries a stub with just the surface the component

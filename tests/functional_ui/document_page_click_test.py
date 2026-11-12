@@ -108,7 +108,12 @@ def test_clicking_a_document_row_unmounts_the_chat(ui_harness, page) -> None:
     after = page.evaluate(_STATE_SCRIPT)
     print(f"\n[click] AFTER CLICK: {after}")
 
-    assert after["url"].endswith(f"/doc/{document_id}"), f"URL is not the document page: {after['url']}"
+    # The PATH is the document page. The query is not part of that claim: a document opens as its
+    # own tab, so the URL carries `?tab=<id>` — the same way a file tab names itself.
+    doc_path = after["url"].split("?")[0]
+    assert doc_path.endswith(f"/doc/{document_id}"), (
+        f"URL is not the document page: {after['url']}"
+    )
     assert after["hasDocView"], "the document did not render"
     for key in ("chatColumn", "composerDock", "composerCard", "textarea", "scrollSlider"):
         assert after[key] == 0, (

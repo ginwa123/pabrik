@@ -104,7 +104,18 @@ jobs:
         # Only `debugfs` is needed on the runner: mkfs.ext4 and e2fsck run
         # inside the builder container, and the assertions below read the
         # finished image rather than mounting it.
-        run: sudo apt-get update && sudo apt-get install -y e2fsprogs
+        #
+        # `Acquire::Retries` + the update loop: the runner's Azure mirror
+        # intermittently fails to resolve, and a red job for that reason
+        # tells nobody anything about the diff.
+        run: |
+          APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          for attempt in 1 2 3; do
+            sudo apt-get "${APT_OPTS[@]}" update && break
+            echo "apt-get update failed (attempt ${attempt}/3); retrying" >&2
+            sleep $((attempt * 10))
+          done
+          sudo apt-get "${APT_OPTS[@]}" install -y e2fsprogs
 
       - name: Cache the pinned artefacts
         # Keyed on the manifest, which IS the artifact list: an unchanged

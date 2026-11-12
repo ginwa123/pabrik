@@ -24,6 +24,26 @@
 
 set -euo pipefail
 
+# The GitHub-hosted runners reach the Ubuntu archive through an Azure mirror that
+# intermittently fails to resolve — "Temporary failure resolving
+# 'azure.archive.ubuntu.com'" — which turned every Linux job red for a reason no
+# diff could fix. `Acquire::Retries` covers a flaky fetch; the loop below covers a
+# flaky `update`, which is a separate invocation with its own DNS lookup.
+APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+
+apt_update() {
+    local attempt
+    for attempt in 1 2 3; do
+        if sudo apt-get "${APT_OPTS[@]}" update; then
+            return 0
+        fi
+        echo "apt-get update failed (attempt ${attempt}/3); retrying in $((attempt * 10))s" >&2
+        sleep $((attempt * 10))
+    done
+    echo "x apt-get update failed after 3 attempts — the Ubuntu mirror is unreachable" >&2
+    return 1
+}
+
 # Exit 0 only when apt has an actual installable candidate. `apt-cache
 # show` is NOT used as the probe: its exit code for an unknown package has
 # varied across apt releases, which turns a missing package into either a
@@ -50,14 +70,14 @@ apt_install() {
         echo "x not available on this image: ${missing[*]}" >&2
         return 1
     fi
-    sudo apt-get install -y "$@"
+    sudo apt-get "${APT_OPTS[@]}" install -y "$@"
 }
 
 apt_any() {
     local pkg
     for pkg in "$@"; do
         if pkg_available "$pkg"; then
-            sudo apt-get install -y "$pkg"
+            sudo apt-get "${APT_OPTS[@]}" install -y "$pkg"
             return 0
         fi
     done
@@ -65,7 +85,7 @@ apt_any() {
     return 1
 }
 
-sudo apt-get update
+apt_update
 
 # C toolchain + the libraries the `databases` and `kabelweb` packages link
 # unconditionally on Linux: -lpq, -lcurl, -lssl/-lcrypto, -lsqlite3.

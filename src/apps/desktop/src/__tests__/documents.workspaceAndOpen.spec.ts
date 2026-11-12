@@ -250,10 +250,15 @@ const STUB_CONFIG = {
   },
 }
 
+/** A replace that LOSES the open document: it carries a query but neither `?doc=` nor the document's
+ * own path. A replace that lands on the doc path keeps it — that is the tab funnel naming the tab
+ * (`?tab=`), not the store→URL mirror dropping the page. */
 function replacesDroppingDoc() {
+  const docPath = `/app/${WS_ID}/doc/${DOC_ID}`
   return replaceMock.mock.calls.filter((call) => {
-    const q = (call[0] ?? {}).query as Record<string, string> | undefined
-    return q && q.doc === undefined
+    const target = (call[0] ?? {}) as { path?: string; query?: Record<string, string> }
+    if (String(target.path ?? '') === docPath) return false
+    return target.query !== undefined && target.query.doc === undefined
   })
 }
 
