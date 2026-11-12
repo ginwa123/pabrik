@@ -64,6 +64,9 @@ pub const ToolContext = struct {
     /// The `llm_history` tool-result row for the tool call being dispatched
     /// (the Phase-1 placeholder). See `tools.ToolExecContext.llm_history_id`.
     llm_history_id: []const u8 = "",
+    /// Interpreter for `register_hook.py`, from the workspace settings.
+    /// Empty = auto-resolve.
+    python_bin: []const u8 = "",
 };
 
 /// Result of parsing diff_view XML from tool result.
@@ -442,8 +445,8 @@ const PreHookAction = union(enum) {
 };
 
 fn runPreHookAction(ctx: ToolContext, tool_name: []const u8, arguments: []const u8) PreHookAction {
-    const hook_ctx = hooks.HookContext{ .session_id = ctx.session_id, .cwd = ctx.cwd, .model = ctx.model };
-    const pre = hooks.runPreHook(ctx.allocator, ctx.logger, ctx.environment, tool_name, arguments, hook_ctx) catch return .proceed;
+    const hook_ctx = hooks.HookContext{ .session_id = ctx.session_id, .cwd = ctx.cwd, .model = ctx.model, .python_bin = ctx.python_bin };
+    const pre = hooks.runPreHook(ctx.allocator, ctx.io, ctx.logger, ctx.environment, tool_name, arguments, hook_ctx) catch return .proceed;
     switch (pre) {
         .allow => return .proceed,
         .deny => |reason| {
@@ -463,8 +466,8 @@ fn runPreHookAction(ctx: ToolContext, tool_name: []const u8, arguments: []const 
 /// Run the Lua post hook. Returns an owned replacement output, or null to
 /// keep `current`. Never errors outward (fail-open inside).
 fn runPostHookOverride(ctx: ToolContext, tool_name: []const u8, arguments: []const u8, current: []const u8) ?[]const u8 {
-    const hook_ctx = hooks.HookContext{ .session_id = ctx.session_id, .cwd = ctx.cwd, .model = ctx.model };
-    const post = hooks.runPostHook(ctx.allocator, ctx.logger, ctx.environment, tool_name, arguments, current, hook_ctx) catch return null;
+    const hook_ctx = hooks.HookContext{ .session_id = ctx.session_id, .cwd = ctx.cwd, .model = ctx.model, .python_bin = ctx.python_bin };
+    const post = hooks.runPostHook(ctx.allocator, ctx.io, ctx.logger, ctx.environment, tool_name, arguments, current, hook_ctx) catch return null;
     switch (post) {
         .keep => return null,
         .replace => |new_output| return new_output,
@@ -942,6 +945,7 @@ pub fn handle_tool(
             .selected_profile_model = selected_profile_model,
             .allowed_tools = allowed_tools,
             .is_sub_agent = is_sub_agent,
+            .python_bin = config.hook_python_bin,
         };
 
         // ─── Phase 3: dispatch each tool & UPDATE placeholder in place ───

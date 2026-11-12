@@ -46,6 +46,7 @@ const has_queue_message_mod = @import("has_queue_messagge.zig");
 const insert_llm_histories_mod = @import("insert_llm_histories.zig");
 const file_attachments = @import("file_attachments.zig");
 const insert_queue_message_mod = @import("insert_queue_message.zig");
+const hooks = @import("hooks.zig");
 const is_session_kanban_mod = @import("is_session_kanban.zig");
 const is_worker_cancelled_mod = @import("is_worker_cancelled.zig");
 const is_worker_running_mod = @import("is_worker_running.zig");
@@ -601,6 +602,51 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     const copy_inherited_context = try parent_allocator.dupe(u8, params.inherited_context);
     var is_have_queue_message = false;
 
+    const hook_model = try parent_allocator.dupe(u8, eff.model);
+    const hook_ctx = hooks.HookContext{
+        .session_id = copy_session_id,
+        .cwd = copy_cwd,
+        .model = hook_model,
+        .python_bin = config.hook_python_bin,
+    };
+
+    var hook_context: []const u8 = "";
+    {
+        const fields = [_]hooks.Field{
+            .{ .key = "session_id", .value = .{ .string = copy_session_id } },
+            .{ .key = "parent_session_id", .value = .{ .string = copy_parent_session_id } },
+            .{ .key = "cwd", .value = .{ .string = copy_cwd } },
+            .{ .key = "model", .value = .{ .string = hook_model } },
+            .{ .key = "is_sub_agent", .value = .{ .boolean = copy_is_sub_agent } },
+            .{ .key = "message", .value = .{ .string = copy_message } },
+        };
+        const started = hooks.runLifecycleHook(parent_allocator, io, logger, environment, hooks.SESSION_START_EVENT, &fields, hook_ctx) catch |err| blk: {
+            logger.warnFmt("[hooks] session_start failed open: {s}", .{@errorName(err)});
+            break :blk hooks.LifecycleResult{};
+        };
+        if (started.context) |c| hook_context = c;
+    }
+
+    var end_reason: []const u8 = "error";
+    var end_finish_reason: []const u8 = "";
+    var hook_continues: u8 = 0;
+    var loop_counter: u32 = 0;
+    defer {
+        const fields = [_]hooks.Field{
+            .{ .key = "session_id", .value = .{ .string = copy_session_id } },
+            .{ .key = "cwd", .value = .{ .string = copy_cwd } },
+            .{ .key = "model", .value = .{ .string = hook_model } },
+            .{ .key = "finish_reason", .value = .{ .string = end_finish_reason } },
+            .{ .key = "loop_count", .value = .{ .integer = @intCast(loop_counter) } },
+            .{ .key = "end_reason", .value = .{ .string = end_reason } },
+        };
+        var ended = hooks.runLifecycleHook(parent_allocator, io, logger, environment, hooks.SESSION_END_EVENT, &fields, hook_ctx) catch |err| blk: {
+            logger.warnFmt("[hooks] session_end failed open: {s}", .{@errorName(err)});
+            break :blk hooks.LifecycleResult{};
+        };
+        ended.deinit(parent_allocator);
+    }
+
     // Persist the selected profile on the session row so subagent children
     // (whose rows are lazily created by updateWorker with NULL profile) carry
     // the parent's profile.
@@ -731,7 +777,6 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
     var last_retry_source: []const u8 = "unknown";
     var last_retry_server_detail: ?[]const u8 = null;
     var current_max_tokens: usize = 20000;
-    var loop_counter: u32 = 0;
     var last_iter_start_ns: i128 = 0;
     // The auto-name call is a blocking LLM round-trip, so it runs at most
     // ONCE per worker run (one user turn) — never once per loop iteration.
@@ -784,6 +829,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             break;
         };
         const iter_state = iteration orelse {
+            end_reason = "lease_lost";
             logger.infoFmt(
                 "[CHECKPOINT] session lease not ours any more session_id={s} — leaving the loop",
                 .{copy_session_id},
@@ -862,6 +908,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // Cancellation, read in the iteration transaction above — BEFORE
         // `touchCheckpointWorkers` resets the flag on the row.
         if (iter_state.is_cancelled) {
+            end_reason = "cancelled";
             logger.infoFmt("WORKFLOW CANCELLED while looping back for next API call...", .{});
             break;
         }
@@ -870,6 +917,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         // would receive the <status>pending</status> envelope and might
         // guess.
         if (ask_user_pending.hasPendingQuestion(allocator, db, copy_session_id)) {
+            end_reason = "pending_question";
             logger.infoFmt(
                 "[CHECKPOINT] question still pending — ending the run session_id={s}",
                 .{copy_session_id},
@@ -1270,7 +1318,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         const active_agent_prompt_owned = try session_group_mod.turnPersona(allocator, sub_agent_system_prompt, group_speaker, group_system_prompt);
         defer allocator.free(active_agent_prompt_owned);
         const active_agent_prompt: []const u8 = active_agent_prompt_owned;
-        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, active_agent_prompt);
+        const initialMessages = try build_msg_prompt.buildMessages(allocator, io, db, copy_cwd, copy_session_id, copy_parent_session_id, copy_is_sub_agent, db_messages, merged_tools, copy_inherited_context, active_agent_prompt, hook_context);
 
         try messagesLists.appendSlice(allocator, initialMessages);
 
@@ -1297,6 +1345,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
         defer llm_cancel_thunk.unregister();
         const res_dynamic_agent = callDynamicAgentNew(allocator, io, messagesLists, agent_temperature, current_max_tokens, isThinking, eff.thinking_budget_tokens, eff.thinking_adaptive, eff.reasoning_effort, eff.api_key, eff.model, eff.base_url, eff.url_style, eff.backend, eff.opencode_agent, eff.opencode_auto, copy_cwd, copy_session_id, merged_tools, config.llm_read_timeout_ms, &llm_cancel_thunk.call, &last_dynamic_agent_error_message) catch |err| {
             if (err == error.Cancelled) {
+                end_reason = "cancelled";
                 logger.infoFmt("WORKFLOW CANCELLED during streaming: session_id={s}", .{copy_session_id});
                 // Keep the partial text and settle the transcript — without
                 // this the only signal is `worker_deleted`, which clears the
@@ -1351,6 +1400,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                 .io = io,
                 .logger = logger,
             })) {
+                end_reason = "cancelled";
                 logger.infoFmt("WORKFLOW CANCELLED during retry delay: session_id={s}", .{copy_session_id});
                 break;
             }
@@ -1422,6 +1472,25 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             };
         }
         if (res_dynamic_agent.finish_reason) |finish_reason| {
+            end_finish_reason = finish_reason.to_str();
+            var hook_continue: ?[]const u8 = null;
+            {
+                const fields = [_]hooks.Field{
+                    .{ .key = "session_id", .value = .{ .string = copy_session_id } },
+                    .{ .key = "cwd", .value = .{ .string = copy_cwd } },
+                    .{ .key = "model", .value = .{ .string = hook_model } },
+                    .{ .key = "finish_reason", .value = .{ .string = finish_reason.to_str() } },
+                    .{ .key = "content", .value = .{ .string = res_dynamic_agent.content orelse "" } },
+                    .{ .key = "tool_count", .value = .{ .integer = @intCast(if (res_dynamic_agent.tool_calls) |tc| tc.len else 0) } },
+                    .{ .key = "loop_index", .value = .{ .integer = @intCast(loop_counter) } },
+                };
+                const verdict = hooks.runLifecycleHook(allocator, io, logger, environment, hooks.FINISH_REASON_EVENT, &fields, hook_ctx) catch |err| blk: {
+                    logger.warnFmt("[hooks] finish_reason failed open: {s}", .{@errorName(err)});
+                    break :blk hooks.LifecycleResult{};
+                };
+                if (verdict.context) |c| allocator.free(c);
+                hook_continue = verdict.continue_with;
+            }
             if (finish_reason == .stop) {
                 logger.infoFmt(
                     "[CHECKPOINT] finish_reason=stop session_id={s} loop_counter={d} content_len={d}",
@@ -1551,7 +1620,35 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     }
                 }
 
+                if (asked == null) {
+                    if (hook_continue) |hook_prompt| {
+                        if (hook_continues < hooks.MAX_HOOK_CONTINUES) {
+                            hook_continues += 1;
+                            try insert_queue_message_mod.insertQueueMessage(.{
+                                .allocator = allocator,
+                                .db = db,
+                                .logger = logger,
+                                .session_id = copy_session_id,
+                                .message = hook_prompt,
+                                .image_url = "",
+                                .event_bus = event_bus,
+                                .is_emit_sse = true,
+                            });
+                            logger.infoFmt(
+                                "[CHECKPOINT] finish_reason hook kept the run alive session_id={s} count={d}",
+                                .{ copy_session_id, hook_continues },
+                            );
+                            continue;
+                        }
+                        logger.warnFmt(
+                            "[CHECKPOINT] finish_reason hook asked to continue past the cap session_id={s} cap={d}",
+                            .{ copy_session_id, hooks.MAX_HOOK_CONTINUES },
+                        );
+                    }
+                }
+
                 if (asked != null) {
+                    end_reason = "awaiting_user";
                     logger.infoFmt(
                         "[CHECKPOINT] awaiting_user — ending the turn session_id={s} loop_counter={d}",
                         .{ copy_session_id, loop_counter },
@@ -1586,6 +1683,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     .run_token = run_lease.token,
                 });
 
+                end_reason = "stop";
                 logger.infoFmt(
                     "[CHECKPOINT] worker done session_id={s} loop_counter={d}",
                     .{ copy_session_id, loop_counter },
@@ -1618,6 +1716,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                             .{@errorName(err)},
                         );
                     };
+                    end_reason = "is_stop";
                     logger.infoFmt(
                         "[CHECKPOINT] is_stop — ending the turn session_id={s} loop_counter={d}",
                         .{ copy_session_id, loop_counter },
@@ -1659,6 +1758,7 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
                     .io = io,
                     .logger = logger,
                 })) {
+                    end_reason = "cancelled";
                     logger.infoFmt("WORKFLOW CANCELLED during retry delay (finish_reason else): session_id={s}", .{copy_session_id});
                     break;
                 }

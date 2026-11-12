@@ -16,6 +16,8 @@ pub extern fn lua_tolstring(L: ?*LuaState, idx: c_int, len: ?*usize) callconv(.c
 pub extern fn lua_tonumberx(L: ?*LuaState, idx: c_int, isnum: ?*c_int) callconv(.c) f64;
 pub extern fn lua_pushstring(L: ?*LuaState, s: [*:0]const u8) callconv(.c) ?[*:0]const u8;
 pub extern fn lua_pushlstring(L: ?*LuaState, s: [*]const u8, len: usize) callconv(.c) ?[*:0]const u8;
+pub extern fn lua_pushinteger(L: ?*LuaState, n: c_longlong) callconv(.c) void;
+pub extern fn lua_pushboolean(L: ?*LuaState, b: c_int) callconv(.c) void;
 pub extern fn lua_createtable(L: ?*LuaState, narr: c_int, nrec: c_int) callconv(.c) void;
 pub extern fn lua_setfield(L: ?*LuaState, idx: c_int, k: [*:0]const u8) callconv(.c) void;
 pub extern fn lua_settop(L: ?*LuaState, idx: c_int) callconv(.c) void;
@@ -49,7 +51,6 @@ test "lua bindings round-trip: script sets global, Zig reads it back" {
 }
 
 test "lua bindings: pcall return value readable via tolstring" {
-
     const L = luaL_newstate() orelse return error.HookNoState;
     defer lua_close(L);
     luaL_openlibs(L);

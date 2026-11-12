@@ -426,8 +426,7 @@ test "build_agent_prompt omits Local Knowledge when cwd is empty" {
     const tools = [_]AgentTool{
         makeTool("read_file", "Read a file"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "",                  
-        "", "", "", "", &tools, "", null, "", "", "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No cwd → no Local Knowledge section
@@ -472,20 +471,7 @@ test "build_agent_prompt: no sub-agent section is rendered" {
     const io = std.testing.io;
 
     const tools = [_]AgentTool{};
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,                            
-        "",                          
-        "",                             
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Available Sub-Agents"));
@@ -536,20 +522,7 @@ test "build_agent_prompt omits Kanban Status Tracking when section is empty" {
     const io = std.testing.io;
 
     const tools = [_]AgentTool{};
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",                          
-        "",                             
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Kanban Status Tracking"));
@@ -1071,20 +1044,7 @@ test "build_agent_prompt omits Workspace Context when section is empty" {
     const tools = [_]AgentTool{};
     // workspaceContext is "" — mirrors the production behavior when
     // the session is not bound to any workspace_item_task.
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",                          
-        "",                             
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // No Workspace Context section is rendered.
@@ -1102,20 +1062,7 @@ test "build_agent_prompt always renders Search Tool Preference (unconditional)" 
 
     // Empty tool list — proves the section has no `requires_tool` gate.
     const tools = [_]AgentTool{};
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // Header is rendered.
@@ -1151,20 +1098,7 @@ test "build_agent_prompt Search Tool Preference appears even with non-empty tool
         makeTool("bash", "Run a bash command"),
         makeTool("search", "Search tool"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(contains(prompt, "## Search Tool Preference (MANDATORY)"));
@@ -1184,20 +1118,7 @@ test "build_agent_prompt renders Memory Tools section when load_memory is in too
         makeTool("read_file", "Read a file"),
         makeTool("load_memory", "Search saved notes (FTS5)"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     // Section header is rendered.
@@ -1220,20 +1141,7 @@ test "build_agent_prompt omits Memory Tools section when load_memory is absent" 
         makeTool("read_file", "Read a file"),
         makeTool("bash", "Run shell"),
     };
-    const prompt = try prompts_mod.build_agent_prompt(
-        alloc,
-        io,
-        "/tmp",
-        "",
-        "",
-        "",
-        "",
-        &tools,
-        "",
-        null,
-        "",
-        "",
-        "");
+    const prompt = try prompts_mod.build_agent_prompt(alloc, io, "/tmp", "", "", "", "", &tools, "", null, "", "", "");
     defer alloc.free(prompt);
 
     try std.testing.expect(!contains(prompt, "## Memory Tools"));
@@ -1522,6 +1430,7 @@ fn buildSystemPromptFor(
         is_sub_agent,
         &.{},
         tools,
+        "",
         "",
         "",
     );

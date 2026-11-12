@@ -92,6 +92,7 @@ pub fn systemPromptGetHandler(
         merged_tools,
         "",
         "",
+        "",
     ) catch {
         return res.jsonResponse(.{
             .status_code = 500,

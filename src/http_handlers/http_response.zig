@@ -352,6 +352,8 @@ pub const PabrikConfigResponse = struct {
     /// Delay in milliseconds before the workflow retries a failed
     /// `callDynamicAgentNew` call. 0 = no delay.
     retry_delay_ms: u32 = 0,
+    /// Interpreter that runs `register_hook.py`. Empty = auto-resolve.
+    hook_python_bin: []const u8 = "",
     /// Overall deadline in milliseconds for ONE streaming LLM call.
     llm_read_timeout_ms: u32 = 900_000,
     /// Default tool checklist (Tools tab, plan

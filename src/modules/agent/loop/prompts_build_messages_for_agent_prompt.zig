@@ -84,6 +84,7 @@ pub fn buildMessages(
     tools: []tool_models.AgentTool,
     inherited_context_mode: []const u8,
     activeAgentContent: []const u8,
+    hook_context: []const u8,
 ) ![]agent.AgentMessage {
     // `environment` feeds only `loadGlobalKnowledge` below.
     const environment: ?*const std.process.Environ.Map =
@@ -293,6 +294,12 @@ pub fn buildMessages(
     defer allocator.free(planContent);
     if (planContent.len > 0) {
         try final_system.appendSlice(allocator, planContent);
+    }
+
+    if (hook_context.len > 0) {
+        try final_system.appendSlice(allocator, "\n\n## Hook Context\n\n");
+        try final_system.appendSlice(allocator, hook_context);
+        try final_system.appendSlice(allocator, "\n");
     }
 
     const final_system_content = try final_system.toOwnedSlice(allocator);
@@ -1809,6 +1816,7 @@ test "buildMessages: the spawned agent's configuration reaches the prompt" {
         &.{},
         "",
         "You are a strict code reviewer.",
+        "",
     );
     const prompt = try testing.allocator.dupe(u8, messages[0].content orelse "");
     for (messages) |*msg| msg.deinit(testing.allocator);
@@ -1841,6 +1849,7 @@ test "buildMessages: a top-level session gets no agent-configuration section" {
         false,
         &.{},
         &.{},
+        "",
         "",
         "",
     );
@@ -1883,6 +1892,7 @@ fn buildMessagesForOneRow(
         false,
         history,
         &.{},
+        "",
         "",
         "",
     );
@@ -2006,6 +2016,7 @@ test "buildMessages: the cross-project block reaches the prompt, after the works
         false,
         &.{},
         &.{},
+        "",
         "",
         "",
     );

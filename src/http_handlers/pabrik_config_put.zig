@@ -144,6 +144,12 @@ pub fn pabrikConfigPutHandler(ctx: gserverz.HttpContext, req: gserverz.HttpReque
     if (input.notify_on_error) |n| {
         config_json.notify_on_error = n;
     }
+    // hook_python_bin: the interpreter for `register_hook.py`. An empty
+    // string is meaningful — it means "auto-resolve", so it is applied
+    // rather than treated as absent.
+    if (input.hook_python_bin) |bin| {
+        config_json.hook_python_bin = bin;
+    }
     // web_launch_enabled: parallel to notify_on_complete. Absent =
     // preserve existing on-disk value.
     if (input.web_launch_enabled) |n| {
@@ -515,6 +521,10 @@ pub const ConfigInput = struct {
     /// Delay in milliseconds before retrying a failed workflow call.
     /// Range-validated at apply time: 0 ≤ value ≤ 60_000.
     retry_delay_ms: ?u32 = null,
+    /// Interpreter that runs `register_hook.py`. Empty string = auto-resolve
+    /// (`PABRIK_HOOK_PYTHON`, then `python`, `python3`, `py`). Absent =
+    /// preserve the existing on-disk value.
+    hook_python_bin: ?[]const u8 = null,
     /// Overall deadline in milliseconds for ONE streaming LLM call.
     /// Range-validated at apply time: 1_000 ≤ value ≤ 1_800_000.
     llm_read_timeout_ms: ?u32 = null,
@@ -602,6 +612,9 @@ const ConfigJson = struct {
     /// Mirrors `LlmConfig.retry_delay_ms` (Config.zig). Clamped to
     /// [0, 60_000] by the apply block. Default 0 = no delay.
     retry_delay_ms: u32 = 0,
+    /// Interpreter that runs `register_hook.py`. Mirrors
+    /// `LlmConfig.hook_python_bin`. Empty = auto-resolve.
+    hook_python_bin: []const u8 = "",
     /// Overall deadline in milliseconds for ONE streaming LLM call.
     /// Mirrors `LlmConfig.llm_read_timeout_ms` (Config.zig). Clamped to
     /// [1_000, 1_800_000] by the apply block.
