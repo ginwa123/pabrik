@@ -33,6 +33,52 @@ function Get-HexDigest {
     return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
 }
 
+function Remove-DebugSections {
+    param([string]$Path)
+
+    if ($env:PABRIK_RUSTFS_NO_STRIP -eq "1") {
+        Write-Output "PABRIK_RUSTFS_NO_STRIP=1; the bundled rustfs keeps its debug sections"
+        return
+    }
+
+    $tool = $null
+    foreach ($name in @("llvm-strip", "strip")) {
+        $found = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $tool = $found.Source; break }
+    }
+    if (-not $tool) {
+        Write-Output "warning: no llvm-strip or strip on PATH; the bundled rustfs keeps its debug sections"
+        return
+    }
+
+    $before = (Get-Item -LiteralPath $Path).Length
+    $backup = "$Path.unstripped"
+    Copy-Item -Force -LiteralPath $Path -Destination $backup
+
+    $code = 1
+    try {
+        & $tool --strip-all $Path 2>$null | Out-Null
+        $code = $LASTEXITCODE
+    } catch {
+        $code = 1
+    }
+    if ($code -ne 0) {
+        Move-Item -Force -LiteralPath $backup -Destination $Path
+        Write-Output "warning: $tool could not strip the bundled rustfs; keeping the original"
+        return
+    }
+
+    $after = (Get-Item -LiteralPath $Path).Length
+    if ($after -ge $before) {
+        Move-Item -Force -LiteralPath $backup -Destination $Path
+        Write-Output "warning: stripping did not shrink the bundled rustfs; keeping the original"
+        return
+    }
+
+    Remove-Item -Force -LiteralPath $backup
+    Write-Output "stripped the bundled rustfs: $before -> $after bytes"
+}
+
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
 $cached = (Test-Path $Archive) -and ((Get-HexDigest $Archive) -eq $WantSha)
@@ -75,6 +121,8 @@ $DestDir = Split-Path -Parent $Dest
 if ($DestDir -ne "" -and -not (Test-Path $DestDir)) {
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 }
+Remove-DebugSections -Path $Member
+
 $MemberSha = Get-HexDigest $Member
 try {
     Copy-Item -Force $Member $Dest

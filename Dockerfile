@@ -11,7 +11,7 @@ FROM ubuntu:${UBUNTU_VERSION} AS rustfs
 ARG RUSTFS_VERSION=1.0.4
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && apt-get install -y --no-install-recommends binutils ca-certificates curl unzip \
  && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
@@ -28,6 +28,7 @@ RUN set -eux; \
     fi; \
     echo "${rustfs_sha}  /tmp/rustfs.zip" | sha256sum -c -; \
     unzip -p /tmp/rustfs.zip rustfs > /usr/local/bin/pabrik-fs; \
+    strip --strip-all /usr/local/bin/pabrik-fs; \
     chmod 0755 /usr/local/bin/pabrik-fs; \
     rm /tmp/rustfs.zip; \
     /usr/local/bin/pabrik-fs --version

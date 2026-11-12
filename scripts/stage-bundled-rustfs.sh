@@ -153,6 +153,68 @@ fetch() {
     fi
 }
 
+strip_staged() {
+    local file="$1"
+
+    if [[ "${PABRIK_RUSTFS_NO_STRIP:-0}" == "1" ]]; then
+        echo "PABRIK_RUSTFS_NO_STRIP=1; the bundled rustfs keeps its debug sections"
+        return 0
+    fi
+
+    local tool=""
+    if command -v strip >/dev/null 2>&1; then
+        tool="strip"
+    elif command -v llvm-strip >/dev/null 2>&1; then
+        tool="llvm-strip"
+    fi
+    if [[ -z "$tool" ]]; then
+        echo "warning: no strip or llvm-strip on PATH; the bundled rustfs keeps its debug sections" >&2
+        return 0
+    fi
+
+    local darwin=0
+    local flags=(--strip-all)
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        darwin=1
+        flags=(-x)
+    fi
+
+    local before after
+    before="$(wc -c < "$file" | tr -d ' ')"
+    local backup="${file}.unstripped"
+    cp -p "$file" "$backup"
+
+    if ! "$tool" "${flags[@]}" "$file" >/dev/null 2>&1; then
+        mv -f "$backup" "$file"
+        echo "warning: ${tool} could not strip the bundled rustfs; keeping the original" >&2
+        return 0
+    fi
+
+    if [[ "$darwin" -eq 1 ]]; then
+        if ! command -v codesign >/dev/null 2>&1; then
+            mv -f "$backup" "$file"
+            echo "warning: no codesign to re-sign the stripped rustfs; keeping the original" >&2
+            return 0
+        fi
+        codesign --force --sign - "$file" >/dev/null 2>&1 || true
+        if ! codesign --verify "$file" >/dev/null 2>&1; then
+            mv -f "$backup" "$file"
+            echo "warning: the stripped rustfs lost its code signature; keeping the original" >&2
+            return 0
+        fi
+    fi
+
+    after="$(wc -c < "$file" | tr -d ' ')"
+    if [[ "$after" -ge "$before" ]]; then
+        mv -f "$backup" "$file"
+        echo "warning: stripping did not shrink the bundled rustfs; keeping the original" >&2
+        return 0
+    fi
+
+    rm -f "$backup"
+    echo "stripped the bundled rustfs: ${before} -> ${after} bytes"
+}
+
 if [[ -f "$archive" ]] && [[ "$(sha256_of "$archive")" == "$want_sha" ]]; then
     echo "reusing cached $(basename "$archive")"
 else
@@ -188,7 +250,7 @@ fi
 # fails with ETXTBSY when a smoke test left pabrik-fs running, and a rename
 # replaces the directory entry without touching the running inode.
 staged="${dest}.staged.$$"
-trap 'rm -f "$staged"' EXIT
+trap 'rm -f "$staged" "${staged}.unstripped"' EXIT
 
 if command -v unzip >/dev/null 2>&1; then
     unzip -p "$archive" rustfs > "$staged"
@@ -216,6 +278,8 @@ if [[ -n "$want_size" ]]; then
         exit 1
     fi
 fi
+
+strip_staged "$staged"
 
 chmod 0755 "$staged"
 mv -f "$staged" "$dest"
