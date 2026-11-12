@@ -18,7 +18,7 @@ const REAL_BOTTOM = REAL_TOTAL - VIEWPORT
 const SAVED_POSITION = 9000
 const BASE_NANO = 1794000000000000000
 
-const ctl = vi.hoisted(() => ({ cached: [] as unknown[] }))
+const ctl = vi.hoisted(() => ({ cached: [] as ReturnType<typeof cachedRow>[] }))
 
 const wireRow = (id: string, content: string, nano: number, role: string) => ({
   id,

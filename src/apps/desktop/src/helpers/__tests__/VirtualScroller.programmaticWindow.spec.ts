@@ -49,7 +49,7 @@ function mountScroller() {
       itemKey: (item: unknown) => (item as Item).id,
     },
   })
-  return { wrapper, el: wrapper.element as HTMLElement, vm: wrapper.vm as unknown as Exposed }
+  return { wrapper, el: wrapper.element as HTMLElement, vm: wrapper.vm as Exposed }
 }
 
 async function settle(): Promise<void> {
