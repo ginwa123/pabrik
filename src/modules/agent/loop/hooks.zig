@@ -1,4 +1,4 @@
-//! Lua hooks: global + per-project single-file hooks.
+//! Lua + Python hooks: global + per-project single-file hooks.
 
 const std = @import("std");
 const pabrik = @import("pabrikcore");
@@ -7,12 +7,22 @@ const helpers = @import("helpers");
 const logger_mod = pabrik.loggermod;
 const config_mod = pabrik.config;
 const lua = @import("lua_bindings.zig");
+const hooks_python = @import("hooks_python.zig");
 
 const Logger = logger_mod.Logger;
 
 pub const HOOK_FILENAME = "register_hook.lua";
+pub const PY_HOOK_FILENAME = "register_hook.py";
 pub const PRE_EVENT = "pre_tool_use";
 pub const POST_EVENT = "post_tool_use";
+pub const SESSION_START_EVENT = "session_start";
+pub const FINISH_REASON_EVENT = "finish_reason";
+pub const SESSION_END_EVENT = "session_end";
+
+/// How many times one run may be kept alive by a `finish_reason` hook
+/// returning `{ continue = true }`. Without a cap a hook that always
+/// continues spins the loop forever.
+pub const MAX_HOOK_CONTINUES: u8 = 3;
 
 pub const PreResult = union(enum) {
     allow,
@@ -44,11 +54,40 @@ pub const PostResult = union(enum) {
     }
 };
 
+/// What a lifecycle hook (`session_start`, `finish_reason`, `session_end`)
+/// asked for. Both fields are owned by the caller.
+pub const LifecycleResult = struct {
+    /// Text to append to the system prompt for this run.
+    context: ?[]u8 = null,
+    /// Prompt to queue so the run keeps going instead of ending.
+    continue_with: ?[]u8 = null,
+
+    pub fn deinit(self: LifecycleResult, allocator: std.mem.Allocator) void {
+        if (self.context) |c| allocator.free(c);
+        if (self.continue_with) |p| allocator.free(p);
+    }
+};
+
+pub const FieldValue = union(enum) {
+    string: []const u8,
+    integer: i64,
+    boolean: bool,
+};
+
+/// One key of a hook's `data` table. The same list feeds the Lua table and
+/// the Python JSON payload, so the two runtimes cannot drift.
+pub const Field = struct {
+    key: []const u8,
+    value: FieldValue,
+};
+
 /// Extra hook context passed inside every `data` table.
 pub const HookContext = struct {
     session_id: []const u8 = "",
     cwd: []const u8 = "",
     model: []const u8 = "",
+    /// The workspace setting for the Python interpreter. Empty = auto-resolve.
+    python_bin: []const u8 = "",
 };
 
 /// Resolve `<config_dir>/hooks` (caller frees). Returns null when there is
@@ -60,19 +99,30 @@ pub fn getHooksDir(allocator: std.mem.Allocator, environment: ?*const std.proces
     return try std.fs.path.join(allocator, &.{ config_dir, "hooks" });
 }
 
-/// Resolve the global hook file path (caller frees). Returns null when
-/// there is no environment or the file does not exist. Never errors on
-/// a missing file — absence is normal.
-pub fn resolveHookFile(allocator: std.mem.Allocator, environment: ?*const std.process.Environ.Map) !?[]u8 {
-    const hooks_dir = try getHooksDir(allocator, environment) orelse return null;
-    defer allocator.free(hooks_dir);
-    const full = try std.fs.path.join(allocator, &.{ hooks_dir, HOOK_FILENAME });
+fn resolveInDir(allocator: std.mem.Allocator, dir: []const u8, filename: []const u8) !?[]u8 {
+    const full = try std.fs.path.join(allocator, &.{ dir, filename });
     errdefer allocator.free(full);
     if (!helpers.fileExists(full)) {
         allocator.free(full);
         return null;
     }
     return full;
+}
+
+/// Resolve the global hook file path (caller frees). Returns null when
+/// there is no environment or the file does not exist. Never errors on
+/// a missing file — absence is normal.
+pub fn resolveHookFile(allocator: std.mem.Allocator, environment: ?*const std.process.Environ.Map) !?[]u8 {
+    const hooks_dir = try getHooksDir(allocator, environment) orelse return null;
+    defer allocator.free(hooks_dir);
+    return resolveInDir(allocator, hooks_dir, HOOK_FILENAME);
+}
+
+/// Same as `resolveHookFile` for the Python hook file.
+pub fn resolvePythonHookFile(allocator: std.mem.Allocator, environment: ?*const std.process.Environ.Map) !?[]u8 {
+    const hooks_dir = try getHooksDir(allocator, environment) orelse return null;
+    defer allocator.free(hooks_dir);
+    return resolveInDir(allocator, hooks_dir, PY_HOOK_FILENAME);
 }
 
 /// Resolve the per-project hook file `<cwd>/.pabrik/hooks/register_hook.lua`
@@ -80,19 +130,63 @@ pub fn resolveHookFile(allocator: std.mem.Allocator, environment: ?*const std.pr
 /// exist. No directory walk: the path is exact and predictable.
 pub fn resolveProjectHookFile(allocator: std.mem.Allocator, cwd: []const u8) !?[]u8 {
     if (cwd.len == 0) return null;
-    const full = try std.fs.path.join(allocator, &.{ cwd, ".pabrik", "hooks", HOOK_FILENAME });
-    errdefer allocator.free(full);
-    if (!helpers.fileExists(full)) {
-        allocator.free(full);
-        return null;
-    }
-    return full;
+    const dir = try std.fs.path.join(allocator, &.{ cwd, ".pabrik", "hooks" });
+    defer allocator.free(dir);
+    return resolveInDir(allocator, dir, HOOK_FILENAME);
+}
+
+/// Same as `resolveProjectHookFile` for the Python hook file.
+pub fn resolveProjectPythonHookFile(allocator: std.mem.Allocator, cwd: []const u8) !?[]u8 {
+    if (cwd.len == 0) return null;
+    const dir = try std.fs.path.join(allocator, &.{ cwd, ".pabrik", "hooks" });
+    defer allocator.free(dir);
+    return resolveInDir(allocator, dir, PY_HOOK_FILENAME);
+}
+
+/// The four hook files in chain order: global Lua, global Python, project
+/// Lua, project Python. A scope's Lua hook runs before its Python hook, so
+/// the order is deterministic regardless of which language a user picks.
+const HookFiles = [4]?[]u8;
+
+fn resolveHookFiles(
+    allocator: std.mem.Allocator,
+    logger: *Logger,
+    environment: ?*const std.process.Environ.Map,
+    cwd: []const u8,
+) HookFiles {
+    return .{
+        resolveHookFile(allocator, environment) catch |err| blk: {
+            logger.warnFmt("[hooks] global resolve failed, skipping: {s}", .{@errorName(err)});
+            break :blk null;
+        },
+        resolvePythonHookFile(allocator, environment) catch |err| blk: {
+            logger.warnFmt("[hooks] global python resolve failed, skipping: {s}", .{@errorName(err)});
+            break :blk null;
+        },
+        resolveProjectHookFile(allocator, cwd) catch |err| blk: {
+            logger.warnFmt("[hooks] project resolve failed, skipping: {s}", .{@errorName(err)});
+            break :blk null;
+        },
+        resolveProjectPythonHookFile(allocator, cwd) catch |err| blk: {
+            logger.warnFmt("[hooks] project python resolve failed, skipping: {s}", .{@errorName(err)});
+            break :blk null;
+        },
+    };
+}
+
+fn freeHookFiles(allocator: std.mem.Allocator, files: HookFiles) void {
+    for (files) |f| if (f) |p| allocator.free(p);
+}
+
+fn isPythonHook(hook_file: []const u8) bool {
+    return std.mem.endsWith(u8, hook_file, ".py");
 }
 
 /// Run the pre-tool hooks: global first, then project (which sees the global
 /// hook's modifications). First `deny` or `mock` stops the chain.
 pub fn runPreHook(
     allocator: std.mem.Allocator,
+    io: std.Io,
     logger: *Logger,
     environment: ?*const std.process.Environ.Map,
     tool_name: []const u8,
@@ -103,23 +197,12 @@ pub fn runPreHook(
     var owned_args: ?[]u8 = null;
     defer if (owned_args) |o| allocator.free(o);
 
-    const files: [2]?[]u8 = .{
-        resolveHookFile(allocator, environment) catch |err| blk: {
-            logger.warnFmt("[hooks] global resolve failed, skipping: {s}", .{@errorName(err)});
-            break :blk null;
-        },
-        resolveProjectHookFile(allocator, ctx.cwd) catch |err| blk: {
-            logger.warnFmt("[hooks] project resolve failed, skipping: {s}", .{@errorName(err)});
-            break :blk null;
-        },
-    };
-    defer {
-        for (files) |f| if (f) |p| allocator.free(p);
-    }
+    const files = resolveHookFiles(allocator, logger, environment, ctx.cwd);
+    defer freeHookFiles(allocator, files);
 
     for (files) |hook_file_opt| {
         const hook_file = hook_file_opt orelse continue;
-        const r = callPreHook(allocator, logger, hook_file, tool_name, cur_args, ctx) catch |err| {
+        const r = callPreHookAny(allocator, io, logger, environment, hook_file, tool_name, cur_args, ctx) catch |err| {
             logger.debugFmt("[hooks] pre hook {s} failed open: {s}", .{ hook_file, @errorName(err) });
             continue;
         };
@@ -146,6 +229,7 @@ pub fn runPreHook(
 /// First `deny` stops the chain; `replace` outputs chain forward.
 pub fn runPostHook(
     allocator: std.mem.Allocator,
+    io: std.Io,
     logger: *Logger,
     environment: ?*const std.process.Environ.Map,
     tool_name: []const u8,
@@ -157,23 +241,12 @@ pub fn runPostHook(
     var owned_output: ?[]u8 = null;
     defer if (owned_output) |o| allocator.free(o);
 
-    const files: [2]?[]u8 = .{
-        resolveHookFile(allocator, environment) catch |err| blk: {
-            logger.warnFmt("[hooks] global resolve failed, skipping: {s}", .{@errorName(err)});
-            break :blk null;
-        },
-        resolveProjectHookFile(allocator, ctx.cwd) catch |err| blk: {
-            logger.warnFmt("[hooks] project resolve failed, skipping: {s}", .{@errorName(err)});
-            break :blk null;
-        },
-    };
-    defer {
-        for (files) |f| if (f) |p| allocator.free(p);
-    }
+    const files = resolveHookFiles(allocator, logger, environment, ctx.cwd);
+    defer freeHookFiles(allocator, files);
 
     for (files) |hook_file_opt| {
         const hook_file = hook_file_opt orelse continue;
-        const r = callPostHook(allocator, logger, hook_file, tool_name, arguments, cur_output, ctx) catch |err| {
+        const r = callPostHookAny(allocator, io, logger, environment, hook_file, tool_name, arguments, cur_output, ctx) catch |err| {
             logger.debugFmt("[hooks] post hook {s} failed open: {s}", .{ hook_file, @errorName(err) });
             continue;
         };
@@ -250,6 +323,157 @@ fn callPostHook(
     return parsePostReturn(allocator, logger, L);
 }
 
+/// Run the lifecycle hooks: global Lua, global Python, project Lua, project
+/// Python. `context` accumulates across the chain; `continue_with` is
+/// first-wins, matching the "first deny stops the chain" convention.
+pub fn runLifecycleHook(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    logger: *Logger,
+    environment: ?*const std.process.Environ.Map,
+    event: []const u8,
+    fields: []const Field,
+    ctx: HookContext,
+) !LifecycleResult {
+    var context_buf: ?[]u8 = null;
+    errdefer if (context_buf) |c| allocator.free(c);
+    var continue_buf: ?[]u8 = null;
+    errdefer if (continue_buf) |p| allocator.free(p);
+
+    const files = resolveHookFiles(allocator, logger, environment, ctx.cwd);
+    defer freeHookFiles(allocator, files);
+
+    for (files) |hook_file_opt| {
+        const hook_file = hook_file_opt orelse continue;
+        const r = callLifecycleHookAny(allocator, io, logger, environment, hook_file, event, fields, ctx) catch |err| {
+            logger.debugFmt("[hooks] lifecycle hook {s} failed open: {s}", .{ hook_file, @errorName(err) });
+            continue;
+        };
+        if (r.context) |c| {
+            if (context_buf) |old| {
+                const joined = std.mem.concat(allocator, u8, &.{ old, "\n\n", c }) catch |err| {
+                    allocator.free(c);
+                    return err;
+                };
+                allocator.free(old);
+                allocator.free(c);
+                context_buf = joined;
+            } else {
+                context_buf = c;
+            }
+        }
+        if (r.continue_with) |p| {
+            if (continue_buf == null) continue_buf = p else allocator.free(p);
+        }
+    }
+
+    return .{ .context = context_buf, .continue_with = continue_buf };
+}
+
+fn callPreHookAny(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    logger: *Logger,
+    environment: ?*const std.process.Environ.Map,
+    hook_file: []const u8,
+    tool_name: []const u8,
+    arguments: []const u8,
+    ctx: HookContext,
+) !PreResult {
+    if (!isPythonHook(hook_file)) {
+        return callPreHook(allocator, logger, hook_file, tool_name, arguments, ctx);
+    }
+    const fields = [_]Field{
+        .{ .key = "tool_name", .value = .{ .string = tool_name } },
+        .{ .key = "arguments", .value = .{ .string = arguments } },
+        .{ .key = "session_id", .value = .{ .string = ctx.session_id } },
+        .{ .key = "cwd", .value = .{ .string = ctx.cwd } },
+        .{ .key = "model", .value = .{ .string = ctx.model } },
+    };
+    const json = try eventJson(allocator, &fields);
+    defer allocator.free(json);
+    const out = try hooks_python.runPythonHook(allocator, io, logger, environment, ctx.python_bin, hook_file, PRE_EVENT, json) orelse return .allow;
+    defer allocator.free(out);
+    return parsePreReturnJson(allocator, logger, out);
+}
+
+fn callPostHookAny(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    logger: *Logger,
+    environment: ?*const std.process.Environ.Map,
+    hook_file: []const u8,
+    tool_name: []const u8,
+    arguments: []const u8,
+    output: []const u8,
+    ctx: HookContext,
+) !PostResult {
+    if (!isPythonHook(hook_file)) {
+        return callPostHook(allocator, logger, hook_file, tool_name, arguments, output, ctx);
+    }
+    const fields = [_]Field{
+        .{ .key = "tool_name", .value = .{ .string = tool_name } },
+        .{ .key = "arguments", .value = .{ .string = arguments } },
+        .{ .key = "output", .value = .{ .string = output } },
+        .{ .key = "session_id", .value = .{ .string = ctx.session_id } },
+        .{ .key = "cwd", .value = .{ .string = ctx.cwd } },
+        .{ .key = "model", .value = .{ .string = ctx.model } },
+    };
+    const json = try eventJson(allocator, &fields);
+    defer allocator.free(json);
+    const out = try hooks_python.runPythonHook(allocator, io, logger, environment, ctx.python_bin, hook_file, POST_EVENT, json) orelse return .keep;
+    defer allocator.free(out);
+    return parsePostReturnJson(allocator, logger, out);
+}
+
+fn callLifecycleHookAny(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    logger: *Logger,
+    environment: ?*const std.process.Environ.Map,
+    hook_file: []const u8,
+    event: []const u8,
+    fields: []const Field,
+    ctx: HookContext,
+) !LifecycleResult {
+    if (!isPythonHook(hook_file)) {
+        return callLifecycleHook(allocator, logger, hook_file, event, fields, ctx);
+    }
+    const json = try eventJson(allocator, fields);
+    defer allocator.free(json);
+    const out = try hooks_python.runPythonHook(allocator, io, logger, environment, ctx.python_bin, hook_file, event, json) orelse return .{};
+    defer allocator.free(out);
+    return parseLifecycleReturnJson(allocator, logger, out);
+}
+
+fn callLifecycleHook(
+    allocator: std.mem.Allocator,
+    logger: *Logger,
+    hook_file: []const u8,
+    event: []const u8,
+    fields: []const Field,
+    ctx: HookContext,
+) !LifecycleResult {
+    _ = ctx;
+    const L = lua.luaL_newstate() orelse return error.HookNoState;
+    defer lua.lua_close(L);
+    lua.luaL_openlibs(L);
+
+    try loadHookFile(allocator, logger, L, hook_file);
+    if (!pushInitFn(L)) return .{};
+
+    const zevent = try allocator.dupeZ(u8, event);
+    defer allocator.free(zevent);
+    _ = lua.lua_pushstring(L, zevent);
+    try pushEventTable(L, allocator, fields);
+    if (lua.lua_pcallk(L, 2, 1, 0, 0, null) != lua.LUA_OK) {
+        logLuaError(logger, L, hook_file, "init(lifecycle)");
+        return error.HookInitFailed;
+    }
+    defer lua.lua_settop(L, 0);
+    return parseLifecycleReturn(allocator, logger, L);
+}
+
 /// `luaL_loadfilex` + `pcall` the chunk so its globals (incl. `init`)
 /// exist. Logs the Lua message and errors on any failure.
 fn loadHookFile(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaState, hook_file: []const u8) !void {
@@ -276,7 +500,7 @@ fn pushInitFn(L: ?*lua.LuaState) bool {
     return true;
 }
 
-/// Push the `data` table for one hook call. Stack: [..., fn, event] →
+/// Push the `data` table for one tool hook call. Stack: [..., fn, event] →
 /// [..., fn, event, table]. `output` is present for post hooks only.
 fn pushDataTable(
     L: ?*lua.LuaState,
@@ -286,20 +510,59 @@ fn pushDataTable(
     output: ?[]const u8,
     ctx: HookContext,
 ) !void {
-    lua.lua_createtable(L, 0, 6);
-    try pushField(L, allocator, "tool_name", tool_name);
-    try pushField(L, allocator, "arguments", arguments);
-    if (output) |o| try pushField(L, allocator, "output", o);
-    try pushField(L, allocator, "session_id", ctx.session_id);
-    try pushField(L, allocator, "cwd", ctx.cwd);
-    try pushField(L, allocator, "model", ctx.model);
+    var fields: [6]Field = undefined;
+    var n: usize = 0;
+    fields[n] = .{ .key = "tool_name", .value = .{ .string = tool_name } };
+    n += 1;
+    fields[n] = .{ .key = "arguments", .value = .{ .string = arguments } };
+    n += 1;
+    if (output) |o| {
+        fields[n] = .{ .key = "output", .value = .{ .string = o } };
+        n += 1;
+    }
+    fields[n] = .{ .key = "session_id", .value = .{ .string = ctx.session_id } };
+    n += 1;
+    fields[n] = .{ .key = "cwd", .value = .{ .string = ctx.cwd } };
+    n += 1;
+    fields[n] = .{ .key = "model", .value = .{ .string = ctx.model } };
+    n += 1;
+    try pushEventTable(L, allocator, fields[0..n]);
 }
 
-fn pushField(L: ?*lua.LuaState, allocator: std.mem.Allocator, key: [*:0]const u8, value: []const u8) !void {
-    const z = try allocator.dupeZ(u8, value);
-    defer allocator.free(z);
-    _ = lua.lua_pushstring(L, z);
-    lua.lua_setfield(L, -2, key);
+fn pushEventTable(L: ?*lua.LuaState, allocator: std.mem.Allocator, fields: []const Field) !void {
+    lua.lua_createtable(L, 0, @intCast(fields.len));
+    for (fields) |f| {
+        const zkey = try allocator.dupeZ(u8, f.key);
+        defer allocator.free(zkey);
+        switch (f.value) {
+            .string => |s| {
+                const z = try allocator.dupeZ(u8, s);
+                defer allocator.free(z);
+                _ = lua.lua_pushstring(L, z);
+            },
+            .integer => |v| lua.lua_pushinteger(L, @intCast(v)),
+            .boolean => |v| lua.lua_pushboolean(L, if (v) 1 else 0),
+        }
+        lua.lua_setfield(L, -2, zkey);
+    }
+}
+
+/// The same `Field` list as a JSON object, for the Python runtime.
+fn eventJson(allocator: std.mem.Allocator, fields: []const Field) ![]u8 {
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    errdefer out.deinit();
+    var stringify: std.json.Stringify = .{ .writer = &out.writer };
+    try stringify.beginObject();
+    for (fields) |f| {
+        try stringify.objectField(f.key);
+        switch (f.value) {
+            .string => |v| try stringify.write(v),
+            .integer => |v| try stringify.write(v),
+            .boolean => |v| try stringify.write(v),
+        }
+    }
+    try stringify.endObject();
+    return out.toOwnedSlice();
 }
 
 /// Parse the `init` return value at the stack top. Priority: deny, then
@@ -343,6 +606,121 @@ fn parsePostReturn(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaSt
         return .{ .replace = replacement };
     }
     return .keep;
+}
+
+/// Parse a lifecycle `init` return value. `context` is the text to append to
+/// the system prompt; `continue` + `prompt` keep the run going.
+fn parseLifecycleReturn(allocator: std.mem.Allocator, logger: *Logger, L: ?*lua.LuaState) !LifecycleResult {
+    const t = lua.lua_type(L, -1);
+    if (t == lua.LUA_TNIL or t == lua.LUA_TNONE) return .{};
+    if (t != lua.LUA_TTABLE) {
+        logger.warnFmt("[hooks] lifecycle init returned non-table, ignoring", .{});
+        return .{};
+    }
+    var out: LifecycleResult = .{};
+    if (try getStringField(allocator, L, "context")) |c| {
+        if (c.len > 0) out.context = c else allocator.free(c);
+    }
+    if (getBoolField(L, "continue")) {
+        if (try getStringField(allocator, L, "prompt")) |p| {
+            if (p.len > 0) out.continue_with = p else allocator.free(p);
+        }
+    }
+    return out;
+}
+
+fn parsePreReturnJson(allocator: std.mem.Allocator, logger: *Logger, json: []const u8) !PreResult {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, json, .{}) catch {
+        logger.warnFmt("[hooks] python pre hook returned invalid JSON, ignoring", .{});
+        return .allow;
+    };
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        .null => return .allow,
+        else => {
+            logger.warnFmt("[hooks] python pre hook returned non-object, ignoring", .{});
+            return .allow;
+        },
+    };
+    if (jsonStringField(obj, "deny")) |reason| {
+        if (reason.len > 0) return .{ .deny = try allocator.dupe(u8, reason) };
+    }
+    if (jsonStringField(obj, "arguments")) |new_args| {
+        if (isValidJson(allocator, new_args)) return .{ .modify = try allocator.dupe(u8, new_args) };
+        logger.warnFmt("[hooks] python pre hook returned invalid arguments JSON, ignoring modify", .{});
+    }
+    if (jsonStringField(obj, "output")) |mock_output| {
+        return .{ .mock = try allocator.dupe(u8, mock_output) };
+    }
+    return .allow;
+}
+
+fn parsePostReturnJson(allocator: std.mem.Allocator, logger: *Logger, json: []const u8) !PostResult {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, json, .{}) catch {
+        logger.warnFmt("[hooks] python post hook returned invalid JSON, ignoring", .{});
+        return .keep;
+    };
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        .null => return .keep,
+        else => {
+            logger.warnFmt("[hooks] python post hook returned non-object, ignoring", .{});
+            return .keep;
+        },
+    };
+    if (jsonStringField(obj, "deny")) |reason| {
+        if (reason.len > 0) return .{ .deny = try allocator.dupe(u8, reason) };
+    }
+    if (jsonStringField(obj, "output")) |replacement| {
+        return .{ .replace = try allocator.dupe(u8, replacement) };
+    }
+    return .keep;
+}
+
+fn parseLifecycleReturnJson(allocator: std.mem.Allocator, logger: *Logger, json: []const u8) !LifecycleResult {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, json, .{}) catch {
+        logger.warnFmt("[hooks] python lifecycle hook returned invalid JSON, ignoring", .{});
+        return .{};
+    };
+    defer parsed.deinit();
+    const obj = switch (parsed.value) {
+        .object => |o| o,
+        .null => return .{},
+        else => {
+            logger.warnFmt("[hooks] python lifecycle hook returned non-object, ignoring", .{});
+            return .{};
+        },
+    };
+    var out: LifecycleResult = .{};
+    if (jsonStringField(obj, "context")) |c| {
+        if (c.len > 0) out.context = try allocator.dupe(u8, c);
+    }
+    const wants_continue = switch (obj.get("continue") orelse return out) {
+        .bool => |b| b,
+        else => false,
+    };
+    if (wants_continue) {
+        if (jsonStringField(obj, "prompt")) |p| {
+            if (p.len > 0) out.continue_with = try allocator.dupe(u8, p);
+        }
+    }
+    return out;
+}
+
+fn jsonStringField(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {
+    const value = obj.get(key) orelse return null;
+    return switch (value) {
+        .string => |s| s,
+        else => null,
+    };
+}
+
+fn getBoolField(L: ?*lua.LuaState, key: [*:0]const u8) bool {
+    _ = lua.lua_getfield(L, -1, key);
+    defer lua.lua_settop(L, -2);
+    return lua.lua_toboolean(L, -1) != 0;
 }
 
 /// Read a string field from the table at the stack top. Returns an owned
@@ -538,7 +916,7 @@ test "hooks: broken syntax fails open" {
     const path = try hookPath(allocator, tmp.dir, testing.io, "broken.lua");
     defer allocator.free(path);
 
-    const pre = try runPreHook(allocator, &lg, null, "bash", "{}", .{});
+    const pre = try runPreHook(allocator, testing.io, &lg, null, "bash", "{}", .{});
     _ = pre;
     // runPreHook with null env resolves to allow without touching the file;
     // the broken file itself must error at the call level (fail-open above it).
@@ -646,7 +1024,7 @@ test "hooks: project-only hook denies without global" {
     const proj_root = try writeProjectHook(allocator, proj_tmp.dir, testing.io, "function init(event, data) if event == 'pre_tool_use' then return { deny = 'project says no' } end return nil end\n");
     defer allocator.free(proj_root);
 
-    const pre = try runPreHook(allocator, &lg, &env_map, "bash", "{}", .{ .cwd = proj_root });
+    const pre = try runPreHook(allocator, testing.io, &lg, &env_map, "bash", "{}", .{ .cwd = proj_root });
     defer pre.deinit(allocator);
     try testing.expect(pre == .deny);
     try testing.expectEqualStrings("project says no", pre.deny);
@@ -668,7 +1046,7 @@ test "hooks: global modify chains into project" {
     const proj_root = try writeProjectHook(allocator, proj_tmp.dir, testing.io, "function init(event, data) return { output = 'proj saw:' .. data.arguments } end\n");
     defer allocator.free(proj_root);
 
-    const pre = try runPreHook(allocator, &lg, &env_map, "bash", "{\"v\":\"orig\"}", .{ .cwd = proj_root });
+    const pre = try runPreHook(allocator, testing.io, &lg, &env_map, "bash", "{\"v\":\"orig\"}", .{ .cwd = proj_root });
     defer pre.deinit(allocator);
     try testing.expect(pre == .mock);
     try testing.expectEqualStrings("proj saw:{\"v\":\"global\"}", pre.mock);
@@ -690,7 +1068,7 @@ test "hooks: global deny stops project" {
     const proj_root = try writeProjectHook(allocator, proj_tmp.dir, testing.io, "function init(event, data) return { output = 'project ran' } end\n");
     defer allocator.free(proj_root);
 
-    const pre = try runPreHook(allocator, &lg, &env_map, "bash", "{}", .{ .cwd = proj_root });
+    const pre = try runPreHook(allocator, testing.io, &lg, &env_map, "bash", "{}", .{ .cwd = proj_root });
     defer pre.deinit(allocator);
     try testing.expect(pre == .deny);
     try testing.expectEqualStrings("global block", pre.deny);
@@ -709,7 +1087,7 @@ test "hooks: broken project fails open" {
     const proj_root = try writeProjectHook(allocator, proj_tmp.dir, testing.io, "function init(((\n");
     defer allocator.free(proj_root);
 
-    const pre = try runPreHook(allocator, &lg, &env_map, "bash", "{}", .{ .cwd = proj_root });
+    const pre = try runPreHook(allocator, testing.io, &lg, &env_map, "bash", "{}", .{ .cwd = proj_root });
     defer pre.deinit(allocator);
     try testing.expect(pre == .allow);
 }
@@ -729,7 +1107,7 @@ test "hooks: post replace chains, project wins" {
     const proj_root = try writeProjectHook(allocator, proj_tmp.dir, testing.io, "function init(event, data) if event == 'post_tool_use' then return { output = 'PROJECT:' .. data.output } end return nil end\n");
     defer allocator.free(proj_root);
 
-    const post = try runPostHook(allocator, &lg, &env_map, "bash", "{}", "orig", .{ .cwd = proj_root });
+    const post = try runPostHook(allocator, testing.io, &lg, &env_map, "bash", "{}", "orig", .{ .cwd = proj_root });
     defer post.deinit(allocator);
     try testing.expect(post == .replace);
     try testing.expectEqualStrings("PROJECT:GLOBAL", post.replace);
@@ -743,10 +1121,10 @@ test "hooks: empty cwd skips project tier" {
     var env_map = try emptyHomeEnv(allocator, &home_tmp);
     defer env_map.deinit();
 
-    const pre = try runPreHook(allocator, &lg, &env_map, "bash", "{}", .{ .cwd = "" });
+    const pre = try runPreHook(allocator, testing.io, &lg, &env_map, "bash", "{}", .{ .cwd = "" });
     defer pre.deinit(allocator);
     try testing.expect(pre == .allow);
-    const post = try runPostHook(allocator, &lg, &env_map, "bash", "{}", "out", .{ .cwd = "" });
+    const post = try runPostHook(allocator, testing.io, &lg, &env_map, "bash", "{}", "out", .{ .cwd = "" });
     defer post.deinit(allocator);
     try testing.expect(post == .keep);
 }
@@ -766,4 +1144,167 @@ test "hooks: long-bracket args with backslashes survive verbatim" {
     defer pre.deinit(allocator);
     try testing.expect(pre == .modify);
     try testing.expectEqualStrings("{\"path\":\"C:\\\\Users\\\\x\\\\f.txt\"}", pre.modify);
+}
+
+fn writeProjectPythonHook(allocator: std.mem.Allocator, proj: std.Io.Dir, io: std.Io, content: []const u8) ![]u8 {
+    try proj.createDirPath(io, ".pabrik/hooks");
+    var hooks_dir = try proj.openDir(io, ".pabrik/hooks", .{});
+    defer hooks_dir.close(io);
+    try writeHookFile(hooks_dir, io, PY_HOOK_FILENAME, content);
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try proj.realPath(io, &path_buf);
+    return try allocator.dupe(u8, path_buf[0..n]);
+}
+
+fn lifecycleFields(finish_reason: []const u8, content: []const u8, end_reason: []const u8) [3]Field {
+    return .{
+        .{ .key = "finish_reason", .value = .{ .string = finish_reason } },
+        .{ .key = "content", .value = .{ .string = content } },
+        .{ .key = "end_reason", .value = .{ .string = end_reason } },
+    };
+}
+
+test "lifecycle: session_start context is returned to the caller" {
+    const allocator = testing.allocator;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try home_tmp.dir.realPath(testing.io, &path_buf);
+    var env_map = try globalHookEnvForTest(allocator, testing.io, home_tmp.dir, path_buf[0..n], "function init(event, data) if event == 'session_start' then return { context = 'project rules: be terse' } end return nil end\n");
+    defer env_map.deinit();
+
+    const fields = lifecycleFields("", "", "");
+    var r = try runLifecycleHook(allocator, testing.io, &lg, &env_map, SESSION_START_EVENT, &fields, .{});
+    defer r.deinit(allocator);
+    try testing.expect(r.context != null);
+    try testing.expectEqualStrings("project rules: be terse", r.context.?);
+    try testing.expect(r.continue_with == null);
+}
+
+test "lifecycle: context accumulates across the global and project hooks" {
+    const allocator = testing.allocator;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try home_tmp.dir.realPath(testing.io, &path_buf);
+    var env_map = try globalHookEnvForTest(allocator, testing.io, home_tmp.dir, path_buf[0..n], "function init(event, data) if event == 'session_start' then return { context = 'GLOBAL' } end return nil end\n");
+    defer env_map.deinit();
+
+    var proj_tmp = testing.tmpDir(.{});
+    defer proj_tmp.cleanup();
+    const proj_root = try writeProjectHook(allocator, proj_tmp.dir, testing.io, "function init(event, data) if event == 'session_start' then return { context = 'PROJECT' } end return nil end\n");
+    defer allocator.free(proj_root);
+
+    const fields = lifecycleFields("", "", "");
+    var r = try runLifecycleHook(allocator, testing.io, &lg, &env_map, SESSION_START_EVENT, &fields, .{ .cwd = proj_root });
+    defer r.deinit(allocator);
+    try testing.expect(r.context != null);
+    try testing.expectEqualStrings("GLOBAL\n\nPROJECT", r.context.?);
+}
+
+test "lifecycle: finish_reason hook sees the reason and the content" {
+    const allocator = testing.allocator;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try home_tmp.dir.realPath(testing.io, &path_buf);
+    var env_map = try globalHookEnvForTest(allocator, testing.io, home_tmp.dir, path_buf[0..n], "function init(event, data) if event == 'finish_reason' and data.finish_reason == 'stop' then return { continue = true, prompt = 'keep going: ' .. data.content } end return nil end\n");
+    defer env_map.deinit();
+
+    const fields = lifecycleFields("stop", "done", "");
+    var r = try runLifecycleHook(allocator, testing.io, &lg, &env_map, FINISH_REASON_EVENT, &fields, .{});
+    defer r.deinit(allocator);
+    try testing.expect(r.continue_with != null);
+    try testing.expectEqualStrings("keep going: done", r.continue_with.?);
+}
+
+test "lifecycle: a non-stop finish_reason does not ask to continue" {
+    const allocator = testing.allocator;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try home_tmp.dir.realPath(testing.io, &path_buf);
+    var env_map = try globalHookEnvForTest(allocator, testing.io, home_tmp.dir, path_buf[0..n], "function init(event, data) if event == 'finish_reason' and data.finish_reason == 'stop' then return { continue = true, prompt = 'again' } end return nil end\n");
+    defer env_map.deinit();
+
+    const fields = lifecycleFields("tool_calls", "", "");
+    var r = try runLifecycleHook(allocator, testing.io, &lg, &env_map, FINISH_REASON_EVENT, &fields, .{});
+    defer r.deinit(allocator);
+    try testing.expect(r.continue_with == null);
+    try testing.expect(r.context == null);
+}
+
+test "lifecycle: session_end hook sees the end_reason" {
+    const allocator = testing.allocator;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try home_tmp.dir.realPath(testing.io, &path_buf);
+    var env_map = try globalHookEnvForTest(allocator, testing.io, home_tmp.dir, path_buf[0..n], "function init(event, data) if event == 'session_end' then return { context = 'ended:' .. data.end_reason } end return nil end\n");
+    defer env_map.deinit();
+
+    const fields = lifecycleFields("stop", "", "is_stop");
+    var r = try runLifecycleHook(allocator, testing.io, &lg, &env_map, SESSION_END_EVENT, &fields, .{});
+    defer r.deinit(allocator);
+    try testing.expect(r.context != null);
+    try testing.expectEqualStrings("ended:is_stop", r.context.?);
+}
+
+test "lifecycle: a broken hook fails open" {
+    const allocator = testing.allocator;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try home_tmp.dir.realPath(testing.io, &path_buf);
+    var env_map = try globalHookEnvForTest(allocator, testing.io, home_tmp.dir, path_buf[0..n], "function init(((\n");
+    defer env_map.deinit();
+
+    const fields = lifecycleFields("stop", "", "");
+    var r = try runLifecycleHook(allocator, testing.io, &lg, &env_map, FINISH_REASON_EVENT, &fields, .{});
+    defer r.deinit(allocator);
+    try testing.expect(r.context == null);
+    try testing.expect(r.continue_with == null);
+}
+
+test "lifecycle: a python hook returns the same shape as a lua hook" {
+    const allocator = testing.allocator;
+    const probe = try hooks_python.resolveInterpreter(allocator, testing.io, null, "");
+    defer allocator.free(probe);
+    if (!hooks_python.isPython3(testing.io, probe)) return error.SkipZigTest;
+    var lg = testLogger(allocator);
+    var home_tmp = testing.tmpDir(.{});
+    defer home_tmp.cleanup();
+    var env_map = try emptyHomeEnv(allocator, &home_tmp);
+    defer env_map.deinit();
+
+    var proj_tmp = testing.tmpDir(.{});
+    defer proj_tmp.cleanup();
+    const proj_root = try writeProjectPythonHook(allocator, proj_tmp.dir, testing.io,
+        \\def init(event, data):
+        \\    if event == "session_start":
+        \\        return {"context": "from python"}
+        \\    if event == "finish_reason" and data["finish_reason"] == "stop":
+        \\        return {"continue": True, "prompt": "python says go"}
+        \\    return None
+        \\
+    );
+    defer allocator.free(proj_root);
+
+    const start_fields = lifecycleFields("", "", "");
+    var started = try runLifecycleHook(allocator, testing.io, &lg, &env_map, SESSION_START_EVENT, &start_fields, .{ .cwd = proj_root });
+    defer started.deinit(allocator);
+    try testing.expect(started.context != null);
+    try testing.expectEqualStrings("from python", started.context.?);
+
+    const stop_fields = lifecycleFields("stop", "", "");
+    var stopped = try runLifecycleHook(allocator, testing.io, &lg, &env_map, FINISH_REASON_EVENT, &stop_fields, .{ .cwd = proj_root });
+    defer stopped.deinit(allocator);
+    try testing.expect(stopped.continue_with != null);
+    try testing.expectEqualStrings("python says go", stopped.continue_with.?);
 }

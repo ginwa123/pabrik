@@ -118,6 +118,10 @@ pub const LlmConfig = struct {
     /// failed `callDynamicAgentNew` call. 0 = no delay (current behavior, the
     /// retry fires immediately on the next loop iteration).
     retry_delay_ms: u32 = 0,
+    /// Absolute path (or PATH name) of the interpreter that runs
+    /// `register_hook.py`. Empty = resolve it: `PABRIK_HOOK_PYTHON`, then the
+    /// first of `python`, `python3`, `py` that is a Python 3.
+    hook_python_bin: []const u8 = "",
     /// Overall deadline in milliseconds for ONE streaming LLM call (response
     /// head + body). A design turn's 100k-token prompt plus a 7k-token answer
     /// needs more than the 5 minutes this used to be hard-coded to.
@@ -351,6 +355,8 @@ pub const LlmConfig = struct {
         /// See `LlmConfig.retry_delay_ms` for semantics. Plan
         /// 2026-07-15-retry-delay.
         retry_delay_ms: u32 = 0,
+        /// Interpreter for `register_hook.py`. Empty = auto-resolve.
+        hook_python_bin: []const u8 = "",
         /// Overall deadline in milliseconds for one streaming LLM call.
         /// See `LlmConfig.llm_read_timeout_ms`.
         llm_read_timeout_ms: u32 = 900_000,
@@ -692,6 +698,7 @@ pub const LlmConfig = struct {
             .chat_view = parseChatViewMode(config_json.chat_view),
             .skill_evals = skillEvalsFromJson(config_json.skill_evals),
             .retry_delay_ms = config_json.retry_delay_ms,
+            .hook_python_bin = try allocator.dupe(u8, config_json.hook_python_bin),
             .llm_read_timeout_ms = config_json.llm_read_timeout_ms,
             // Top-level compaction defaults — restored in plan
             // 2026-07-07-compaction-inline.
@@ -714,6 +721,7 @@ pub const LlmConfig = struct {
             allocator.free(config.model);
             allocator.free(config.base_url);
             allocator.free(config.url_style);
+            allocator.free(config.hook_python_bin);
             if (config.active_agent) |ap| allocator.free(ap);
             freeMcpServersMap(&config.mcp_servers, allocator);
             freeAgentsMap(&config.agents, allocator);
@@ -1193,6 +1201,7 @@ pub const LlmConfig = struct {
         self.allocator.free(self.model);
         self.allocator.free(self.base_url);
         self.allocator.free(self.url_style);
+        self.allocator.free(self.hook_python_bin);
         // Plan 2026-08-06-set-active-profile-default — owned slice was
         // duped in `init` only when non-empty.
         if (self.active_agent) |ap| self.allocator.free(ap);
@@ -1237,6 +1246,7 @@ pub const LlmConfig = struct {
             .max_capacity_token_model = self.max_capacity_token_model,
             .compaction_threshold_percent = self.compaction_threshold_percent,
             .compaction_llm_summary = self.compaction_llm_summary,
+            .hook_python_bin = try self.allocator.dupe(u8, self.hook_python_bin),
             // Plan 2026-08-06-set-active-profile-default — deep-dupe
             // the user-chosen default profile name (null stays null).
             .active_agent = if (self.active_agent) |ap|
@@ -1252,6 +1262,7 @@ pub const LlmConfig = struct {
             self.allocator.free(config.model);
             self.allocator.free(config.base_url);
             self.allocator.free(config.url_style);
+            self.allocator.free(config.hook_python_bin);
             if (config.active_agent) |ap| self.allocator.free(ap);
             freeMcpServersMap(&config.mcp_servers, self.allocator);
             freeAgentsMap(&config.agents, self.allocator);

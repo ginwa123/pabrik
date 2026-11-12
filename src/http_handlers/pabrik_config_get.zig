@@ -143,6 +143,7 @@ pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
         .max_capacity_token_model = cfg.max_capacity_token_model,
         .compaction_threshold_percent = cfg.compaction_threshold_percent,
         .retry_delay_ms = cfg.retry_delay_ms,
+        .hook_python_bin = cfg.hook_python_bin,
         .llm_read_timeout_ms = cfg.llm_read_timeout_ms,
         .tools = cfg.tools,
         .web_search = masked_web_search,
@@ -187,6 +188,8 @@ pub const ConfigJson = struct {
     /// Delay in milliseconds before retrying a failed workflow call.
     /// See `LlmConfig.retry_delay_ms` for semantics.
     retry_delay_ms: u32 = 0,
+    /// Interpreter that runs `register_hook.py`. Empty = auto-resolve.
+    hook_python_bin: []const u8 = "",
     /// Overall deadline in milliseconds for ONE streaming LLM call.
     /// See `LlmConfig.llm_read_timeout_ms` for semantics.
     llm_read_timeout_ms: u32 = 900_000,

@@ -286,6 +286,314 @@ test "example_hook_is_valid_lua" {
     if (code == null or code.? != 0) return error.TestUnexpectedResult;
 }
 
+// ============================================================================
+// Lifecycle events, end to end: a real server, a real turn, a real hook.
+// ============================================================================
+
+const LIFECYCLE_SESSION_ID = "sess_hook_lifecycle_1";
+
+/// An OpenAI-compatible upstream that always answers with a plain `stop`.
+/// Enough to make the loop reach `finish_reason` and end the turn.
+const Stub = struct {
+    port: u16,
+    server: std.Io.net.Server,
+    thread: std.Thread,
+    stop: std.atomic.Value(bool) = .init(false),
+
+    fn start(stub: *Stub) !void {
+        stub.* = .{ .port = 0, .server = undefined, .thread = undefined };
+        stub.port = try harness.findFreePortRandom(gpa);
+        const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(stub.port) };
+        stub.server = try addr.listen(io, .{ .reuse_address = true });
+        errdefer stub.server.deinit(io);
+        stub.thread = try std.Thread.spawn(.{}, serve, .{stub});
+    }
+
+    fn deinit(self: *Stub) void {
+        self.stop.store(true, .release);
+        const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(self.port) };
+        if (addr.connect(io, .{ .mode = .stream })) |conn| {
+            var c = conn;
+            c.close(io);
+        } else |_| {}
+        self.thread.join();
+        self.server.deinit(io);
+    }
+};
+
+fn serve(stub: *Stub) void {
+    while (!stub.stop.load(.acquire)) {
+        var stream = stub.server.accept(io) catch break;
+        defer stream.close(io);
+        if (stub.stop.load(.acquire)) break;
+        answer(stream) catch {};
+    }
+}
+
+fn answer(stream: std.Io.net.Stream) !void {
+    var rbuf: [64 * 1024]u8 = undefined;
+    var sr = stream.reader(io, &rbuf);
+    const r = &sr.interface;
+
+    var head: std.Io.Writer.Allocating = .init(gpa);
+    defer head.deinit();
+    var head_len: usize = 0;
+    while (head_len == 0) {
+        r.fill(1) catch break;
+        const b = r.buffered();
+        if (b.len == 0) break;
+        head.writer.writeAll(b) catch break;
+        r.toss(b.len);
+        if (head.written().len > (1 << 18)) break;
+        if (std.mem.indexOf(u8, head.written(), "\r\n\r\n")) |i| head_len = i + 4;
+    }
+    if (head_len == 0) return;
+
+    var remaining = contentLength(head.written()[0..head_len]);
+    if (head.written().len > head_len) remaining -|= head.written().len - head_len;
+    while (remaining > 0) {
+        r.fill(1) catch break;
+        const b = r.buffered();
+        if (b.len == 0) break;
+        const take = @min(b.len, remaining);
+        r.toss(take);
+        remaining -= take;
+    }
+
+    const payload = try textSse("hook probe done");
+    defer gpa.free(payload);
+    const response = try std.fmt.allocPrint(
+        gpa,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n",
+        .{payload.len},
+    );
+    defer gpa.free(response);
+
+    var wbuf: [8 * 1024]u8 = undefined;
+    var sw = stream.writer(io, &wbuf);
+    try sw.interface.writeAll(response);
+    try sw.interface.writeAll(payload);
+    try sw.interface.flush();
+}
+
+fn contentLength(head: []const u8) usize {
+    const needle = "content-length:";
+    var i: usize = 0;
+    while (i + needle.len <= head.len) : (i += 1) {
+        if (!std.ascii.eqlIgnoreCase(head[i .. i + needle.len], needle)) continue;
+        var j = i + needle.len;
+        while (j < head.len and (head[j] == ' ' or head[j] == '\t')) j += 1;
+        var end = j;
+        while (end < head.len and head[end] >= '0' and head[end] <= '9') end += 1;
+        return std.fmt.parseInt(usize, head[j..end], 10) catch 0;
+    }
+    return 0;
+}
+
+fn textSse(text: []const u8) ![]u8 {
+    return std.fmt.allocPrint(
+        gpa,
+        "data: {{\"id\":\"chatcmpl-hook\",\"object\":\"chat.completion.chunk\",\"model\":\"stub-model\",\"choices\":[{{\"index\":0,\"delta\":{{\"role\":\"assistant\",\"content\":\"{s}\"}},\"finish_reason\":null}}]}}\n\n" ++
+            "data: {{\"id\":\"chatcmpl-hook\",\"object\":\"chat.completion.chunk\",\"model\":\"stub-model\",\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"stop\"}}]}}\n\n" ++
+            "data: [DONE]\n\n",
+        .{text},
+    );
+}
+
+fn useStubProfile(h: *Harness, stub_port: u16, profile: []const u8) !void {
+    const stub_url = try std.fmt.allocPrint(gpa, "http://127.0.0.1:{d}/v1/chat/completions", .{stub_port});
+    defer gpa.free(stub_url);
+    const body = try std.fmt.allocPrint(
+        gpa,
+        "{{\"api_endpoint\":\"{s}\",\"api_key\":\"sk-stub-test\",\"model\":\"stub-model\",\"url_style\":\"openai\"," ++
+            "\"profiles\":{{\"{s}\":{{\"model\":\"stub-model\",\"base_url\":\"{s}\",\"api_key\":\"sk-stub-test\",\"url_style\":\"openai\"}}}}," ++
+            "\"active_profile\":\"{s}\"}}",
+        .{ stub_url, profile, stub_url, profile },
+    );
+    defer gpa.free(body);
+
+    var r = try h.http(io, .PUT, "/api/config/pabrik", .{
+        .json_body = body,
+        .expect = &.{200},
+    });
+    defer r.deinit();
+}
+
+fn sendTurn(h: *Harness, message: []const u8, profile: []const u8) !void {
+    const body = try std.fmt.allocPrint(
+        gpa,
+        "{{\"session_id\":\"{s}\",\"queue_message\":\"{s}\",\"cwd_session\":\"{s}\"," ++
+            "\"allowed_tools\":\"\",\"image_urls\":\"\",\"selected_profile_model\":\"{s}\"," ++
+            "\"is_auto_retry_until_stop\":\"\"}}",
+        .{ LIFECYCLE_SESSION_ID, message, h.temp_dir, profile },
+    );
+    defer gpa.free(body);
+
+    var r = try h.http(io, .POST, "/api/llm/session", .{
+        .json_body = body,
+        .expect = &.{ 200, 201, 500 },
+        .timeout_s = 30.0,
+    });
+    defer r.deinit();
+}
+
+/// Poll the hook's own log until `session_end` lands, or the deadline passes.
+/// The hook writes that line from the run's `defer`, so its presence IS the
+/// "the run finished" signal — no database needed.
+fn waitForSessionEnd(log_path: []const u8, timeout_ms: i64) ![]u8 {
+    const deadline = std.Io.Timestamp.now(io, .awake).toMilliseconds() + timeout_ms;
+    while (std.Io.Timestamp.now(io, .awake).toMilliseconds() < deadline) {
+        const text = std.Io.Dir.cwd().readFileAlloc(io, log_path, gpa, .limited(1 << 20)) catch |err| switch (err) {
+            error.FileNotFound => {
+                std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
+                continue;
+            },
+            else => return err,
+        };
+        if (std.mem.indexOf(u8, text, "session_end:") != null) return text;
+        gpa.free(text);
+        std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
+    }
+    return error.TestUnexpectedResult;
+}
+
+fn assertLifecycleLines(text: []const u8) !void {
+    const start_at = std.mem.indexOf(u8, text, "session_start") orelse {
+        std.debug.print("no session_start line in hook log:\n{s}\n", .{text});
+        return error.TestUnexpectedResult;
+    };
+    const reason_at = std.mem.indexOf(u8, text, "finish_reason:stop") orelse {
+        std.debug.print("no finish_reason:stop line in hook log:\n{s}\n", .{text});
+        return error.TestUnexpectedResult;
+    };
+    const end_at = std.mem.indexOf(u8, text, "session_end:stop") orelse {
+        std.debug.print("no session_end:stop line in hook log:\n{s}\n", .{text});
+        return error.TestUnexpectedResult;
+    };
+    if (!(start_at < reason_at and reason_at < end_at)) {
+        std.debug.print("lifecycle events out of order:\n{s}\n", .{text});
+        return error.TestUnexpectedResult;
+    }
+}
+
+fn writePythonHook(temp_dir: []const u8, content: []const u8) ![]u8 {
+    const dir = try hooksDir(temp_dir);
+    defer gpa.free(dir);
+    const path = try std.fs.path.join(gpa, &.{ dir, "register_hook.py" });
+    errdefer gpa.free(path);
+    var f = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer f.close(io);
+    try f.writeStreamingAll(io, content);
+    return path;
+}
+
+fn pyString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    errdefer out.deinit();
+    out.writer.writeByte('"') catch return error.OutOfMemory;
+    for (s) |c| switch (c) {
+        '\\' => out.writer.writeAll("\\\\") catch return error.OutOfMemory,
+        '"' => out.writer.writeAll("\\\"") catch return error.OutOfMemory,
+        '\n' => out.writer.writeAll("\\n") catch return error.OutOfMemory,
+        else => out.writer.writeByte(c) catch return error.OutOfMemory,
+    };
+    out.writer.writeByte('"') catch return error.OutOfMemory;
+    return out.toOwnedSlice();
+}
+
+fn lifecycleLogPath(temp_dir: []const u8) ![]u8 {
+    return std.fs.path.join(gpa, &.{ temp_dir, "hook-events.log" });
+}
+
+test "lifecycle: a lua hook sees session_start, finish_reason and session_end in order" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    var stub: Stub = undefined;
+    try stub.start();
+    defer stub.deinit();
+
+    const log_path = try lifecycleLogPath(h.temp_dir);
+    defer gpa.free(log_path);
+    const log_lit = try luaString(gpa, log_path);
+    defer gpa.free(log_lit);
+    const source = try std.fmt.allocPrint(gpa,
+        \\local log = {s}
+        \\local function w(line)
+        \\  local f = io.open(log, "a")
+        \\  if f then f:write(line .. "\n") f:close() end
+        \\end
+        \\function init(event, data)
+        \\  if event == "session_start" then w("session_start") end
+        \\  if event == "finish_reason" then w("finish_reason:" .. data.finish_reason) end
+        \\  if event == "session_end" then w("session_end:" .. data.end_reason) end
+        \\  return nil
+        \\end
+        \\
+    , .{log_lit});
+    defer gpa.free(source);
+
+    const hook_path = try writeHook(h.temp_dir, source);
+    defer gpa.free(hook_path);
+
+    const profile = "hook-lifecycle-lua";
+    try useStubProfile(&h, stub.port, profile);
+    try sendTurn(&h, "say something", profile);
+
+    const text = try waitForSessionEnd(log_path, 60_000);
+    defer gpa.free(text);
+    try assertLifecycleLines(text);
+}
+
+test "lifecycle: a python hook sees the same three events in the same order" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{ .stub_llm_profile = true });
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    var stub: Stub = undefined;
+    try stub.start();
+    defer stub.deinit();
+
+    const log_path = try lifecycleLogPath(h.temp_dir);
+    defer gpa.free(log_path);
+    const log_lit = try pyString(gpa, log_path);
+    defer gpa.free(log_lit);
+    const source = try std.fmt.allocPrint(gpa,
+        \\LOG = {s}
+        \\
+        \\def _w(line):
+        \\    with open(LOG, "a") as f:
+        \\        f.write(line + "\n")
+        \\
+        \\def init(event, data):
+        \\    if event == "session_start":
+        \\        _w("session_start")
+        \\    elif event == "finish_reason":
+        \\        _w("finish_reason:" + data["finish_reason"])
+        \\    elif event == "session_end":
+        \\        _w("session_end:" + data["end_reason"])
+        \\    return None
+        \\
+    , .{log_lit});
+    defer gpa.free(source);
+
+    const hook_path = try writePythonHook(h.temp_dir, source);
+    defer gpa.free(hook_path);
+
+    const profile = "hook-lifecycle-py";
+    try useStubProfile(&h, stub.port, profile);
+    try sendTurn(&h, "say something", profile);
+
+    const text = try waitForSessionEnd(log_path, 60_000);
+    defer gpa.free(text);
+    try assertLifecycleLines(text);
+}
+
 comptime {
     // Body-analysis barrier: an unreferenced function is never
     // type-checked, so a stdlib rename inside one would stay invisible
@@ -299,4 +607,16 @@ comptime {
     _ = repoFileAbs;
     _ = exitCode;
     _ = whichLua;
+    _ = Stub;
+    _ = serve;
+    _ = answer;
+    _ = contentLength;
+    _ = textSse;
+    _ = useStubProfile;
+    _ = sendTurn;
+    _ = waitForSessionEnd;
+    _ = assertLifecycleLines;
+    _ = writePythonHook;
+    _ = pyString;
+    _ = lifecycleLogPath;
 }
