@@ -85,8 +85,12 @@ def test_system_prompt_section_renders_empty_state(ui_harness: UIHarness, page) 
     panel = page.locator('[data-testid="agent-system-prompt-panel"]')
     assert panel.count() > 0, "System Prompt panel missing from agent view"
     _wait_for_text(page, "No system prompts yet")
-    # The + Add button is present.
-    assert page.locator('[data-testid="agent-add-system-prompt"]').is_visible()
+    # The + Add button is present. `is_visible()` is a single non-waiting
+    # read, so on a loaded runner it can answer False for a button that
+    # renders one frame later — wait for it instead of sampling it.
+    page.locator('[data-testid="agent-add-system-prompt"]').first.wait_for(
+        timeout=10000, state="visible"
+    )
 
 
 def test_add_system_prompt_via_dialog(ui_harness: UIHarness, page) -> None:

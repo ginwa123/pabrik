@@ -222,20 +222,6 @@ def _list_tasks(h: UIHarness, workspace_id: str, kanban_id: str) -> list[dict[st
     return body.get("tasks", body if isinstance(body, list) else [])
 
 
-def _task_id_for_name(
-    h: UIHarness, workspace_id: str, kanban_id: str, task_name: str
-) -> str:
-    """Look up a task id by name via API (avoid DOM scraping)."""
-    tasks = _list_tasks(h, workspace_id, kanban_id)
-    for t in tasks:
-        if t.get("name") == task_name:
-            return t["id"]
-    raise AssertionError(
-        f"task {task_name!r} not found in {tasks!r}; the create click may "
-        f"have been rejected silently. Backend log: {h.log_path}"
-    )
-
-
 def _get_session_via_db(h: UIHarness, session_id: str) -> dict[str, Any] | None:
     """Read sessions row by id straight from sqlite3.
 
@@ -260,6 +246,27 @@ def _get_session_via_db(h: UIHarness, session_id: str) -> dict[str, Any] | None:
         "selected_profile_model": row[0],
         "is_auto_retry_until_stop": row[1],
     }
+
+
+def _wait_for_session_via_db(
+    h: UIHarness, session_id: str, timeout_s: float = 15.0
+) -> dict[str, Any] | None:
+    """Poll the sessions row until it appears, or the budget runs out.
+
+    The task row and the sessions row are written by DIFFERENT steps of
+    the same request: `task_create.useCase` commits the task (step 4),
+    then `kanban_tasks_create.zig` resolves the LLM config and the skill
+    directives before its `INSERT INTO sessions` (step 5). `_wait_for_task`
+    returns as soon as step 4 is visible, so a single read here races
+    step 5 — and loses on a loaded CI runner. Polling the same row the
+    assertion reads makes the wait exactly as long as the work.
+    """
+    deadline = time.monotonic() + timeout_s
+    while True:
+        row = _get_session_via_db(h, session_id)
+        if row is not None or time.monotonic() >= deadline:
+            return row
+        time.sleep(0.05)
 
 
 # ─── Test 1: DB-level regression — Create task + Unattended ON + profile pick ─
@@ -404,7 +411,7 @@ def test_dialog_create_task_persists_picked_profile_in_db(
 
     # Direct DB read — the most authoritative check. Pre-fix this would
     # show selected_profile_model=NULL/'' (the bug).
-    row = _get_session_via_db(h, task_id)
+    row = _wait_for_session_via_db(h, task_id)
     assert row is not None, (
         f"sessions row for task_id={task_id!r} not found — the step-5 "
         f"INSERT in kanban_tasks_create.zig didn't fire."
@@ -502,7 +509,7 @@ def test_dialog_create_and_run_persists_picked_profile_in_db(
     assert matching, f"task {task_title!r} not created via API"
     task_id = matching[0]["id"]
 
-    row = _get_session_via_db(h, task_id)
+    row = _wait_for_session_via_db(h, task_id)
     assert row is not None, f"sessions row for {task_id!r} missing"
     assert row["selected_profile_model"] == "900ribu", (
         f"create_and_run lost the profile too. Got "
@@ -583,7 +590,13 @@ def test_dialog_picked_profile_surfaces_in_chatview_chip(
         '[data-testid="kanban-task-detail-save"]'
     ).first.click()
 
-    task_id = _task_id_for_name(h, ws_id, kanban_id, task_title)
+    matching = _wait_for_task(h, ws_id, kanban_id, task_title)
+    assert matching, (
+        f"task {task_title!r} not visible via API after click-create. "
+        f"The Save button may not have fired. Vite log: {h.vite_log_path}, "
+        f"backend log: {h.log_path}."
+    )
+    task_id = matching[0]["id"]
 
     # Navigate to the new task's chatview. The chatview is rendered
     # via AppLayout.vue when the URL is `/app?view=chat&session=<id>`
