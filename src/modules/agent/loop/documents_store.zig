@@ -360,6 +360,9 @@ pub const DocumentRow = struct {
     content_bytes: i64 = 0,
     /// The first `PREVIEW_MAX_BYTES` of the body, kept in SQL for the sidebar.
     preview: []const u8 = "",
+    /// Migration 148 — the document's own glyph name. NULL means "no override":
+    /// the sidebar draws `file` instead.
+    icon: ?[]const u8 = null,
 };
 
 /// Fields for a new document. `workspace_id` is required and has no
@@ -504,13 +507,15 @@ const SELECT_COLUMNS =
     "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
     "COALESCE(CAST(position AS TEXT), '0'), COALESCE(folder_id, ''), " ++
     "COALESCE(content_key, ''), COALESCE(content_sha256, ''), " ++
-    "COALESCE(CAST(content_bytes AS TEXT), '0'), COALESCE(preview, '') " ++
+    "COALESCE(CAST(content_bytes AS TEXT), '0'), COALESCE(preview, ''), " ++
+    "COALESCE(icon, '') " ++
     "FROM documents";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !DocumentRow {
     const folder: ?[]const u8 = if (values[7].len == 0) null else try allocator.dupe(u8, values[7]);
     const content_key: ?[]const u8 = if (values[8].len == 0) null else try allocator.dupe(u8, values[8]);
     const content_sha256: ?[]const u8 = if (values[9].len == 0) null else try allocator.dupe(u8, values[9]);
+    const icon: ?[]const u8 = if (values[12].len == 0) null else try allocator.dupe(u8, values[12]);
     return .{
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
@@ -524,6 +529,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Docu
         .content_sha256 = content_sha256,
         .content_bytes = std.fmt.parseInt(i64, values[10], 10) catch 0,
         .preview = try allocator.dupe(u8, values[11]),
+        .icon = icon,
         // The body is not a column any more: `getDocument` hydrates it from
         // the object store, and a list or search read leaves it empty.
         .content = "",
@@ -869,6 +875,39 @@ pub const Store = struct {
 
         return self.getDocument(allocator, workspace_id, document_id) catch
             return error.UpdateFailed;
+    }
+
+    /// Set (or clear) a document's glyph. `null` is "Reset to default". Its own
+    /// statement rather than a field on `updateDocument`: routing it through the
+    /// body path would make an icon-only patch re-place the object.
+    pub fn updateDocumentIcon(
+        self: Store,
+        allocator: std.mem.Allocator,
+        workspace_id: []const u8,
+        document_id: []const u8,
+        icon: ?[]const u8,
+    ) UpdateDocumentError!DocumentRow {
+        if (workspace_id.len == 0 or document_id.len == 0) return error.IdsRequired;
+
+        if (icon) |value| {
+            self.db.exec(allocator,
+                \\UPDATE documents SET icon = ?, updated_at = CURRENT_TIMESTAMP
+                \\WHERE id = ? AND workspace_id = ?
+            , &[_][]const u8{ value, document_id, workspace_id }) catch
+                return error.UpdateFailed;
+        } else {
+            self.db.exec(allocator,
+                \\UPDATE documents SET icon = NULL, updated_at = CURRENT_TIMESTAMP
+                \\WHERE id = ? AND workspace_id = ?
+            , &[_][]const u8{ document_id, workspace_id }) catch
+                return error.UpdateFailed;
+        }
+
+        return self.getDocument(allocator, workspace_id, document_id) catch |err| switch (err) {
+            error.NotFound => return error.NotFound,
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return error.UpdateFailed,
+        };
     }
 
     /// Delete a document. Scoped like every other read: a foreign id reports
@@ -1228,6 +1267,7 @@ pub fn freeDocumentRow(allocator: std.mem.Allocator, row: DocumentRow) void {
     if (row.content_key) |key| allocator.free(key);
     if (row.content_sha256) |digest| allocator.free(digest);
     allocator.free(row.preview);
+    if (row.icon) |icon| allocator.free(icon);
 }
 
 /// Free a slice of rows. The slice header is freed last.
@@ -1256,6 +1296,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
+    try migration.Migration148AddDocumentIcon.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

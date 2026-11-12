@@ -5,7 +5,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
-import { PROJECT_ICON_NAMES } from '../../stores/projectIcons'
+import { ICON_PICKER_NAMES } from '../../stores/sidebarIcons'
 
 const props = defineProps<{
   /** Viewport x of the anchor (the context menu's right edge). */
@@ -14,8 +14,8 @@ const props = defineProps<{
   y: number
   /** The glyph the row draws right now, override or fallback. */
   current: UiIconName
-  /** Shown in the header so it is obvious which project is being changed. */
-  workspaceName: string
+  /** Shown in the header so it is obvious which row is being changed. */
+  label: string
 }>()
 
 const emit = defineEmits<{
@@ -45,8 +45,8 @@ const position = computed(() => {
 
 const matches = computed(() => {
   const query = search.value.trim().toLowerCase()
-  if (!query) return PROJECT_ICON_NAMES
-  return PROJECT_ICON_NAMES.filter((name) => name.includes(query))
+  if (!query) return ICON_PICKER_NAMES
+  return ICON_PICKER_NAMES.filter((name) => name.includes(query))
 })
 
 const onKeydown = (event: KeyboardEvent) => {
@@ -75,10 +75,10 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       ref="panel"
-      data-testid="project-icon-picker"
+      data-testid="icon-picker"
       role="dialog"
       aria-label="Change project icon"
-      class="fixed z-[60] rounded-lg"
+      class="fixed z-[70] rounded-lg"
       :style="{
         ...position,
         width: `${PANEL_WIDTH}px`,
@@ -96,8 +96,8 @@ onBeforeUnmount(() => {
         <span
           class="ml-auto normal-case tracking-normal font-mono truncate"
           style="color: var(--semantic-text-muted)"
-          data-testid="project-icon-picker-who"
-          >{{ workspaceName }}</span
+          data-testid="icon-picker-who"
+          >{{ label }}</span
         >
       </div>
 
@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
         type="search"
         placeholder="Filter icons"
         aria-label="Filter icons"
-        data-testid="project-icon-picker-search"
+        data-testid="icon-picker-search"
         class="w-full h-[26px] mb-2 px-2 rounded-md text-dense outline-none"
         :style="{
           border: '1px solid var(--color-border)',
@@ -120,7 +120,7 @@ onBeforeUnmount(() => {
         v-if="matches.length > 0"
         class="grid grid-cols-6 gap-1 overflow-y-auto"
         style="max-height: 196px"
-        data-testid="project-icon-picker-grid"
+        data-testid="icon-picker-grid"
       >
         <button
           v-for="name in matches"
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
         v-else
         class="py-4 text-center text-dense italic"
         style="color: var(--semantic-text-dim)"
-        data-testid="project-icon-picker-empty"
+        data-testid="icon-picker-empty"
       >
         No icon matches.
       </p>
@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
       <div class="mt-2 pt-2" :style="{ borderTop: '1px solid var(--color-border)' }">
         <button
           type="button"
-          data-testid="project-icon-picker-reset"
+          data-testid="icon-picker-reset"
           class="w-full h-[26px] rounded-md text-dense cursor-pointer"
           :style="{
             border: '1px solid var(--color-border)',

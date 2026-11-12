@@ -25,6 +25,9 @@ pub const FolderRow = struct {
     position: i64,
     created_at: []const u8,
     updated_at: []const u8,
+    /// Migration 148 — the folder's own glyph name. NULL means "no override":
+    /// the sidebar draws `folder` / `folder-open` from the expanded state.
+    icon: ?[]const u8 = null,
 };
 
 pub const CreateFolderArgs = struct {
@@ -84,11 +87,13 @@ pub const ListFoldersError = error{
 const SELECT_COLUMNS =
     "SELECT id, workspace_id, COALESCE(parent_id, ''), name, " ++
     "COALESCE(CAST(position AS TEXT), '0'), " ++
-    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), '') " ++
+    "COALESCE(CAST(created_at AS TEXT), ''), COALESCE(CAST(updated_at AS TEXT), ''), " ++
+    "COALESCE(icon, '') " ++
     "FROM document_folders";
 
 fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !FolderRow {
     const parent: ?[]const u8 = if (values[2].len == 0) null else try allocator.dupe(u8, values[2]);
+    const icon: ?[]const u8 = if (values[7].len == 0) null else try allocator.dupe(u8, values[7]);
     return .{
         .id = try allocator.dupe(u8, values[0]),
         .workspace_id = try allocator.dupe(u8, values[1]),
@@ -97,6 +102,7 @@ fn rowFromValues(allocator: std.mem.Allocator, values: []const []const u8) !Fold
         .position = std.fmt.parseInt(i64, values[4], 10) catch 0,
         .created_at = try allocator.dupe(u8, values[5]),
         .updated_at = try allocator.dupe(u8, values[6]),
+        .icon = icon,
     };
 }
 
@@ -107,6 +113,7 @@ pub fn freeFolderRow(allocator: std.mem.Allocator, row: FolderRow) void {
     allocator.free(row.name);
     allocator.free(row.created_at);
     allocator.free(row.updated_at);
+    if (row.icon) |icon| allocator.free(icon);
 }
 
 pub fn freeFolderRows(allocator: std.mem.Allocator, rows: []FolderRow) void {
@@ -393,6 +400,39 @@ pub fn updateFolder(
     return getFolder(allocator, db, workspace_id, folder_id) catch return error.UpdateFailed;
 }
 
+/// Set (or clear) a folder's glyph. `null` is "Reset to default". Separate
+/// from `updateFolder` so an icon-only write cannot trip the rename validation
+/// or the move/cycle checks.
+pub fn updateFolderIcon(
+    allocator: std.mem.Allocator,
+    db: *database.Db,
+    workspace_id: []const u8,
+    folder_id: []const u8,
+    icon: ?[]const u8,
+) UpdateFolderError!FolderRow {
+    if (workspace_id.len == 0 or folder_id.len == 0) return error.IdsRequired;
+
+    if (icon) |value| {
+        db.exec(allocator,
+            \\UPDATE document_folders SET icon = ?, updated_at = CURRENT_TIMESTAMP
+            \\WHERE id = ? AND workspace_id = ?
+        , &[_][]const u8{ value, folder_id, workspace_id }) catch
+            return error.UpdateFailed;
+    } else {
+        db.exec(allocator,
+            \\UPDATE document_folders SET icon = NULL, updated_at = CURRENT_TIMESTAMP
+            \\WHERE id = ? AND workspace_id = ?
+        , &[_][]const u8{ folder_id, workspace_id }) catch
+            return error.UpdateFailed;
+    }
+
+    return getFolder(allocator, db, workspace_id, folder_id) catch |err| switch (err) {
+        error.NotFound => return error.NotFound,
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.UpdateFailed,
+    };
+}
+
 /// Delete a folder and move its contents one level up. Returns how many
 /// documents were reparented, so the caller can tell the user none were lost.
 pub fn deleteFolder(
@@ -475,6 +515,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
+    try migration.Migration148AddDocumentIcon.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 

@@ -319,6 +319,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
+    try migration.Migration148AddDocumentIcon.up(&db, testing.allocator);
 
     try db.exec(testing.allocator,
         \\INSERT INTO workspace_items (id, workspace_id, item_type, name, path, position) VALUES

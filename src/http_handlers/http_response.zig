@@ -1348,6 +1348,8 @@ pub const DocumentResponse = struct {
     position: i64,
     /// `null` means the document sits at the root of the Documents section.
     folder_id: ?[]const u8,
+    /// Migration 148 — the document's own glyph name, or null for "no override".
+    icon: ?[]const u8 = null,
 };
 
 /// Map a `documents_store.DocumentRow` (or any struct with the same fields)
@@ -1365,6 +1367,7 @@ pub fn makeDocumentResponse(doc: anytype) DocumentResponse {
         .updated_at = doc.updated_at,
         .position = doc.position,
         .folder_id = doc.folder_id,
+        .icon = doc.icon,
     };
 }
 
@@ -1383,6 +1386,8 @@ pub const FolderResponse = struct {
     parent_id: ?[]const u8,
     name: []const u8,
     position: i64,
+    /// Migration 148 — the folder's own glyph name, or null for "no override".
+    icon: ?[]const u8 = null,
 };
 
 pub fn makeFolderResponse(folder: anytype) FolderResponse {
@@ -1392,6 +1397,7 @@ pub fn makeFolderResponse(folder: anytype) FolderResponse {
         .parent_id = folder.parent_id,
         .name = folder.name,
         .position = folder.position,
+        .icon = folder.icon,
     };
 }
 
@@ -1673,6 +1679,7 @@ const test_doc = struct {
     updated_at: []const u8 = "2026-09-02 10:00:00",
     position: i64 = 0,
     folder_id: ?[]const u8 = null,
+    icon: ?[]const u8 = null,
 };
 
 test "makeDocumentResponse carries the body" {

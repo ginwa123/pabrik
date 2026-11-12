@@ -154,6 +154,9 @@ pub const DocumentsOp = enum {
     /// HTTP export endpoints return.
     export_file,
     backfill,
+    /// Set (or clear) a document's or a folder's glyph. `--document` and
+    /// `--folder` are mutually exclusive; an empty `--icon` clears it.
+    set_icon,
 };
 
 pub const DocumentsArgs = struct {
@@ -197,6 +200,8 @@ pub const DocumentsArgs = struct {
     /// `export`: where to write the file. Null means the exported file's own
     /// name, in the current directory.
     out: ?[]const u8 = null,
+    /// `set-icon`: the glyph name. Empty clears the override.
+    icon: []const u8 = "",
 };
 
 /// The project-row verbs. `set-icon` writes the same column the `Change icon…`
@@ -313,7 +318,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill | set-icon\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      doc-create flags: --content <body> --format markdown|office|html\n" ++
     "      search flags: --query <text>\n" ++
@@ -322,6 +327,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      in-place patch flags: --old-text <t> --new-text <t> --replace-all (doc-edit, doc-html-edit)\n" ++
     "      bounded read flags: --offset <bytes> --limit <bytes> (doc-read, doc-html-read; default 20000, max 200000)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
+    "      set-icon flags: --workspace <id> --document <id> | --folder <id> --icon <name> (empty clears)\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
     "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n> --message <text>\n" ++
@@ -609,6 +615,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
         if (std.mem.eql(u8, word, "export")) break :blk .export_file;
         if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
+        if (std.mem.eql(u8, word, "set-icon")) break :blk .set_icon;
         return fail(.{ .kind = .documents_unknown_op, .value = word });
     };
 
@@ -686,6 +693,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.out = argv[i];
+        } else if (std.mem.eql(u8, flag, "--icon")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.icon = argv[i];
         } else {
             return fail(.{ .kind = .unknown_subcommand, .value = flag });
         }
@@ -725,6 +736,14 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
         .doc_search => {},
+        .set_icon => {
+            if (got.document_id == null and got.folder_id == null) {
+                return fail(.{ .kind = .documents_requires_flag, .value = "--document or --folder" });
+            }
+            if (got.document_id != null and got.folder_id != null) {
+                return fail(.{ .kind = .documents_requires_flag, .value = "--document or --folder, not both" });
+            }
+        },
     }
 
     return .{ .documents = got };
@@ -1496,6 +1515,35 @@ test "parse: storage reads the backend override" {
 test "parse: storage defaults the backend to null so the environment decides" {
     const a = try parse(&.{ "storage", "get", "--key", "k.md" });
     try testing.expect(a.storage.backend == null);
+}
+
+test "parse: documents set-icon reads the document and the glyph" {
+    const a = try parse(&.{ "documents", "set-icon", "--workspace", "ws_1", "--document", "doc_a", "--icon", "note" });
+    try testing.expectEqual(DocumentsOp.set_icon, a.documents.op);
+    try testing.expectEqualStrings("ws_1", a.documents.workspace_id);
+    try testing.expectEqualStrings("doc_a", a.documents.document_id.?);
+    try testing.expectEqualStrings("note", a.documents.icon);
+}
+
+test "parse: documents set-icon reads a folder target" {
+    const a = try parse(&.{ "documents", "set-icon", "--workspace", "ws_1", "--folder", "fld_a", "--icon", "palette" });
+    try testing.expectEqual(DocumentsOp.set_icon, a.documents.op);
+    try testing.expectEqualStrings("fld_a", a.documents.folder_id.?);
+    try testing.expect(a.documents.document_id == null);
+}
+
+test "parse: documents set-icon accepts an empty --icon, which clears the override" {
+    const a = try parse(&.{ "documents", "set-icon", "--workspace", "ws_1", "--document", "doc_a", "--icon", "" });
+    try testing.expectEqualStrings("", a.documents.icon);
+}
+
+test "parse: documents set-icon refuses a target that is missing or doubled" {
+    try expectFailure(&.{ "documents", "set-icon", "--workspace", "ws_1", "--icon", "note" }, .documents_requires_flag);
+    try expectFailure(
+        &.{ "documents", "set-icon", "--workspace", "ws_1", "--document", "doc_a", "--folder", "fld_a", "--icon", "note" },
+        .documents_requires_flag,
+    );
+    try expectFailure(&.{ "documents", "set-icon", "--document", "doc_a", "--icon", "note" }, .documents_requires_flag);
 }
 
 test "parse: documents backfill needs no workspace, so it can sweep every one" {

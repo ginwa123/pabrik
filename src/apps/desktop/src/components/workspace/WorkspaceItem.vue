@@ -11,8 +11,8 @@ import type { DesignPage } from '../../api'
 import WorkerElapsedChip from '../WorkerElapsedChip.vue'
 import OpenInNewTabMenu from '../shell/OpenInNewTabMenu.vue'
 import UiIcon from '../ui/UiIcon.vue'
-import ProjectIconPicker from './ProjectIconPicker.vue'
-import { projectIconFor } from '../../stores/projectIcons'
+import IconPicker from './IconPicker.vue'
+import { folderIconFor } from '../../stores/sidebarIcons'
 
 const workspacesStore = useWorkspacesStore()
 
@@ -203,7 +203,7 @@ const openItemMenuDelete = () => {
 
 // ─── Project icon (Migration 147) ────────────────────────────────────────
 // The glyph is a NAME stored on the server row, not in this browser.
-const projectIcon = computed(() => projectIconFor(props.item, isExpanded.value))
+const projectIcon = computed(() => folderIconFor(props.item, isExpanded.value))
 
 // Where the flyout anchors. Captured from the menu BEFORE it closes, so the
 // picker still lands beside the row the user right-clicked.
@@ -807,12 +807,12 @@ const handlePinnedDrop = (event: DragEvent) => {
       @change-icon="openItemMenuChangeIcon"
       @delete-item="openItemMenuDelete"
     />
-    <ProjectIconPicker
+    <IconPicker
       v-if="iconPickerPos"
       :x="iconPickerPos.x"
       :y="iconPickerPos.y"
       :current="projectIcon"
-      :workspace-name="item.name || 'Untitled project'"
+      :label="item.name || 'Untitled project'"
       @pick="applyIcon"
       @reset="applyIcon(null)"
       @close="closeIconPicker"

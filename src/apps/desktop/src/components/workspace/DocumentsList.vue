@@ -18,6 +18,9 @@ import {
 import { DEFAULT_HTML_BODY, HTML_FORMAT } from '../../helpers/htmlDocument'
 import DocumentsNewMenu from './DocumentsNewMenu.vue'
 import DocumentsContextMenu from './DocumentsContextMenu.vue'
+import IconPicker from './IconPicker.vue'
+import UiIcon from '../ui/UiIcon.vue'
+import { useDocumentRowIcons } from '../../composables/useDocumentRowIcons'
 import ConfirmDialog from '../dialogs/ConfirmDialog.vue'
 import SidebarSkeleton from '../shell/SidebarSkeleton.vue'
 import { useDocumentSelectionActions } from '../../composables/useDocumentSelectionActions'
@@ -267,6 +270,39 @@ const removeFolder = (folder: DocumentFolder) => {
   void documentsStore.deleteFolder(wsId, folder.id)
 }
 
+// ─── Row glyphs (Migration 148) ──────────────────────────────────────────
+const {
+  folderIcon,
+  documentIcon,
+  iconPicker,
+  openIconPickerAt,
+  closeIconPicker,
+  applyIcon,
+  folderMenuPos,
+  folderMenuTarget,
+  onFolderContextMenu,
+  folderMenuRename,
+  folderMenuChangeIcon,
+  folderMenuDelete,
+} = useDocumentRowIcons({
+  workspaceId: activeWorkspaceId,
+  isCollapsed: (folderId) => collapsed.value.has(folderId),
+  setDocumentIcon: documentsStore.setDocumentIcon,
+  setFolderIcon: documentsStore.setFolderIcon,
+  startRename,
+  removeFolder,
+})
+
+/** The document menu's `Change icon…`: anchored past the menu's right edge,
+ * measured rather than assumed because the menu's width is content-driven. */
+const documentMenuChangeIcon = () => {
+  const id = singleSelectedId.value
+  const pos = menuPos.value
+  const doc = documents.value.find((candidate) => candidate.id === id)
+  if (!id || !pos || !doc) return
+  openIconPickerAt(pos.x + 240, pos.y, 'document', id, doc.title, documentIcon(doc))
+}
+
 // Refetch on workspace switch so a stale list is never shown under a new header. `reset()` on the
 // way out is what makes the refetch necessary rather than a stale-merge hazard. Prev-value guard on
 // update — same reset+fetch the watcher did; mount runs the same initial fetch.
@@ -308,13 +344,15 @@ onUpdated(() => {
           @click.stop="toggleDocumentsSection"
         >
           <span
-            class="w-[var(--sb-mark)] shrink-0 flex items-center text-meta transition-transform duration-200"
+            class="w-[var(--sb-mark)] shrink-0 flex items-center transition-transform duration-200"
             :style="{
-              transform: sidebarStore.documentsExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transform: sidebarStore.documentsExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
             }"
             style="color: var(--semantic-text-dim)"
-            >▶</span
+            aria-hidden="true"
           >
+            <UiIcon name="chevron-down" :size="12" />
+          </span>
           <span
             class="text-micro font-semibold uppercase tracking-[0.08em]"
             style="color: var(--semantic-text-dim)"
@@ -448,16 +486,26 @@ onUpdated(() => {
             :aria-level="row.depth + 1"
             @click="toggleFolder(row.folder.id)"
             @dblclick="startRename(row.folder)"
+            @contextmenu.prevent="onFolderContextMenu($event, row.folder)"
             @keydown="onFolderKeydown($event, row.folder.id)"
           >
             <span class="w-[var(--sb-mark)] shrink-0 flex items-center" aria-hidden="true">
               <span
-                class="text-meta inline-block transition-transform duration-200"
+                class="inline-block transition-transform duration-200"
                 :style="{
-                  transform: collapsed.has(row.folder.id) ? 'rotate(0deg)' : 'rotate(90deg)',
+                  transform: collapsed.has(row.folder.id) ? 'rotate(-90deg)' : 'rotate(0deg)',
                 }"
-                >▶</span
               >
+                <UiIcon name="chevron-down" :size="12" />
+              </span>
+            </span>
+            <span
+              class="shrink-0 flex items-center mr-1.5"
+              :data-testid="`folder-icon-${row.folder.id}`"
+              :data-icon="folderIcon(row.folder)"
+              aria-hidden="true"
+            >
+              <UiIcon :name="folderIcon(row.folder)" :size="14" />
             </span>
             <input
               v-if="renamingId === row.folder.id"
@@ -517,7 +565,14 @@ onUpdated(() => {
             @contextmenu.prevent="onDocumentContextMenu($event, row.document.id)"
             @keydown="onDocumentKeydown($event, row.document.id)"
           >
-            <span class="w-[var(--sb-mark)] shrink-0" aria-hidden="true"></span>
+            <span
+              class="w-[var(--sb-mark)] shrink-0 flex items-center"
+              :data-testid="`document-icon-${row.document.id}`"
+              :data-icon="documentIcon(row.document)"
+              aria-hidden="true"
+            >
+              <UiIcon :name="documentIcon(row.document)" :size="14" />
+            </span>
             <input
               v-if="renamingDocId === row.document.id"
               v-model="renameDocValue"
@@ -576,6 +631,7 @@ onUpdated(() => {
       :busy="busy"
       @open="openSelected"
       @rename="renameSelected"
+      @change-icon="documentMenuChangeIcon"
       @duplicate="duplicateSelected"
       @copy-link="copyLinkSelected"
       @remove="requestDelete"
@@ -583,6 +639,32 @@ onUpdated(() => {
       @export-all="exportAll"
       @select-all="selectAllDocuments"
       @clear-selection="clearSelectionFromMenu"
+    />
+
+    <DocumentsContextMenu
+      v-if="folderMenuPos"
+      :x="folderMenuPos.x"
+      :y="folderMenuPos.y"
+      :title="folderMenuTarget?.name ?? ''"
+      :selected-count="1"
+      :total-count="1"
+      :single-selected="true"
+      :busy="false"
+      kind="folder"
+      @rename="folderMenuRename"
+      @change-icon="folderMenuChangeIcon"
+      @remove="folderMenuDelete"
+    />
+
+    <IconPicker
+      v-if="iconPicker"
+      :x="iconPicker.x"
+      :y="iconPicker.y"
+      :current="iconPicker.current"
+      :label="iconPicker.label"
+      @pick="applyIcon"
+      @reset="applyIcon(null)"
+      @close="closeIconPicker"
     />
 
     <ConfirmDialog

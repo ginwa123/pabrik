@@ -8,6 +8,7 @@ const gserverz = pabrikcore.gserverz;
 const http_response = @import("http_response.zig");
 const documents_store = @import("../modules/agent/loop/documents_store.zig");
 const document_events = @import("../modules/agent/loop/document_events.zig");
+const icon_name = @import("icon_name.zig");
 
 /// PATCH body. `"content": null` stays distinguishable from `"content": ""`,
 /// which is a real "clear the body". `move_folder` records that the KEY was
@@ -17,6 +18,11 @@ const UpdateDocumentBody = struct {
     content: ?[]const u8 = null,
     folder_id: ?[]const u8 = null,
     move_folder: bool = false,
+    /// Migration 148 — a glyph name sets the override, `null` clears it.
+    icon: ?[]const u8 = null,
+    /// `"icon"` was present at all. Without this, `icon: null` (clear) and an
+    /// absent key (keep) would be the same value.
+    set_icon: bool = false,
 };
 
 /// Read one optional string field out of a parsed object. A present key whose
@@ -67,7 +73,7 @@ fn useCase(
     if (input.workspace_id.len == 0 or input.document_id.len == 0) {
         return error.IdsRequired;
     }
-    return .{ .document = try store.updateDocument(
+    const updated = try store.updateDocument(
         allocator,
         input.workspace_id,
         input.document_id,
@@ -77,6 +83,17 @@ fn useCase(
             .folder_id = input.body.folder_id,
             .move_folder = input.body.move_folder,
         },
+    );
+    if (!input.body.set_icon) return .{ .document = updated };
+
+    // The icon is its own column, so it is its own statement. Applied after
+    // the body/title patch so one request can carry both.
+    defer documents_store.freeDocumentRow(allocator, updated);
+    return .{ .document = try store.updateDocumentIcon(
+        allocator,
+        input.workspace_id,
+        input.document_id,
+        input.body.icon,
     ) };
 }
 
@@ -138,7 +155,23 @@ pub fn documentsUpdateHandler(
             });
         },
         .move_folder = obj.get("folder_id") != null,
+        .icon = optionalString(obj, "icon") catch {
+            return res.jsonResponse(.{
+                .status_code = 400,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "icon must be a string or null" }),
+            });
+        },
+        .set_icon = obj.get("icon") != null,
     };
+
+    if (body.icon) |name| {
+        if (!icon_name.isValidIconName(name)) {
+            return res.jsonResponse(.{
+                .status_code = 400,
+                .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "icon must be 1-64 lowercase letters, digits or hyphens" }),
+            });
+        }
+    }
 
     const output = useCase(allocator, .{ .db = sqlite_db, .storage = di.objectStore() }, .{
         .workspace_id = req.params.get("workspace_id") orelse "",
@@ -228,6 +261,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
+    try migration.Migration148AddDocumentIcon.up(&db, testing.allocator);
     try db.exec(testing.allocator,
         \\INSERT INTO documents (id, workspace_id, title, preview) VALUES
         \\  ('doc_a', 'ws_1', 'A', 'body a'),

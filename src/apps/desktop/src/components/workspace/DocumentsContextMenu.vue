@@ -10,13 +10,23 @@ const props = withDefaults(
     totalCount?: number
     singleSelected?: boolean
     busy?: boolean
+    /** A folder row opens the same menu with only the row edits it can use. */
+    kind?: 'document' | 'folder'
   }>(),
-  { title: '', selectedCount: 0, totalCount: 0, singleSelected: false, busy: false },
+  {
+    title: '',
+    selectedCount: 0,
+    totalCount: 0,
+    singleSelected: false,
+    busy: false,
+    kind: 'document',
+  },
 )
 
 const emit = defineEmits<{
   open: []
   rename: []
+  changeIcon: []
   duplicate: []
   copyLink: []
   remove: []
@@ -96,6 +106,7 @@ const focusRow = (event: MouseEvent) => {
       </div>
 
       <button
+        v-if="kind === 'document'"
         type="button"
         role="menuitem"
         data-testid="documents-context-menu-open"
@@ -140,6 +151,28 @@ const focusRow = (event: MouseEvent) => {
       <button
         type="button"
         role="menuitem"
+        data-testid="documents-context-menu-change-icon"
+        class="menu-row"
+        :disabled="busy || !singleSelected"
+        @click="emit('changeIcon')"
+        @mouseenter="focusRow"
+      >
+        <span class="menu-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"
+            />
+          </svg>
+        </span>
+        <span class="menu-lb">Change icon…</span>
+      </button>
+
+      <button
+        v-if="kind === 'document'"
+        type="button"
+        role="menuitem"
         data-testid="documents-context-menu-duplicate"
         class="menu-row"
         :disabled="busy || selectedCount === 0"
@@ -159,6 +192,7 @@ const focusRow = (event: MouseEvent) => {
       </button>
 
       <button
+        v-if="kind === 'document'"
         type="button"
         role="menuitem"
         data-testid="documents-context-menu-copy-link"
@@ -182,6 +216,7 @@ const focusRow = (event: MouseEvent) => {
       <div class="menu-sep" role="separator" />
 
       <button
+        v-if="kind === 'document'"
         type="button"
         role="menuitem"
         data-testid="documents-context-menu-export"
@@ -203,6 +238,7 @@ const focusRow = (event: MouseEvent) => {
       </button>
 
       <button
+        v-if="kind === 'document'"
         type="button"
         role="menuitem"
         data-testid="documents-context-menu-export-all"
@@ -226,6 +262,7 @@ const focusRow = (event: MouseEvent) => {
       <div class="menu-sep" role="separator" />
 
       <button
+        v-if="kind === 'document'"
         type="button"
         role="menuitem"
         data-testid="documents-context-menu-select-all"
@@ -239,6 +276,7 @@ const focusRow = (event: MouseEvent) => {
       </button>
 
       <button
+        v-if="kind === 'document'"
         type="button"
         role="menuitem"
         data-testid="documents-context-menu-clear"

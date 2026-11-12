@@ -22,6 +22,7 @@ const FolderDto = struct {
     parent_id: ?[]const u8,
     name: []const u8,
     position: i64,
+    icon: ?[]const u8,
 };
 
 const DocumentDto = struct {
@@ -30,6 +31,7 @@ const DocumentDto = struct {
     format: []const u8,
     folder_id: ?[]const u8,
     position: i64,
+    icon: ?[]const u8,
 };
 
 const ListDto = struct {
@@ -58,7 +60,13 @@ const SearchDto = struct {
 };
 
 fn folderDto(row: folders_store.FolderRow) FolderDto {
-    return .{ .id = row.id, .parent_id = row.parent_id, .name = row.name, .position = row.position };
+    return .{
+        .id = row.id,
+        .parent_id = row.parent_id,
+        .name = row.name,
+        .position = row.position,
+        .icon = row.icon,
+    };
 }
 
 fn documentDto(row: documents_store.DocumentRow) DocumentDto {
@@ -68,6 +76,7 @@ fn documentDto(row: documents_store.DocumentRow) DocumentDto {
         .format = row.format,
         .folder_id = row.folder_id,
         .position = row.position,
+        .icon = row.icon,
     };
 }
 
@@ -424,6 +433,21 @@ pub fn runWithDb(
             return documentJson(allocator, row);
         },
 
+        .set_icon => {
+            if (a.document_id == null and a.folder_id == null) return error.DocumentOrFolderRequired;
+            // `--icon ""` is the "Reset to default" write: an empty value
+            // clears the override rather than storing an empty name.
+            const icon: ?[]const u8 = if (a.icon.len == 0) null else a.icon;
+            if (a.document_id) |document_id| {
+                const row = try store.updateDocumentIcon(allocator, a.workspace_id, document_id, icon);
+                defer documents_store.freeDocumentRow(allocator, row);
+                return documentJson(allocator, row);
+            }
+            const row = try folders_store.updateFolderIcon(allocator, store.db, a.workspace_id, a.folder_id.?, icon);
+            defer folders_store.freeFolderRow(allocator, row);
+            return folderJson(allocator, row);
+        },
+
         .backfill => {
             const report = try store.backfill(allocator, .{
                 .workspace_id = if (a.workspace_id.len == 0) null else a.workspace_id,
@@ -464,6 +488,7 @@ fn setupDb() !TestCtx {
     try migration.Migration140AddDocumentFolders.up(&db, testing.allocator);
     try migration.Migration143AddDocumentContentKey.up(&db, testing.allocator);
     try migration.Migration144DropDocumentContent.up(&db, testing.allocator);
+    try migration.Migration148AddDocumentIcon.up(&db, testing.allocator);
     return .{ .db = db, .threaded = threaded };
 }
 
@@ -583,4 +608,144 @@ test "parseIdList: an empty value is an empty list, not one blank id" {
     defer alloc.free(ids);
 
     try testing.expectEqual(@as(usize, 0), ids.len);
+}
+
+test "headless documents: set-icon persists a document glyph and list reads it back" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .doc_create,
+        .workspace_id = "ws_1",
+        .title = "Plan",
+    });
+    defer alloc.free(created);
+    const created_json = try std.json.parseFromSlice(std.json.Value, alloc, created, .{});
+    defer created_json.deinit();
+    const doc_id = created_json.value.object.get("id").?.string;
+
+    const set_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .set_icon,
+        .workspace_id = "ws_1",
+        .document_id = doc_id,
+        .icon = "note",
+    });
+    defer alloc.free(set_json);
+    {
+        const parsed = try std.json.parseFromSlice(std.json.Value, alloc, set_json, .{});
+        defer parsed.deinit();
+        try testing.expectEqualStrings("note", parsed.value.object.get("icon").?.string);
+    }
+
+    // A SECOND call, through the list path, is the read-back that proves the
+    // write landed in the table rather than in the response builder.
+    const list_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{ .op = .list, .workspace_id = "ws_1" });
+    defer alloc.free(list_json);
+    const list = try std.json.parseFromSlice(std.json.Value, alloc, list_json, .{});
+    defer list.deinit();
+    const docs = list.value.object.get("documents").?.array.items;
+    try testing.expectEqual(@as(usize, 1), docs.len);
+    try testing.expectEqualStrings("note", docs[0].object.get("icon").?.string);
+}
+
+test "headless documents: an empty --icon clears a document's override" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .doc_create,
+        .workspace_id = "ws_1",
+        .title = "Plan",
+    });
+    defer alloc.free(created);
+    const created_json = try std.json.parseFromSlice(std.json.Value, alloc, created, .{});
+    defer created_json.deinit();
+    const doc_id = created_json.value.object.get("id").?.string;
+
+    const set_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .set_icon,
+        .workspace_id = "ws_1",
+        .document_id = doc_id,
+        .icon = "note",
+    });
+    defer alloc.free(set_json);
+
+    const reset_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .set_icon,
+        .workspace_id = "ws_1",
+        .document_id = doc_id,
+        .icon = "",
+    });
+    defer alloc.free(reset_json);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, reset_json, .{});
+    defer parsed.deinit();
+    // JSON null, not "" — the UI distinguishes "no override" from a name.
+    try testing.expect(parsed.value.object.get("icon").? == .null);
+}
+
+test "headless documents: set-icon persists a folder glyph" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const folder_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .folder_create,
+        .workspace_id = "ws_1",
+        .name = "Design",
+    });
+    defer alloc.free(folder_json);
+    const folder = try std.json.parseFromSlice(std.json.Value, alloc, folder_json, .{});
+    defer folder.deinit();
+    const folder_id = folder.value.object.get("id").?.string;
+
+    const set_json = try runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+        .op = .set_icon,
+        .workspace_id = "ws_1",
+        .folder_id = folder_id,
+        .icon = "palette",
+    });
+    defer alloc.free(set_json);
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, alloc, set_json, .{});
+    defer parsed.deinit();
+    try testing.expectEqualStrings("palette", parsed.value.object.get("icon").?.string);
+}
+
+test "headless documents: set-icon on a missing document is an error, not a silent success" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.NotFound,
+        runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+            .op = .set_icon,
+            .workspace_id = "ws_1",
+            .document_id = "doc_missing",
+            .icon = "note",
+        }),
+    );
+}
+
+test "headless documents: set-icon with neither a document nor a folder is refused" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.DocumentOrFolderRequired,
+        runWithDb(alloc, ctx.threaded.io(), .{ .db = &ctx.db }, .{
+            .op = .set_icon,
+            .workspace_id = "ws_1",
+            .icon = "note",
+        }),
+    );
 }

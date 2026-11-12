@@ -314,6 +314,74 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
+  /** Set (or clear) a document's glyph; `null` is "Reset to default".
+   * Optimistic, with a rollback: a row that keeps a glyph the server never
+   * stored is worse than one that flickers. */
+  async function setDocumentIcon(
+    workspaceId: string,
+    documentId: string,
+    icon: string | null,
+  ): Promise<boolean> {
+    if (!workspaceId) return false
+    const previous = documents.value
+    documents.value = previous.map((d) => (d.id === documentId ? { ...d, icon } : d))
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.setIcon', () => api.updateDocument(workspaceId, documentId, { icon })),
+        'documents.setIcon',
+      )
+      if (!result.ok) {
+        documents.value = previous
+        error.value = result.reason
+        return false
+      }
+      documents.value = documents.value.map((d) =>
+        d.id === result.value.document.id ? result.value.document : d,
+      )
+      await runSyncVoid(
+        documentEngineDb.putDocument(workspaceId, result.value.document),
+        'documents.put',
+      )
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
+  /** Set (or clear) a folder's glyph. Same optimistic + rollback contract as
+   * `setDocumentIcon`. */
+  async function setFolderIcon(
+    workspaceId: string,
+    folderId: string,
+    icon: string | null,
+  ): Promise<boolean> {
+    if (!workspaceId) return false
+    const previous = folders.value
+    folders.value = previous.map((f) => (f.id === folderId ? { ...f, icon } : f))
+    saving.value = true
+    error.value = null
+    try {
+      const result = await runSyncResult(
+        remote('documents.folderSetIcon', () => api.updateFolder(workspaceId, folderId, { icon })),
+        'documents.folderSetIcon',
+      )
+      if (!result.ok) {
+        folders.value = previous
+        error.value = result.reason
+        return false
+      }
+      folders.value = folders.value.map((f) =>
+        f.id === result.value.folder.id ? result.value.folder : f,
+      )
+      writeCachedFolders(workspaceId, folders.value)
+      return true
+    } finally {
+      saving.value = false
+    }
+  }
+
   /** Nest a folder, or send it back to the root with `parentId = null`. A
    * cycle is refused HERE, before the request: the server refuses it too, but
    * a round trip for a drop the UI can already see is wrong is still wrong. */
@@ -453,6 +521,8 @@ export const useDocumentsStore = defineStore('documents', () => {
     moveDocument,
     createFolder,
     renameFolder,
+    setDocumentIcon,
+    setFolderIcon,
     moveFolder,
     deleteFolder,
     loadDocument,
