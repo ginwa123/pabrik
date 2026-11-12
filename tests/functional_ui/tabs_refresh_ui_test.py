@@ -91,21 +91,31 @@ def _wait_for_tabs(page, count: int) -> None:
     )
 
 
+def _open_file(page, h: UIHarness, ws_id: str, session_id: str, name: str, tabs: int) -> None:
+    """Open one file in the chat and wait until the app has settled on it.
+
+    The funnel rewrites the URL with `?tab=<id>` right after the editor mounts. Navigating
+    again before that replace lands aborts the next `goto` (`net::ERR_ABORTED`), so the
+    settle is part of the gesture, not a sleep.
+    """
+    page.goto(
+        _file_url(h, ws_id, session_id, name), wait_until="domcontentloaded", timeout=60000
+    )
+    page.wait_for_selector('[data-testid="code-editor"]', timeout=30000)
+    _wait_for_tabs(page, tabs)
+    page.wait_for_function(
+        "() => new URLSearchParams(location.search).has('tab')", timeout=30000
+    )
+
+
 def _open_two_files_and_reload(page, h: UIHarness, ws_id: str, session_id: str) -> None:
     """The user's gesture: a chat, two files opened in it, then F5."""
     page.goto(_chat_url(h, ws_id, session_id), wait_until="domcontentloaded", timeout=60000)
     page.wait_for_selector(".messages-scroll-hide-native", timeout=30000)
     _wait_for_tabs(page, 1)
 
-    for name in (FILE_A, FILE_B):
-        page.goto(
-            _file_url(h, ws_id, session_id, name),
-            wait_until="domcontentloaded",
-            timeout=60000,
-        )
-        page.wait_for_selector('[data-testid="code-editor"]', timeout=30000)
-
-    _wait_for_tabs(page, 3)
+    _open_file(page, h, ws_id, session_id, FILE_A, 2)
+    _open_file(page, h, ws_id, session_id, FILE_B, 3)
     before = _tab_titles(page)
     print(f"\n[tabs before reload] {before}")
 
@@ -131,6 +141,10 @@ def _create_admin(bin_path: Path, home: Path) -> None:
     """`pabrik create-admin` against the harness's isolated HOME."""
     env = dict(os.environ)
     env["HOME"] = str(home)
+    if os.name == "nt":
+        env["USERPROFILE"] = str(home)
+        env["APPDATA"] = str(home / "AppData" / "Roaming")
+        env["LOCALAPPDATA"] = str(home / "AppData" / "Local")
     env["XDG_CONFIG_HOME"] = str(home / ".config")
     env["XDG_STATE_HOME"] = str(home / ".local" / "state")
     env["XDG_DATA_HOME"] = str(home / ".local" / "share")
