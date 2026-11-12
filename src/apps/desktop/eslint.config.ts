@@ -130,6 +130,15 @@ export default defineConfigWithVueTs(
       // the rule on costs nothing and makes that discipline enforceable for
       // new code. `any` erases the error channel this repo is trying to widen.
       '@typescript-eslint/no-explicit-any': 'error',
+      // The same ban, from the AST, plus `unknown` — which no upstream rule
+      // covers. The upstream rule above is defeated in practice: 875 inline
+      // `eslint-disable` comments across `src/` switch it off site by site,
+      // and a disable written for a different rule id does not silence this
+      // one. Pre-existing sites are pinned as baseline debt in
+      // `eslint-suppressions.json`; new ones fail immediately. The one legal
+      // `unknown` is a `v is T` type predicate's parameter — see
+      // `eslint-rules/noAnyUnknown.ts` and `docs/any-unknown-policy.md`.
+      'local/no-any-unknown': 'error',
     },
   },
 

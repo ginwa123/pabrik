@@ -2912,6 +2912,23 @@ pub fn build(b: *std.Build) void {
     b.step("test:helpers:git_env_guard", "Run git_env_guard helper tests")
         .dependOn(&run_git_env_guard_tests.step);
 
+    // `mod.zig` is the `helpers` PACKAGE root and its own `build.zig` declares
+    // no test step, so every `test` block in it was dead until this one. The
+    // Windows id generator is only reachable from a Windows build — hence here.
+    const helpers_mod_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/helpers/mod.zig"),
+            .target = test_target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const run_helpers_mod_tests = b.addRunArtifact(helpers_mod_tests);
+    run_helpers_mod_tests.setName("test helpers mod");
+    test_step.dependOn(&run_helpers_mod_tests.step);
+    b.step("test:helpers:mod", "Run the helpers package root tests")
+        .dependOn(&run_helpers_mod_tests.step);
+
     // === The VM trio: the guest agent (installed as /init), the probe
     // fixture, and the manager. All three come out of `zig build`, so no
     // script needs to know how to invoke the compiler on their behalf.

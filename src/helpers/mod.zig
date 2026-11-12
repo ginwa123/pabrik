@@ -177,37 +177,30 @@ fn filetimeTicksToUnixNanos(ticks: u128) i128 {
     return ns_since_1601 - ns_1601_to_1970;
 }
 
+/// Process-global, NOT thread-local: the value feeds PRIMARY KEYs, and
+/// `GetSystemTimeAsFileTime` ticks at ~15.6 ms, so two threads read the same
+/// FILETIME routinely — a thread-local counter minted duplicate ids.
+var unixNanosWindowsMu: std.atomic.Mutex = .unlocked;
+var unixNanosWindowsLast: i128 = 0;
+
+/// Strictly increasing, process-wide: `candidate` when the clock moved
+/// forward, otherwise one past the last value handed out. Platform-independent
+/// so the uniqueness contract is testable on any host.
+fn nextUniqueNanos(candidate: i128) i128 {
+    while (!unixNanosWindowsMu.tryLock()) std.atomic.spinLoopHint();
+    defer unixNanosWindowsMu.unlock();
+    const next = if (candidate > unixNanosWindowsLast) candidate else unixNanosWindowsLast + 1;
+    unixNanosWindowsLast = next;
+    return next;
+}
+
 fn unixTimestampNanosWindows() i128 {
     var ft: std.os.windows.FILETIME = undefined;
     GetSystemTimeAsFileTime(&ft);
     // Combine low + high 32 bits into u128 (little-endian on Windows).
     const ticks: u128 = (@as(u128, ft.dwHighDateTime) << 32) | @as(u128, ft.dwLowDateTime);
-    const base_ns = filetimeTicksToUnixNanos(ticks);
-    // Raw 1601-based nanos for the same-tick dedup counter below
-    // (pre-offset, so the counter never conflates absolute time with
-    // the in-tick sequence number).
-    const ns_since_1601: i128 = @intCast(ticks * 100);
-
-    // Ensure uniqueness across rapid back-to-back calls.
-    const last_ns = unixNanosWindowsLastNs;
-    const counter = unixNanosWindowsCounter;
-    defer {
-        // Compare the raw FILETIME (not `base_ns` which has the offset
-        // subtracted) so we don't conflate absolute time with the counter.
-        const raw_ns = ns_since_1601;
-        unixNanosWindowsLastNs = raw_ns;
-    }
-    if (ns_since_1601 == last_ns) {
-        unixNanosWindowsCounter = counter + 1;
-        return base_ns + counter + 1;
-    } else {
-        unixNanosWindowsCounter = 0;
-        return base_ns;
-    }
+    return nextUniqueNanos(filetimeTicksToUnixNanos(ticks));
 }
-
-threadlocal var unixNanosWindowsLastNs: i128 = 0;
-threadlocal var unixNanosWindowsCounter: u64 = 0;
 
 /// Cross-platform monotonic nanosecond timestamp. Returns a non-negative
 /// `u64` value that increases monotonically with wall-clock time.
@@ -386,6 +379,31 @@ test "unixTimestampNanos: returns positive value within sane range" {
     try std.testing.expect(ns < 4_102_444_800 * std.time.ns_per_s);
 }
 
+test "nextUniqueNanos: two threads reading the same tick get different values" {
+    // The Windows clock ticks at ~15.6 ms, so two threads routinely read the
+    // SAME FILETIME. The counter used to be `threadlocal`, so both minted the
+    // same `item_<nanos>` and the second INSERT died on the PK. Red before.
+    const tick: i128 = 1_000_000_000;
+    var results: [2]i128 = .{ 0, 0 };
+    var threads: [2]std.Thread = undefined;
+    for (&threads, 0..) |*t, i| {
+        t.* = try std.Thread.spawn(.{}, struct {
+            fn run(out: *i128, candidate: i128) void {
+                out.* = nextUniqueNanos(candidate);
+            }
+        }.run, .{ &results[i], tick });
+    }
+    for (&threads) |*t| t.join();
+    try std.testing.expect(results[0] != results[1]);
+}
+
+test "nextUniqueNanos: a clock that steps backwards never re-mints a value" {
+    const tick: i128 = 1_000_000_000;
+    const first = nextUniqueNanos(tick);
+    const second = nextUniqueNanos(tick - 5 * std.time.ns_per_s);
+    try std.testing.expect(second > first);
+}
+
 test "unixTimestamp: 4-byte suseconds_t read does not pick up padding bytes (macOS struct-layout regression guard)" {
     // On macOS, `suseconds_t` is `__int32_t` (4 bytes). The struct declares
     // `usec: Usect` (i32 on macOS) so the read matches the C ABI
@@ -474,10 +492,9 @@ test "process_status: killProcess returns false for non-existent pid" {
 }
 
 test "process_status: round-trip — isProcessRunning then killProcess" {
-    // Spawn a child process that sleeps, verify isProcessRunning returns
-    // true, kill it, verify isProcessRunning returns false. Uses
-    // std.process.Child via the v1.0+ API.
-    if (@import("builtin").os.tag == .wasm) return;
+    // Spawn a child that sleeps, verify isProcessRunning is true, kill it,
+    // reap it, verify it is false. No wasm guard: Zig 0.16 dropped `wasm` from
+    // `Target.Os.Tag`, and that line kept this file from compiling as a root.
 
     // Spawn a long-running child (sleep 60 seconds).
     const argv = [_][]const u8{ "sleep", "60" };
@@ -498,12 +515,17 @@ test "process_status: round-trip — isProcessRunning then killProcess" {
         return;
     });
 
+    var reaped = false;
     defer {
-        // Clean up: kill the child if it's still alive.
-        if (process_status.isProcessRunning(child_pid)) {
-            _ = process_status.killProcess(child_pid);
+        // Clean up: kill the child if it's still alive, then reap it. A
+        // second `wait` on an already-reaped child errors, so the flag keeps
+        // the happy path from reaping twice.
+        if (!reaped) {
+            if (process_status.isProcessRunning(child_pid)) {
+                _ = process_status.killProcess(child_pid);
+            }
+            if (child.wait(std.testing.io)) |_| {} else |_| {}
         }
-        _ = child.wait(std.testing.io);
     }
 
     // The child should be alive.
@@ -512,8 +534,11 @@ test "process_status: round-trip — isProcessRunning then killProcess" {
     // Kill it.
     try testing.expect(process_status.killProcess(child_pid));
 
-    // Give the OS a moment to reap it.
-    std.time.sleep(100 * std.time.ns_per_ms);
+    // REAP it before asserting it is gone: `isProcessRunning` is `kill(pid, 0)`
+    // on POSIX, and that still succeeds for a ZOMBIE until the parent waits.
+    // The old test asserted "not running" while the child was unreaped.
+    if (child.wait(std.testing.io)) |_| {} else |_| {}
+    reaped = true;
 
     // The child should now be dead.
     try testing.expect(!process_status.isProcessRunning(child_pid));
