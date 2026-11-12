@@ -160,6 +160,7 @@ const migration_144 = @import("migration_144.zig");
 const migration_145 = @import("migration_145.zig");
 const migration_146 = @import("migration_146.zig");
 const migration_147 = @import("migration_147.zig");
+const migration_148 = @import("migration_148.zig");
 
 // Re-exports so existing
 // `@import("../migrations/migration.zig").Migration076…` call sites
@@ -309,6 +310,7 @@ pub const Migration144DropDocumentContent = migration_144.Migration144DropDocume
 pub const Migration145AddPendingDelegate = migration_145.Migration145AddPendingDelegate;
 pub const Migration146AddMcpOAuth = migration_146.Migration146AddMcpOAuth;
 pub const Migration147AddWorkspaceItemIcon = migration_147.Migration147AddWorkspaceItemIcon;
+pub const Migration148AddDocumentIcon = migration_148.Migration148AddDocumentIcon;
 
 /// All available migrations - add new migrations to this slice
 pub const allMigrations: []const Migration = &.{
@@ -581,6 +583,7 @@ pub const allMigrations: []const Migration = &.{
     .{ .version = Migration145AddPendingDelegate.version, .name = Migration145AddPendingDelegate.name, .up = Migration145AddPendingDelegate.up },
     .{ .version = Migration146AddMcpOAuth.version, .name = Migration146AddMcpOAuth.name, .up = Migration146AddMcpOAuth.up },
     .{ .version = Migration147AddWorkspaceItemIcon.version, .name = Migration147AddWorkspaceItemIcon.name, .up = Migration147AddWorkspaceItemIcon.up },
+    .{ .version = Migration148AddDocumentIcon.version, .name = Migration148AddDocumentIcon.name, .up = Migration148AddDocumentIcon.up },
 };
 
 /// Register all migrations with a MigrationManager

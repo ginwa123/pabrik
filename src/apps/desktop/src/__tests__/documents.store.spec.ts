@@ -12,6 +12,7 @@ const updateDocument = vi.hoisted(() => vi.fn())
 const deleteDocument = vi.hoisted(() => vi.fn())
 const getDocument = vi.hoisted(() => vi.fn())
 const reorderDocuments = vi.hoisted(() => vi.fn())
+const updateFolder = vi.hoisted(() => vi.fn())
 
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api')
@@ -23,6 +24,7 @@ vi.mock('../api', async () => {
     deleteDocument,
     getDocument,
     reorderDocuments,
+    updateFolder,
   }
 })
 
@@ -55,6 +57,7 @@ beforeEach(async () => {
   deleteDocument.mockReset()
   getDocument.mockReset()
   reorderDocuments.mockReset()
+  updateFolder.mockReset()
 })
 
 describe('documents store — load', () => {
@@ -383,5 +386,78 @@ describe('documents store — reorder', () => {
     expect(saved).toBe(false)
     expect(store.documents.map((d) => d.id)).toEqual(['doc_a', 'doc_b', 'doc_c'])
     expect(store.error).toContain('404')
+  })
+})
+
+describe('documents store — row glyphs', () => {
+  it('repaints a document row with the picked glyph', async () => {
+    listDocuments.mockResolvedValue({ documents: [doc('doc_a')], count: 1 })
+    updateDocument.mockResolvedValue({ document: doc('doc_a', { icon: 'note' }) })
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const saved = await store.setDocumentIcon('ws_1', 'doc_a', 'note')
+
+    expect(saved).toBe(true)
+    expect(store.documents[0]!.icon).toBe('note')
+  })
+
+  it('clears a document override when the user resets to default', async () => {
+    listDocuments.mockResolvedValue({ documents: [doc('doc_a', { icon: 'note' })], count: 1 })
+    updateDocument.mockResolvedValue({ document: doc('doc_a', { icon: null }) })
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    await store.setDocumentIcon('ws_1', 'doc_a', null)
+
+    expect(store.documents[0]!.icon).toBeNull()
+  })
+
+  it('restores a document row when the server rejects the write', async () => {
+    listDocuments.mockResolvedValue({ documents: [doc('doc_a', { icon: 'note' })], count: 1 })
+    updateDocument.mockRejectedValue(new Error('HTTP 500 Internal Server Error'))
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const saved = await store.setDocumentIcon('ws_1', 'doc_a', 'tree')
+
+    // The row must not keep a glyph the database never stored.
+    expect(saved).toBe(false)
+    expect(store.documents[0]!.icon).toBe('note')
+    expect(store.error).toContain('500')
+  })
+
+  it('repaints a folder row with the picked glyph', async () => {
+    listDocuments.mockResolvedValue({
+      documents: [],
+      folders: [{ id: 'fld_a', workspace_id: 'ws_1', parent_id: null, name: 'Design', position: 0 }],
+      count: 0,
+    })
+    updateFolder.mockResolvedValue({
+      folder: { id: 'fld_a', workspace_id: 'ws_1', parent_id: null, name: 'Design', position: 0, icon: 'palette' },
+    })
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const saved = await store.setFolderIcon('ws_1', 'fld_a', 'palette')
+
+    expect(saved).toBe(true)
+    expect(store.folders[0]!.icon).toBe('palette')
+  })
+
+  it('restores a folder row when the server rejects the write', async () => {
+    listDocuments.mockResolvedValue({
+      documents: [],
+      folders: [{ id: 'fld_a', workspace_id: 'ws_1', parent_id: null, name: 'Design', position: 0, icon: 'palette' }],
+      count: 0,
+    })
+    updateFolder.mockRejectedValue(new Error('HTTP 404 Not Found'))
+    const store = useDocumentsStore()
+    await store.fetchDocuments('ws_1')
+
+    const saved = await store.setFolderIcon('ws_1', 'fld_a', 'tree')
+
+    expect(saved).toBe(false)
+    expect(store.folders[0]!.icon).toBe('palette')
   })
 })

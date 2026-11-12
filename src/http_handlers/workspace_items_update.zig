@@ -3,6 +3,7 @@ const http_response = @import("http_response.zig");
 const pabrikcore = @import("pabrikcore");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
+const icon_name = @import("icon_name.zig");
 
 /// PUT /api/workspaces/:workspace_id/items/:item_id - Update a workspace item
 /// Accepts an optional `path` field.
@@ -86,7 +87,7 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "icon, when present, must be a string or null" }) });
         }
         if (icon_value) |name| {
-            if (!isValidIconName(name)) {
+            if (!icon_name.isValidIconName(name)) {
                 return res.jsonResponse(.{ .status_code = 400, .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = "icon must be 1-64 lowercase letters, digits or hyphens" }) });
             }
         }
@@ -292,16 +293,4 @@ pub fn workspaceItemsUpdateHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             .icon = icon_value,
         }),
     });
-}
-
-/// A project icon is a NAME from the frontend's `ICON_PATHS` registry, so the
-/// accepted shape is that registry's key shape: 1-64 lowercase letters, digits
-/// or hyphens. The registry is not duplicated here; the UI degrades unknowns.
-fn isValidIconName(name: []const u8) bool {
-    if (name.len == 0 or name.len > 64) return false;
-    for (name) |c| {
-        const ok = (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '-';
-        if (!ok) return false;
-    }
-    return true;
 }

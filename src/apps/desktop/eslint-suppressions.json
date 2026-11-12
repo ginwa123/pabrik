@@ -1147,5 +1147,10 @@
     "local/no-try-catch": {
       "count": 1
     }
+  },
+  "src/components/workspace/DocumentsList.vue": {
+    "max-lines": {
+      "count": 1
+    }
   }
 }

@@ -26,6 +26,9 @@ export interface Document {
   /** The folder this document sits in; `null` (or absent, in a row cached
    * before Migration 140) means the root of the section. */
   folder_id?: string | null
+  /** Migration 148 — the document's own glyph name, or null/absent for "no
+   * override" (the row then draws `file`). */
+  icon?: string | null
 }
 
 /** One folder in the documents tree (Migration 140). `parent_id: null` is a
@@ -37,6 +40,9 @@ export interface DocumentFolder {
   parent_id: string | null
   name: string
   position: number
+  /** Migration 148 — the folder's own glyph name, or null/absent for "no
+   * override" (the row then draws `folder` / `folder-open`). */
+  icon?: string | null
 }
 
 /**  * GET /api/workspaces/:workspaceId/documents All documents in one workspace in the saved sidebar
@@ -105,7 +111,13 @@ export async function createDocument(
 export async function updateDocument(
   workspaceId: string,
   documentId: string,
-  patch: { title?: string; content?: string; folder_id?: string | null },
+  patch: {
+    title?: string
+    content?: string
+    folder_id?: string | null
+    /** A glyph name sets the override, `null` clears it. */
+    icon?: string | null
+  },
 ): Promise<{ document: Document }> {
   return await apiFetch<{ document: Document }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
@@ -143,7 +155,12 @@ export async function createFolder(
 export async function updateFolder(
   workspaceId: string,
   folderId: string,
-  patch: { name?: string; parent_id?: string | null },
+  patch: {
+    name?: string
+    parent_id?: string | null
+    /** A glyph name sets the override, `null` clears it. */
+    icon?: string | null
+  },
 ): Promise<{ folder: DocumentFolder }> {
   return await apiFetch<{ folder: DocumentFolder }>(
     `/workspaces/${encodeURIComponent(workspaceId)}/document-folders/${encodeURIComponent(folderId)}`,
