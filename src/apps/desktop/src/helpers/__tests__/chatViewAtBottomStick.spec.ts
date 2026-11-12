@@ -632,7 +632,7 @@ describe('wiring — both sides really use the shared ruler', () => {
     const fn = body?.[1] ?? ''
     if (fn === '') throw new Error('could not locate the scrollToBottom body to assert on')
     expect(fn).toMatch(/bottomScrollTop\(\)/)
-    expect(fn).toMatch(/scrollTo\(\{\s*top:\s*\w+,?\s*behavior\s*\}\)/)
+    expect(fn).toMatch(/writeScrollTop\(target, behavior\)/)
     expect(fn).not.toMatch(/scrollHeight\s*-\s*clientHeight/)
   })
 

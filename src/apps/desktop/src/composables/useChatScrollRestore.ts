@@ -76,9 +76,15 @@ export function useChatScrollRestore(
     if (el) writeSaved(el.scrollTop)
   }
 
-  // Captured synchronously during setup so restore() can return it immediately (matches the
-  // existing kanban composable's contract).
-  const savedScrollTop: number | null = readSaved()
+  let savedSnapshot: { key: string; value: number | null } | null = null
+
+  const savedScrollTop = (): number | null => {
+    const key = keyRef.value
+    if (savedSnapshot !== null && savedSnapshot.key === key) return savedSnapshot.value
+    const value = readSaved()
+    savedSnapshot = { key, value }
+    return value
+  }
 
   let attachedEl: HTMLElement | null = null
 
@@ -125,8 +131,9 @@ export function useChatScrollRestore(
   })
 
   const restore = (): number | null => {
-    if (savedScrollTop === null) return null
-    if (savedScrollTop <= 0) return null
+    const saved = savedScrollTop()
+    if (saved === null) return null
+    if (saved <= 0) return null
     const el = containerRef.value
     if (!el) return null
     const max = el.scrollHeight - el.clientHeight
@@ -134,15 +141,17 @@ export function useChatScrollRestore(
     // "Near bottom" branch: if the saved position is within BOTTOM_THRESHOLD_PX of the bottom edge,
     // treat as "still at bottom" → let the caller fall through to scrollToBottom. The edge is the
     // caller's, not the DOM's — see `resolveBottomEdge`.
-    if (savedScrollTop >= bottomEdgeOf(el) - BOTTOM_THRESHOLD_PX) return null
-    return savedScrollTop
+    if (saved >= bottomEdgeOf(el) - BOTTOM_THRESHOLD_PX) return null
+    return saved
   }
 
   /** True when localStorage holds a positive value for the current key. Deliberately reads NOTHING
    * from the container: the question is "did this reader ever leave a position behind?", which is a
    * fact about storage, not about layout. */
-  const hasSavedPosition = (): boolean =>
-    savedScrollTop !== null && savedScrollTop > 0
+  const hasSavedPosition = (): boolean => {
+    const saved = savedScrollTop()
+    return saved !== null && saved > 0
+  }
 
   const restorePosition = (value: number): void => {
     const el = containerRef.value

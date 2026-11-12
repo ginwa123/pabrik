@@ -798,15 +798,20 @@ const endPreserve = async () => {
   console.log('[endPreserve] END scrollTop:', containerRef.value!.scrollTop)
 }
 
-const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
-  if (!containerRef.value) return
-  containerRef.value.scrollTo({
-    top: accumulatedHeights.value[index] ?? index * props.defaultItemHeight,
-    behavior,
-  })
+const writeScrollTop = (target: number, behavior: ScrollBehavior): void => {
+  const el = containerRef.value
+  if (!el) return
+  const clamped = Math.max(0, Math.min(target, reachableScrollTop()))
+  el.scrollTo({ top: clamped, behavior })
+  if (behavior !== 'auto') return
+  scrollTop.value = clamped
+  lastScrollTop.value = clamped
 }
-const scrollToTop = (behavior: ScrollBehavior = 'auto') =>
-  containerRef.value?.scrollTo({ top: 0, behavior })
+
+const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
+  writeScrollTop(accumulatedHeights.value[index] ?? index * props.defaultItemHeight, behavior)
+}
+const scrollToTop = (behavior: ScrollBehavior = 'auto') => writeScrollTop(0, behavior)
 /** THE bottom, as a scrollTop — the single ruler for "is the reader at the end". Two different
  * notions of "the bottom" used to live in two files, and they disagreed by more than either one's
  * tolerance: - the DOM's notion: `scrollHeight - clientHeight`, which trusts the sizer. */
@@ -832,7 +837,7 @@ const bottomScrollTop = (): number => {
 const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
   const target = bottomScrollTop()
-  containerRef.value.scrollTo({ top: target, behavior })
+  writeScrollTop(target, behavior)
   // An explicit jump to the bottom is the strongest possible statement that the reader is following
   // the tail, and the next measure pass has to honour it (see `settledBottom`). This is the gesture
   // behind the jump-to-bottom arrow, and it is the exact moment the reported bug used to be armed.
@@ -841,14 +846,12 @@ const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
 /** Put the container at an arbitrary scrollTop, clamped to the DOM max. ── Why this clears
  * `settledBottom` ───────────────────────────────────────── `settledBottom` is "where the bottom
  * sat when the stick LAST acted". */
-const scrollToPosition = (scrollTop: number, behavior: ScrollBehavior = 'auto') => {
+const scrollToPosition = (position: number, behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
-  const clientHeight = containerRef.value.clientHeight
-  const max = containerRef.value.scrollHeight - clientHeight
+  const max = containerRef.value.scrollHeight - containerRef.value.clientHeight
   if (max <= 0) return
-  const clamped = Math.max(0, Math.min(scrollTop, max))
   settledBottom = null
-  containerRef.value.scrollTo({ top: clamped, behavior })
+  writeScrollTop(position, behavior)
 }
 const scrollToItem = (index: number, behavior: ScrollBehavior = 'auto') =>
   scrollToIndex(index, behavior)
