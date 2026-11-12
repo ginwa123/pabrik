@@ -15,6 +15,7 @@ type RuleName =
   | 'local/no-derived-state-watch'
   | 'local/no-silent-fallback-catch'
   | 'local/no-try-catch'
+  | 'local/no-any-unknown'
 
 const ALL_RULES: RuleName[] = [
   'local/no-watch',
@@ -24,6 +25,7 @@ const ALL_RULES: RuleName[] = [
   'local/no-derived-state-watch',
   'local/no-silent-fallback-catch',
   'local/no-try-catch',
+  'local/no-any-unknown',
 ]
 
 /** Lint `code` with ONLY `rules` enabled and return the rule ids that fired. Isolation matters
@@ -443,7 +445,10 @@ describe('local/no-try-catch', () => {
     // The dominant shape in the corpus: one `await` wrapped so the failure
     // becomes `unknown` and the signature still claims success.
     expect(
-      lint(`async function load() { try { return await fetchRows() } catch (e) { return [] } }`, ONLY_TRY_CATCH),
+      lint(
+        `async function load() { try { return await fetchRows() } catch (e) { return [] } }`,
+        ONLY_TRY_CATCH,
+      ),
     ).toEqual(['local/no-try-catch'])
   })
 
@@ -475,10 +480,7 @@ describe('local/no-try-catch', () => {
     // Two handlers, two reports — the baseline count is per-site, so a
     // nested pair must not collapse into one.
     expect(
-      lint(
-        `try { try { go() } catch (e) { log(e) } } catch (e) { log(e) }`,
-        ONLY_TRY_CATCH,
-      ),
+      lint(`try { try { go() } catch (e) { log(e) } } catch (e) { log(e) }`, ONLY_TRY_CATCH),
     ).toEqual(['local/no-try-catch', 'local/no-try-catch'])
   })
 
@@ -486,9 +488,7 @@ describe('local/no-try-catch', () => {
     // AGENTS.md sanctions `finally` for releasing a resource, and that is
     // not handling a failure — there is no error channel to widen. 57 such
     // blocks exist today.
-    expect(
-      lint(`try { return await open() } finally { release() }`, ONLY_TRY_CATCH),
-    ).toEqual([])
+    expect(lint(`try { return await open() } finally { release() }`, ONLY_TRY_CATCH)).toEqual([])
   })
 
   it('allows a bare try/finally that only clears a ref', () => {
@@ -499,9 +499,7 @@ describe('local/no-try-catch', () => {
     // Deliberately out of scope: 10 of the 30 sites are fire-and-forget `router.replace(...)`
     // navigations and 3 are best-effort `res.text()` reads, where the failure genuinely cannot
     // reach the user. The dangerous subset is `local/no-silent-fallback-catch`'s job.
-    expect(
-      lint(`router.replace({ path }).catch(() => {})`, ONLY_TRY_CATCH),
-    ).toEqual([])
+    expect(lint(`router.replace({ path }).catch(() => {})`, ONLY_TRY_CATCH)).toEqual([])
   })
 
   it('does not fire on a method literally named catch', () => {
@@ -520,7 +518,11 @@ describe('local/no-try-catch', () => {
     // the difference is fixtures and prose. A rule that matched text would
     // have pinned those as debt.
     expect(
-      lint(`const doc = 'try { go() } catch { return null }' // try/catch is banned`, ONLY_TRY_CATCH),
+      lint(
+        `const doc = 'try { go() } catch { return null }' // try/catch is banned`,
+        ONLY_TRY_CATCH,
+      ),
     ).toEqual([])
   })
 })
+

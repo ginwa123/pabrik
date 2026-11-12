@@ -1,42 +1,1248 @@
 {
   "src/App.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/__tests__/AddMemoryDialog.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/AgentChatView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/AgentView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/App.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 20
+    }
+  },
+  "src/__tests__/AppLayout.agentToolsFetchOnView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 17
+    }
+  },
+  "src/__tests__/AppLayout.backForwardReconcile.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/AppLayout.chatClickUrlOverwrite.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/AppLayout.chatPathWorkspaceAdoption.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/AppLayout.chatSuffixRoundTrip.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/AppLayout.chatview.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/AppLayout.codeEditorChatSwitch.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/AppLayout.createElement.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 13
+    }
+  },
+  "src/__tests__/AppLayout.designChatDialog.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/AppLayout.kanban.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/AppLayout.kanbanChatTab.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/AppLayout.kanbanMoveGate.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/AppLayout.simplifyUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 13
+    }
+  },
+  "src/__tests__/AppLayout.sortUrlRoundTrip.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 13
+    }
+  },
+  "src/__tests__/AppLayout.standardTaskChat.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/AppLayout.taskClickUrlOverwrite.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/AppLayout.urlPersist.designItem.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 29
+    }
+  },
+  "src/__tests__/AppLayout.urlPersist.designPage.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 30
+    }
+  },
+  "src/__tests__/AppLayout.urlPersist.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/AppLayout.workspaceSwitcherUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/ChatView.agentErrorPersistence.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/ChatView.agentIdentity.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/ChatView.centerDiffToolbar.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/ChatView.characterization.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/ChatView.floatingComposer.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/ChatView.gitStatusCache.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/ChatView.initializing.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/ChatView.profileCascade.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/ChatView.profilePickerScope.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/ChatView.stackingContainment.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/ChatView.stopSession.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/ChatView.updatePlan.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/ChatView.usedTools.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/ChatsList.activeFromUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/ChatsList.activeFromUrlReactive.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/ChatsList.bootTitle.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/ChatsList.contextMenu.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/ChatsList.emptyRefresh.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 10
+    }
+  },
+  "src/__tests__/ChatsList.lastHumanTouched.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/ChatsList.noDeleteX.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/ChatsList.pinned.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/ChatsList.prConflict.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/ChatsList.statusBadge.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/ChatsList.touchedLoop.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/ChatsList.workspaceScoped.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/CompactionCard.json.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/DesignChatDialog.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/DesignPageRow.activeFromUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/DesignPageRow.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/DesignView.endToEnd.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/DesignView.gestureCapture.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/DesignView.groupDrag.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/DesignView.handPan.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/DesignView.reparent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/DesignView.shiftClick.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/DesignView.shortcut.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/DesignView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/DesignView.undoHidden.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/DocumentsFolders.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/DocumentsList.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/DocumentsView.html.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/DocumentsView.office.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/DocumentsView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/FileInput.autofocus.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/FileInput.documents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FileInput.hideQueueButton.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FileInput.initializing.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FileInput.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/FileInput.stopButton.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FilePickerDialog.navigation.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FilePickerDialog.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FilePickerDialog.tabs.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/FilePickerDialog.windows.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/GitBaseBranchSelect.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanCard.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanCardAsyncMedia.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/KanbanColumn.columnScrollRestore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanColumn.runAllAgents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanColumn.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/KanbanColumn.stopAllAgents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanDependsInput.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanDescriptionEditor.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 13
+    }
+  },
+  "src/__tests__/KanbanPrList.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanSettingsView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanTagsInput.autocomplete.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/KanbanTagsInput.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.autocomplete.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.commitSplit.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.createAttachments.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.creatingGuard.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.edit.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.profile.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.runAgent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.skill.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.startAgent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanTaskDetailDialog.useGitWorktree.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/KanbanView.createAndRun.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 26
+    }
+  },
+  "src/__tests__/KanbanView.createWithImages.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/KanbanView.rowMode.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/KanbanView.runAgentFromMenu.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/KanbanView.runAllAgents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/KanbanView.sortByApi.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/KanbanView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/KanbanView.startAgent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 11
+    }
+  },
+  "src/__tests__/KanbanView.stopAllAgents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/LayersPanel.reorder.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/MarkdownDescription.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/McpServerModal.stdio.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/MembersSection.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/__tests__/MemoryDetail.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/MemoryList.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/MergeBox.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/OfficeDocumentEditor.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/PabrikConfigEditor.autosaveWindow.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/PabrikConfigEditor.modes.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/PabrikConfigEditor.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 38
+    }
+  },
+  "src/__tests__/PrChecksPanel.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/ProbeWorkspaceId.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/ProjectsList.expandedNoActiveBg.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/PropertiesPanel.htmlSave.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/SecretAutocomplete.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/SecretsSection.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/Sidebar.agentDirectChat.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/Sidebar.deleteDesignPageConfirm.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 11
+    }
+  },
+  "src/__tests__/Sidebar.goToSettings.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/Sidebar.newChat.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/Sidebar.switcher.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/SidebarDiffPanel.checksTab.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/StandardTaskChatView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/SubAgentPeekPanel.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/ToolsSection.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/WorkspaceItem.activeFromUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/WorkspaceItemTaskCard.tags.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/WorkspaceMemoriesPanel.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/WorkspaceSettingsView.agentSections.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/WorkspaceSwitcher.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/_helpers/sseClientHarness.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/api-agent-knowledge-content.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/apiDeleteAgent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/apiDesign.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/apiFetchTimeout.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/apiFolderWorkspace.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/apiGetChats.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/apiGitWorkspace.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/apiKanbanDependencies.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/apiKanbanTagSuggestions.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/apiLocalMemories.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/apiMemories.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/apiReparent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/apiTestLlmProfile.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/apiWorkspaceMemories.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/chatGroupRoster.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/chatViewCompact.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/chatViewWorktree.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 11
+    }
+  },
+  "src/__tests__/chatsListGitWorktree.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 12
+    }
+  },
+  "src/__tests__/createPrDialog.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/__tests__/designLogger.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/__tests__/designSseStore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/__tests__/documents.store.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/documents.workspaceAndOpen.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/documentsSse.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/fakes/fakeTabChannel.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/frontendLogClient.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/getChats.slowList.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/iframeAutoResize.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/kanbanApi.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/kanbanApiCreateTask.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
   "src/__tests__/kanbanSse.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/__tests__/kanbanSseMirrorMove.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/__tests__/kanbanStore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/pabrikConfigFormThinking.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/secretsStore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/sendChatMessage.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/setup.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/sidebarActiveState.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/sidebarHandleSelectTaskUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 20
+    }
+  },
+  "src/__tests__/sidebarKanbanSortUrl.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/sidebarSingleActive.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/sseBus.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/sseBusOnStateChange.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/__tests__/sseClient.deeplog.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/__tests__/sseClient.lifecycle.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/sseClient.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/sseConnectedTimeout.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/sseStallRecovery.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/sseTabResync.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/sseTabSharing.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/tabTarget.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/tabsSettingsToggle.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/tabsStore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/unifiedSseAuthError.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/unifiedSseBuffer.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/unifiedSseDocuments.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/unifiedSseGitFileStage.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/unifiedSseGitPrState.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/useAgentDelete.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/useKanbanTagSuggestions.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/usePabrikConfig.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/useSubAgentPeek.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 14
+    }
+  },
+  "src/__tests__/views/ChatView.autofocusOnMount.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/views/ChatView.cacheFirstRemoteLoad.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 10
+    }
+  },
+  "src/__tests__/views/ChatView.cachedMountScrollBack.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/views/ChatView.fullEventStick.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 11
+    }
+  },
+  "src/__tests__/views/ChatView.scrollRestore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/views/ChatView.scrollRestoreLands.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/views/ChatView.skillCard.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/views/ChatView.spawnArgsIndex.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/views/ChatView.streamingStick.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    }
+  },
+  "src/__tests__/views/ChatView.tallBubbleAutoStick.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 13
+    }
+  },
+  "src/__tests__/views/chatViewCompactThought.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/workspaceItemPinnedReorder.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/workspaceItemTask.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/workspaceListItemDragDrop.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/workspacesStore.dependencies.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/workspacesStore.tags.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/workspacesStoreActiveWorkspace.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/workspacesStoreAddKanbanTask.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/workspacesStoreBatchGeometry.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/workspacesStoreDeleteDesignPage.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/workspacesStoreDesignPages.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/workspacesStoreFetchDedup.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/workspacesStoreFetchDesignElements.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/workspacesStoreGroup.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/__tests__/workspacesStoreInit.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/workspacesStoreLazyLoad.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/__tests__/workspacesStoreMoveBatch.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
+  "src/__tests__/workspacesStoreNormalizeTaskDates.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/workspacesStoreNormalizeTaskImageUrls.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/__tests__/workspacesStorePerColumnPagination.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/__tests__/workspacesStoreRenameDesignPage.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/workspacesStoreSessionEvents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/__tests__/workspacesStoreSingleGeometry.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 10
+    }
+  },
+  "src/__tests__/workspacesStoreTaskCache.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/__tests__/workspacesStoreTranslateResize.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 15
+    }
+  },
+  "src/__tests__/workspacesStoreUngroup.spec.ts": {
+    "local/no-any-unknown": {
       "count": 1
     }
   },
   "src/api/__tests__/backgroundProcesses.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/api/__tests__/gitEndpointsProbe.spec.ts": {
+    "local/no-any-unknown": {
       "count": 1
     }
   },
   "src/api/__tests__/sseSkills.spec.ts": {
     "local/no-try-catch": {
       "count": 1
+    }
+  },
+  "src/api/__tests__/taskMedia.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/api/__tests__/terminalApi.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
     }
   },
   "src/api/agentKanbans.ts": {
@@ -49,22 +1255,43 @@
       "count": 1
     }
   },
+  "src/api/chatHistory.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
   "src/api/chatMessages.ts": {
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/api/client.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/api/config.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
       "count": 4
+    }
+  },
+  "src/api/designElements.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/api/documents.ts": {
+    "local/no-any-unknown": {
+      "count": 1
     }
   },
   "src/api/files.ts": {
@@ -86,6 +1313,9 @@
     }
   },
   "src/api/kanban.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
@@ -101,6 +1331,9 @@
     }
   },
   "src/api/sessionList.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
@@ -114,11 +1347,32 @@
     }
   },
   "src/api/sse.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-try-catch": {
       "count": 17
     }
   },
+  "src/api/sseEvents.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/api/taskMutations.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/api/taskRuns.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/api/tasks.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-try-catch": {
       "count": 2
     }
@@ -129,7 +1383,25 @@
     }
   },
   "src/components/FilePickerDialog.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/WorkerElapsedChip.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/__tests__/AppLayout.translateResize.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/__tests__/WorkerElapsedChip.spec.ts": {
+    "local/no-any-unknown": {
       "count": 1
     }
   },
@@ -138,6 +1410,11 @@
       "count": 1
     },
     "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/appLayout/codeEditorUrl.ts": {
+    "local/no-any-unknown": {
       "count": 1
     }
   },
@@ -161,9 +1438,19 @@
       "count": 1
     }
   },
+  "src/components/appLayout/useAppLayoutPumps.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/appLayout/useAppLayoutRouteSync.ts": {
     "local/no-try-catch": {
       "count": 3
+    }
+  },
+  "src/components/appLayout/useAppLayoutUrlState.ts": {
+    "local/no-any-unknown": {
+      "count": 1
     }
   },
   "src/components/appLayout/useChatSessionCwd.ts": {
@@ -171,8 +1458,18 @@
       "count": 1
     }
   },
+  "src/components/appLayout/useDesignPanel.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
   "src/components/chat/ChatScrollSlider.vue": {
     "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/chat/__tests__/MermaidDiagram.spec.ts": {
+    "local/no-any-unknown": {
       "count": 1
     }
   },
@@ -193,6 +1490,9 @@
     }
   },
   "src/components/design/PropertiesPanel.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 2
     },
@@ -200,8 +1500,48 @@
       "count": 1
     }
   },
+  "src/components/design/__tests__/AddDesignElementDialog.create.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/design/__tests__/DesignElement.drag.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 85
+    }
+  },
+  "src/components/design/__tests__/DesignView.nudge.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/components/design/__tests__/DesignView.pageSync.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/components/design/__tests__/DesignView.pinch.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/design/__tests__/DesignView.secondGroupDrag.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 9
+    }
+  },
+  "src/components/design/__tests__/DesignView.translate.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 14
+    }
+  },
   "src/components/dialogs/AddMemoryDialog.vue": {
     "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/components/dialogs/AgentKnowledgeDialog.spec.ts": {
+    "local/no-any-unknown": {
       "count": 1
     }
   },
@@ -218,6 +1558,31 @@
       "count": 3
     }
   },
+  "src/components/file/FileInput.search.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/file/FileInput.skillPicker.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/components/file/FileInput.slashMenu.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/components/file/FileInput.toolPicker.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/components/file/FileInput.toolPickerMcp.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
   "src/components/file/FileInput.vue": {
     "local/no-try-catch": {
       "count": 2
@@ -226,9 +1591,19 @@
       "count": 1
     }
   },
+  "src/components/file/FolderExplorer.contextMenu.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/file/FolderExplorer.vue": {
     "local/no-try-catch": {
       "count": 1
+    }
+  },
+  "src/components/filePicker/filePickerRows.ts": {
+    "local/no-any-unknown": {
+      "count": 5
     }
   },
   "src/components/git/GitChanges.vue": {
@@ -262,6 +1637,11 @@
       "count": 1
     }
   },
+  "src/components/kanban/KanbanDescriptionEditor.search.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/components/kanban/KanbanDescriptionEditor.vue": {
     "local/no-silent-fallback-catch": {
       "count": 1
@@ -274,6 +1654,9 @@
     }
   },
   "src/components/kanban/KanbanPrList.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     },
@@ -286,7 +1669,20 @@
       "count": 2
     }
   },
+  "src/components/kanban/KanbanTaskDetailDialog.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/kanban/KanbanTaskRow.elapsed.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/components/kanban/KanbanView.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-silent-fallback-catch": {
       "count": 3
     },
@@ -300,6 +1696,36 @@
     },
     "local/no-try-catch": {
       "count": 1
+    }
+  },
+  "src/components/kanban/kanbanAgentOutcome.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/components/kanban/kanbanBoardLoad.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/kanban/kanbanBoardUrl.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/kanban/useKanbanBoardView.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/components/kanban/useKanbanPanels.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/components/kanban/useKanbanPrs.ts": {
+    "local/no-any-unknown": {
+      "count": 4
     }
   },
   "src/components/memory/MemoryDetail.vue": {
@@ -329,6 +1755,9 @@
     }
   },
   "src/components/pabrik/PabrikConfigEditor.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -344,12 +1773,25 @@
       "count": 3
     }
   },
+  "src/components/preview/Bash.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/preview/CompactionCard.vue": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-try-catch": {
       "count": 1
     },
     "max-lines": {
       "count": 1
+    }
+  },
+  "src/components/preview/Glob.vue": {
+    "local/no-any-unknown": {
+      "count": 3
     }
   },
   "src/components/preview/PreviewContentRenderer.vue": {
@@ -358,13 +1800,54 @@
     }
   },
   "src/components/preview/ShellTool.vue": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/components/preview/SkillsSettings.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/preview/UpdateActivity.vue": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
   "src/components/preview/UseSkill.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-try-catch": {
       "count": 1
+    }
+  },
+  "src/components/preview/__tests__/Glob.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/preview/__tests__/ShellTool.backgroundCompletion.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/preview/__tests__/ShellTool.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/preview/__tests__/SkillsSettings.url.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/session/__tests__/SessionTabStrip.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
     }
   },
   "src/components/settings/SettingsShell.vue": {
@@ -395,17 +1878,46 @@
       "count": 1
     }
   },
+  "src/components/shell/__tests__/SkillDetail.edit.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/shell/__tests__/SkillDetail.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/AddSkill.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/AskUser.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/components/tool_outputs/EditSkill.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/GenerateImage.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/GetPlan.vue": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -413,7 +1925,20 @@
       "count": 2
     }
   },
+  "src/components/tool_outputs/KanbanList.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/KanbanMove.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/ListAgents.vue": {
+    "local/no-any-unknown": {
+      "count": 8
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -422,11 +1947,22 @@
     }
   },
   "src/components/tool_outputs/ListDirectory.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/components/tool_outputs/ListSearchProviders.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/LoadMemory.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -435,6 +1971,9 @@
     }
   },
   "src/components/tool_outputs/McpTool.vue": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
       "count": 1
     }
@@ -445,6 +1984,9 @@
     }
   },
   "src/components/tool_outputs/PresentFiles.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 5
     },
@@ -452,7 +1994,15 @@
       "count": 1
     }
   },
+  "src/components/tool_outputs/ProgressiveTool.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/ReadCompactedMessages.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -460,7 +2010,15 @@
       "count": 1
     }
   },
+  "src/components/tool_outputs/ReadFile.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/ReadWorkspaceSession.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -471,7 +2029,20 @@
       "count": 1
     }
   },
+  "src/components/tool_outputs/RemoveFile.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/RemoveSkill.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/SaveMemory.vue": {
+    "local/no-any-unknown": {
+      "count": 8
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -479,7 +2050,35 @@
       "count": 2
     }
   },
+  "src/components/tool_outputs/Search.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/SearchSkills.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/SetGitWorktree.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/SetPullRequest.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/SkillList.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/components/tool_outputs/SpawnSubAgent.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -488,6 +2087,9 @@
     }
   },
   "src/components/tool_outputs/TextReplace.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -495,7 +2097,15 @@
       "count": 1
     }
   },
+  "src/components/tool_outputs/ToolCard.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/components/tool_outputs/UpdatePlan.vue": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -504,6 +2114,9 @@
     }
   },
   "src/components/tool_outputs/UsedTools.vue": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -512,11 +2125,17 @@
     }
   },
   "src/components/tool_outputs/WebSearch.vue": {
+    "local/no-any-unknown": {
+      "count": 6
+    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/components/tool_outputs/WriteFile.vue": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -524,17 +2143,138 @@
       "count": 1
     }
   },
+  "src/components/tool_outputs/__tests__/AskUser.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/__tests__/GetPlan.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/components/tool_outputs/__tests__/KanbanList.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/KanbanMove.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/ListAgents.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/tool_outputs/__tests__/ListDirectory.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/ListDirectory.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/LoadMemory.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/PresentFiles.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/tool_outputs/__tests__/ReadFile.image.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/ReadFile.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/ReadFile.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/RemoveFile.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/SaveMemory.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/Search.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/SetGitWorktree.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/SetPullRequest.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/SpawnSubAgent.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/components/tool_outputs/__tests__/SpawnSubAgent.successArgs.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/components/tool_outputs/__tests__/TextReplace.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/TextReplace.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/tool_outputs/__tests__/UpdatePlan.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
       "count": 3
+    }
+  },
+  "src/components/tool_outputs/__tests__/UsedTools.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/WebSearch.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/__tests__/WriteFile.inprogress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
     }
   },
   "src/components/tool_outputs/_shared/DiffView.vue": {
@@ -548,16 +2288,47 @@
     }
   },
   "src/components/tool_outputs/_shared/ToolParameters.vue": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
       "count": 2
     }
   },
+  "src/components/tool_outputs/_shared/parsers/internal.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/components/tool_outputs/_shared/parsers/progressive.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/_shared/parsers/skills.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/tool_outputs/_shared/parsers/webSearch.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
   "src/components/tool_outputs/_shared/toolOutputParser.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
       "count": 5
+    }
+  },
+  "src/components/tool_outputs/_shared/toolSummary.ts": {
+    "local/no-any-unknown": {
+      "count": 3
     }
   },
   "src/components/views/AgentView.vue": {
@@ -580,6 +2351,9 @@
     }
   },
   "src/components/views/ChatsList.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 9
     },
@@ -640,12 +2414,138 @@
       "count": 1
     }
   },
+  "src/components/views/__tests__/ChatView.authorBadge.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/views/__tests__/ChatView.backgroundCompletion.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/ChatView.centerSync.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/ChatView.commandOutputLive.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/components/views/__tests__/ChatView.openInEditorButton.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/components/views/__tests__/ChatView.skillsLive.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/views/__tests__/ChatView.staleDiffGuard.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/components/views/__tests__/CodeEditor.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/CodeViewerStage.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/ConversationPanel.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/views/__tests__/DiffCommentBox.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.batch.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.chrome.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.commits.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.conversation.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.counts.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.list.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.prConflict.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffPanel.tabs.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffView.color.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/components/views/__tests__/SidebarDiffView.split.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/views/__tests__/useChatRightSidebar.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/components/views/__tests__/wholeFileDiff.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/components/views/chat_right_sidebar/ChatRightSidebar.vue": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -654,6 +2554,9 @@
     }
   },
   "src/components/views/chat_right_sidebar/DiffCommentBox.vue": {
+    "local/no-any-unknown": {
+      "count": 5
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -662,6 +2565,9 @@
     }
   },
   "src/components/views/chat_right_sidebar/SidebarDiffPanel.vue": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 5
     }
@@ -680,6 +2586,9 @@
     }
   },
   "src/components/views/chat_right_sidebar/TerminalTab.vue": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -719,6 +2628,9 @@
     }
   },
   "src/components/views/chat_view/useChatMessagePresentation.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -727,6 +2639,9 @@
     }
   },
   "src/components/views/chat_view/useChatPagination.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 6
     },
@@ -735,6 +2650,9 @@
     }
   },
   "src/components/views/chat_view/useChatSessionRuntime.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 8
     },
@@ -743,6 +2661,9 @@
     }
   },
   "src/components/views/chat_view/useChatSse.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 2
     }
@@ -755,6 +2676,21 @@
   "src/components/views/chat_view/useChatWorktree.ts": {
     "local/no-try-catch": {
       "count": 2
+    }
+  },
+  "src/components/views/chatsList/chatsListRows.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/components/workspace/DocumentsList.vue": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/components/workspace/OfficeDocumentEditor.vue": {
+    "local/no-any-unknown": {
+      "count": 1
     }
   },
   "src/components/workspace/WorkspaceItem.vue": {
@@ -775,6 +2711,21 @@
       "count": 1
     }
   },
+  "src/composables/__tests__/useChatScrollRestore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/composables/__tests__/useKanbanColumnScrollRestore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/composables/__tests__/useKanbanScrollRestore.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/composables/useAgentDelete.ts": {
     "local/no-try-catch": {
       "count": 1
@@ -789,6 +2740,9 @@
     }
   },
   "src/composables/useCodeEditorSession.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -796,7 +2750,20 @@
       "count": 6
     }
   },
+  "src/composables/useCurrentMainView.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/composables/useDebouncedRunner.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/composables/useDesignHandlers.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -805,6 +2772,9 @@
     }
   },
   "src/composables/useDesignHistory.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
@@ -823,6 +2793,9 @@
     }
   },
   "src/composables/useKanbanScrollRestore.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -839,6 +2812,9 @@
     }
   },
   "src/composables/usePabrikConfig.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -852,11 +2828,27 @@
     }
   },
   "src/composables/useSubAgentPeek.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/composables/useTabShortcuts.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/composables/useTaskActions.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
   "src/helpers/VirtualScroller.vue": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -867,7 +2859,110 @@
       "count": 1
     }
   },
+  "src/helpers/__tests__/VirtualScroller.scrollToPosition.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/helpers/__tests__/buildTaskUrlQuery.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/helpers/__tests__/chatHistoryRetry.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/chatViewAtBottomStick.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 6
+    }
+  },
+  "src/helpers/__tests__/folderDiffCache.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/gitStatusCache.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/subagentProgress.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerBuffer.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerContentObserver.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerFullViewport.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerGlitchAudit.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerPerfWiring.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerPrependDrift.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerScrollAnchor.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerStableKeys.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerTailGap.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 5
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerTallBubbleAutoStick.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/__tests__/virtualScrollerTransform.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/appUrl.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/helpers/askUserBlock.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    }
+  },
   "src/helpers/authMe.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -875,16 +2970,42 @@
       "count": 5
     }
   },
+  "src/helpers/buildItemIdWithChat.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    }
+  },
+  "src/helpers/chatHistoryRetry.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/helpers/designLogger.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
     "local/no-try-catch": {
       "count": 4
     }
   },
+  "src/helpers/effectRuntime.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/helpers/extractParam.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
     "local/no-try-catch": {
+      "count": 2
+    }
+  },
+  "src/helpers/fileAttachments.ts": {
+    "local/no-any-unknown": {
       "count": 2
     }
   },
@@ -894,6 +3015,9 @@
     }
   },
   "src/helpers/gitStatusCache.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -901,7 +3025,20 @@
       "count": 3
     }
   },
+  "src/helpers/iframeAutoResize.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/helpers/isBackgroundCommandOutput.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
   "src/helpers/markdown.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -914,7 +3051,15 @@
       "count": 2
     }
   },
+  "src/helpers/officeDocument.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
   "src/helpers/parseSpawnSubAgentArgs.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -923,26 +3068,46 @@
     }
   },
   "src/helpers/prStatusCache.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/helpers/renderResponse.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
       "count": 2
     }
   },
   "src/helpers/scrollLogger.ts": {
+    "local/no-any-unknown": {
+      "count": 8
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
+  "src/helpers/skillFilter.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/helpers/sseBus.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
       "count": 5
     }
   },
   "src/helpers/sseClient.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
       "count": 10
     },
@@ -951,11 +3116,30 @@
     }
   },
   "src/helpers/sseTabChannel.ts": {
+    "local/no-any-unknown": {
+      "count": 13
+    },
     "local/no-try-catch": {
       "count": 4
     }
   },
+  "src/helpers/tabPersistence.ts": {
+    "local/no-any-unknown": {
+      "count": 4
+    },
+    "local/no-try-catch": {
+      "count": 1
+    }
+  },
+  "src/helpers/tabTarget.ts": {
+    "local/no-any-unknown": {
+      "count": 18
+    }
+  },
   "src/helpers/taskMediaCache.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -963,7 +3147,15 @@
       "count": 6
     }
   },
+  "src/helpers/univerBootstrap.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    }
+  },
   "src/helpers/unwrapToolOutput.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -985,6 +3177,9 @@
     }
   },
   "src/helpers/workspacesCache.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -993,6 +3188,9 @@
     }
   },
   "src/router/index.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -1001,6 +3199,9 @@
     }
   },
   "src/stores/agentToolToggle.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    },
     "local/no-try-catch": {
       "count": 1
     }
@@ -1018,9 +3219,24 @@
       "count": 2
     }
   },
+  "src/stores/designSse.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
+  "src/stores/documentTree.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/stores/documents.ts": {
     "local/no-try-catch": {
       "count": 4
+    }
+  },
+  "src/stores/explorerExpansion.ts": {
+    "local/no-any-unknown": {
+      "count": 2
     }
   },
   "src/stores/kanbanSse.ts": {
@@ -1029,6 +3245,9 @@
     }
   },
   "src/stores/recentFolders.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -1036,7 +3255,20 @@
       "count": 2
     }
   },
+  "src/stores/tabFunnel.ts": {
+    "local/no-any-unknown": {
+      "count": 3
+    }
+  },
+  "src/stores/tabs.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/stores/tabsStorage.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -1055,6 +3287,9 @@
     }
   },
   "src/stores/workspaces/designElements.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 2
     }
@@ -1065,11 +3300,17 @@
     }
   },
   "src/stores/workspaces/initActions.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 1
     }
   },
   "src/stores/workspaces/itemCrud.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-try-catch": {
       "count": 8
     }
@@ -1085,6 +3326,9 @@
     }
   },
   "src/stores/workspaces/kanbanTasks.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 2
     }
@@ -1095,6 +3339,9 @@
     }
   },
   "src/stores/workspaces/normalize.ts": {
+    "local/no-any-unknown": {
+      "count": 7
+    },
     "local/no-silent-fallback-catch": {
       "count": 1
     },
@@ -1116,6 +3363,9 @@
     }
   },
   "src/stores/workspaces/taskCrud.ts": {
+    "local/no-any-unknown": {
+      "count": 2
+    },
     "local/no-try-catch": {
       "count": 4
     }
@@ -1130,7 +3380,15 @@
       "count": 4
     }
   },
+  "src/sync/ChatEngineDb.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    }
+  },
   "src/sync/IndexedDbStore.ts": {
+    "local/no-any-unknown": {
+      "count": 1
+    },
     "local/no-silent-fallback-catch": {
       "count": 2
     },
@@ -1138,19 +3396,19 @@
       "count": 2
     }
   },
-  "src/views/LoginView.vue": {
-    "local/no-try-catch": {
+  "src/sync/TaskEngineDb.ts": {
+    "local/no-any-unknown": {
       "count": 3
     }
   },
-  "src/helpers/tabPersistence.ts": {
-    "local/no-try-catch": {
-      "count": 1
+  "src/sync/__tests__/TaskEngineDb.spec.ts": {
+    "local/no-any-unknown": {
+      "count": 2
     }
   },
-  "src/components/workspace/DocumentsList.vue": {
-    "max-lines": {
-      "count": 1
+  "src/views/LoginView.vue": {
+    "local/no-try-catch": {
+      "count": 3
     }
   }
 }
