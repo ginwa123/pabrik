@@ -76,14 +76,15 @@ export function useChatScrollRestore(
     if (el) writeSaved(el.scrollTop)
   }
 
-  let savedSnapshot: { key: string; value: number | null } | null = null
+  let savedSnapshot: { key: string; value: number | null } = {
+    key: keyRef.value,
+    value: readSaved(),
+  }
 
   const savedScrollTop = (): number | null => {
     const key = keyRef.value
-    if (savedSnapshot !== null && savedSnapshot.key === key) return savedSnapshot.value
-    const value = readSaved()
-    savedSnapshot = { key, value }
-    return value
+    if (savedSnapshot.key !== key) savedSnapshot = { key, value: readSaved() }
+    return savedSnapshot.value
   }
 
   let attachedEl: HTMLElement | null = null

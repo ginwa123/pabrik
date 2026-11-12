@@ -9,8 +9,6 @@ import VirtualScroller from '../VirtualScroller.vue'
 const VIEWPORT = 800
 const ROW = 200
 const COUNT = 100
-const MODEL_TOTAL = ROW * COUNT
-const BOTTOM = MODEL_TOTAL - VIEWPORT
 
 interface Item {
   id: string
@@ -36,7 +34,7 @@ Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
 })
 
 interface Exposed {
-  scrollToBottom: (behavior?: ScrollBehavior) => void
+  scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
   scrollToPosition: (scrollTop: number, behavior?: ScrollBehavior) => void
   effectiveRange: { start: number; end: number }
 }
@@ -61,16 +59,16 @@ async function settle(): Promise<void> {
 }
 
 describe('VirtualScroller — a programmatic scroll moves the rendered window with it', () => {
-  it('scrollToBottom renders the tail window without waiting for a scroll event', async () => {
+  it('scrollToIndex renders the target window without waiting for a scroll event', async () => {
     const { wrapper, el, vm } = mountScroller()
     await settle()
 
     expect(vm.effectiveRange.end).toBeLessThan(COUNT)
 
-    vm.scrollToBottom()
+    vm.scrollToIndex(95)
     await nextTick()
 
-    expect(el.scrollTop).toBe(BOTTOM)
+    expect(el.scrollTop).toBe(95 * ROW)
     expect(vm.effectiveRange.end).toBe(COUNT)
     expect(vm.effectiveRange.start).toBeGreaterThan(COUNT - 20)
     wrapper.unmount()

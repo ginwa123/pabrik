@@ -837,7 +837,7 @@ const bottomScrollTop = (): number => {
 const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
   if (!containerRef.value) return
   const target = bottomScrollTop()
-  writeScrollTop(target, behavior)
+  containerRef.value.scrollTo({ top: target, behavior })
   // An explicit jump to the bottom is the strongest possible statement that the reader is following
   // the tail, and the next measure pass has to honour it (see `settledBottom`). This is the gesture
   // behind the jump-to-bottom arrow, and it is the exact moment the reported bug used to be armed.
