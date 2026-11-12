@@ -1,14 +1,16 @@
 /** Per-user browser-storage namespacing (plan 2026-09-25, W5). The bug these specs pin: every
  * localStorage key is origin-global, so two users on the same browser profile share one key space
  * and B inherits A's cached workspace list / active chat / open tabs. */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeLocalStorageStub } from './helpers'
+import { getAuthMeCached } from '../helpers/authMe'
 import {
   getCurrentUserId,
   isForeignScopedKey,
   isIdentityResolved,
   purgeForeignScopedKeys,
   resetUserScopeForTest,
+  seedIdentityFromCache,
   setCurrentUserId,
   userIdFromScopedKey,
   userScopedKey,
@@ -135,5 +137,69 @@ describe('purgeForeignScopedKeys', () => {
     localStorage.setItem(userScopedKey('active-chat-id'), 'chat-a')
     expect(purgeForeignScopedKeys()).toBe(0)
     expect(localStorage.getItem('active-chat-id::u:user_a')).toBe('chat-a')
+  })
+})
+
+/** The boot race this pins: a store reads its user-scoped key at creation, which happens
+ * before the router guard's async `/api/auth/me` returns. The identity therefore has to be
+ * adopted from the CACHED response, synchronously, or the read and the write disagree. */
+describe('seedIdentityFromCache', () => {
+  function okResponse(body: unknown): Response {
+    return { ok: true, status: 200, json: async () => body } as Response
+  }
+
+  beforeEach(() => {
+    resetUserScopeForTest()
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: makeLocalStorageStub(),
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('adopts the signed-in user from the cached /me before the guard resolves', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        okResponse({
+          authenticated: true,
+          auth_enabled: true,
+          user: { id: 'user_a', email: 'a@example.com', name: 'A', role: 'admin' },
+        }),
+      ),
+    )
+    await getAuthMeCached()
+    resetUserScopeForTest()
+
+    seedIdentityFromCache()
+
+    expect(getCurrentUserId()).toBe('user_a')
+    expect(userScopedKey('pabrik-tabs:v1:win1')).toBe('pabrik-tabs:v1:win1::u:user_a')
+  })
+
+  it('leaves the identity unresolved when nothing is cached', () => {
+    seedIdentityFromCache()
+
+    expect(isIdentityResolved()).toBe(false)
+    expect(userScopedKey('pabrik-tabs:v1:win1')).toBe('pabrik-tabs:v1:win1')
+  })
+
+  it('resolves to no identity when the cached /me says signed out', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse({ authenticated: false, auth_enabled: true })),
+    )
+    await getAuthMeCached()
+    resetUserScopeForTest()
+
+    seedIdentityFromCache()
+
+    expect(isIdentityResolved()).toBe(true)
+    expect(getCurrentUserId()).toBeNull()
+    expect(userScopedKey('pabrik-tabs:v1:win1')).toBe('pabrik-tabs:v1:win1')
   })
 })
