@@ -15,11 +15,14 @@
 # runtime finds the bundle beside `pabrik`; a real `rg` on PATH still works, and
 # PABRIK_RG_BIN overrides both.
 #
-# It also installs `pabrik-fs-<triple>` as `$BINDIR/pabrik-fs`: the rustfs
-# object store that holds document bodies. The backend starts it automatically
-# on a free loopback port and stops it on shutdown, so there is no service to
-# configure; the process shows up as `pabrik-fs` in a task manager. A triple
-# upstream has no build for (x86_64 macOS) falls back to the filesystem store.
+# The object store is opt-in. `pabrik-fs-<triple>` is the rustfs binary that
+# holds document bodies, and it is 277 MB on Linux / 235 MB on macOS against
+# 9.5 MB for pabrik itself, so a default install leaves it out and document
+# bodies stay in the filesystem store. `--with-fs` (or PABRIK_WITH_FS=1)
+# installs it as `$BINDIR/pabrik-fs`: the backend then starts it on a free
+# loopback port and stops it on shutdown, so there is no service to configure
+# and the process shows up as `pabrik-fs` in a task manager. A triple upstream
+# has no build for (x86_64 macOS), so that cell keeps the filesystem store.
 #
 # Env overrides:
 #   PABRIK_VERSION   release tag, default "ci-latest"
@@ -28,13 +31,15 @@
 #   PABRIK_BASE_URL  full base URL for the release assets (default
 #                    https://github.com/$PABRIK_REPO/releases/download/$PABRIK_VERSION).
 #                    Tests point it at a local file:// staging dir.
+#   PABRIK_WITH_FS=1  also install the bundled object store (`pabrik-fs`);
+#                    same as --with-fs. Default: not installed.
 #   PABRIK_SKIP_DESKTOP_ENTRY=1  skip the Linux .desktop launcher fetch
 #                    (hermetic/offline installs and tests).
 #   PABRIK_NO_MODIFY_PATH=1  print the export line instead of appending
 #                    it to ~/.bashrc / ~/.zshrc (CI, tests).
 #   PABRIK_DRY_RUN=1 print resolved asset URLs and exit (no download, no install)
 #
-# Flags: --help | --version TAG | --dir DIR | --system | --no-desktop | --uninstall
+# Flags: --help | --version TAG | --dir DIR | --system | --no-desktop | --with-fs | --uninstall
 #
 # Webapp cache: EVERY run refreshes the shipped UI a bare `pabrik` serves
 # (`$BINDIR/html`) from the `pabrik-html-<triple>.tar.gz` release asset --
@@ -58,10 +63,15 @@ BINDIR="${PABRIK_BINDIR:-}"
 SYSTEM=0
 WITH_DESKTOP=1
 UNINSTALL=0
+WITH_FS="${PABRIK_WITH_FS:-0}"
+case "$WITH_FS" in
+    1|[Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]) WITH_FS=1 ;;
+    *) WITH_FS=0 ;;
+esac
 
 usage() {
     sed -n '1,/^$/p' "$0" | sed 's/^# \{0,1\}//' || true
-    echo "Usage: install.sh [--dir DIR] [--system] [--no-desktop] [--version TAG] [--uninstall]"
+    echo "Usage: install.sh [--dir DIR] [--system] [--no-desktop] [--with-fs] [--version TAG] [--uninstall]"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -71,6 +81,7 @@ while [[ $# -gt 0 ]]; do
         --dir) BINDIR="${2:?--dir needs a directory}"; shift 2 ;;
         --system) SYSTEM=1; shift ;;
         --no-desktop) WITH_DESKTOP=0; shift ;;
+        --with-fs) WITH_FS=1; shift ;;
         --uninstall) UNINSTALL=1; shift ;;
         *) echo "Unknown flag: $1 (see --help)" >&2; exit 1 ;;
     esac
@@ -144,12 +155,14 @@ BIN_PABRIK="${BINDIR}/pabrik"
 BIN_DESKTOP="${BINDIR}/pabrik-desktop"
 
 if [[ "${PABRIK_DRY_RUN:-0}" -eq 1 ]]; then
-    echo "repo=${REPO} tag=${TAG} triple=${TRIPLE} bindir=${BINDIR}"
+    echo "repo=${REPO} tag=${TAG} triple=${TRIPLE} bindir=${BINDIR} with_fs=${WITH_FS}"
     echo "${BASE_URL}/pabrik-${TRIPLE}"
     echo "${BASE_URL}/pabrik-desktop-${TRIPLE}"
     echo "${BASE_URL}/pabrik-html-${TRIPLE}.tar.gz"
     echo "${BASE_URL}/rg-pabrik-${TRIPLE}"
-    echo "${BASE_URL}/pabrik-fs-${TRIPLE}"
+    if [[ "$WITH_FS" -eq 1 ]]; then
+        echo "${BASE_URL}/pabrik-fs-${TRIPLE}"
+    fi
     exit 0
 fi
 
@@ -320,22 +333,36 @@ install_bundled_rg() {
     echo "Installed the bundled ripgrep into ${BINDIR}/rg-pabrik."
 }
 
-# The object store, beside the pabrik binary. Document bodies live in an
-# S3-compatible store and the backend pabrik supervises is rustfs, so the
-# install carries it: the runtime finds `pabrik-fs` next to the executable,
-# starts it on a free loopback port, and stops it on shutdown. The name is
-# `pabrik-fs`, not `rustfs`, so a task manager shows `pabrik-fs` and a
+# The object store, beside the pabrik binary, and only when the user asked for
+# it: the rustfs binary is 277 MB, so the default install stays small and keeps
+# document bodies in the filesystem store. `--with-fs` / PABRIK_WITH_FS=1 turns
+# the rustfs runtime on by putting it where the resolver looks first. The name
+# is `pabrik-fs`, not `rustfs`, so a task manager shows `pabrik-fs` and a
 # `--system` install never shadows a rustfs the user installed.
 # Best-effort: a triple upstream has no build for (x86_64 macOS) or a release
 # published before the asset existed still installs a working pabrik, which
-# then falls back to the filesystem store.
+# then keeps the filesystem store.
 install_bundled_rustfs() {
+    if [[ "$WITH_FS" -ne 1 ]]; then
+        return 0
+    fi
     if ! download "${BASE_URL}/pabrik-fs-${TRIPLE}" "${TMPDIR}/pabrik-fs" 2>/dev/null; then
-        echo "warning: no bundled object store asset for ${TRIPLE} -- documents fall back to the filesystem store" >&2
+        echo "warning: no bundled object store asset for ${TRIPLE} -- documents stay in the filesystem store" >&2
         return 0
     fi
     install -m 0755 "${TMPDIR}/pabrik-fs" "${BINDIR}/pabrik-fs"
     echo "Installed the bundled object store into ${BINDIR}/pabrik-fs."
+}
+
+# Which storage runtime the install leaves behind, so the user learns the
+# alternative without reading the header.
+report_object_store() {
+    if [[ "$WITH_FS" -eq 1 ]]; then
+        echo "Object store: ${BINDIR}/pabrik-fs (rustfs runtime)."
+    else
+        echo "Object store: not installed -- document bodies use the filesystem store."
+        echo "  Re-run with --with-fs to add the rustfs runtime."
+    fi
 }
 
 mkdir -p "$BINDIR"
@@ -373,9 +400,10 @@ if have_cmd cmp && [[ -f "$BIN_PABRIK" ]]; then
         # Same reasoning for rg: an install that predates the bundled
         # ripgrep has an up-to-date binary and still no `search`.
         install_bundled_rg
-        # And for the object store: an install that predates it has an
-        # up-to-date binary and still no rustfs to put document bodies in.
+        # And for the object store: an install that asked for it with
+        # --with-fs gets it even when the binaries already match.
         install_bundled_rustfs
+        report_object_store
         exit 0
     fi
 fi
@@ -470,4 +498,5 @@ ensure_path
 
 echo "Installed: ${BIN_PABRIK}"
 [[ "$WITH_DESKTOP" -eq 1 ]] && echo "Installed: ${BIN_DESKTOP}"
+report_object_store
 echo "Run 'pabrik --help' to start. Desktop GUI: 'pabrik-desktop'."

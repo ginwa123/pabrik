@@ -1483,10 +1483,11 @@ jobs:
           ./scripts/stage-bundled-ripgrep.ps1 -Target $env:TARGET -Dest "zig-out/bin/rg-pabrik.exe"
 
       - name: Stage bundled rustfs (Windows)
-        # Same reason as the POSIX step: the object store ships with the
-        # install so a user never starts a service by hand. It rides inside
-        # the desktop zip as `pabrik-fs.exe` (see the zip step) instead of a
-        # bare release asset, and the runtime finds it beside pabrik.exe.
+        # Same reason as the POSIX step: the runtime finds the object store
+        # beside pabrik.exe. It is published as its own
+        # `pabrik-fs-$TARGET.zip` (see the zip step), never inside the desktop
+        # zip, so a default install does not download ~90 MB of rustfs it
+        # never asked for.
         if: runner.os == 'Windows'
         shell: pwsh
         env:
@@ -1558,14 +1559,15 @@ jobs:
             echo "✗ zig-out/bin/rg-pabrik missing for $TARGET — the install would ship without a bundled ripgrep" >&2
             exit 1
           fi
-          # Bundled object store. `pabrik-fs-$TARGET` is the supervised rustfs
-          # the runtime starts; install.sh drops it beside the pabrik binary
-          # under the name `pabrik-fs`. Windows needs no separate asset (its
-          # pabrik-fs.exe rides inside the desktop zip), and a cell upstream
-          # has no build for (x86_64 macOS) simply publishes none — the
-          # runtime then falls back to the filesystem store.
+          # Bundled object store, published as its own asset on every cell:
+          # `pabrik-fs-$TARGET` (bare binary) on POSIX and
+          # `pabrik-fs-$TARGET.zip` on Windows. Nothing bundles it into a
+          # default download: install.sh / install.ps1 fetch it only when the
+          # user passes --with-fs / -WithFs. A cell upstream has no build for
+          # (x86_64 macOS) simply publishes none — the runtime then keeps the
+          # filesystem store.
           if [ "${RUNNER_OS:-}" = "Windows" ]; then
-            echo "→ pabrik-fs.exe ships inside pabrik-desktop-$TARGET.zip (no separate asset)"
+            echo "→ pabrik-fs-$TARGET.zip is produced by the Windows bundle step (never inside the desktop zip)"
           elif [ -f "zig-out/bin/pabrik-fs" ]; then
             cp "zig-out/bin/pabrik-fs" "$stage/pabrik-fs-$TARGET"
             chmod 0755 "$stage/pabrik-fs-$TARGET"
@@ -1669,19 +1671,20 @@ jobs:
           }
           Copy-Item -Force $rgSrc (Join-Path $tmp "rg-pabrik.exe")
           Write-Host "ok rg-pabrik.exe bundled"
-          # Bundled object store. Document bodies live in rustfs, and the
-          # runtime starts it as a child process; Install-Pabrik.ps1 drops
-          # this beside pabrik.exe, which is the resolver's first candidate.
-          # Named pabrik-fs.exe so Task Manager shows `pabrik-fs` and it can
-          # never collide with a rustfs the user installed. HARD GATE: without
-          # it the install falls back to the filesystem store.
+          # The object store ships as its OWN asset, never inside the desktop
+          # zip: `install.ps1 -WithFs` downloads it, and a default install
+          # skips ~90 MB nobody asked for. Named pabrik-fs.exe inside the zip
+          # so Install-Pabrik.ps1 drops it beside pabrik.exe, the resolver's
+          # first candidate. HARD GATE: without it the -WithFs path 404s.
           $fsSrc = "zig-out/bin/pabrik-fs.exe"
           if (-not (Test-Path $fsSrc)) {
-            Write-Error "pabrik-fs.exe missing at $fsSrc -- the zip would ship without the bundled object store; see the Stage bundled rustfs step log"
+            Write-Error "pabrik-fs.exe missing at $fsSrc -- the -WithFs asset would be empty; see the Stage bundled rustfs step log"
             exit 1
           }
-          Copy-Item -Force $fsSrc (Join-Path $tmp "pabrik-fs.exe")
-          Write-Host "ok pabrik-fs.exe bundled"
+          $fsZip = Join-Path $stage "pabrik-fs-$env:TARGET.zip"
+          if (Test-Path $fsZip) { Remove-Item $fsZip -Force }
+          Compress-Archive -Path $fsSrc -DestinationPath $fsZip -Force
+          Write-Host "ok pabrik-fs.exe published as $fsZip (outside the desktop zip)"
           # Setup script: makes the zip a setup package. The user extracts
           # and runs `powershell -ExecutionPolicy Bypass -File
           # Install-Pabrik.ps1` for a user-local install (LOCALAPPDATA, no

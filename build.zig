@@ -3666,13 +3666,30 @@ pub fn build(b: *std.Build) void {
     // when missing. The fetch script is idempotent — re-running on a
     // populated vendor/ is a fast no-op.
 
-    // The object store rides beside the binary, so a checkout behaves like an
-    // install: `./zig-out/bin/pabrik` starts rustfs and stops it on shutdown.
-    if (stageBundledRustfs(b)) |step| {
-        build_all_step.dependOn(step);
-        b.getInstallStep().dependOn(step);
+    // The object store is opt-in: staging it downloads a 115 MB upstream
+    // archive, so the default build leaves it out and documents keep the
+    // filesystem store. `-Dwith-fs` / PABRIK_WITH_FS=1 puts `pabrik-fs`
+    // beside the binary, so `./zig-out/bin/pabrik` starts rustfs.
+    const with_fs = b.option(
+        bool,
+        "with-fs",
+        "Download and stage the bundled rustfs object store (pabrik-fs) beside the binary; PABRIK_WITH_FS=1 does the same",
+    ) orelse envFlag(b, "PABRIK_WITH_FS");
+    if (with_fs) {
+        if (stageBundledRustfs(b)) |step| {
+            build_all_step.dependOn(step);
+            b.getInstallStep().dependOn(step);
+        }
     }
     // Default: same as `build:all`. Without this, `zig build` (no args) runs
     // the `install` step alone, which prints no summary on success.
     b.default_step = build_all_step;
+}
+
+fn envFlag(b: *std.Build, name: []const u8) bool {
+    const raw = b.graph.environ_map.get(name) orelse return false;
+    const value = std.mem.trim(u8, raw, " \t\r\n");
+    return std.mem.eql(u8, value, "1") or
+        std.ascii.eqlIgnoreCase(value, "true") or
+        std.ascii.eqlIgnoreCase(value, "yes");
 }

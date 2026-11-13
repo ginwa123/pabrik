@@ -112,15 +112,18 @@ if (Test-Path $rgSrc) {
     Write-Warning "rg-pabrik.exe not found in $SourceDir -- the search tool will need ripgrep on PATH."
 }
 
-# Bundled object store: document bodies live in rustfs, and the runtime
-# starts it as a child process. It lands beside pabrik.exe, the resolver's
-# first candidate. Named pabrik-fs.exe so Task Manager shows `pabrik-fs` and
-# it can never collide with a rustfs the user installed.
+# The object store is opt-in. The release zip no longer carries
+# pabrik-fs.exe; `irm install.ps1 -WithFs` downloads it separately and drops
+# it next to pabrik.exe, the resolver's first candidate. A checkout that ran
+# `zig build -Dwith-fs` has one in zig-out\bin, and it rides along. Named
+# pabrik-fs.exe so Task Manager shows `pabrik-fs` and it can never collide
+# with a rustfs the user installed.
 $fsSrc = Join-Path $SourceDir "pabrik-fs.exe"
 if (Test-Path $fsSrc) {
     Copy-Item -Force $fsSrc (Join-Path $binDir "pabrik-fs.exe")
+    Write-Output "Installed the object store to $(Join-Path $binDir 'pabrik-fs.exe')"
 } else {
-    Write-Warning "pabrik-fs.exe not found in $SourceDir -- documents fall back to the filesystem store."
+    Write-Output "No pabrik-fs.exe in $SourceDir -- documents use the filesystem store (>irm install.ps1 -WithFs adds the rustfs runtime)."
 }
 
 # Persistent html (Windows-only shipped static dir). The desktop
