@@ -55,6 +55,10 @@ const list_secrets_mod = pabrikcore.list_secrets;
 // Markdown task plan with - [ ] / - [x] checklist, persisted across iterations.
 const update_plan_mod = pabrikcore.update_plan;
 const get_plan_mod = pabrikcore.get_plan;
+// `compaction` — the agent compresses its own context window. Registered here
+// so it is in every session's tool list; the workspace's
+// `agent_auto_compaction` setting decides whether a call runs.
+const compaction_mod = pabrikcore.compaction;
 const list_agents_mod = pabrikcore.list_agents;
 const used_tools_mod = pabrikcore.used_tools;
 const run_skill_eval_mod = @import("../loop/run_skill_eval.zig");
@@ -90,6 +94,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // 2026-08-19 — session_plan tools (Task 4).
         update_plan_mod.update_plan_tool,
         get_plan_mod.get_plan_tool,
+        compaction_mod.compaction_tool,
         list_agents_mod.list_agents_tool,
         // used_tools: read-only introspection over this very list ("what
         // tools do I have"). Sub-agent-safe (NOT main-agent-only).
@@ -119,7 +124,7 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // no parameters and returns NAMES only — the value is substituted at
         // dispatch and never reaches a tool result.
         list_secrets_mod.list_secrets_tool,
-                // Workspace-scoped documents (Migration 098): one tool, four actions.
+        // Workspace-scoped documents (Migration 098): one tool, four actions.
         document_mod.document_markdown_tool,
         document_html_mod.document_html_tool,
         use_skill_mod.use_skill_tool,
@@ -190,6 +195,9 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // 2026-08-19-session-plan-agent-tool.md).
         .{ .name = "update_plan", .exec = tools.execUpdatePlan, .tool_def = update_plan_mod.update_plan_tool },
         .{ .name = "get_plan", .exec = tools.execGetPlan, .tool_def = get_plan_mod.get_plan_tool },
+        // `compaction` — the agent compacts its own context. Executed only when
+        // the workspace setting `agent_auto_compaction` is on.
+        .{ .name = "compaction", .exec = tools.execCompaction, .tool_def = compaction_mod.compaction_tool },
         .{ .name = "list_agents", .exec = tools.execListAgents, .tool_def = list_agents_mod.list_agents_tool },
         // used_tools: read-only introspection ("what tools do I have").
         // Available in every mode; the exec adapter resolves the

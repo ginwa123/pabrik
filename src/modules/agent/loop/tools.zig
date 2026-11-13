@@ -73,6 +73,9 @@ pub const execDelegateAgent = @import("../tools/delegate_agent.zig").execDelegat
 // persists across iterations and gets re-injected into the system prompt.
 pub const execUpdatePlan = @import("../tools/update_plan.zig").execUpdatePlan;
 pub const execGetPlan = @import("../tools/get_plan.zig").execGetPlan;
+// `compaction` — the agent compresses its own context window. Gated by the
+// workspace's `agent_auto_compaction` setting.
+pub const execCompaction = @import("../tools/compaction.zig").execCompaction;
 pub const execListAgents = @import("../tools/list_agents.zig").execListAgents;
 pub const execUsedTools = @import("../tools/used_tools.zig").execUsedTools;
 // 2026-08-28 — add_mcp_server agent tool (Step 3 of

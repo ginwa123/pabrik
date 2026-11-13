@@ -676,7 +676,10 @@ pub fn maybeCompactMessagesNew(
     };
     defer allocator.free(envelope);
 
-    _ = try deps.compactMessagesInMemory(
+    // The dependency returns the NEW list and owns nothing of ours, so this
+    // discard had to free it: production `compactMessageInMemoryNew` hands back
+    // the system message plus the handoff envelope, both freshly allocated.
+    var compacted_messages = try deps.compactMessagesInMemory(
         allocator,
         messages.*,
         envelope,
@@ -688,6 +691,8 @@ pub fn maybeCompactMessagesNew(
         logger,
         event_bus,
     );
+    for (compacted_messages.items) |*msg| msg.deinit(allocator);
+    compacted_messages.deinit(allocator);
     return true;
 }
 
@@ -1670,6 +1675,7 @@ fn mockCompactMessagesInMemory(
     _ = db;
     _ = io;
     _ = logger;
+    _ = messages;
     mock_state.compact_messages_in_memory_calls += 1;
     // Track the event_bus the caller passed so tests can assert on
     // null vs non-null wiring without spinning up the full singleton.
@@ -1681,10 +1687,10 @@ fn mockCompactMessagesInMemory(
     mock_state.last_compact_session_id = session_id;
     mock_state.last_compact_model = model;
     if (mock_state.compact_skip) return error.Skip;
-    // Return the messages unchanged. The test owns them — `messages.*` was
-    // passed in by value from `maybeCompactMessagesNew`, and we don't want
-    // to double-free or invalidate the test's `messages.items`.
-    return messages;
+    // Production frees the list it was handed and returns a fresh one, so this
+    // fake returns an EMPTY list: handing the caller the test's own items would
+    // make the caller's free a double free.
+    return std.ArrayList(agent.AgentMessage).empty;
 }
 
 /// The mock bundle wired into a `CompactDeps`. Pass this as the first arg

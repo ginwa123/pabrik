@@ -82,6 +82,7 @@ pub fn dispatchHeadless(
         .workspace_items => |a| try runWorkspaceItems(allocator, io, environment, a, log_file, db_request),
         .mcp_oauth => |a| try runMcpOAuth(allocator, io, environment, a, log_file, db_request),
         .mcp_add => |a| try runMcpAdd(allocator, io, environment, a, log_file, db_request),
+        .compaction => |a| try runCompaction(allocator, io, environment, a, log_file, db_request),
     }
     return true;
 }
@@ -517,6 +518,41 @@ fn runMcpAdd(
 
     const ok = std.mem.indexOf(u8, output, "\"success\":true") != null;
     backend.finish(if (ok) 0 else 1);
+}
+
+/// Boot the backend, run one compaction, print its JSON, tear down. The exit
+/// code is 1 when the workspace setting refused the run, so a shell can branch
+/// without parsing the object.
+fn runCompaction(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    environment: *const std.process.Environ.Map,
+    a: headless.args.CompactionArgs,
+    log_file: ?[]const u8,
+    db_request: db_target.Request,
+) !void {
+    var backend: headless.boot.Backend = undefined;
+    headless.boot.boot(&backend, allocator, io, environment, .{ .log_file = log_file, .db_request = db_request }) catch |err| {
+        std.log.err("headless: boot failed: {s}", .{@errorName(err)});
+        std.process.exit(1);
+    };
+
+    const out = headless.compaction.run(allocator, backend.ctx, a) catch |err| {
+        switch (err) {
+            error.UnknownSession => std.log.err("headless: unknown session '{s}'", .{a.session_id}),
+            else => std.log.err("headless: compaction failed: {s}", .{@errorName(err)}),
+        }
+        backend.finish(1);
+    };
+    defer allocator.free(out.json);
+
+    var buf: [4096]u8 = undefined;
+    var w = std.Io.File.stdout().writer(io, &buf);
+    try w.interface.writeAll(out.json);
+    try w.interface.writeAll("\n");
+    try w.interface.flush();
+
+    backend.finish(out.exit_code);
 }
 
 fn runMcpOAuth(

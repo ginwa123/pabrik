@@ -134,6 +134,10 @@ pub const LlmConfig = struct {
     /// Add a model-written summary to each compaction envelope. Off by default:
     /// the envelope is deterministic without it.
     compaction_llm_summary: bool = false,
+    /// Whether the AGENT may compact its own context through the `compaction`
+    /// tool. Absent → enabled. NOT the threshold switch: with the tool off the
+    /// loop still compacts at `compaction_threshold_percent`, and Compact works.
+    agent_auto_compaction: bool = true,
     /// Plan 2026-08-06-set-active-profile-default — the agent the workflow
     /// uses as the default when neither the session's selection nor the POST
     /// names one. Parsed from the on-disk `active_profile` key.
@@ -369,6 +373,9 @@ pub const LlmConfig = struct {
         /// Add a model-written summary to each compaction envelope. Off by
         /// default: the envelope is deterministic without it.
         compaction_llm_summary: bool = false,
+        /// Whether the agent may compact its own context (`compaction` tool).
+        /// Null = the key is absent, which reads as enabled.
+        agent_auto_compaction: ?bool = null,
         /// Plan 2026-08-06-set-active-profile-default — name of the profile
         /// to use as the default when no other selection is set.
         active_profile: ?[]const u8 = null,
@@ -705,6 +712,9 @@ pub const LlmConfig = struct {
             .max_capacity_token_model = config_json.max_capacity_token_model,
             .compaction_threshold_percent = config_json.compaction_threshold_percent,
             .compaction_llm_summary = config_json.compaction_llm_summary,
+            // Absent key reads as enabled: the `compaction` tool works for
+            // every config that never heard of it.
+            .agent_auto_compaction = config_json.agent_auto_compaction orelse true,
             // Plan 2026-08-06-set-active-profile-default — load the
             // user-chosen default profile from JSON.
             .active_agent = blk: {
@@ -1246,6 +1256,7 @@ pub const LlmConfig = struct {
             .max_capacity_token_model = self.max_capacity_token_model,
             .compaction_threshold_percent = self.compaction_threshold_percent,
             .compaction_llm_summary = self.compaction_llm_summary,
+            .agent_auto_compaction = self.agent_auto_compaction,
             .hook_python_bin = try self.allocator.dupe(u8, self.hook_python_bin),
             // Plan 2026-08-06-set-active-profile-default — deep-dupe
             // the user-chosen default profile name (null stays null).

@@ -313,6 +313,31 @@ describe('PabrikConfigEditor — workspace scope', () => {
     expect(mockSave).not.toHaveBeenCalled()
   })
 
+  it('clicking the agent auto-compaction switch saves it to THIS workspace', async () => {
+    const router = await makeRouter({ section: 'runtime' })
+    mockGetWs.mockResolvedValueOnce({ retry_delay_ms: 0 })
+    mockSaveWs.mockResolvedValueOnce({ success: true })
+    const wrapper = mountEditor({
+      props: { source: workspaceConfigSource('ws_1'), sections: [...WORKSPACE_TABS] },
+      global: { plugins: [router], stubs: { Teleport: true } },
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="toggle-agent-auto-compaction"]').setValue(false)
+    await flushPromises()
+    await settleAutosave()
+
+    expect(mockSaveWs.mock.calls[0]![0]).toBe('ws_1')
+    const saved = mockSaveWs.mock.calls[0]![1] as {
+      agent_auto_compaction?: boolean
+      retry_delay_ms?: number
+    }
+    expect(saved.agent_auto_compaction).toBe(false)
+    // The sibling runtime value is written through, never reset by the toggle.
+    expect(saved.retry_delay_ms).toBe(0)
+    expect(mockSave).not.toHaveBeenCalled()
+  })
+
   it('owns no section nav of its own — the settings shell does', async () => {
     mockGetWs.mockResolvedValueOnce({})
     const wrapper = mountEditor({

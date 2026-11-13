@@ -158,6 +158,10 @@ pub const WORKSPACE_SCOPED_KEYS = [_]ScopedKey{
     // One model call's deadline is a property of the run too: a workspace
     // that asks for long design turns needs more patience than a chat one.
     .{ .disk = "llm_read_timeout_ms", .max = 1_800_000 },
+    // Whether the agent may compact its own context is a workspace policy:
+    // the same account runs a throwaway chat and a long refactor, and only the
+    // second can afford the agent deciding to compress.
+    .{ .disk = "agent_auto_compaction" },
 };
 
 /// The value for one scoped key, preferring the ON-DISK spelling.
@@ -533,6 +537,7 @@ const USER_CONFIG =
     \\ "web_launch_enabled":true,
     \\ "model_compaction_size_kb":250,
     \\ "max_capacity_token_model":200000,
+    \\ "agent_auto_compaction":false,
     \\ "compaction_threshold_percent":80}
 ;
 

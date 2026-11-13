@@ -15,6 +15,7 @@ pub const group = @import("group.zig");
 pub const memories = @import("memories.zig");
 pub const workspace_items = @import("workspace_items.zig");
 pub const mcp_oauth = @import("mcp_oauth.zig");
+pub const compaction = @import("compaction.zig");
 
 /// The subcommand to run, with its arguments already parsed. `help` is a
 /// first-class variant rather than an error so `pabrik headless --help` exits
@@ -43,6 +44,8 @@ pub const Command = union(enum) {
     mcp_oauth: args.McpOAuthArgs,
     /// Register an MCP server through the agent tool's own path.
     mcp_add: args.McpAddArgs,
+    /// Compact one session through the `compaction` agent tool's path.
+    compaction: args.CompactionArgs,
     /// Print the usage text.
     help,
     /// The argv was rejected; `failure` says why.
@@ -65,6 +68,7 @@ pub fn parseCommand(argv: []const []const u8) args.ParseError!Command {
         .workspace_items => |a| .{ .workspace_items = a },
         .mcp_oauth => |a| .{ .mcp_oauth = a },
         .mcp_add => |a| .{ .mcp_add = a },
+        .compaction => |a| .{ .compaction = a },
         .help => .help,
         .invalid => |f| .{ .invalid = f },
     };

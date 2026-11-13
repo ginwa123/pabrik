@@ -349,6 +349,10 @@ pub const PabrikConfigResponse = struct {
     /// Optional top-level compaction threshold as a percentage (0-100).
     /// `null` = fall through to per-profile override, then built-in 80.
     compaction_threshold_percent: ?u8 = null,
+    /// Whether the agent may compact its own context through the `compaction`
+    /// tool. Workspace-scoped; `null` = absent on disk = enabled. Not the
+    /// threshold switch: the threshold trigger and Compact are unaffected.
+    agent_auto_compaction: ?bool = null,
     /// Delay in milliseconds before the workflow retries a failed
     /// `callDynamicAgentNew` call. 0 = no delay.
     retry_delay_ms: u32 = 0,
