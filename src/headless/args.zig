@@ -209,6 +209,7 @@ pub const DocumentsArgs = struct {
 pub const WorkspaceItemsOp = enum {
     list,
     set_icon,
+    delete,
 };
 
 pub const WorkspaceItemsArgs = struct {
@@ -341,8 +342,8 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
-    "  pabrik headless workspace-items <op> [flags]  Read or change a project row's icon\n" ++
-    "      ops: list | set-icon\n" ++
+    "  pabrik headless workspace-items <op> [flags]  Read, delete or re-icon a project row\n" ++
+    "      ops: list | set-icon | delete\n" ++
     "      flags: --workspace <id> (list) --item <id> --icon <name> (set-icon; empty clears)\n" ++
     "  pabrik headless mcp-oauth <op> [flags]    Authorize a remote MCP server over OAuth 2.1\n" ++
     "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
@@ -951,6 +952,7 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
         const word = argv[0];
         if (std.mem.eql(u8, word, "list")) break :blk .list;
         if (std.mem.eql(u8, word, "set-icon")) break :blk .set_icon;
+        if (std.mem.eql(u8, word, "delete")) break :blk .delete;
         return fail(.{ .kind = .workspace_items_unknown_op, .value = word });
     };
 
@@ -981,6 +983,9 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
             if (got.workspace_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--workspace" });
         },
         .set_icon => {
+            if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
+        },
+        .delete => {
             if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
         },
     }
@@ -1599,6 +1604,13 @@ test "parse: workspace-items names the flag each op is missing" {
     try expectFailure(&.{ "workspace-items", "list" }, .workspace_items_requires_flag);
     try expectFailure(&.{ "workspace-items", "set-icon", "--icon", "tree" }, .workspace_items_requires_flag);
     try expectFailure(&.{ "workspace-items", "set-icon", "--item" }, .missing_value);
+    try expectFailure(&.{ "workspace-items", "delete" }, .workspace_items_requires_flag);
+}
+
+test "parse: workspace-items delete reads the item from --item" {
+    const a = try parse(&.{ "workspace-items", "delete", "--item", "item_a" });
+    try testing.expectEqual(WorkspaceItemsOp.delete, a.workspace_items.op);
+    try testing.expectEqualStrings("item_a", a.workspace_items.item_id);
 }
 
 test "parse: workspace-items refuses a flag it does not own" {

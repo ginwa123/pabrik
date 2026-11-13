@@ -4,6 +4,7 @@ const pabrikcore = @import("pabrikcore");
 const design_io = @import("../modules/agent/loop/design_io.zig");
 const gserverz = pabrikcore.gserverz;
 const ai_mod = pabrikcore.ai_mod;
+const loggermod = pabrikcore.loggermod;
 
 pub const WorkspaceItemsDeleteError = error{
     OutOfMemory,
@@ -34,6 +35,7 @@ pub fn workspaceItemsDeleteHandler(ctx: gserverz.HttpContext, req: gserverz.Http
             error.DatabaseError => "Failed to delete workspace item",
             error.OutOfMemory => "Out of memory",
         };
+        if (status == 500) logDeleteFailure(item_id, err);
         return res.jsonResponse(.{
             .status_code = status,
             .data = try http_response.makeErrorResponse(allocator, .{ .@"error" = message }),
@@ -43,11 +45,18 @@ pub fn workspaceItemsDeleteHandler(ctx: gserverz.HttpContext, req: gserverz.Http
     return res.jsonResponse(.{ .status_code = 200, .data = try http_response.makeWorkspaceItemResponse(allocator, .{ .id = result.id }) });
 }
 
-const WorkspaceItemsDeleteResult = struct {
+/// The 500 body says only "Failed to delete workspace item"; this is the line
+/// that names what actually went wrong.
+fn logDeleteFailure(item_id: []const u8, err: WorkspaceItemsDeleteError) void {
+    const logger = loggermod.getGlobal() orelse return;
+    logger.warnFmt("workspace_items_delete: '{s}' failed: {s}", .{ item_id, @errorName(err) });
+}
+
+pub const WorkspaceItemsDeleteResult = struct {
     id: []const u8,
 };
 
-fn useCase(
+pub fn useCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     sqlite_db: *pabrikcore.database.Db,
