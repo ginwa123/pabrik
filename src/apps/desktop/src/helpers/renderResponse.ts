@@ -1,6 +1,7 @@
 import { marked } from 'marked'
 import { isThinkingTags, getThinkingTags, stripThinkingTags } from './stripTags'
 import { tryUnwrapToolOutput } from './unwrapToolOutput'
+import { neutralizeSwallowingHtml } from './swallowingHtml'
 
 /** Render a chat message's content to HTML. */
 const escapeHtml = (text: string): string => {
@@ -94,6 +95,11 @@ const guardedRender = (content: string, render: (trimmed: string) => string): st
   }
 }
 
+/** One parse for every caller: the HTML goes straight into `v-html`, so an opener the model left
+ * unclosed must not be able to swallow the rest of the message. */
+const parseMarkdown = (text: string): string =>
+  neutralizeSwallowingHtml(marked.parse(text, { async: false }) as string)
+
 const renderUncached = (content: string, role: string, tool_name?: string): string => {
   const trimmed = content.trim()
   if (!trimmed) {
@@ -103,9 +109,11 @@ const renderUncached = (content: string, role: string, tool_name?: string): stri
   return guardedRender(content, (text) => {
     if (role === 'assistant') {
       if (isThinkingTags(text)) {
-        return getThinkingTags(text)
+        // getThinkingTags returns raw text, not marked output, so it cannot go through parseMarkdown
+        // — but the same `v-html` span injects it and it needs the same guard.
+        return neutralizeSwallowingHtml(getThinkingTags(text))
       }
-      return marked.parse(stripThinkingTags(text), { async: false }) as string
+      return parseMarkdown(stripThinkingTags(text))
     }
     if (role === 'tool') {
       return renderTool(text, tool_name)
@@ -131,7 +139,7 @@ export const renderMarkdown = (payload: string): string => {
   const key = `md|${payload}`
   const cached = cacheGet(key)
   if (cached !== undefined) return cached
-  const html = guardedRender(payload, (text) => marked.parse(text, { async: false }) as string)
+  const html = guardedRender(payload, parseMarkdown)
   cacheSet(key, html)
   return html
 }
