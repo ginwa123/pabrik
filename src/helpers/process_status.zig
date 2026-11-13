@@ -65,6 +65,20 @@ fn killProcessWindows(pid: i32) bool {
     return ok;
 }
 
+/// PID of a child this process spawned, or null once it has no id left
+/// (`wait`/`kill` ran) — `std.process.Child.Id` is a `pid_t` on POSIX but a
+/// `HANDLE` on Windows, where the number has to be asked of the OS.
+pub fn pidOfChild(child: std.process.Child) ?i32 {
+    const id = child.id orelse return null;
+    if (comptime @typeInfo(@TypeOf(id)) == .int) return @intCast(id);
+    if (comptime builtin.os.tag == .windows) {
+        const pid = GetProcessId(id);
+        // 0 means the handle is not a live process.
+        return if (pid == 0) null else @intCast(pid);
+    }
+    return null;
+}
+
 /// Returns the current process's PID as an `i32`. On POSIX, returns
 /// `getpid()`.
 pub fn getCurrentProcessIdInt() i32 {
@@ -87,6 +101,7 @@ const WINDOWS_PROCESS_TERMINATE: u32 = 0x0001;
 extern "c" fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: u32, dwProcessId: u32) ?*anyopaque;
 extern "c" fn TerminateProcess(hProcess: *anyopaque, uExitCode: u32) i32;
 extern "c" fn CloseHandle(hObject: *anyopaque) i32;
+extern "c" fn GetProcessId(hProcess: *anyopaque) u32;
 
 // === Tests ===
 
