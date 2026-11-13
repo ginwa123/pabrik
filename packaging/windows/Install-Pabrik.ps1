@@ -26,6 +26,11 @@
 .PARAMETER DesktopShortcut
   Also create Desktop\Pabrik.lnk alongside the Start Menu entry.
 
+.PARAMETER WithFs
+  Also install `pabrik-fs.exe` from SourceDir beside the exes. Off by
+  default: the release zip no longer carries it, and install.ps1 -WithFs
+  fetches it separately.
+
 .PARAMETER Uninstall
   Remove %LOCALAPPDATA%\pabrik\bin, %LOCALAPPDATA%\pabrik\html
   (plus legacy %LOCALAPPDATA%\pabrik\webapp),
@@ -42,6 +47,7 @@
 param(
     [string]$SourceDir = "",
     [switch]$DesktopShortcut,
+    [switch]$WithFs,
     [switch]$Uninstall
 )
 
@@ -112,15 +118,21 @@ if (Test-Path $rgSrc) {
     Write-Warning "rg-pabrik.exe not found in $SourceDir -- the search tool will need ripgrep on PATH."
 }
 
-# Bundled object store: document bodies live in rustfs, and the runtime
-# starts it as a child process. It lands beside pabrik.exe, the resolver's
-# first candidate. Named pabrik-fs.exe so Task Manager shows `pabrik-fs` and
-# it can never collide with a rustfs the user installed.
+# The object store is opt-in: `-WithFs` installs `pabrik-fs.exe` from
+# SourceDir beside pabrik.exe, the resolver's first candidate, under the name
+# pabrik-fs.exe so Task Manager shows `pabrik-fs` and it can never collide
+# with a rustfs the user installed. `irm install.ps1 -WithFs` downloads the
+# payload itself and drops it in the install dir; this switch serves the
+# checkout flow, where `zig build -Dwith-fs` left one in zig-out\bin.
 $fsSrc = Join-Path $SourceDir "pabrik-fs.exe"
-if (Test-Path $fsSrc) {
+if ($WithFs) {
+    if (-not (Test-Path $fsSrc)) {
+        Write-Error -Message "pabrik-fs.exe missing in $SourceDir -- re-run without -WithFs, or stage it with 'zig build -Dwith-fs'." -ErrorAction Stop
+    }
     Copy-Item -Force $fsSrc (Join-Path $binDir "pabrik-fs.exe")
-} else {
-    Write-Warning "pabrik-fs.exe not found in $SourceDir -- documents fall back to the filesystem store."
+    Write-Output "Installed the object store to $(Join-Path $binDir 'pabrik-fs.exe')"
+} elseif (Test-Path $fsSrc) {
+    Write-Output "pabrik-fs.exe left out of $binDir (pass -WithFs to install the object store)."
 }
 
 # Persistent html (Windows-only shipped static dir). The desktop

@@ -152,11 +152,33 @@ fn installEnv(home: []const u8, xdg_data_home: []const u8, base_url: []const u8)
 /// Run the installer against a staged release — what the user does when they
 /// pipe install.sh into bash a second time.
 fn runInstallSh(alloc: Allocator, bindir: []const u8, home: []const u8, base_url: []const u8) !void {
+    try runInstallShArgs(alloc, bindir, home, base_url, &.{}, &.{});
+}
+
+/// The same install with extra argv words and extra env pairs, so a scenario
+/// can pass `--with-fs` or PABRIK_WITH_FS=1.
+fn runInstallShArgs(
+    alloc: Allocator,
+    bindir: []const u8,
+    home: []const u8,
+    base_url: []const u8,
+    extra_args: []const []const u8,
+    extra_env: []const [2][]const u8,
+) !void {
     const xdg_data_home = try std.fs.path.join(alloc, &.{ home, ".local", "share" });
     defer alloc.free(xdg_data_home);
-    const env = installEnv(home, xdg_data_home, base_url);
+    const base_env = installEnv(home, xdg_data_home, base_url);
+    var env: [8][2][]const u8 = undefined;
+    for (base_env, 0..) |kv, i| env[i] = kv;
+    for (extra_env, 0..) |kv, i| env[base_env.len + i] = kv;
+
+    var argv: std.ArrayList([]const u8) = .empty;
+    defer argv.deinit(alloc);
+    try argv.appendSlice(alloc, &.{ "bash", "install.sh", "--dir", bindir });
+    try argv.appendSlice(alloc, extra_args);
+
     try expectExitZero(
-        try runChild(&.{ "bash", "install.sh", "--dir", bindir }, &env),
+        try runChild(argv.items, env[0 .. base_env.len + extra_env.len]),
         "install.sh",
     );
 }
@@ -203,6 +225,27 @@ fn republishChangedBinaries(alloc: Allocator, stage: []const u8, triple: []const
 /// the install left none.
 fn installedShell(alloc: Allocator, bindir: []const u8) !?[]u8 {
     const path = try std.fs.path.join(alloc, &.{ bindir, "html", "index.html" });
+    defer alloc.free(path);
+    return Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(1 << 20)) catch null;
+}
+
+/// Bytes of a fake `pabrik-fs-<triple>` release asset. The installer only has
+/// to move them into $BINDIR when the user asked for the rustfs runtime.
+const object_store_asset_body = "#!/bin/sh\necho a fake rustfs\n";
+
+/// Publish that asset, so a default install has something it could download
+/// and an opt-in install has something it must.
+fn publishObjectStore(alloc: Allocator, stage: []const u8, triple: []const u8) !void {
+    const path = try std.fmt.allocPrint(alloc, "{s}/pabrik-fs-{s}", .{ stage, triple });
+    defer alloc.free(path);
+    var f = try Io.Dir.cwd().createFile(io, path, .{});
+    defer f.close(io);
+    try f.writeStreamingAll(io, object_store_asset_body);
+}
+
+/// What the install put at $BINDIR/pabrik-fs, or null when it installed none.
+fn installedObjectStore(alloc: Allocator, bindir: []const u8) !?[]u8 {
+    const path = try std.fs.path.join(alloc, &.{ bindir, "pabrik-fs" });
     defer alloc.free(path);
     return Io.Dir.cwd().readFileAlloc(io, path, alloc, .limited(1 << 20)) catch null;
 }
@@ -268,6 +311,7 @@ fn installFromFreshRelease(scratch: []const u8, triple: []const u8, ui_body: ?[]
         );
     }
     if (ui_body) |body| try publishShippedUi(gpa, stage, triple, body);
+    try publishObjectStore(gpa, stage, triple);
 
     const base_url = try std.fmt.allocPrint(gpa, "file://{s}", .{stage});
     errdefer gpa.free(base_url);
@@ -725,4 +769,93 @@ test "installed pabrik serves the app from its bundled html dir" {
     }
     Io.sleep(io, .fromMilliseconds(2000), .awake) catch {};
     child.kill(io); // reaps + clears the id (wait() after this would assert)
+}
+
+// THE CARD: `pabrik-fs` is 277 MB on Linux, so a default install must not
+// fetch it even though the release publishes it.
+test "a default install does not download the object store" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    if (try installedObjectStore(gpa, install.bindir)) |body| {
+        defer gpa.free(body);
+        std.debug.print("the default install downloaded pabrik-fs ({d} bytes)\n", .{body.len});
+        return error.TestUnexpectedResult;
+    }
+}
+
+// --with-fs is how a user asks for the rustfs runtime instead.
+test "--with-fs installs the object store beside the binary" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    try runInstallShArgs(gpa, install.bindir, install.home, install.release.base_url, &.{"--with-fs"}, &.{});
+
+    const body = (try installedObjectStore(gpa, install.bindir)) orelse {
+        std.debug.print("--with-fs left no pabrik-fs in {s}\n", .{install.bindir});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(body);
+    try testing.expectEqualStrings(object_store_asset_body, body);
+}
+
+// PABRIK_WITH_FS=1 is the same opt-in for a scripted install.
+test "PABRIK_WITH_FS=1 installs the object store like --with-fs" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    try runInstallShArgs(gpa, install.bindir, install.home, install.release.base_url, &.{}, &.{
+        .{ "PABRIK_WITH_FS", "1" },
+    });
+
+    const body = (try installedObjectStore(gpa, install.bindir)) orelse {
+        std.debug.print("PABRIK_WITH_FS=1 left no pabrik-fs in {s}\n", .{install.bindir});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(body);
+    try testing.expectEqualStrings(object_store_asset_body, body);
+}
+
+// An install made before the opt-in can add the runtime later: the up-to-date
+// path (binaries byte-identical to the release) still honours --with-fs.
+test "a re-run with --with-fs adds the object store to an up-to-date install" {
+    const triple = try installTriple();
+    try harness.requirePabrikBin(io, gpa);
+
+    const scratch = try harness.makeScratchDir(gpa);
+    defer gpa.free(scratch);
+    defer harness.cleanupExtraDir(io, gpa, scratch);
+
+    const install = try installFromFreshRelease(scratch, triple, null);
+    defer install.deinit();
+
+    try runInstallShArgs(gpa, install.bindir, install.home, install.release.base_url, &.{"--with-fs"}, &.{});
+
+    const body = (try installedObjectStore(gpa, install.bindir)) orelse {
+        std.debug.print("the up-to-date re-run left no pabrik-fs in {s}\n", .{install.bindir});
+        return error.TestUnexpectedResult;
+    };
+    defer gpa.free(body);
+    try testing.expectEqualStrings(object_store_asset_body, body);
 }

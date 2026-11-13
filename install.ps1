@@ -24,6 +24,12 @@
 .PARAMETER DesktopShortcut
   Also create Desktop\Pabrik.lnk alongside the Start Menu entry.
 
+.PARAMETER WithFs
+  Also install the rustfs object store (`pabrik-fs.exe`) beside the exes.
+  It is a ~90 MB download, so the default install leaves it out and
+  document bodies stay in the filesystem store. Same as
+  $env:PABRIK_WITH_FS = "1".
+
 .PARAMETER Uninstall
   Remove the install (bin, html, shortcuts) and exit. Downloads
   nothing.
@@ -31,6 +37,7 @@
 param(
     [string]$Version = "",
     [switch]$DesktopShortcut,
+    [switch]$WithFs,
     [switch]$Uninstall
 )
 
@@ -56,6 +63,39 @@ $ZipName = "pabrik-desktop-$Triple.zip"
 # PABRIK_BASE_URL overrides the release download base (tests point it at a
 # local file:// staging dir holding the zip).
 $BaseUrl = if ($env:PABRIK_BASE_URL) { $env:PABRIK_BASE_URL } else { "https://github.com/$Repo/releases/download/$Tag" }
+$WithFs = $WithFs.IsPresent -or ($env:PABRIK_WITH_FS -ne $null -and $env:PABRIK_WITH_FS.Trim() -match '^(?i)(1|true|yes)$')
+
+function Get-ReleaseAsset($Name, $Dest) {
+    $url = "$BaseUrl/$Name"
+    Write-Output "Downloading $url ..."
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $Dest -UseBasicParsing -TimeoutSec 900
+        return
+    } catch {
+        Write-Output "  direct download failed; retrying through the API asset endpoint ..."
+    }
+    $headers = @{ "Accept" = "application/vnd.github+json" }
+    if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)" }
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers
+    $asset = $release.assets | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+    if (-not $asset) { throw "$Name is not in the $Tag release" }
+    Invoke-WebRequest -Uri $asset.url -OutFile $Dest -UseBasicParsing -TimeoutSec 900 `
+        -Headers @{ "Accept" = "application/octet-stream" }
+}
+
+function Install-FsPayload($WorkDir) {
+    $fsZipName = "pabrik-fs-$Triple.zip"
+    $fsZip = Join-Path $WorkDir $fsZipName
+    Get-ReleaseAsset $fsZipName $fsZip
+    $fsDir = Join-Path $WorkDir "fs"
+    New-Item -ItemType Directory -Force -Path $fsDir | Out-Null
+    Expand-Archive -Path $fsZip -DestinationPath $fsDir -Force
+    $fsExe = Get-ChildItem $fsDir -Recurse -Filter "pabrik-fs.exe" | Select-Object -First 1
+    if (-not $fsExe) { Write-Error -Message "$fsZipName carries no pabrik-fs.exe" -ErrorAction Stop }
+    $target = Join-Path $env:LOCALAPPDATA "pabrik\bin\pabrik-fs.exe"
+    Copy-Item -Force $fsExe.FullName $target
+    Write-Output "Installed the object store to $target"
+}
 
 if (-not [Environment]::Is64BitOperatingSystem) {
     Write-Error -Message "Pabrik ships a 64-bit Windows build only; 32-bit Windows is not supported." -ErrorAction Stop
@@ -83,22 +123,7 @@ $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("pabrik-install-" + [System.
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {
     $zipPath = Join-Path $tmp $ZipName
-    $url = "$BaseUrl/$ZipName"
-    Write-Output "Downloading $url ..."
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -TimeoutSec 600
-    } catch {
-        # The `releases/download` redirect 504s often enough that a second
-        # path is worth it: ask the API for the asset id and fetch it there.
-        Write-Output "  direct download failed; retrying through the API asset endpoint ..."
-        $headers = @{ "Accept" = "application/vnd.github+json" }
-        if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)" }
-        $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers
-        $asset = $release.assets | Where-Object { $_.name -eq $ZipName } | Select-Object -First 1
-        if (-not $asset) { throw "$ZipName is not in the $Tag release" }
-        Invoke-WebRequest -Uri $asset.url -OutFile $zipPath -UseBasicParsing -TimeoutSec 900 `
-            -Headers @{ "Accept" = "application/octet-stream" }
-    }
+    Get-ReleaseAsset $ZipName $zipPath
     $extract = Join-Path $tmp "pkg"
     New-Item -ItemType Directory -Force -Path $extract | Out-Null
     Expand-Archive -Path $zipPath -DestinationPath $extract -Force
@@ -123,6 +148,8 @@ try {
     $hadExisting = Test-Path -LiteralPath $installedService
     if ((Same-File $newDesktop $installedDesktop) -and (Same-File $newService $installedService)) {
         Write-Output "pabrik is already up to date ($Tag)."
+        if ($WithFs) { Install-FsPayload $tmp }
+        else { Write-Output "Object store: not installed -- document bodies use the filesystem store. Re-run with -WithFs to add it." }
         return
     }
 
@@ -155,6 +182,8 @@ try {
     }
 
     Write-Output "Installed Pabrik. Press Win key and type 'Pabrik' to launch it."
+    if ($WithFs) { Install-FsPayload $tmp }
+    else { Write-Output "Object store: not installed -- document bodies use the filesystem store. Re-run with -WithFs to add it." }
     if ($hadExisting) { Write-Output "Updated existing installation to $Tag." }
 } finally {
     if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue }
