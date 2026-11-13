@@ -3667,9 +3667,8 @@ pub fn build(b: *std.Build) void {
     // populated vendor/ is a fast no-op.
 
     // The object store is opt-in: staging it downloads a 115 MB upstream
-    // archive, so the default build leaves it out and documents keep the
-    // filesystem store. `-Dwith-fs` / PABRIK_WITH_FS=1 puts `pabrik-fs`
-    // beside the binary, so `./zig-out/bin/pabrik` starts rustfs.
+    // archive. `-Dwith-fs` / PABRIK_WITH_FS=1 puts `pabrik-fs` beside the
+    // binary so `./zig-out/bin/pabrik` starts rustfs.
     const with_fs = b.option(
         bool,
         "with-fs",
