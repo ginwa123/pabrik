@@ -320,8 +320,10 @@ test "getcwd: returns non-empty slice on a real system" {
     try std.testing.expect(cwd.len > 0);
 }
 
-test "fileExists: /tmp exists" {
-    try std.testing.expect(fileExists("/tmp"));
+test "fileExists: an absolute path that exists is found" {
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd = getcwd(&buf) orelse return error.TestUnexpectedResult;
+    try std.testing.expect(fileExists(cwd));
 }
 
 test "fileExists: non-existent path returns false" {
@@ -492,34 +494,22 @@ test "process_status: killProcess returns false for non-existent pid" {
 }
 
 test "process_status: round-trip — isProcessRunning then killProcess" {
-    // Spawn a child that sleeps, verify isProcessRunning is true, kill it,
-    // reap it, verify it is false. No wasm guard: Zig 0.16 dropped `wasm` from
-    // `Target.Os.Tag`, and that line kept this file from compiling as a root.
-
-    // Spawn a long-running child (sleep 60 seconds).
-    const argv = [_][]const u8{ "sleep", "60" };
-    var child = std.process.spawn(std.testing.io, .{
-        .argv = &argv,
+    const argv: []const []const u8 = switch (builtin.os.tag) {
+        .windows => &.{ "ping", "-n", "30", "127.0.0.1" },
+        .linux, .macos => &.{ "sleep", "60" },
+        else => &.{},
+    };
+    var child = try std.process.spawn(std.testing.io, .{
+        .argv = argv,
         .stdin = .ignore,
         .stdout = .ignore,
         .stderr = .ignore,
-    }) catch |err| switch (err) {
-        error.FileNotFound => return, // sleep not available
-        else => return,
-    };
-
-    const child_pid: i32 = @intCast(child.id orelse {
-        // Spawn returned a null id — can't continue. Kill the child
-        // defensively before bailing.
-        child.kill(std.testing.io);
-        return;
     });
+
+    const child_pid = process_status.pidOfChild(child) orelse return error.TestUnexpectedResult;
 
     var reaped = false;
     defer {
-        // Clean up: kill the child if it's still alive, then reap it. A
-        // second `wait` on an already-reaped child errors, so the flag keeps
-        // the happy path from reaping twice.
         if (!reaped) {
             if (process_status.isProcessRunning(child_pid)) {
                 _ = process_status.killProcess(child_pid);
@@ -528,18 +518,26 @@ test "process_status: round-trip — isProcessRunning then killProcess" {
         }
     }
 
-    // The child should be alive.
     try testing.expect(process_status.isProcessRunning(child_pid));
 
-    // Kill it.
     try testing.expect(process_status.killProcess(child_pid));
 
-    // REAP it before asserting it is gone: `isProcessRunning` is `kill(pid, 0)`
-    // on POSIX, and that still succeeds for a ZOMBIE until the parent waits.
-    // The old test asserted "not running" while the child was unreaped.
-    if (child.wait(std.testing.io)) |_| {} else |_| {}
+    // Reap before judging the kill: a zombie still answers `kill(pid, 0)`.
+    const term = child.wait(std.testing.io) catch return error.TestUnexpectedResult;
     reaped = true;
 
-    // The child should now be dead.
-    try testing.expect(!process_status.isProcessRunning(child_pid));
+    switch (builtin.os.tag) {
+        // Windows keeps a dead process's pid openable while any handle to the
+        // process object survives (its console host holds one), so the kill is
+        // witnessed by the exit code rather than by a probe by pid.
+        .windows => {
+            try testing.expect(term == .exited);
+            try testing.expect(term.exited != 0);
+        },
+        .linux, .macos => {
+            try testing.expect(term == .signal);
+            try testing.expect(!process_status.isProcessRunning(child_pid));
+        },
+        else => return error.TestUnexpectedResult,
+    }
 }
