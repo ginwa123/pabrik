@@ -8267,9 +8267,8 @@ test "parse_stream_chunk (default UrlStyle): falls through to OpenAI parser" {
     try expectEqualStringsParseAnthropicSse("world", chunk.?.content.?);
 }
 // ---------------------------------------------------------------------------
-// Wire parameter names. The provider sees short keys; every consumer on this
-// side of the wire (tool handlers, DB rows, the UI) keeps the canonical ones.
-// ---------------------------------------------------------------------------
+// Wire parameter names: the provider sees short keys, while tool handlers, DB
+// rows and the UI keep the canonical ones this side of the wire.
 
 const wire_command_tool = @import("tools/command.zig").command_tool;
 
