@@ -298,9 +298,13 @@ def _probe(page) -> dict:
     return page.evaluate("() => window.__probe")
 
 
-def _cursored(requests: list[dict]) -> list[dict]:
-    """Scroll-back requests only (the initial page carries no cursor)."""
-    return [r for r in requests if r.get("cursor")]
+def _scroll_back_requests(requests: list[dict]) -> list[dict]:
+    """Descending requests that carry a cursor — i.e. real older-history pages.
+
+    ``chatEngineDb.loadDelta`` re-hits this endpoint ASCENDING with a stored
+    cursor to refresh the tail, so a cursor alone does not make a scroll-back.
+    """
+    return [r for r in requests if r.get("cursor") and r.get("direction") != "asc"]
 
 
 # ─── Tests ──────────────────────────────────────────────────────────────────
@@ -339,9 +343,9 @@ def test_prefetch_request_is_issued_before_the_scroll_reaches_the_top(ui_harness
     # load lands at the bottom, far outside both the arm radius and the band.
     before = _probe(page)
     assert before["requests"], "the initial history page was never requested"
-    assert _cursored(before["requests"]) == [], (
+    assert _scroll_back_requests(before["requests"]) == [], (
         "a scroll-back page was fetched on open (before any scroll): "
-        f"{_cursored(before['requests'])}; prefetch log: "
+        f"{_scroll_back_requests(before['requests'])}; prefetch log: "
         f"{[l for l in console_lines if 'load-more-prefetch' in l]}"
     )
 
@@ -354,7 +358,7 @@ def test_prefetch_request_is_issued_before_the_scroll_reaches_the_top(ui_harness
     page.wait_for_timeout(600)  # let the speculative request resolve
 
     probe_a = _probe(page)
-    armed = _cursored(probe_a["requests"])
+    armed = _scroll_back_requests(probe_a["requests"])
     assert armed, (
         "no scroll-back request was issued while the user was still above the "
         f"load-more band (band={band:.0f}px) — the prefetch never armed. "
@@ -390,7 +394,7 @@ def test_prefetch_request_is_issued_before_the_scroll_reaches_the_top(ui_harness
     page.wait_for_timeout(900)  # give a late/duplicate request a chance to appear
 
     probe = _probe(page)
-    fetch_requests = _cursored(probe["requests"])
+    fetch_requests = _scroll_back_requests(probe["requests"])
     phase_b_start = float(probe["tFlingStart"])
 
     # (2) THE CONTRACT: every scroll-back request was issued while the
@@ -472,7 +476,7 @@ def test_exhausted_history_never_fires_a_scroll_back_request(ui_harness, page) -
     # the load-more band: only those could have been a scroll-back arm. This is
     # the same predicate the prefetch test above uses, and it keeps this test
     # honest — a real regression arms at scrollTop≈0 and is still caught.
-    from_band = [r for r in _cursored(probe["requests"]) if r["scrollTop"] <= band]
+    from_band = [r for r in _scroll_back_requests(probe["requests"]) if r["scrollTop"] <= band]
     assert not from_band, (
         f"has_more=false still produced scroll-back requests from inside the "
         f"load-more band (band={band:.0f}px): {from_band}"
@@ -509,7 +513,7 @@ def test_pagination_continues_across_pages_with_distinct_cursors(ui_harness, pag
         heights.append(float(page.evaluate("() => window.__pickScroller().scrollHeight")))
 
     probe = _probe(page)
-    fetch_requests = _cursored(probe["requests"])
+    fetch_requests = _scroll_back_requests(probe["requests"])
     cursors = [r["cursor"] for r in fetch_requests]
     audit = page.evaluate(_DOM_AUDIT_SCRIPT)
 
@@ -530,16 +534,6 @@ def test_pagination_continues_across_pages_with_distinct_cursors(ui_harness, pag
 #: How long the first open gets to flush its write-through cache (`putLocal` + `setCursor` are async
 #: IndexedDB writes). The reload below is only a *cached* mount once they have landed.
 CACHE_FLUSH_WAIT_MS = 2000
-
-
-def _scroll_back_requests(requests: list[dict]) -> list[dict]:
-    """Descending requests that carry a cursor — i.e. real older-history pages.
-
-    The tail refresh of a cached mount hits the SAME endpoint with a cursor, but ASCENDING
-    (``direction=asc``), and it fires wherever the reader happens to sit. Counting it as a
-    scroll-back would make this suite pass on a build that never paginates at all.
-    """
-    return [r for r in requests if r.get("cursor") and r.get("direction") != "asc"]
 
 
 def test_reopened_chat_keeps_paginating_older_pages_at_the_top(ui_harness, page) -> None:

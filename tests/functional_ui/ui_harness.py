@@ -113,9 +113,14 @@ VITE_RESERVED_PORTS: tuple[int, ...] = (5173, 8081)
 VITE_PORT_START = RANDOM_PORT_START
 VITE_PORT_END = RANDOM_PORT_END
 
-#: Vite ready timeout. Vite's first compile + module-graph build takes
-#: ~5-15s on a warm cache, more on cold. We poll vite's HTTP root for
-#: a 200 response — by the time Vite is serving, the bundle is ready.
+#: Vite ready timeout. We poll vite's HTTP root for a 200 response.
+#: That is all this proves: the server is answering. It is NOT the bundle
+#: being ready — Vite transforms on demand, so the first browser load still
+#: pays the compile, and on a cold ``node_modules`` the dependency optimizer
+#: re-bundles (and FULL-RELOADS connected clients) seconds after this poll
+#: succeeds. ``conftest._warm_vite_module_graph``, called from the ``ui_harness``
+#: fixture, is what closes that gap; do not hand a ``page`` a server that has
+#: not been through it.
 VITE_READY_TIMEOUT_S = 60.0
 
 #: Polling interval for vite readiness. 200ms is fine — vite's compile
@@ -402,8 +407,8 @@ class ViteServer:
     def _wait_ready(self, timeout_s: float) -> None:
         """Poll vite's HTTP root until it returns 200 or timeout.
 
-        Raising 200 means vite has compiled the bundle and is serving.
-        Until then, requests may hang or 404 on module imports.
+        A 200 means vite is serving, not that the bundle is compiled — see
+        ``VITE_READY_TIMEOUT_S``.
         """
         assert self.proc is not None
         deadline = time.monotonic() + timeout_s

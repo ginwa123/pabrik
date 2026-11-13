@@ -47,6 +47,7 @@ teardown. The artifacts dir is a separate, non-harness directory under
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
@@ -173,11 +174,101 @@ def vite_server(pinned_backend_port: int, default_pabrik_bin: Path) -> Iterator[
         server.teardown()
 
 
+# ─── Worker-scoped: make the shared Vite server actually ready ──────────────
+
+#: Document identity marker the warm-up installs on every document it loads.
+#: A full page reload replaces the document, so a changed marker is how the
+#: warm-up sees that the dev server reloaded the client under it.
+_BOOT_MARKER_SCRIPT = "window.__pabrikWarmUpDocument = Math.random()"
+
+#: Budget for EACH warm-up phase (the first navigation, the mount wait, and the
+#: reload loop's deadline). The first browser load of a shard pays the dev
+#: server's whole module-graph compile, which is far more than any single
+#: test's own budget.
+WARM_UP_TIMEOUT_S = 180.0
+
+#: How long the document must stay put before the warm-up trusts it. It has to
+#: outlast the gap between Vite's optimizer passes, which run seconds apart; a
+#: reload inside the window restarts it, so the only failure mode is a pass that
+#: lands after the window closes. Sizing it comfortably above that gap is worth
+#: the wait — it is paid once per worker.
+WARM_UP_QUIET_S = 10.0
+
+
+def _warm_vite_module_graph(browser, vite_server: ViteServer) -> None:
+    """Load the app once, and wait until the dev server stops reloading it.
+
+    ``ViteServer.boot`` only waits for a 200 on ``/``. Vite transforms on
+    demand, and on a cold ``node_modules`` — every CI job — its dependency
+    optimizer re-bundles seconds after that answer and FULL-RELOADS every
+    connected client on each pass. So the first test to drive a browser races a
+    reload it did not cause, while the tests after it inherit an optimizer that
+    has already settled: a failure that depends only on which test is first is
+    a harness precondition, not a product bug.
+
+    Paying the compile and absorbing the reloads here, once per worker, in a
+    throwaway context, is what turns "the server answers" into "the server is
+    ready". The context is its own so the IndexedDB chat/session cache a boot
+    writes cannot reach a test's.
+    """
+    context = browser.new_context(viewport={"width": 1280, "height": 800})
+    try:
+        page = context.new_page()
+        page.add_init_script(_BOOT_MARKER_SCRIPT)
+        page.goto(
+            vite_server.url("/app"),
+            wait_until="domcontentloaded",
+            timeout=WARM_UP_TIMEOUT_S * 1000,
+        )
+        page.wait_for_function(
+            "() => { const app = document.getElementById('app');"
+            " return !!app && app.children.length > 0; }",
+            timeout=WARM_UP_TIMEOUT_S * 1000,
+        )
+        deadline = time.monotonic() + WARM_UP_TIMEOUT_S
+        while True:
+            marker = page.evaluate("() => window.__pabrikWarmUpDocument")
+            page.wait_for_timeout(WARM_UP_QUIET_S * 1000)
+            if page.evaluate("() => window.__pabrikWarmUpDocument") == marker:
+                return
+            if time.monotonic() > deadline:
+                raise FunctionalHarnessError(
+                    "the shared Vite dev server reloaded the app on every load for "
+                    f"{WARM_UP_TIMEOUT_S:.0f}s, so no test could act on a document "
+                    "that stays put. Its log is at "
+                    f"{vite_server.log_path}."
+                )
+    finally:
+        context.close()
+
+
+#: Set by the first browser test of the worker; every later one skips the
+#: warm-up. Module-level, so it is per worker the same way ``vite_server`` is.
+_vite_warmed = False
+
+
+def _warm_once(request: pytest.FixtureRequest, vite_server: ViteServer) -> None:
+    """Warm the shared dev server, the first time a test brings a browser.
+
+    ``request.fixturenames`` is what says a browser is coming, so the wire-only
+    tests that use ``ui_harness`` without a ``page`` still boot nothing but the
+    backend. ``code_editor_viewer_ui_test`` serves the app from ``vite build``
+    output through ``prod_harness`` and never reaches this fixture at all.
+    """
+    global _vite_warmed
+    if _vite_warmed or "page" not in request.fixturenames:
+        return
+    _vite_warmed = True
+    _warm_vite_module_graph(request.getfixturevalue("browser"), vite_server)
+
+
 # ─── Function-scoped: a fresh backend per test ─────────────────────────────
 
 
 @pytest.fixture
-def ui_harness(default_pabrik_bin: Path, vite_server: ViteServer) -> Iterator[UIHarness]:
+def ui_harness(
+    default_pabrik_bin: Path, vite_server: ViteServer, request: pytest.FixtureRequest
+) -> Iterator[UIHarness]:
     """Function-scoped: a fresh pabrik per test, isolated tmpdir HOME.
 
     The backend binds the worker's pinned port so the shared Vite
@@ -185,9 +276,14 @@ def ui_harness(default_pabrik_bin: Path, vite_server: ViteServer) -> Iterator[UI
     teardown runs even when the test asserts-fail mid-execution. The
     harness's teardown itself calls ``is_safe_tmp`` and refuses to
     rmtree an unsafe path.
+
+    The first test that drives a browser also warms the dev server, after
+    this backend is up so the app boots against a live ``/api`` (see
+    ``_warm_vite_module_graph``).
     """
     h = UIHarness.boot(default_pabrik_bin, vite=vite_server)
     try:
+        _warm_once(request, vite_server)
         yield h
     finally:
         try:
