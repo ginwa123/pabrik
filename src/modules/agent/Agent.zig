@@ -4,6 +4,7 @@ const Reader = std.Io.Reader;
 const bashTool = @import("tools/bash.zig").bash_tool;
 const bashMod = @import("tools/bash.zig");
 const schemas = @import("tools/schemas.zig");
+const param_alias = @import("tools/param_alias.zig");
 const BashInput = schemas.BashInput;
 const ToolProperty = schemas.ToolProperty;
 const ToolParameters = schemas.ToolParameters;
@@ -1287,11 +1288,16 @@ pub const StreamingAggregator = struct {
             for (sorted_indices.items) |idx| {
                 const buffer = self.tool_call_buffers.get(idx).?;
                 if (buffer.id) |id| {
+                    const tool_name = if (buffer.name) |n| n else "";
+                    const wire_args = buffer.arguments.items;
                     tool_call_slice[out_i] = .{
                         .id = id,
                         .function = .{
-                            .name = if (buffer.name) |n| n else "",
-                            .arguments = buffer.arguments.items,
+                            .name = tool_name,
+                            .arguments = if (param_alias.isBuiltinTool(tool_name))
+                                try param_alias.expandArgs(self.allocator, wire_args)
+                            else
+                                wire_args,
                         },
                     };
                     out_i += 1;
@@ -1575,7 +1581,11 @@ pub const Agent = struct {
 
                 for (msg.tool_calls.?) |tc| {
                     const input_value = blk: {
-                        const parsed = std.json.parseFromSlice(std.json.Value, arena_alloc, tc.function.arguments, .{}) catch {
+                        const wire_args = if (param_alias.isBuiltinTool(tc.function.name))
+                            try param_alias.shortenArgs(arena_alloc, tc.function.arguments)
+                        else
+                            tc.function.arguments;
+                        const parsed = std.json.parseFromSlice(std.json.Value, arena_alloc, wire_args, .{}) catch {
                             break :blk std.json.Value{ .null = {} };
                         };
                         break :blk parsed.value;
@@ -1691,16 +1701,14 @@ pub const Agent = struct {
             const tool_slice = try arena_alloc.alloc(AnthropicTool, params.tools.len);
             for (params.tools, 0..) |tool, i| {
                 const props = tool.function.parameters.properties;
-                const json_props = try arena_alloc.alloc(ToolProperty, props.len);
-                for (props, 0..) |prop, j| {
-                    json_props[j] = prop;
-                }
+                const short_params = param_alias.isBuiltinTool(tool.function.name);
+                const json_props = try param_alias.wireProperties(arena_alloc, props, short_params);
                 tool_slice[i] = .{
                     .name = tool.function.name,
                     .description = tool.function.description,
                     .input_schema = .{
                         .properties = json_props,
-                        .required = tool.function.parameters.required,
+                        .required = try param_alias.wireRequired(arena_alloc, tool.function.parameters.required, short_params),
                     },
                 };
             }
@@ -1816,7 +1824,9 @@ pub const Agent = struct {
                         const raw = tc.function.arguments;
                         if (raw.len == 0) break :blk "{}";
                         const repaired = args_repair.repairToolCallArguments(arena_alloc, raw) catch break :blk "{}";
-                        break :blk if (repaired) |r| r.slice() else "{}";
+                        const canonical = if (repaired) |r| r.slice() else "{}";
+                        if (!param_alias.isBuiltinTool(tc.function.name)) break :blk canonical;
+                        break :blk try param_alias.shortenArgs(arena_alloc, canonical);
                     };
                     tc_slice[j] = .{
                         .id = tc.id,
@@ -1863,10 +1873,8 @@ pub const Agent = struct {
             const tool_slice = try arena_alloc.alloc(JsonTool, params.tools.len);
             for (params.tools, 0..) |tool, i| {
                 const props = tool.function.parameters.properties;
-                const json_props = try arena_alloc.alloc(ToolProperty, props.len);
-                for (props, 0..) |prop, j| {
-                    json_props[j] = prop;
-                }
+                const short_params = param_alias.isBuiltinTool(tool.function.name);
+                const json_props = try param_alias.wireProperties(arena_alloc, props, short_params);
                 tool_slice[i] = .{
                     .type = tool.type,
                     .function = .{
@@ -1874,7 +1882,7 @@ pub const Agent = struct {
                         .description = tool.function.description,
                         .parameters = .{
                             .properties = json_props,
-                            .required = tool.function.parameters.required,
+                            .required = try param_alias.wireRequired(arena_alloc, tool.function.parameters.required, short_params),
                         },
                     },
                 };
@@ -2050,7 +2058,10 @@ pub const Agent = struct {
                             .item_type = "function_call",
                             .call_id = tc.id,
                             .name = tc.function.name,
-                            .arguments = tc.function.arguments,
+                            .arguments = if (param_alias.isBuiltinTool(tc.function.name))
+                                try param_alias.shortenArgs(arena_alloc, tc.function.arguments)
+                            else
+                                tc.function.arguments,
                         };
                         input_count += 1;
                     }
@@ -2095,16 +2106,14 @@ pub const Agent = struct {
             const tool_slice = try arena_alloc.alloc(ResponsesTool, params.tools.len);
             for (params.tools, 0..) |tool, i| {
                 const props = tool.function.parameters.properties;
-                const json_props = try arena_alloc.alloc(ToolProperty, props.len);
-                for (props, 0..) |prop, j| {
-                    json_props[j] = prop;
-                }
+                const short_params = param_alias.isBuiltinTool(tool.function.name);
+                const json_props = try param_alias.wireProperties(arena_alloc, props, short_params);
                 tool_slice[i] = .{
                     .name = tool.function.name,
                     .description = tool.function.description,
                     .parameters = .{
                         .properties = json_props,
-                        .required = tool.function.parameters.required,
+                        .required = try param_alias.wireRequired(arena_alloc, tool.function.parameters.required, short_params),
                     },
                 };
             }
@@ -8256,4 +8265,185 @@ test "parse_stream_chunk (default UrlStyle): falls through to OpenAI parser" {
     const chunk = a.parse_stream_chunk(data, arena.allocator());
     try expectParseAnthropicSse(chunk != null);
     try expectEqualStringsParseAnthropicSse("world", chunk.?.content.?);
+}
+// ---------------------------------------------------------------------------
+// Wire parameter names. The provider sees short keys; every consumer on this
+// side of the wire (tool handlers, DB rows, the UI) keeps the canonical ones.
+// ---------------------------------------------------------------------------
+
+const wire_command_tool = @import("tools/command.zig").command_tool;
+
+fn wireToolParam(parsed: std.json.Value, tool_index: usize, path: []const []const u8) !std.json.Value {
+    var node = parsed.object.get("tools").?.array.items[tool_index];
+    for (path) |key| node = node.object.get(key).?;
+    return node;
+}
+
+fn wireHistoryToolCall(name: []const u8, args: []const u8) ToolCall {
+    return .{ .id = "call_1", .function = .{ .name = name, .arguments = args } };
+}
+
+fn wireAssistantMessage(tool_calls: []ToolCall) AgentMessage {
+    return .{
+        .role = .assistant,
+        .content = null,
+        .content_parts = null,
+        .tool_calls = tool_calls,
+        .tool_call_id = null,
+        .reasoning_content = null,
+    };
+}
+
+test "buildJsonOpenAIRequest: a builtin tool schema emits short parameter names" {
+    var a = Agent.init(testing.allocator, testing.io);
+    a.model = "test-model";
+    defer a.deinit();
+
+    const tools = [_]AgentTool{wire_command_tool};
+    const body = try a.buildJsonOpenAIRequest(.{ .tools = &tools, .messages = &.{} }, false);
+    defer testing.allocator.free(body);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+    defer parsed.deinit();
+
+    const props = (try wireToolParam(parsed.value, 0, &.{ "function", "parameters", "properties" })).object;
+    try testing.expect(props.get("cmd") != null);
+    try testing.expect(props.get("c") != null);
+    try testing.expect(props.get("t") != null);
+    try testing.expect(props.get("command") == null);
+    try testing.expect(props.get("cwd") == null);
+
+    const required = (try wireToolParam(parsed.value, 0, &.{ "function", "parameters", "required" })).array;
+    try testing.expectEqualStrings("cmd", required.items[0].string);
+    try testing.expectEqualStrings("c", required.items[1].string);
+    try testing.expectEqualStrings("t", required.items[2].string);
+}
+
+test "buildJsonOpenAIRequest: a builtin tool's history arguments travel short" {
+    var a = Agent.init(testing.allocator, testing.io);
+    a.model = "test-model";
+    defer a.deinit();
+
+    const tools = [_]AgentTool{wire_command_tool};
+    var calls = [_]ToolCall{wireHistoryToolCall("command", "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":5}")};
+    const messages = [_]AgentMessage{wireAssistantMessage(&calls)};
+    const body = try a.buildJsonOpenAIRequest(.{ .tools = &tools, .messages = &messages }, false);
+    defer testing.allocator.free(body);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+    defer parsed.deinit();
+    const args = parsed.value.object.get("messages").?.array.items[0].object.get("tool_calls").?.array.items[0].object.get("function").?.object.get("arguments").?.string;
+    try testing.expectEqualStrings("{\"cmd\":\"ls\",\"c\":\"/tmp\",\"t\":5}", args);
+}
+
+test "buildJsonOpenAIRequest: an MCP tool keeps the parameter names its server declared" {
+    const mcp_tool = AgentTool{
+        .type = "function",
+        .function = .{
+            .name = "mcp_weather",
+            .description = "Weather",
+            .parameters = .{
+                .type = "object",
+                .properties = &.{.{ .name = "query", .type = "string", .description = "City" }},
+                .required = &.{"query"},
+            },
+        },
+    };
+    var a = Agent.init(testing.allocator, testing.io);
+    a.model = "test-model";
+    defer a.deinit();
+
+    const tools = [_]AgentTool{mcp_tool};
+    var calls = [_]ToolCall{wireHistoryToolCall("mcp_weather", "{\"query\":\"Paris\"}")};
+    const messages = [_]AgentMessage{wireAssistantMessage(&calls)};
+    const body = try a.buildJsonOpenAIRequest(.{ .tools = &tools, .messages = &messages }, false);
+    defer testing.allocator.free(body);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+    defer parsed.deinit();
+    const props = (try wireToolParam(parsed.value, 0, &.{ "function", "parameters", "properties" })).object;
+    try testing.expect(props.get("query") != null);
+    try testing.expect(props.get("q") == null);
+    const required = (try wireToolParam(parsed.value, 0, &.{ "function", "parameters", "required" })).array;
+    try testing.expectEqualStrings("query", required.items[0].string);
+    const args = parsed.value.object.get("messages").?.array.items[0].object.get("tool_calls").?.array.items[0].object.get("function").?.object.get("arguments").?.string;
+    try testing.expectEqualStrings("{\"query\":\"Paris\"}", args);
+}
+
+test "buildJsonAnthropicRequest: schema and history input travel short" {
+    var a = makeAgentAnthropicRequest(.{});
+    defer a.deinit();
+
+    const tools = [_]AgentTool{wire_command_tool};
+    var calls = [_]ToolCall{wireHistoryToolCall("command", "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":5}")};
+    const messages = [_]AgentMessage{wireAssistantMessage(&calls)};
+    const body = try a.buildJsonAnthropicRequest(.{ .tools = &tools, .messages = &messages }, true);
+    defer testing.allocator.free(body);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+    defer parsed.deinit();
+    const props = (try wireToolParam(parsed.value, 0, &.{ "input_schema", "properties" })).object;
+    try testing.expect(props.get("cmd") != null);
+    try testing.expect(props.get("cwd") == null);
+
+    const input = parsed.value.object.get("messages").?.array.items[0].object.get("content").?.array.items[0].object.get("input").?.object;
+    try testing.expectEqualStrings("/tmp", input.get("c").?.string);
+    try testing.expect(input.get("cwd") == null);
+}
+
+test "buildJsonResponsesRequest: schema and function_call arguments travel short" {
+    var a = makeResponsesAgentOpenaiResponses(.{});
+    defer a.deinit();
+
+    const tools = [_]AgentTool{wire_command_tool};
+    var calls = [_]ToolCall{wireHistoryToolCall("command", "{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":5}")};
+    const messages = [_]AgentMessage{wireAssistantMessage(&calls)};
+    const body = try a.buildJsonResponsesRequest(.{ .tools = &tools, .messages = &messages }, true);
+    defer testing.allocator.free(body);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, body, .{});
+    defer parsed.deinit();
+    const props = (try wireToolParam(parsed.value, 0, &.{ "parameters", "properties" })).object;
+    try testing.expect(props.get("cmd") != null);
+    try testing.expect(props.get("cwd") == null);
+
+    const input = parsed.value.object.get("input").?.array;
+    const fc = input.items[input.items.len - 1];
+    try testing.expectEqualStrings("function_call", fc.object.get("type").?.string);
+    try testing.expectEqualStrings("{\"cmd\":\"ls\",\"c\":\"/tmp\",\"t\":5}", fc.object.get("arguments").?.string);
+}
+
+test "finalize: short wire names come back canonical for the tool handler" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var agg = StreamingAggregator.init(arena_state.allocator());
+
+    try agg.process_chunk(.{ .tool_calls_delta = &.{.{
+        .index = 0,
+        .id = "call_1",
+        .function_name = "command",
+        .function_arguments = "{\"cmd\":\"ls\",\"c\":\"/tmp\",\"t\":5}",
+    }} });
+    try agg.process_chunk(.{ .finish_reason = .tool_calls });
+
+    const response = try agg.finalize();
+    try testing.expectEqualStrings("command", response.tool_calls.?[0].function.name);
+    try testing.expectEqualStrings("{\"command\":\"ls\",\"cwd\":\"/tmp\",\"timeout\":5}", response.tool_calls.?[0].function.arguments);
+}
+
+test "finalize: an MCP tool's arguments are not rewritten" {
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    var agg = StreamingAggregator.init(arena_state.allocator());
+
+    try agg.process_chunk(.{ .tool_calls_delta = &.{.{
+        .index = 0,
+        .id = "call_1",
+        .function_name = "mcp_weather",
+        .function_arguments = "{\"q\":\"Paris\"}",
+    }} });
+    try agg.process_chunk(.{ .finish_reason = .tool_calls });
+
+    const response = try agg.finalize();
+    try testing.expectEqualStrings("{\"q\":\"Paris\"}", response.tool_calls.?[0].function.arguments);
 }
