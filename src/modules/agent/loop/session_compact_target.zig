@@ -96,12 +96,21 @@ pub fn compactSession(
         .db = db,
         .session_id = session_id,
     });
+    // Every row owns its strings, and the slice is the caller's. Deferred so it
+    // runs after the compaction has consumed them: this path is called once per
+    // agent-initiated compaction, so a per-call leak is a leak in a loop.
+    defer {
+        for (db_messages) |*m| m.deinit(allocator);
+        allocator.free(db_messages);
+    }
 
     var messages: std.ArrayList(agent.AgentMessage) = .empty;
-    try messages.appendSlice(
-        allocator,
-        try buildMessages(allocator, io, db, resolved.cwd, session_id, "", false, db_messages, tools, "", "", ""),
-    );
+    // `buildMessages` hands back a heap SLICE, and `appendSlice` copies the
+    // elements out of it: the slice's own backing store has to be released or
+    // every compaction call leaks it.
+    const built = try buildMessages(allocator, io, db, resolved.cwd, session_id, "", false, db_messages, tools, "", "", "");
+    defer allocator.free(built);
+    try messages.appendSlice(allocator, built);
 
     const compacted = try compact_mod.maybeCompactMessagesNew(
         deps,
@@ -125,6 +134,10 @@ pub fn compactSession(
     if (compacted) return .{ .compacted = true, .message = "Compaction completed" };
 
     const since_last = compact_mod.messagesSinceLastCompaction(messages.items);
+
+    // Nothing was written, so the list this call built is ours to release.
+    for (messages.items) |*msg| msg.deinit(allocator);
+    messages.deinit(allocator);
     return .{
         .compacted = false,
         .message = if (since_last < compact_mod.MIN_MESSAGES_TO_COMPACT)

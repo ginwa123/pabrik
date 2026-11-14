@@ -308,6 +308,8 @@ const generalSettings = ref<PabrikGeneralSettings>({
 const runtimeSettings = ref<PabrikRuntimeSettings>({
   retry_delay_ms: 0,
   llm_read_timeout_ms: 900_000,
+  // Absent on disk reads as ON — the `compaction` tool works out of the box.
+  agent_auto_compaction: true,
 })
 
 // Skill Evals tab. Only `enabled` is editable in the UI; the budget
@@ -375,6 +377,8 @@ function syncFromConfig() {
   runtimeSettings.value = {
     retry_delay_ms: c.retry_delay_ms ?? 0,
     llm_read_timeout_ms: c.llm_read_timeout_ms ?? 900_000,
+    // `null`/absent on disk means enabled — the same reading the backend does.
+    agent_auto_compaction: c.agent_auto_compaction ?? true,
   }
   // Remember the persisted flag so the autosave can detect the OFF→ON
   // transition for the one-time browser auto-open.
@@ -476,6 +480,9 @@ function syncToConfig() {
     notify_on_error: generalSettings.value.notify_on_error,
     retry_delay_ms: runtimeSettings.value.retry_delay_ms,
     llm_read_timeout_ms: runtimeSettings.value.llm_read_timeout_ms,
+    // Absent on disk means enabled, so the sibling of the two above defaults to
+    // `true` rather than `false` before the user touches it.
+    agent_auto_compaction: runtimeSettings.value.agent_auto_compaction,
     // Plan 2026-09-10-web-launch-toggle: 4th operational setting,
     // always written through like its siblings.
     web_launch_enabled: generalSettings.value.web_launch_enabled,

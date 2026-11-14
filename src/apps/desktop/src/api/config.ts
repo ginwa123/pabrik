@@ -149,6 +149,10 @@ export interface PabrikConfig {
   /**    * Optional top-level compaction threshold as a percentage (0-100). `null` = fall through to
    * per-profile override, then built-in 80. Mirrors `LlmConfig.compaction_threshold_percent`. */
   compaction_threshold_percent?: number | null
+  /**    * Whether the AGENT may compact its own context through `compaction`. Workspace-scoped
+   * (Runtime tab); `null`/absent = enabled. Off does NOT stop the threshold trigger or the
+   * manual Compact button. Mirrors `LlmConfig.agent_auto_compaction`. */
+  agent_auto_compaction?: boolean | null
   /** Delay in milliseconds before the workflow retries a failed `callDynamicAgentNew` call. 0 = no
    * delay (current behavior, the retry fires immediately on the next loop iteration). Range: 0–60
    * 000. The backend clamps values > 60 000 to 60 000. */

@@ -84,6 +84,20 @@ including `totals.reported_input_tokens` and `cache_hit_rate`. `--range`
 defaults to the endpoint's own default (`30d`); a range the endpoint
 rejects exits non-zero with nothing on stdout.
 
+### `compaction` — the `compaction` agent tool's own path
+
+```
+pabrik headless compaction <session_id> [--force]
+```
+
+Runs the same `session_compact_target.compactSession` the tool and
+`POST /api/session/:session_id/compact` call, and prints
+`{"session_id","agent_auto_compaction","allowed","forced","compacted","message"}`.
+The workspace switch is the gate: when `agent_auto_compaction` is off the run
+is refused and the exit code is 1, which is how a script tells a refusal from a
+no-op. `--force` is what the user's Compact button does (force = true), so it
+overrides the switch and reports `forced: true`.
+
 ### `help`
 
 ```

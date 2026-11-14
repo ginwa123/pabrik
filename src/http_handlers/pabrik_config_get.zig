@@ -142,6 +142,7 @@ pub fn makeConfigResponse(allocator: std.mem.Allocator, cfg: ConfigJson) ![]u8 {
         // Top-level compaction defaults - plan 2026-07-07-compaction-inline.
         .max_capacity_token_model = cfg.max_capacity_token_model,
         .compaction_threshold_percent = cfg.compaction_threshold_percent,
+        .agent_auto_compaction = cfg.agent_auto_compaction,
         .retry_delay_ms = cfg.retry_delay_ms,
         .hook_python_bin = cfg.hook_python_bin,
         .llm_read_timeout_ms = cfg.llm_read_timeout_ms,
@@ -185,6 +186,9 @@ pub const ConfigJson = struct {
     max_capacity_token_model: ?u32 = null,
     /// Optional top-level compaction threshold (see LlmConfigJson).
     compaction_threshold_percent: ?u8 = null,
+    /// Whether the agent may compact its own context through the `compaction`
+    /// tool (see LlmConfigJson). Null = absent on disk = enabled.
+    agent_auto_compaction: ?bool = null,
     /// Delay in milliseconds before retrying a failed workflow call.
     /// See `LlmConfig.retry_delay_ms` for semantics.
     retry_delay_ms: u32 = 0,

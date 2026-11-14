@@ -1,5 +1,6 @@
 /** Tests for PabrikRuntimeSection.vue — the Runtime tab in WORKSPACE settings. The behaviour under
- * test is the seconds↔milliseconds conversion and the [0, 60 000] clamp the backend also enforces. */
+ * test is the seconds↔milliseconds conversion and the [0, 60 000] clamp the backend also enforces,
+ * plus the agent auto-compaction switch. */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
@@ -9,7 +10,14 @@ import PabrikRuntimeSection, {
 
 function mountSection(settings: Partial<PabrikRuntimeSettings>) {
   return mount(PabrikRuntimeSection, {
-    props: { modelValue: { retry_delay_ms: 0, llm_read_timeout_ms: 900_000, ...settings } },
+    props: {
+      modelValue: {
+        retry_delay_ms: 0,
+        llm_read_timeout_ms: 900_000,
+        agent_auto_compaction: true,
+        ...settings,
+      },
+    },
   })
 }
 
@@ -103,5 +111,30 @@ describe('PabrikRuntimeSection', () => {
     const wrapper = mountSection({ llm_read_timeout_ms: 60_000 })
     await wrapper.find('[data-testid="input-read-timeout-seconds"]').setValue('')
     expect(emittedReadTimeoutMs(wrapper)).toBe(900_000)
+  })
+
+  it('renders the agent auto-compaction switch from the stored value', () => {
+    const on = mountSection({ agent_auto_compaction: true })
+    expect(
+      (on.find('[data-testid="toggle-agent-auto-compaction"]').element as HTMLInputElement).checked,
+    ).toBe(true)
+
+    const off = mountSection({ agent_auto_compaction: false })
+    expect(
+      (off.find('[data-testid="toggle-agent-auto-compaction"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(false)
+  })
+
+  it('clicking the agent auto-compaction switch emits the flipped boolean', async () => {
+    const wrapper = mountSection({ agent_auto_compaction: true })
+    await wrapper.find('[data-testid="toggle-agent-auto-compaction"]').setValue(false)
+
+    const payload = wrapper.emitted('update:modelValue')?.[0]?.[0] as PabrikRuntimeSettings
+    expect(payload.agent_auto_compaction).toBe(false)
+    // The siblings ride along untouched: the toggle must not reset a delay the
+    // user set in the other card.
+    expect(payload.retry_delay_ms).toBe(0)
+    expect(payload.llm_read_timeout_ms).toBe(900_000)
   })
 })

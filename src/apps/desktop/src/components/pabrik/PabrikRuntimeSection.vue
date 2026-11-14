@@ -11,6 +11,10 @@ export interface PabrikRuntimeSettings {
   /** Deadline in milliseconds for ONE streaming LLM call (1 000–1 800 000).
    * Mirrors `PabrikConfig.llm_read_timeout_ms`. Default 900 000 = 15 minutes. */
   llm_read_timeout_ms: number
+  /** Whether the agent may compact its own context through the `compaction`
+   * tool. Mirrors `PabrikConfig.agent_auto_compaction`. Absent on disk reads as
+   * ON; OFF leaves the token-window threshold and the Compact button working. */
+  agent_auto_compaction: boolean
 }
 
 const model = defineModel<PabrikRuntimeSettings>({ required: true })
@@ -77,6 +81,11 @@ function onReadTimeoutChange(event: Event) {
   if (!Number.isFinite(seconds)) return
   readTimeoutSeconds.value = seconds
 }
+
+function onAutoCompactionToggle(event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  model.value = { ...model.value, agent_auto_compaction: checked }
+}
 </script>
 
 <template>
@@ -86,6 +95,41 @@ function onReadTimeoutChange(event: Event) {
       <p class="text-dense mt-1" style="color: var(--semantic-text-muted)">
         How agent runs behave in this workspace.
       </p>
+    </div>
+
+    <!-- Agent auto-compaction card -->
+    <div
+      class="rounded-lg p-5 space-y-3"
+      style="background-color: var(--semantic-content-bg); border: 1px solid var(--color-border)"
+    >
+      <div class="flex items-center gap-2">
+        <UiIcon name="atom" size-class="w-4 h-4" />
+        <h3 class="text-body font-semibold" style="color: var(--semantic-text)">
+          Agent compaction
+        </h3>
+      </div>
+
+      <label class="flex items-start gap-3 cursor-pointer" data-testid="row-agent-auto-compaction">
+        <div class="flex-1 min-w-0">
+          <div class="text-body font-medium" style="color: var(--semantic-text)">
+            Let the agent compact its own context
+          </div>
+          <div class="text-dense mt-0.5" style="color: var(--semantic-text-muted)">
+            Gives the agent the <code class="text-micro font-mono">compaction</code> tool, so it can
+            write a handoff envelope and drop earlier turns when the context gets long. Off = the
+            tool is refused. Off does NOT disable the token-window threshold below, and the Compact
+            button keeps working either way.
+          </div>
+        </div>
+        <input
+          type="checkbox"
+          data-testid="toggle-agent-auto-compaction"
+          :checked="model.agent_auto_compaction"
+          @change="onAutoCompactionToggle($event)"
+          class="mt-1 w-4 h-4 shrink-0 cursor-pointer"
+          style="accent-color: var(--color-violet)"
+        />
+      </label>
     </div>
 
     <!-- Retry card -->

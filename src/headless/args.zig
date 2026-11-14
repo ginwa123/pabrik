@@ -44,6 +44,15 @@ pub const MessagesArgs = struct {
     limit: u32 = 50,
 };
 
+/// `pabrik headless compaction` — the `compaction` agent tool's own path.
+pub const CompactionArgs = struct {
+    session_id: []const u8,
+    /// Run even when the workspace switched agent auto-compaction off. This is
+    /// what the user's Compact button does, so a script can prove the setting
+    /// is the only difference.
+    force: bool = false,
+};
+
 /// The multi-agent session verbs. `next` answers the question the loop asks
 /// once per iteration, so a caller can drive a group with no model in the
 /// way.
@@ -286,6 +295,7 @@ pub const FailureKind = enum {
     memories_requires_flag,
     workspace_items_unknown_op,
     workspace_items_requires_flag,
+    compaction_requires_session,
 };
 
 pub const Failure = struct {
@@ -317,6 +327,8 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless run <message> [flags]     One agentic turn; prints the reply as JSON\n" ++
     "  pabrik headless sessions [flags]          List recent sessions\n" ++
     "  pabrik headless messages <id> [flags]     Print one session's messages\n" ++
+    "  pabrik headless compaction <id> [flags]  Compact ONE session via the agent tool path\n" ++
+    "      flags: --force (run even when this workspace switched agent auto-compaction off)\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
     "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill | set-icon\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
@@ -379,6 +391,7 @@ pub const Outcome = union(enum) {
     workspace_items: WorkspaceItemsArgs,
     mcp_oauth: McpOAuthArgs,
     mcp_add: McpAddArgs,
+    compaction: CompactionArgs,
     help,
     /// Nothing parsed; `failure` says why.
     invalid: Failure,
@@ -412,6 +425,7 @@ pub fn parse(argv: []const []const u8) ParseError!Outcome {
     if (std.mem.eql(u8, verb, "workspace-items")) return try parseWorkspaceItems(rest);
     if (std.mem.eql(u8, verb, "mcp-oauth")) return try parseMcpOAuth(rest);
     if (std.mem.eql(u8, verb, "mcp-add")) return try parseMcpAdd(rest);
+    if (std.mem.eql(u8, verb, "compaction")) return try parseCompaction(rest);
 
     return .{ .invalid = .{ .kind = .unknown_subcommand, .value = verb } };
 }
@@ -473,9 +487,31 @@ fn parseMcpAdd(argv: []const []const u8) ParseError!Outcome {
     } };
 }
 
+/// `compaction <session_id> [--force]`: one positional id, one flag.
+fn parseCompaction(argv: []const []const u8) ParseError!Outcome {
+    var session_id: []const u8 = "";
+    var force = false;
+
+    for (argv) |word| {
+        if (std.mem.eql(u8, word, "--force")) {
+            force = true;
+        } else if (std.mem.eql(u8, word, "--session")) {
+            return fail(.{ .kind = .unknown_subcommand, .value = word });
+        } else if (word.len > 0 and word[0] == '-') {
+            return fail(.{ .kind = .unknown_subcommand, .value = word });
+        } else if (session_id.len == 0) {
+            session_id = word;
+        } else {
+            return fail(.{ .kind = .unknown_subcommand, .value = word });
+        }
+    }
+
+    if (session_id.len == 0) return fail(.{ .kind = .compaction_requires_session });
+    return .{ .compaction = .{ .session_id = session_id, .force = force } };
+}
+
 fn parseMcpOAuth(argv: []const []const u8) ParseError!Outcome {
     if (argv.len == 0) return fail(.{ .kind = .unknown_subcommand, .value = "mcp-oauth" });
-
     const op: McpOAuthOp = blk: {
         const word = argv[0];
         if (std.mem.eql(u8, word, "discover")) break :blk .discover;
@@ -1105,6 +1141,7 @@ pub fn reportFailure(f: Failure) void {
         .memories_requires_flag => std.log.err("headless: memories needs {s}", .{f.value}),
         .workspace_items_unknown_op => std.log.err("headless: unknown workspace-items op '{s}'", .{f.value}),
         .workspace_items_requires_flag => std.log.err("headless: workspace-items needs {s}", .{f.value}),
+        .compaction_requires_session => std.log.err("headless: compaction requires a session id: pabrik headless compaction <id>", .{}),
     }
 }
 
@@ -1372,6 +1409,29 @@ test "parse: usage refuses to guess which workspace was meant" {
     try expectFailure(&.{"usage"}, .usage_requires_flag);
     try expectFailure(&.{ "usage", "--range", "7d" }, .usage_requires_flag);
     try expectFailure(&.{ "usage", "--workspace" }, .missing_value);
+}
+
+test "parse: compaction takes one session id and the force flag" {
+    const a = switch (try parse(&.{ "compaction", "sess_1" })) {
+        .compaction => |c| c,
+        else => return error.UnexpectedOutcome,
+    };
+    try testing.expectEqualStrings("sess_1", a.session_id);
+    try testing.expect(!a.force);
+
+    const forced = switch (try parse(&.{ "compaction", "sess_1", "--force" })) {
+        .compaction => |c| c,
+        else => return error.UnexpectedOutcome,
+    };
+    try testing.expect(forced.force);
+}
+
+test "parse: compaction refuses a missing session id and a second one" {
+    try expectFailure(&.{"compaction"}, .compaction_requires_session);
+    try expectFailure(&.{ "compaction", "--force" }, .compaction_requires_session);
+    // Two ids would silently pick one, so the second is an error.
+    try expectFailure(&.{ "compaction", "s1", "s2" }, .unknown_subcommand);
+    try expectFailure(&.{ "compaction", "s1", "--workspace", "ws_1" }, .unknown_subcommand);
 }
 
 test "parse: an unknown verb is reported by name" {
