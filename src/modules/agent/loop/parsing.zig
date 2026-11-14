@@ -10,6 +10,52 @@ const json = std.json;
 const sqlite = pabrikcore.sqlite;
 const database = pabrikcore.database;
 
+/// Bytes of one tool result the model is allowed to read. The full output
+/// stays in the transcript row; only the copy replayed into the request is cut.
+pub const MAX_REPLAYED_TOOL_RESULT_BYTES: usize = 32 * 1024;
+
+/// How far back from the budget the cut may look for a line break. A head that
+/// ends on a whole line reads as source to the model, not as a broken token.
+const replay_line_slack: usize = 4 * 1024;
+
+const replay_cut_notice =
+    \\
+    \\[truncated: you are reading the first {d} of {d} bytes of this tool result,
+    \\and the remaining {d} bytes are NOT in your context. The whole output is
+    \\still stored in this session's transcript, so nothing is lost — but a
+    \\replayed tool result never exceeds {d} bytes, and re-running the same call
+    \\is cut in exactly the same place. Narrow the request instead: pass
+    \\offset/limit to read_file, pipe through head/tail/grep for shell output, or
+    \\use a more specific search pattern.]
+    \\
+;
+
+/// Takes ownership of `text`: returns it untouched when it already fits, and
+/// otherwise frees it and returns the head plus `replay_cut_notice`.
+fn capToolResultForReplay(allocator: std.mem.Allocator, text: []u8) ![]u8 {
+    if (text.len <= MAX_REPLAYED_TOOL_RESULT_BYTES) return text;
+    defer allocator.free(text);
+
+    var cut = MAX_REPLAYED_TOOL_RESULT_BYTES;
+    const window_start = cut -| replay_line_slack;
+    if (std.mem.lastIndexOfScalar(u8, text[window_start..cut], '\n')) |at| {
+        cut = window_start + at + 1;
+    } else {
+        while (cut > 0 and (text[cut] & 0xC0) == 0x80) cut -= 1;
+    }
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.appendSlice(allocator, text[0..cut]);
+    try out.print(allocator, replay_cut_notice, .{
+        cut,
+        text.len,
+        text.len - cut,
+        MAX_REPLAYED_TOOL_RESULT_BYTES,
+    });
+    return out.toOwnedSlice(allocator);
+}
+
 pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: LLMHistory) ![]agent.AgentMessage {
     var messages: std.ArrayList(agent.AgentMessage) = .empty;
 
@@ -21,7 +67,7 @@ pub fn transformLLMHistoryToAgentMessage(allocator: std.mem.Allocator, message: 
         const agentMessage = agent.AgentMessage{
             .id = try allocator.dupe(u8, message.id),
             .role = .tool,
-            .content = try stripToolEnvelope(allocator, message.response_content),
+            .content = try capToolResultForReplay(allocator, try stripToolEnvelope(allocator, message.response_content)),
             .tool_call_id = try allocator.dupe(u8, message.tool_call_id orelse ""),
         };
         try messages.append(allocator, agentMessage);
@@ -845,4 +891,153 @@ test "transform keeps legacy plain user text verbatim (positive control)" {
     const result = try transformLLMHistoryToAgentMessage(allocator, hist);
     defer freeMessages(allocator, result);
     try testing.expectEqualStrings("hello plain", result[0].content.?);
+}
+
+// ─── Tests: the replay budget on a tool result ─────────────────────────────
+
+const replay_budget_bytes: usize = 32 * 1024;
+
+fn repeatByte(allocator: std.mem.Allocator, byte: u8, count: usize) ![]u8 {
+    const out = try allocator.alloc(u8, count);
+    @memset(out, byte);
+    return out;
+}
+
+test "a 40 KiB tool result reaches the model cut to the replay budget, head kept" {
+    const allocator = testing.allocator;
+    const original_len = replay_budget_bytes + 8 * 1024;
+    const body = try repeatByte(allocator, 'x', original_len);
+    defer allocator.free(body);
+    var msg = try makeToolMessage(allocator, body);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    try testing.expect(content.len < original_len);
+    try testing.expect(std.mem.startsWith(u8, content, body[0..replay_budget_bytes]));
+}
+
+test "a cut tool result tells the model it was cut and how much it lost" {
+    const allocator = testing.allocator;
+    const original_len = replay_budget_bytes + 8 * 1024;
+    const body = try repeatByte(allocator, 'x', original_len);
+    defer allocator.free(body);
+    var msg = try makeToolMessage(allocator, body);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    try testing.expect(std.mem.indexOf(u8, content, "[truncated") != null);
+    try testing.expect(std.mem.indexOf(u8, content, "40960") != null);
+}
+
+test "a cut tool result tells the model how to read the rest without retrying the same call" {
+    const allocator = testing.allocator;
+    const body = try repeatByte(allocator, 'x', replay_budget_bytes + 8 * 1024);
+    defer allocator.free(body);
+    var msg = try makeToolMessage(allocator, body);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    try testing.expect(std.mem.indexOf(u8, content, "offset/limit") != null);
+    try testing.expect(std.mem.indexOf(u8, content, "session's transcript") != null);
+    try testing.expect(std.mem.indexOf(u8, content, "re-running the same call") != null);
+}
+
+test "the cut lands on a line break so the model never reads half a line" {
+    const allocator = testing.allocator;
+    var body: std.ArrayList(u8) = .empty;
+    defer body.deinit(allocator);
+    const line = "abcdefghijklmnopqrstuvwxyz0123456789\n";
+    while (body.items.len < replay_budget_bytes + 4096) {
+        try body.appendSlice(allocator, line);
+    }
+    var msg = try makeToolMessage(allocator, body.items);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    const marker_at = std.mem.indexOf(u8, content, "[truncated").?;
+    try testing.expectEqual(@as(usize, 0), (marker_at - 1) % line.len);
+    try testing.expect(marker_at - 1 <= replay_budget_bytes);
+}
+
+test "a tool result exactly at the replay budget reaches the model verbatim" {
+    const allocator = testing.allocator;
+    const body = try repeatByte(allocator, 'y', replay_budget_bytes);
+    defer allocator.free(body);
+    var msg = try makeToolMessage(allocator, body);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    try testing.expectEqual(replay_budget_bytes, content.len);
+    try testing.expect(std.mem.indexOf(u8, content, "[truncated") == null);
+}
+
+test "the cut never splits a multi-byte character" {
+    const allocator = testing.allocator;
+    const arrow = "\u{2192}";
+    var body: std.ArrayList(u8) = .empty;
+    defer body.deinit(allocator);
+    for (0..(replay_budget_bytes / arrow.len) + 10) |_| {
+        try body.appendSlice(allocator, arrow);
+    }
+    var msg = try makeToolMessage(allocator, body.items);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    try testing.expect(std.mem.indexOf(u8, content, "[truncated") != null);
+    try testing.expect(std.unicode.utf8ValidateSlice(content));
+}
+
+test "a tool envelope whose data field is 40 KiB cannot bypass the replay budget" {
+    const allocator = testing.allocator;
+    const original_len = replay_budget_bytes + 8 * 1024;
+    const body = try repeatByte(allocator, 'z', original_len);
+    defer allocator.free(body);
+    const envelope = try std.fmt.allocPrint(
+        allocator,
+        "{{\"tool\":\"command\",\"parameters\":{{}},\"success\":true,\"data\":{{\"stdout\":\"{s}\"}},\"error\":null,\"v\":1}}",
+        .{body},
+    );
+    defer allocator.free(envelope);
+    var msg = try makeToolMessage(allocator, envelope);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    const content = result[0].content.?;
+    try testing.expect(std.mem.indexOf(u8, content, "[truncated") != null);
+    try testing.expect(content.len < original_len);
+}
+
+test "the transcript row keeps the whole tool output the model no longer receives" {
+    const allocator = testing.allocator;
+    const original_len = replay_budget_bytes + 8 * 1024;
+    const body = try repeatByte(allocator, 'w', original_len);
+    defer allocator.free(body);
+    var msg = try makeToolMessage(allocator, body);
+    defer msg.deinit(allocator);
+
+    const result = try transformLLMHistoryToAgentMessage(allocator, msg);
+    defer freeMessages(allocator, result);
+
+    try testing.expect(msg.response_content.len == original_len);
+    try testing.expect(result[0].content.?.len < original_len);
 }
