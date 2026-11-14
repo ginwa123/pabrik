@@ -1,23 +1,25 @@
 # CI orchestrator. The graph, and nothing else.
 #
-#   changes ──▶ lint ──┬─▶ desktop-tests ──────────────────────────────────────┐
-#                      ├─▶ zginlint ───────────────────────────────────────────┤
-#                      ├─▶ backend-linux   ──▶ functional-linux-{1,2,3}     ───┤
-#                      ├─▶ backend-macos   ──▶ functional-macos-{1,2,3}     ───┼─▶ ci-ok
-#                      ├─▶ backend-windows ──▶ functional-windows-{1,2,3}   ───┤
-#                      └─▶ android-apk ──▶ android-test ───────────────────────┘
+#   changes ──▶ lint ──┬─▶ desktop-tests ────────────────────────────────────────┐
+#                      ├─▶ zginlint ─────────────────────────────────────────────┤
+#                      ├─▶ backend-linux ─────────────────────────────────────────┤
+#                      ├─▶ backend-macos ─────────────────────────────────────────┼─▶ ci-ok
+#                      ├─▶ backend-windows ───────────────────────────────────────┤
+#                      ├─▶ functional-{linux,macos,windows}-{1,2,3} ──────────────┤
+#                      └─▶ android-apk ──▶ android-test ──────────────────────────┘
 #
 # WHAT CHANGED, AND WHY EACH ONE WAS WORTH THE CHURN
 # ----------------------------------------------------
-# 1. PER-PLATFORM CHAINS. `functional-test` used to `needs: backend`, and
-#    `backend` was a 3-cell matrix — so the Linux functional suite could
-#    not start until macOS AND Windows had finished, using neither of
-#    their artifacts. A matrix has no per-cell dependency edge; a
-#    workflow call does. The three backends are now three separate jobs
-#    (`.github/workflows/ci-backend.yml`, called once per platform)
-#    and each functional shard `needs:` exactly one of them.
-#    Same for android: it needed the whole backend matrix and now needs
-#    nothing but `lint`.
+# 1. NO EDGES FROM THE SUITES TO THE BUILDS. `functional-test` used to
+#    `needs: backend`, and `backend` was a 3-cell matrix — so the Linux
+#    functional suite could not start until macOS AND Windows had
+#    finished, using neither of their artifacts. The three backends are
+#    now three separate jobs (`.github/workflows/ci-backend.yml`, called
+#    once per platform), and the nine functional shards do not `needs:`
+#    any of them: they share the SHA, not an artifact, and the edge cost
+#    21 minutes of wall clock without ever turning a red backend into a
+#    skipped suite (see the functional-jobs note below). Android never
+#    needed the matrix either and hangs off `lint`.
 #
 # 2. SHARDING. `functional-test` was the long pole at ~50 min. Three
 #    shards per platform (nine jobs) drops the wall clock to roughly the
@@ -39,6 +41,10 @@
 #    package cache), the pnpm store, the python venv and Playwright's
 #    chromium are all keyed per runner image. Sharding only pays off
 #    because a warm shard 3 costs a cache restore instead of a compile.
+#    The Windows cells additionally restore vcpkg's per-port BINARY
+#    archives: without them all four Windows jobs compile openssl, curl,
+#    libpq and sqlite3 from source on every run — 8.1 minutes each,
+#    measured on run 43567552418 ("Restored 0 package(s) ... in 136 us").
 #
 # 5. TIMEOUTS ON EVERY JOB. The backend job had none at all, so a wedged
 #    runner held a machine for the default 6 hours.
@@ -685,11 +691,18 @@ jobs:
         # the fixtures, the migrations and the product SQL all have to hold on
         # both engines. `PABRIK_DB_TESTS_REQUIRE_SERVER` keeps a reachable
         # server mandatory rather than letting the run skip itself green.
+        #
+        # `--test-shards=4` for the same reason as `ci-backend.yml`'s test
+        # step: the default is `min(8, cpus/2)` = 2 on a 4-vCPU runner, and
+        # this step is 13 of this job's 15 minutes because the two shard
+        # binaries' run phases are serial within a shard. It is passed
+        # explicitly here rather than inherited, so the two cells that run
+        # the whole suite cannot drift apart.
         env:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: |
           set -o pipefail
-          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --summary all 2>&1 | tee /tmp/test.log
+          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --test-shards=4 --summary all 2>&1 | tee /tmp/test.log
           bash scripts/check-zig-test-output-clean.sh --summary /tmp/test.log
 
       # The same two steps the Linux cell runs after `zig build test`. The
@@ -821,33 +834,35 @@ jobs:
       release_tag: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ci-latest' }}
 
   # ── 3. Functional, three shards per platform ────────────────────────
-  # Each shard `needs:` ITS OWN backend cell and nothing else. This is the
-  # change that makes the graph a set of per-platform chains instead of
-  # one long tail: Linux shards start when Linux is green, not when the
-  # slowest platform is.
+  # NO EDGE TO A BACKEND CELL. These nine jobs `needs:` `changes` and
+  # `lint` and nothing else, because they consume nothing a backend cell
+  # produces: each rebuilds from the same SHA via
+  # `zig build functional-test-all`.
   #
-  # `!cancelled()` in the `if` is deliberate and is the second half of
-  # that: because the `if` is explicit, it REPLACES the implicit
-  # `success()`, so a red backend cell no longer reports this suite as
-  # "skipped" instead of as a verdict. None of these jobs consumes a
-  # backend artifact — each rebuilds from the same SHA via
-  # `zig build functional-test-all` — so a backend failure carries no
-  # information about whether the suites pass. (Run 36555002552 failed
-  # `backend (Windows X64)` on a one-line compile error and all three
-  # functional jobs reported "skipped".)
+  # The `needs: backend-<platform>` they used to carry cost 21 minutes of
+  # wall clock and bought nothing — measured on run 43567552418, where
+  # `backend (Windows X64)` held all three Windows shards until 07:02:50
+  # and the last shard then ran to 07:24. It did not even gate on the
+  # backend's VERDICT: `!cancelled()` in the `if` below means a red
+  # backend cell still runs this suite (that is deliberate — a compile
+  # error in one candidate binary says nothing about whether the suites
+  # pass, and run 36555002552 reported these jobs as "skipped" when it
+  # should have reported a verdict). An edge that delays a green run and
+  # cannot stop a red one is pure serialisation.
   #
   # SHARD_TOTAL is spelled out on every one of the nine jobs on purpose.
   # A `matrix:` cannot be used with `uses:`, so the repetition is the
-  # price of the dependency edges, and a single typo in `shard_total`
-  # would mean two shards of one platform covering different sets of
-  # tests. tests/func_shard.py raises rather than selecting nothing when
-  # an index is out of range, so the loud failure is at least guaranteed.
+  # price of the per-platform `os:`/`target_zig:` inputs, and a single
+  # typo in `shard_total` would mean two shards of one platform covering
+  # different sets of tests. tests/func_shard.py raises rather than
+  # selecting nothing when an index is out of range, so the loud failure
+  # is at least guaranteed.
   #
   # 3 shards × 3 platforms = 9. Going to 4 is a one-character edit here
   # and in shard_total, and nothing else in the tree has to move.
   functional-linux-1:
     name: functional Linux X64 · shard 1/3
-    needs: [changes, lint, backend-linux]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -860,7 +875,7 @@ jobs:
 
   functional-linux-2:
     name: functional Linux X64 · shard 2/3
-    needs: [changes, lint, backend-linux]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -873,7 +888,7 @@ jobs:
 
   functional-linux-3:
     name: functional Linux X64 · shard 3/3
-    needs: [changes, lint, backend-linux]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -886,7 +901,7 @@ jobs:
 
   functional-macos-1:
     name: functional macOS ARM64 · shard 1/3
-    needs: [changes, lint, backend-macos]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -899,7 +914,7 @@ jobs:
 
   functional-macos-2:
     name: functional macOS ARM64 · shard 2/3
-    needs: [changes, lint, backend-macos]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -912,7 +927,7 @@ jobs:
 
   functional-macos-3:
     name: functional macOS ARM64 · shard 3/3
-    needs: [changes, lint, backend-macos]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -925,7 +940,7 @@ jobs:
 
   functional-windows-1:
     name: functional Windows X64 · shard 1/3
-    needs: [changes, lint, backend-windows]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -938,7 +953,7 @@ jobs:
 
   functional-windows-2:
     name: functional Windows X64 · shard 2/3
-    needs: [changes, lint, backend-windows]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
@@ -951,7 +966,7 @@ jobs:
 
   functional-windows-3:
     name: functional Windows X64 · shard 3/3
-    needs: [changes, lint, backend-windows]
+    needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
     with:
