@@ -21,6 +21,15 @@ pub fn getCrashLogPath() ?[]const u8 {
     return crash_log_path;
 }
 
+/// The process `Io` the report needs to ask the self-debug-info reader for a
+/// module's load bias. Set by `setCrashIo(io)` next to `setCrashLogPath`;
+/// null means the report falls back to absolute addresses only.
+var crash_io: ?std.Io = null;
+
+pub fn setCrashIo(io: std.Io) void {
+    crash_io = io;
+}
+
 // =============================================================================
 // Public entry point
 // =============================================================================
@@ -186,6 +195,58 @@ pub fn symbolicateStack(
     if (std.mem.indexOf(u8, out, "Cannot print stack trace") != null) return null;
     if (std.mem.indexOf(u8, out, "(empty stack trace)") != null) return null;
     return allocator.dupe(u8, out) catch null;
+}
+
+/// The load bias (slide) of `address`'s image, or null when unavailable.
+/// Frames are runtime addresses; without the bias an ASLR'd PIE report is
+/// unresolvable, which is why release crashes used to be untraceable.
+pub fn moduleSlide(address: usize) ?usize {
+    const io = crash_io orelse return null;
+    if (@TypeOf(std.debug.SelfInfo) == void) return null;
+    var si: std.debug.SelfInfo = .init;
+    defer si.deinit(io);
+    return si.getModuleSlide(io, address) catch null;
+}
+
+pub fn resolveHint() []const u8 {
+    return switch (builtin.os.tag) {
+        .macos, .ios, .tvos, .watchos => "atos -o <exe> <vm addr>",
+        .windows => "llvm-addr2line -e <exe> -f -C <vm addr>",
+        else => "addr2line -e <exe> -f -C <vm addr>",
+    };
+}
+
+/// One line per frame: the runtime address and the `vm` address a symbols
+/// binary resolves. Best-effort — empty on OOM, never a trap.
+pub fn formatSlideAddrs(
+    allocator: std.mem.Allocator,
+    addrs: []const usize,
+    slide: usize,
+) []const u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    var line: [96]u8 = undefined;
+    for (addrs) |ra| {
+        const s = std.fmt.bufPrint(&line, "  0x{x:0>16}  vm 0x{x:0>12}\n", .{ ra, ra -% slide }) catch continue;
+        buf.appendSlice(allocator, s) catch break;
+    }
+    const owned = buf.toOwnedSlice(allocator) catch {
+        buf.deinit(allocator);
+        return "";
+    };
+    return owned;
+}
+
+pub fn loadBaseNote(allocator: std.mem.Allocator, slide: ?usize) []const u8 {
+    const resolved = slide orelse return std.fmt.allocPrint(
+        allocator,
+        "load base: unknown (no self-debug-info) — the addresses are absolute runtime addresses\n",
+        .{},
+    ) catch "";
+    return std.fmt.allocPrint(
+        allocator,
+        "load base (image slide): 0x{x} — `vm` below is addr - slide, the offset `{s}` resolves\n",
+        .{ resolved, resolveHint() },
+    ) catch "";
 }
 
 /// Format raw return addresses, one `0x…` per line — the addr2line
@@ -509,12 +570,18 @@ fn emitCrashReport(
         ) catch "";
     defer if (sym_section.len > 0) allocator.free(sym_section);
 
-    const raw = formatRawAddrs(allocator, stack.return_addresses);
+    const slide = if (stack.return_addresses.len > 0) moduleSlide(stack.return_addresses[0]) else null;
+    const raw = if (slide) |sl|
+        formatSlideAddrs(allocator, stack.return_addresses, sl)
+    else
+        formatRawAddrs(allocator, stack.return_addresses);
     defer allocator.free(raw);
+    const base_note = loadBaseNote(allocator, slide);
+    defer if (base_note.len > 0) allocator.free(base_note);
     const raw_section = std.fmt.allocPrint(allocator,
-        \\Raw addresses ({d} frames — post-mortem: addr2line -e <exe> <addr>):
-        \\{s}
-    , .{ stack.return_addresses.len, raw }) catch "";
+        \\Raw addresses ({d} frames — post-mortem: {s}):
+        \\{s}{s}
+    , .{ stack.return_addresses.len, resolveHint(), base_note, raw }) catch "";
     defer if (raw_section.len > 0) allocator.free(raw_section);
 
     const footer = "\n=============\n";
@@ -748,6 +815,67 @@ test "formatRawAddrs of empty trace is empty" {
     const out = formatRawAddrs(testing.allocator, &.{});
     defer testing.allocator.free(out);
     try testing.expectEqualStrings("", out);
+}
+
+// ─── formatSlideAddrs: the address a symbols binary can resolve ───────
+// A frame is a RUNTIME address; ASLR moves it every launch, so an absolute
+// frame resolves to nothing unless the report also prints the load bias.
+
+test "formatSlideAddrs reports the vm address with the load bias removed" {
+    const slide: usize = 0x100000000;
+    const addrs = [_]usize{ 0x1042684f0, 0x1041c9c1b };
+    const out = formatSlideAddrs(testing.allocator, &addrs, slide);
+    defer testing.allocator.free(out);
+
+    try testing.expectEqualStrings(
+        "  0x00000001042684f0  vm 0x0000042684f0\n" ++
+            "  0x00000001041c9c1b  vm 0x0000041c9c1b\n",
+        out,
+    );
+}
+
+test "formatSlideAddrs of empty trace is empty" {
+    const out = formatSlideAddrs(testing.allocator, &.{}, 0x1000);
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("", out);
+}
+
+test "formatSlideAddrs subtracts a bias larger than the address without trapping" {
+    // A frame below the reported bias means the bias came from another image.
+    // The line must still render: a trap here loses the whole report.
+    const addrs = [_]usize{0x10};
+    const out = formatSlideAddrs(testing.allocator, &addrs, 0x20);
+    defer testing.allocator.free(out);
+    try testing.expect(std.mem.startsWith(u8, out, "  0x0000000000000010  vm 0x"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, out, "\n"));
+}
+
+test "loadBaseNote names the bias when the reader resolved one" {
+    const note = loadBaseNote(testing.allocator, 0x1000);
+    defer testing.allocator.free(note);
+    try testing.expect(std.mem.indexOf(u8, note, "load base (image slide): 0x1000") != null);
+    try testing.expect(std.mem.indexOf(u8, note, resolveHint()) != null);
+}
+
+test "loadBaseNote says so when the reader could not resolve a bias" {
+    const note = loadBaseNote(testing.allocator, null);
+    defer testing.allocator.free(note);
+    try testing.expect(std.mem.indexOf(u8, note, "load base: unknown") != null);
+}
+
+test "resolveHint names a tool that exists on this platform" {
+    const hint = resolveHint();
+    const expected: []const u8 = switch (@import("builtin").os.tag) {
+        .macos, .ios, .tvos, .watchos => "atos",
+        else => "addr2line",
+    };
+    try testing.expect(std.mem.startsWith(u8, hint, expected));
+}
+
+test "moduleSlide is null until the process hands the handler its Io" {
+    // No `setCrashIo` in a test process: the report must degrade to absolute
+    // addresses instead of dereferencing a missing Io.
+    try testing.expect(moduleSlide(0x1000) == null);
 }
 
 // ─── symbolicateStack: DWARF symbolication ────────────────────────────

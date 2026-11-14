@@ -150,6 +150,7 @@ pub fn main(init: std.process.Init) !void {
     // Crash handlers go in BEFORE the HTTP server starts, sharing the panic
     // log path (see src/service/crash_handler.zig for the contract).
     pabrikcore.crash_handler.setCrashLogPath(log_file_path);
+    pabrikcore.crash_handler.setCrashIo(io);
     pabrikcore.crash_handler.installCrashHandlers();
 
     pabrikcore.loggermod.initGlobalColor(allocator, io, .{

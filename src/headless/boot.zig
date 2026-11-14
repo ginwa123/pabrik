@@ -129,6 +129,7 @@ pub fn boot(
 
     pabrikcore.setPanicLogPath(log_file_path);
     pabrikcore.crash_handler.setCrashLogPath(log_file_path);
+    pabrikcore.crash_handler.setCrashIo(io);
     pabrikcore.crash_handler.installCrashHandlers();
 
     // File-only output: stdout is the machine-readable channel and must
