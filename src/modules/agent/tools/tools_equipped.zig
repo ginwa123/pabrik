@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const test_db = pabrikcore.test_db;
 const tools = @import("../loop/tools.zig");
+const param_alias = @import("param_alias.zig");
 
 const helpers = @import("helpers");
 const agent_db = @import("../../../models/agent.db.zig");
@@ -864,4 +865,44 @@ test "web_search and list_web_search_providers appear in equips, the registry an
     // a divergence there is what the comment at the top of this list warns
     // about, so assert the seed stays non-empty for both.
     try testing.expect(DEFAULT_AGENT_TOOLS.len > 0);
+}
+
+// =====================================================================
+// Wire parameter names: the registry decides what a session can call,
+// `param_alias.BUILTIN_TOOLS` decides whose parameter names travel short.
+
+test "every registry tool travels with short parameter names" {
+    for (UNIFIED_TOOL_REGISTRY()) |entry| {
+        try testing.expect(param_alias.isBuiltinTool(entry.name));
+    }
+}
+
+test "every BUILTIN_TOOLS entry is a registry name or a tolerated alias" {
+    for (param_alias.BUILTIN_TOOLS) |name| {
+        try testing.expect(isKnownToolName(name) or resolveToolAlias(name) != null);
+    }
+}
+
+test "every builtin tool parameter has a short wire name" {
+    for (UNIFIED_TOOL_REGISTRY()) |entry| {
+        const params = entry.tool_def.function.parameters;
+        for (params.properties) |prop| {
+            if (param_alias.shortName(prop.name) == null and !param_alias.isAlreadyShort(prop.name)) {
+                std.debug.print(
+                    "no wire alias for parameter '{s}' of tool '{s}'\n",
+                    .{ prop.name, entry.name },
+                );
+                return error.MissingWireAlias;
+            }
+        }
+        for (params.required) |name| {
+            if (param_alias.shortName(name) == null and !param_alias.isAlreadyShort(name)) {
+                std.debug.print(
+                    "no wire alias for required parameter '{s}' of tool '{s}'\n",
+                    .{ name, entry.name },
+                );
+                return error.MissingWireAlias;
+            }
+        }
+    }
 }
