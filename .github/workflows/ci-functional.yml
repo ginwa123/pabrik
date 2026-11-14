@@ -682,10 +682,18 @@ jobs:
           # the "one process pays the shared inputs once" argument for merging
           # them still holds; what changes is that the slow half now uses the
           # machine.
+          # MEASURED PER IMAGE, not guessed. Run 43616813211 (this change's
+          # first pass) set macOS to 3 on a 3-vCPU/7 GB image and ALL THREE
+          # macOS shards failed with `playwright._impl._errors` on the
+          # chatview tests — several workers' Vite servers, Chromiums and
+          # pabrik backends do not fit there. Linux (4 vCPU/16 GB) and
+          # Windows (2 vCPU) passed at 4 and 2. So macOS stays SERIAL: the
+          # worker count is a capacity question per runner, and the suite's
+          # own note puts a worker at ~1.2 GB.
           case "${RUNNER_OS:-}" in
             Linux)   func_workers=4 ;;
-            macOS)   func_workers=3 ;;
             Windows) func_workers=2 ;;
+            macOS)   func_workers=1 ;;
             *)       func_workers=1 ;;
           esac
           echo "→ functional-test: API suite serial, Playwright suite -n $func_workers"
