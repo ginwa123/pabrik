@@ -1228,6 +1228,31 @@
   #app-sidebar [data-testid='sidebar-logout-button'] {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* The controls a thumb reaches for most often and that the row/hit tokens do NOT cover:
+     the workspace switcher (a 18px text line before this), New Chat (40px), the three
+     section headers that fold a list away (27px) and the workspace rows in the switcher
+     popup (34px). */
+  #app-sidebar [data-testid='workspace-switcher-trigger'],
+  #app-sidebar [data-testid='sidebar-new-chat-button'],
+  #app-sidebar [data-testid$='-section-header'],
+  #app-sidebar [data-testid^='workspace-switcher-option-'] {
+    min-height: 44px;
+  }
+
+  /* Rename / delete inside a switcher row are 22x26 glyphs. The glyph keeps its size and the BOX
+     grows: a thumb aiming at a workspace name should not delete one by mistake either. */
+  #app-sidebar [data-testid^='workspace-switcher-rename-'],
+  #app-sidebar [data-testid^='workspace-switcher-delete-'],
+  #app-sidebar [data-testid='workspace-switcher-add-workspace'] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
     min-height: 44px;
   }
 }
