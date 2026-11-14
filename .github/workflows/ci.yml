@@ -706,7 +706,7 @@ jobs:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: |
           set -o pipefail
-          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --summary all 2>&1 | tee /tmp/test.log
+          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild -Dtest-shards=8 --summary all 2>&1 | tee /tmp/test.log
           bash scripts/check-zig-test-output-clean.sh --summary /tmp/test.log
 
       # The same two steps the Linux cell runs after `zig build test`. The
