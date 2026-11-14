@@ -159,6 +159,9 @@ pub const DocumentsOp = enum {
     doc_html_read,
     /// Read one document back, body included.
     doc_get,
+    /// Expand the `/document-<id>` tokens in a message exactly as a send does,
+    /// and print the text the model would receive.
+    expand,
     /// Write one document, or a zip of several, to a file — the same bytes the
     /// HTTP export endpoints return.
     export_file,
@@ -206,6 +209,8 @@ pub const DocumentsArgs = struct {
     query: []const u8 = "",
     /// `export`: comma-separated document ids, zipped into one archive.
     documents: []const u8 = "",
+    /// `expand`: the message text whose `/document-<id>` tokens are resolved.
+    message: []const u8 = "",
     /// `export`: where to write the file. Null means the exported file's own
     /// name, in the current directory.
     out: ?[]const u8 = null,
@@ -331,13 +336,14 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless compaction <id> [flags]  Compact ONE session via the agent tool path\n" ++
     "      flags: --force (run even when this workspace switched agent auto-compaction off)\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | export | backfill | set-icon\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | expand | export | backfill | set-icon\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      doc-create flags: --content <body> --format markdown|office|html\n" ++
     "      search flags: --query <text>\n" ++
     "      export flags: --document <id> | --documents <id,id,...> --out <path>\n" ++
     "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get, doc-html-add, doc-html-edit, doc-html-read)\n" ++
     "      in-place patch flags: --old-text <t> --new-text <t> --replace-all (doc-edit, doc-html-edit)\n" ++
+    "      expand flags: --session <id> --message <text> (prints the text the model receives)\n" ++
     "      bounded read flags: --offset <bytes> --limit <bytes> (doc-read, doc-html-read; default 20000, max 200000)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "      set-icon flags: --workspace <id> --document <id> | --folder <id> --icon <name> (empty clears)\n" ++
@@ -650,6 +656,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-html-edit")) break :blk .doc_html_edit;
         if (std.mem.eql(u8, word, "doc-html-read")) break :blk .doc_html_read;
         if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
+        if (std.mem.eql(u8, word, "expand")) break :blk .expand;
         if (std.mem.eql(u8, word, "export")) break :blk .export_file;
         if (std.mem.eql(u8, word, "backfill")) break :blk .backfill;
         if (std.mem.eql(u8, word, "set-icon")) break :blk .set_icon;
@@ -706,6 +713,10 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.session = argv[i];
+        } else if (std.mem.eql(u8, flag, "--message")) {
+            i += 1;
+            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+            got.message = argv[i];
         } else if (std.mem.eql(u8, flag, "--limit")) {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
@@ -742,7 +753,8 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
 
     const tool_op = op == .doc_add or op == .doc_edit or op == .doc_delete or op == .doc_search or op == .doc_get or
         op == .doc_read or op == .doc_html_add or op == .doc_html_edit or op == .doc_html_read;
-    if (tool_op) {
+    const session_op = tool_op or op == .expand;
+    if (session_op) {
         if (got.session.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--session" });
     } else if (got.workspace_id.len == 0 and op != .backfill) {
         return fail(.{ .kind = .documents_requires_flag, .value = "--workspace" });
@@ -773,6 +785,9 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
         .doc_search => {},
+        .expand => {
+            if (got.message.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--message" });
+        },
         .set_icon => {
             if (got.document_id == null and got.folder_id == null) {
                 return fail(.{ .kind = .documents_requires_flag, .value = "--document or --folder" });
@@ -1302,6 +1317,19 @@ test "parse: documents folder-create reads the name and the parent" {
 
 test "parse: documents refuses a write with no workspace" {
     try expectFailure(&.{ "documents", "folder-create", "--name", "x" }, .documents_requires_flag);
+}
+
+test "parse: documents expand takes a session and the message text" {
+    const a = try parse(&.{ "documents", "expand", "--session", "task_1", "--message", "see /document-doc_1" });
+    try testing.expectEqual(DocumentsOp.expand, a.documents.op);
+    try testing.expectEqualStrings("task_1", a.documents.session);
+    try testing.expectEqualStrings("see /document-doc_1", a.documents.message);
+    try testing.expectEqualStrings("", a.documents.workspace_id);
+}
+
+test "parse: documents expand refuses a call with no message and no session" {
+    try expectFailure(&.{ "documents", "expand", "--session", "task_1" }, .documents_requires_flag);
+    try expectFailure(&.{ "documents", "expand", "--message", "hi" }, .documents_requires_flag);
 }
 
 test "parse: documents refuses an unknown op by name" {

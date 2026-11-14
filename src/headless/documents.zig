@@ -13,6 +13,7 @@ const folders_store = pabrikcore.document_folders_store;
 const documents_store = pabrikcore.documents_store;
 const documents_export = pabrikcore.documents_export;
 const workspace_scope = pabrikcore.workspace_scope;
+const slash_document_expand = pabrikcore.slash_document_expand;
 const agent = pabrikcore.agent;
 const document_tool = pabrikcore.document_tool;
 const document_html_tool = pabrikcore.document_html_tool;
@@ -351,6 +352,22 @@ fn writeExport(
     return allocator.dupe(u8, path);
 }
 
+/// The message a send would hand the model, with every `/document-<id>` token
+/// resolved through the same function `sessionCreateUseCase` calls.
+fn expandJson(
+    allocator: std.mem.Allocator,
+    store: documents_store.Store,
+    a: args.DocumentsArgs,
+) ![]u8 {
+    var result = try slash_document_expand.expandSlashDocuments(allocator, store, a.session, a.message);
+    defer result.deinit(allocator);
+    return std.json.Stringify.valueAlloc(allocator, .{
+        .message = result.message,
+        .loaded_count = result.loaded_count,
+        .unknown = result.unknown,
+    }, .{});
+}
+
 /// The op table, over a plain `*Db` so a test can drive it against an
 /// in-memory database without booting a backend.
 pub fn runWithDb(
@@ -373,6 +390,8 @@ pub fn runWithDb(
             defer documents_store.freeDocumentRows(allocator, rows);
             return documentsJson(allocator, a.workspace_id, rows);
         },
+
+        .expand => return expandJson(allocator, store, a),
 
         .folder_create => {
             const row = try folders_store.createFolder(allocator, store.db, .{

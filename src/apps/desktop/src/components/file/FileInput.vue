@@ -5,6 +5,7 @@ import * as api from '../../api'
 import { getActivePinia } from 'pinia'
 import { useTabsStore } from '../../stores/tabs'
 import { useWorkspacesStore } from '../../stores/workspaces'
+import { useDocumentsStore } from '../../stores/documents'
 import { SyncRemoteError } from '../../sync/SyncError'
 import { runSyncResult } from '../../sync/runtime'
 import FilePreview from './FilePreview.vue'
@@ -114,6 +115,7 @@ const detectAgentTrigger = () => {
     closeFilePicker()
     closeSkillPicker()
     closeToolPicker()
+    closeDocumentPicker()
   } else if (changed) {
     selectedAgentIndex.value = 0
   }
@@ -263,6 +265,7 @@ const sendMessageWithFiles = async () => {
   showFilePicker.value = false
   closeSkillPicker()
   closeToolPicker()
+  closeDocumentPicker()
   closeCommandMenu()
   previewFiles.value.forEach((item) => {
     if (item.previewUrl.startsWith('blob:')) {
@@ -630,6 +633,7 @@ const detectFilesTrigger = () => {
       selectedFileIndex.value = 0
       closeAgentPicker()
       closeSkillPicker()
+      closeDocumentPicker()
       scheduleFileSearch(true) // immediate on open
     } else if (queryChanged) {
       selectedFileIndex.value = 0
@@ -655,6 +659,7 @@ function scheduleDetectAtTrigger(): void {
     detectFilesTrigger()
     detectSlashTrigger()
     detectToolTrigger()
+    detectDocumentTrigger()
     detectCommandMenu()
   }, PICKER_DEBOUNCE_MS)
 }
@@ -731,6 +736,7 @@ const detectSlashTrigger = () => {
       showSkillPicker.value = true
       selectedSkillIndex.value = 0
       closeFilePicker()
+      closeDocumentPicker()
       void loadSkillsOnce(workspaceId)
     } else {
       selectedSkillIndex.value = 0
@@ -865,6 +871,7 @@ const detectToolTrigger = () => {
       selectedToolIndex.value = 0
       closeFilePicker()
       closeSkillPicker()
+      closeDocumentPicker()
       void loadToolsOnce()
     } else {
       selectedToolIndex.value = 0
@@ -902,6 +909,75 @@ const selectTool = (tool: api.AgentRegistryEntry) => {
   closeToolPicker()
 }
 
+// ── /document picker (mirrors the /tool picker above) ─────────────────
+const DOCUMENT_TOKEN_RE = /(^|\s)\/document-([\w-]*)$/i
+const showDocumentPicker = ref(false)
+const documentQuery = ref('')
+const selectedDocumentIndex = ref(0)
+const documentPickerRef = ref<HTMLElement | null>(null)
+
+const documentsStore = () => (getActivePinia() ? useDocumentsStore() : null)
+const documentList = computed<api.Document[]>(() => documentsStore()?.documents ?? [])
+const isLoadingDocuments = computed(() => documentsStore()?.loading ?? false)
+const documentError = computed(() => documentsStore()?.error ?? null)
+
+const closeDocumentPicker = () => {
+  showDocumentPicker.value = false
+  documentQuery.value = ''
+  selectedDocumentIndex.value = 0
+}
+
+const loadDocumentsOnce = (workspaceId: string) => {
+  const store = documentsStore()
+  if (!store || store.loaded || store.loading) return
+  void store.fetchDocuments(workspaceId)
+}
+
+const detectDocumentTrigger = () => {
+  const textBeforeCursor = inputText.value.slice(0, cursorPos.value)
+  const match = textBeforeCursor.match(DOCUMENT_TOKEN_RE)
+  if (match) {
+    const workspaceId = activeWorkspaceId()
+    if (!workspaceId) {
+      closeDocumentPicker()
+      return
+    }
+    documentQuery.value = (match[2] ?? '').toLowerCase()
+    if (!showDocumentPicker.value) {
+      showDocumentPicker.value = true
+      selectedDocumentIndex.value = 0
+      closeAgentPicker()
+      closeFilePicker()
+      closeSkillPicker()
+      closeToolPicker()
+      loadDocumentsOnce(workspaceId)
+    } else {
+      selectedDocumentIndex.value = 0
+    }
+    return
+  }
+  closeDocumentPicker()
+}
+
+const filteredDocuments = computed(() => {
+  const q = documentQuery.value
+  if (q === '') return documentList.value
+  return documentList.value.filter((d) => d.title.toLowerCase().includes(q))
+})
+
+const selectDocument = (document: api.Document) => {
+  const text = inputText.value
+  const pos = cursorPos.value
+  const textBeforeCursor = text.slice(0, pos)
+  const textAfterCursor = text.slice(pos)
+  const match = textBeforeCursor.match(DOCUMENT_TOKEN_RE)
+  if (match && match.index !== undefined) {
+    const slashPos = match.index + (match[1] ?? '').length
+    inputText.value = textBeforeCursor.slice(0, slashPos) + `/document-${document.id}` + textAfterCursor
+  }
+  closeDocumentPicker()
+}
+
 const selectFile = (file: FileEntry) => {
   const text = inputText.value
   const pos = cursorPos.value
@@ -931,6 +1007,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { token: 'skill-', description: 'Insert a skill', icon: 'brain' },
   { token: 'tool-', description: 'Insert a tool', icon: 'tools' },
   { token: 'files-', description: 'Reference a file', icon: 'file' },
+  { token: 'document-', description: 'Reference a document', icon: 'note' },
 ]
 
 const showCommandMenu = ref(false)
@@ -955,7 +1032,8 @@ const detectCommandMenu = () => {
     showAgentPicker.value ||
     showFilePicker.value ||
     showSkillPicker.value ||
-    showToolPicker.value
+    showToolPicker.value ||
+    showDocumentPicker.value
   ) {
     closeCommandMenu()
     return
@@ -1001,6 +1079,7 @@ const acceptCommand = (command: SlashCommand) => {
     detectFilesTrigger()
     detectSlashTrigger()
     detectToolTrigger()
+    detectDocumentTrigger()
   })
 }
 
@@ -1096,6 +1175,33 @@ const handleKeydown = (e: KeyboardEvent) => {
       if (selectedTool) {
         selectTool(selectedTool)
       }
+    }
+    return
+  }
+
+  // Handle document picker navigation (takes precedence — only one is open)
+  if (showDocumentPicker.value) {
+    const documents = filteredDocuments.value
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedDocumentIndex.value = Math.min(selectedDocumentIndex.value + 1, documents.length - 1)
+      scrollDocumentSelectedIntoView()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      e.stopPropagation()
+      selectedDocumentIndex.value = Math.max(selectedDocumentIndex.value - 1, 0)
+      scrollDocumentSelectedIntoView()
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault()
+      e.stopPropagation()
+      const selectedDocument = documents[selectedDocumentIndex.value]
+      if (selectedDocument) {
+        selectDocument(selectedDocument)
+      }
+    } else if (e.key === 'Escape') {
+      e.stopPropagation()
+      closeDocumentPicker()
     }
     return
   }
@@ -1223,6 +1329,18 @@ const scrollToolSelectedIntoView = () => {
     if (!root) return
     const buttons = root.querySelectorAll('button')
     const selectedBtn = buttons[selectedToolIndex.value]
+    if (selectedBtn) {
+      selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
+    }
+  }, 50)
+}
+
+const scrollDocumentSelectedIntoView = () => {
+  setTimeout(() => {
+    const root = documentPickerRef.value
+    if (!root) return
+    const buttons = root.querySelectorAll('button')
+    const selectedBtn = buttons[selectedDocumentIndex.value]
     if (selectedBtn) {
       selectedBtn.scrollIntoView({ behavior: 'auto', block: 'nearest' })
     }
@@ -1530,6 +1648,65 @@ const sendMessage = () => {
       </div>
     </div>
 
+    <!-- Document picker dropdown — stays open while the `/document-` trigger
+      is active so an empty filter renders `No documents found` instead of
+      vanishing. -->
+    <div
+      v-if="showDocumentPicker"
+      ref="documentPickerRef"
+      class="document-picker-list mb-2 p-2 rounded-lg shadow-lg max-h-72 overflow-y-auto"
+      style="background-color: var(--semantic-card-bg); border: 1px solid var(--color-border)"
+      tabindex="0"
+      data-testid="document-picker-list"
+    >
+      <div v-if="isLoadingDocuments" class="p-4 text-center">
+        <div
+          class="w-6 h-6 border-2 rounded-full animate-spin mx-auto mb-2"
+          style="border-color: var(--color-violet); border-top-color: transparent"
+        ></div>
+        <p class="text-body" style="color: var(--semantic-text-dim)">Loading documents…</p>
+      </div>
+      <div
+        v-else-if="documentError"
+        class="p-2 text-body"
+        style="color: var(--semantic-text-dim)"
+        data-testid="document-picker-error"
+      >
+        {{ documentError }}
+      </div>
+      <div
+        v-else-if="filteredDocuments.length === 0"
+        class="p-2 text-body"
+        style="color: var(--semantic-text-dim)"
+      >
+        No documents found
+      </div>
+      <div v-else>
+        <button
+          v-for="(document, idx) in filteredDocuments"
+          :key="document.id"
+          @click="selectDocument(document)"
+          class="w-full text-left px-3 py-1.5 rounded text-body flex items-center gap-2 transition-colors"
+          :class="idx === selectedDocumentIndex ? 'file-item-selected' : ''"
+          :style="
+            idx === selectedDocumentIndex
+              ? 'background-color: var(--color-violet); color: var(--color-bg);'
+              : 'color: var(--semantic-text);'
+          "
+          @mouseenter="selectedDocumentIndex = idx"
+          :data-document-id="document.id"
+        >
+          <UiIcon name="note" size-class="w-3.5 h-3.5" />
+          <span class="flex flex-col items-start min-w-0">
+            <span class="truncate text-body">{{ document.title }}</span>
+            <span class="truncate text-dense" style="color: var(--semantic-text-dim)">{{
+              document.preview
+            }}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+
     <!-- Image preview list -->
     <FilePreview v-model="previewFiles" max-height="120px" />
 
@@ -1624,7 +1801,7 @@ const sendMessage = () => {
       <textarea
         ref="chatTextareaRef"
         v-model="inputText"
-        placeholder="Type a message... (@ agents, /files- files, /skill- skills, /tool- tools)"
+        placeholder="Type a message... (@ agents, /files- files, /skill- skills, /tool- tools, /document- docs)"
         :disabled="isInitializing"
         data-testid="chat-message-textarea"
         class="flex-1 px-4 py-3 rounded-xl text-body outline-none transition-all duration-200 resize-none"
