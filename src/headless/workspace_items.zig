@@ -10,6 +10,7 @@ const boot_mod = @import("boot.zig");
 
 const workspace_items = pabrikcore.workspace_items;
 const database = pabrikcore.database;
+const workspace_items_delete = pabrikcore.http_handlers.workspace_items_delete;
 
 /// One project row, as the CLI prints it. Deliberately a subset of the HTTP
 /// wire shape: a caller scripting against this needs the identity and the
@@ -44,13 +45,14 @@ pub fn run(
     backend: *boot_mod.Backend,
     a: args.WorkspaceItemsArgs,
 ) ![]u8 {
-    return runWithDb(allocator, backend.ctx.db, a);
+    return runWithDb(allocator, backend.io, backend.ctx.db, a);
 }
 
 /// The op table, over a plain `*Db` so a test can drive it against an
 /// in-memory database without booting a backend.
 pub fn runWithDb(
     allocator: std.mem.Allocator,
+    io: std.Io,
     db: *database.Db,
     a: args.WorkspaceItemsArgs,
 ) ![]u8 {
@@ -86,6 +88,11 @@ pub fn runWithDb(
             defer row.deinit(allocator);
 
             return std.json.Stringify.valueAlloc(allocator, itemDto(row), .{});
+        },
+
+        .delete => {
+            const deleted = try workspace_items_delete.useCase(allocator, io, db, a.item_id);
+            return std.json.Stringify.valueAlloc(allocator, .{ .id = deleted.id, .deleted = true }, .{});
         },
     }
 }
@@ -144,7 +151,7 @@ test "headless workspace-items: set-icon persists the glyph and list reads it ba
 
     try seedItem(&ctx, "item_a", "Board");
 
-    const set_json = try runWithDb(alloc, &ctx.db, .{
+    const set_json = try runWithDb(alloc, testing.io, &ctx.db, .{
         .op = .set_icon,
         .item_id = "item_a",
         .icon = "tree",
@@ -159,7 +166,7 @@ test "headless workspace-items: set-icon persists the glyph and list reads it ba
 
     // A SECOND call, through the list path, is the read-back that proves the
     // write landed in the table rather than in the response builder.
-    const list_json = try runWithDb(alloc, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
+    const list_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
     defer alloc.free(list_json);
 
     const parsed = try parseJson(alloc, list_json);
@@ -177,10 +184,10 @@ test "headless workspace-items: an empty --icon clears the override back to null
 
     try seedItem(&ctx, "item_a", "Board");
 
-    const set_json = try runWithDb(alloc, &ctx.db, .{ .op = .set_icon, .item_id = "item_a", .icon = "box" });
+    const set_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .set_icon, .item_id = "item_a", .icon = "box" });
     defer alloc.free(set_json);
 
-    const reset_json = try runWithDb(alloc, &ctx.db, .{ .op = .set_icon, .item_id = "item_a", .icon = "" });
+    const reset_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .set_icon, .item_id = "item_a", .icon = "" });
     defer alloc.free(reset_json);
 
     const parsed = try parseJson(alloc, reset_json);
@@ -197,7 +204,7 @@ test "headless workspace-items: a project with no override lists icon as null" {
 
     try seedItem(&ctx, "item_a", "Board");
 
-    const list_json = try runWithDb(alloc, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
+    const list_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
     defer alloc.free(list_json);
 
     const parsed = try parseJson(alloc, list_json);
@@ -214,6 +221,66 @@ test "headless workspace-items: set-icon on a missing project is an error, not a
 
     try testing.expectError(
         error.WorkspaceItemNotFound,
-        runWithDb(alloc, &ctx.db, .{ .op = .set_icon, .item_id = "item_missing", .icon = "tree" }),
+        runWithDb(alloc, testing.io, &ctx.db, .{ .op = .set_icon, .item_id = "item_missing", .icon = "tree" }),
     );
+}
+
+fn seedDeletableItem(ctx: *TestCtx) !void {
+    const alloc = testing.allocator;
+    try seedItem(ctx, "item_a", "Board");
+    try ctx.db.exec(alloc, "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, name TEXT NOT NULL, workspace_item_id TEXT NOT NULL)", &.{});
+    try ctx.db.exec(alloc, "CREATE TABLE kanban_columns (id TEXT PRIMARY KEY, workspace_item_id TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL)", &.{});
+    try ctx.db.exec(alloc, "CREATE TABLE kanban (workspace_item_task_id TEXT PRIMARY KEY, kanban_column_id TEXT NOT NULL, kanban_position INTEGER NOT NULL DEFAULT 0)", &.{});
+    try ctx.db.exec(alloc, "CREATE TABLE kanban_task_dependencies (task_id TEXT NOT NULL, depends_on_task_id TEXT NOT NULL, PRIMARY KEY (task_id, depends_on_task_id))", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('col_a', 'item_a', 'todo', 0)", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('task_a', 'card', 'item_a')", &.{});
+    try ctx.db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('task_a', 'col_a', 0)", &.{});
+}
+
+test "headless workspace-items: delete removes the project and prints what it deleted" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDeletableItem(&ctx);
+
+    const json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .delete, .item_id = "item_a" });
+    defer alloc.free(json);
+
+    {
+        const parsed = try parseJson(alloc, json);
+        defer parsed.deinit();
+        try testing.expectEqualStrings("item_a", parsed.value.object.get("id").?.string);
+        try testing.expectEqual(true, parsed.value.object.get("deleted").?.bool);
+    }
+
+    const list_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
+    defer alloc.free(list_json);
+
+    const parsed = try parseJson(alloc, list_json);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(usize, 0), parsed.value.object.get("items").?.array.items.len);
+}
+
+test "headless workspace-items: delete on a missing project reports it, and deletes nothing" {
+    const alloc = testing.allocator;
+    var ctx = try setupDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try seedDeletableItem(&ctx);
+    try seedItem(&ctx, "item_b", "Keeper");
+
+    try testing.expectError(
+        error.WorkspaceItemNotFound,
+        runWithDb(alloc, testing.io, &ctx.db, .{ .op = .delete, .item_id = "item_missing" }),
+    );
+
+    const list_json = try runWithDb(alloc, testing.io, &ctx.db, .{ .op = .list, .workspace_id = "ws_1" });
+    defer alloc.free(list_json);
+
+    const parsed = try parseJson(alloc, list_json);
+    defer parsed.deinit();
+    try testing.expectEqual(@as(usize, 2), parsed.value.object.get("items").?.array.items.len);
 }

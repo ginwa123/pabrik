@@ -4396,15 +4396,37 @@ pub fn updateWorkspaceItemIcon(
     }
 }
 
-/// Delete a workspace item by id
+/// Delete a workspace item and its own subtree in one transaction. sqlite
+/// declares no foreign key from `workspace_item_tasks` to `workspace_items`,
+/// so a bare DELETE leaves the board's tasks and dependency edges orphaned.
 pub fn deleteWorkspaceItem(
     allocator: std.mem.Allocator,
     db: *database.Db,
     id: []const u8,
 ) !void {
-    const sql = "DELETE FROM workspace_items WHERE id = ?";
-    try db.exec(allocator, sql, &.{id});
+    var tx = try db.begin();
+    defer tx.commitOrRollback() catch {};
+    errdefer tx.rollback() catch {};
+
+    try tx.exec(
+        allocator,
+        "DELETE FROM kanban_task_dependencies WHERE task_id IN (" ++ item_tasks ++ ") " ++
+            "OR depends_on_task_id IN (" ++ item_tasks ++ ")",
+        &.{ id, id },
+    );
+    try tx.exec(
+        allocator,
+        "DELETE FROM kanban WHERE workspace_item_task_id IN (" ++ item_tasks ++ ")",
+        &.{id},
+    );
+    try tx.exec(allocator, "DELETE FROM workspace_item_tasks WHERE workspace_item_id = ?", &.{id});
+    try tx.exec(allocator, "DELETE FROM kanban_columns WHERE workspace_item_id = ?", &.{id});
+    try tx.exec(allocator, "DELETE FROM workspace_items WHERE id = ?", &.{id});
+
+    try tx.commit();
 }
+
+const item_tasks = "SELECT id FROM workspace_item_tasks WHERE workspace_item_id = ?";
 
 /// List all workspace items by workspace_id. Sorted by `wi.position DESC,
 /// wi.id ASC`.
@@ -10584,4 +10606,119 @@ test "a task cursor carrying an OR does not escape the item's tasks" {
     defer freeTasks(alloc, page.tasks);
 
     try testing.expectEqual(@as(usize, 0), page.tasks.len);
+}
+// ════════════════════════════════════════════════════════════════════════════
+// deleteWorkspaceItem — a project row does not outlive its own children
+// ════════════════════════════════════════════════════════════════════════════
+
+fn deleteWorkspaceItemDb() !TestCtx {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    const io = threaded.io();
+    var db: database.Db = .{};
+    errdefer db.deinit();
+    try test_db.openMemory(&db, io);
+
+    var manager = migration.MigrationManager.init(alloc, &db);
+    defer manager.deinit();
+    try migration.registerAllMigrations(&manager);
+    try manager.runMigrations();
+
+    return .{ .db = db, .threaded = threaded, .alloc = alloc };
+}
+
+fn deleteItemSeed(db: *database.Db, alloc: std.mem.Allocator) !void {
+    try db.exec(alloc, "INSERT INTO workspaces (id, name) VALUES ('ws_del', 'delete me')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('item_del', 'ws_del', 'kanban', 'doomed')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_items (id, workspace_id, item_type, name) VALUES ('item_keep', 'ws_del', 'kanban', 'survivor')", &.{});
+
+    try db.exec(alloc, "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('col_del', 'item_del', 'todo', 0)", &.{});
+    try db.exec(alloc, "INSERT INTO kanban_columns (id, workspace_item_id, name, position) VALUES ('col_keep', 'item_keep', 'todo', 0)", &.{});
+
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('task_del_1', 'one', 'item_del')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('task_del_2', 'two', 'item_del')", &.{});
+    try db.exec(alloc, "INSERT INTO workspace_item_tasks (id, name, workspace_item_id) VALUES ('task_keep', 'kept', 'item_keep')", &.{});
+
+    try db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('task_del_1', 'col_del', 0)", &.{});
+    try db.exec(alloc, "INSERT INTO kanban (workspace_item_task_id, kanban_column_id, kanban_position) VALUES ('task_keep', 'col_keep', 0)", &.{});
+
+    try db.exec(alloc, "INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id) VALUES ('task_del_2', 'task_del_1')", &.{});
+    try db.exec(alloc, "INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id) VALUES ('task_keep', 'task_keep')", &.{});
+    try db.exec(alloc, "INSERT INTO kanban_task_dependencies (task_id, depends_on_task_id) VALUES ('task_keep', 'task_del_1')", &.{});
+}
+
+fn rowCount(db: *database.Db, alloc: std.mem.Allocator, sql: []const u8, argv: []const []const u8) !usize {
+    var row = try db.queryRow(alloc, sql, argv);
+    defer row.deinit(alloc);
+    return std.fmt.parseInt(usize, row.values[0], 10) catch 0;
+}
+
+test "deleteWorkspaceItem takes the project's tasks, placements and dependency edges with it" {
+    var ctx = try deleteWorkspaceItemDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    try deleteItemSeed(&ctx.db, alloc);
+
+    try deleteWorkspaceItem(alloc, &ctx.db, "item_del");
+
+    try testing.expectEqual(
+        @as(usize, 0),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = 'item_del'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_item_tasks WHERE workspace_item_id = 'item_del'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM kanban_columns WHERE workspace_item_id = 'item_del'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM kanban WHERE workspace_item_task_id IN ('task_del_1','task_del_2')", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        try rowCount(
+            &ctx.db,
+            alloc,
+            "SELECT COUNT(*) FROM kanban_task_dependencies WHERE task_id IN ('task_del_1','task_del_2') OR depends_on_task_id IN ('task_del_1','task_del_2')",
+            &.{},
+        ),
+    );
+}
+
+test "deleteWorkspaceItem leaves a sibling project's tasks and placements alone" {
+    var ctx = try deleteWorkspaceItemDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+    const alloc = testing.allocator;
+
+    try deleteItemSeed(&ctx.db, alloc);
+
+    try deleteWorkspaceItem(alloc, &ctx.db, "item_del");
+
+    try testing.expectEqual(
+        @as(usize, 1),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_items WHERE id = 'item_keep'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 1),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM workspace_item_tasks WHERE id = 'task_keep'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 1),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM kanban WHERE workspace_item_task_id = 'task_keep'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 1),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM kanban_task_dependencies WHERE task_id = 'task_keep' AND depends_on_task_id = 'task_keep'", &.{}),
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        try rowCount(&ctx.db, alloc, "SELECT COUNT(*) FROM kanban_task_dependencies WHERE depends_on_task_id = 'task_del_1'", &.{}),
+    );
 }

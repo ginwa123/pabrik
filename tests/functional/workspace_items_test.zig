@@ -826,6 +826,173 @@ test "delete_item_removes_from_list" {
 }
 
 // ============================================================================
+// Test 9b: DELETE a kanban item whose task sits in a column
+// ============================================================================
+
+/// `POST .../items/<kanban_id>/kanban/columns` → the new column's id. Owned.
+fn createKanbanColumn(
+    h: *Harness,
+    workspace_id: []const u8,
+    kanban_id: []const u8,
+    name: []const u8,
+) ![]u8 {
+    const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
+    defer gpa.free(body);
+
+    const path = try std.fmt.allocPrint(
+        gpa,
+        "/api/workspaces/{s}/items/{s}/kanban/columns",
+        .{ workspace_id, kanban_id },
+    );
+    defer gpa.free(path);
+
+    var r = try h.http(io, .POST, path, .{ .json_body = body, .expect = &.{201} });
+    defer r.deinit();
+
+    var doc = try r.json();
+    defer doc.deinit();
+    const id = doc.str("id") orelse {
+        std.debug.print("kanban column create returned no id: {s}\n", .{r.body});
+        return error.TestUnexpectedResult;
+    };
+    return gpa.dupe(u8, id);
+}
+
+/// `POST .../items/<kanban_id>/tasks` → the new task's id. Owned.
+fn createKanbanTask(
+    h: *Harness,
+    workspace_id: []const u8,
+    kanban_id: []const u8,
+    name: []const u8,
+) ![]u8 {
+    const body = try std.json.Stringify.valueAlloc(gpa, .{ .name = name }, .{});
+    defer gpa.free(body);
+
+    const path = try std.fmt.allocPrint(
+        gpa,
+        "/api/workspaces/{s}/items/{s}/tasks",
+        .{ workspace_id, kanban_id },
+    );
+    defer gpa.free(path);
+
+    var r = try h.http(io, .POST, path, .{ .json_body = body, .expect = &.{201} });
+    defer r.deinit();
+
+    var doc = try r.json();
+    defer doc.deinit();
+    const id = doc.str("id") orelse {
+        std.debug.print("task create returned no id: {s}\n", .{r.body});
+        return error.TestUnexpectedResult;
+    };
+    return gpa.dupe(u8, id);
+}
+
+/// `PATCH .../tasks/<task_id>/move` → 200, placing the task in the column.
+fn moveTaskIntoColumn(
+    h: *Harness,
+    workspace_id: []const u8,
+    kanban_id: []const u8,
+    task_id: []const u8,
+    column_id: []const u8,
+) !void {
+    const body = try std.json.Stringify.valueAlloc(gpa, .{
+        .column_id = column_id,
+        .position = @as(i64, 0),
+    }, .{});
+    defer gpa.free(body);
+
+    const path = try std.fmt.allocPrint(
+        gpa,
+        "/api/workspaces/{s}/items/{s}/tasks/{s}/move",
+        .{ workspace_id, kanban_id, task_id },
+    );
+    defer gpa.free(path);
+
+    var r = try h.http(io, .PATCH, path, .{ .json_body = body, .expect = &.{200} });
+    defer r.deinit();
+}
+
+/// `GET .../items/<kanban_id>/tasks` → how many tasks the API still reports.
+fn kanbanTaskCount(
+    h: *Harness,
+    workspace_id: []const u8,
+    kanban_id: []const u8,
+) !i64 {
+    const path = try std.fmt.allocPrint(
+        gpa,
+        "/api/workspaces/{s}/items/{s}/tasks",
+        .{ workspace_id, kanban_id },
+    );
+    defer gpa.free(path);
+
+    var r = try h.http(io, .GET, path, .{ .expect = &.{200} });
+    defer r.deinit();
+
+    var doc = try r.json();
+    defer doc.deinit();
+    return doc.int("count") orelse {
+        std.debug.print("tasks list has no `count`: {s}\n", .{r.body});
+        return error.TestUnexpectedResult;
+    };
+}
+
+// A project delete used to fail once its board had a card in a column: the
+// placement FK was ON DELETE SET NULL against a NOT NULL column, so the whole
+// DELETE rolled back — and one that did land orphaned the board's tasks.
+test "delete_kanban_item_with_a_task_in_a_column_removes_its_tasks" {
+    try harness.requirePabrikBin(io, gpa);
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const ws_id = try createWorkspace(&h, "items-kanban-delete-ws");
+    defer gpa.free(ws_id);
+    const base = try harness.harnessPath(gpa, h.temp_dir, &.{"pabrik-items-kanban-delete"});
+    defer gpa.free(base);
+
+    const created_raw = try createItem(&h, ws_id, "board", "kanban", base);
+    defer gpa.free(created_raw);
+    const item_id = try itemIdOf(created_raw);
+    defer gpa.free(item_id);
+
+    const column_id = try createKanbanColumn(&h, ws_id, item_id, "todo");
+    defer gpa.free(column_id);
+
+    const task_id = try createKanbanTask(&h, ws_id, item_id, "a card");
+    defer gpa.free(task_id);
+
+    try moveTaskIntoColumn(&h, ws_id, item_id, task_id, column_id);
+    try testing.expectEqual(@as(i64, 1), try kanbanTaskCount(&h, ws_id, item_id));
+
+    const path = try std.fmt.allocPrint(
+        gpa,
+        "/api/workspaces/{s}/items/{s}",
+        .{ ws_id, item_id },
+    );
+    defer gpa.free(path);
+
+    {
+        var r = try h.http(io, .DELETE, path, .{ .expect = &.{200} });
+        defer r.deinit();
+    }
+
+    {
+        var r = try h.http(io, .GET, path, .{ .expect = &.{404} });
+        defer r.deinit();
+    }
+
+    const left = try kanbanTaskCount(&h, ws_id, item_id);
+    if (left != 0) {
+        std.debug.print(
+            "deleted kanban item '{s}' still reports {d} task(s) — its tasks were orphaned, not deleted\n",
+            .{ item_id, left },
+        );
+        return error.TestUnexpectedResult;
+    }
+}
+
+// ============================================================================
 // Test 10: DELETE 404 for nonexistent
 // ============================================================================
 
