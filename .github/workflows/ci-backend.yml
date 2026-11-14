@@ -6,11 +6,11 @@
 # `functional-test` had `needs: backend` — which waits for the WHOLE
 # matrix. So the Linux functional suite could not start until macOS AND
 # Windows had finished, even though it uses neither of their artifacts.
-# A matrix has no per-cell dependency edge; a workflow call does. ci.yml
-# now calls this file three times (`backend-linux`, `backend-macos`,
-# `backend-windows`) and each call's own `needs:` is a real edge, so
-# `functional (Linux X64, shard 1/3)` starts the moment `backend-linux`
-# goes green.
+# A matrix has no per-cell edge; a workflow call does. ci.yml now calls
+# this file three times (`backend-linux`, `backend-macos`,
+# `backend-windows`), so a red Linux cell stops only the jobs that need
+# Linux — and the nine functional shards need NO cell at all, because they
+# rebuild from the same SHA rather than consuming an artifact.
 #
 # The caller owns the graph; this file owns one cell's steps. Adding a
 # platform is one `uses:` block in ci.yml, not an entry in a matrix whose
@@ -319,6 +319,52 @@ jobs:
           }
           Write-Host "ok MSVC toolchain on PATH"
           $global:LASTEXITCODE = 0
+      - name: Resolve the vcpkg baseline the archive cache is keyed to (Windows)
+        if: runner.os == 'Windows'
+        id: vcpkg-baseline
+        shell: pwsh
+        # The ports tree the image ships decides each package's version, and
+        # a package archive is only valid against the tree that built it. So
+        # the cache key carries the tree's commit: an image bump changes it,
+        # which retires the old archives instead of restoring bytes vcpkg
+        # would then reject (or worse, link).
+        # FAIL-OPEN. A cache that cannot be keyed must cost a slow run, not a
+        # red job: if the image ever ships vcpkg without its git history the
+        # fallback below keys every image to the same archives, which is the
+        # status quo minus the speedup rather than a broken pipeline.
+        run: |
+          $rev = ""
+          if (Test-Path "C:\vcpkg\.git") {
+            $rev = (git -C C:\vcpkg rev-parse HEAD 2>$null | Select-Object -First 1)
+          }
+          if (-not $rev -or $rev.Length -ne 40) {
+            Write-Warning "C:\vcpkg has no readable git history -- keying the port cache to the image only"
+            $rev = "nogit"
+          }
+          Write-Host "vcpkg baseline $rev"
+          "rev=$rev" >> $env:GITHUB_OUTPUT
+
+      - name: Restore the vcpkg binary cache (Windows)
+        if: runner.os == 'Windows'
+        id: vcpkg-cache
+        # `restore` rather than `cache`: the exact key never exists on the
+        # first run and DOES exist forever after, so a single-key
+        # actions/cache entry would either never save or never refresh.
+        # This pair restores the NEWEST archive set for these ports (the
+        # prefix match) and saves under a key that changes exactly when the
+        # ports list or the image's ports tree does.
+        #
+        # Path is under C:/vcpkg, not the runner's %LOCALAPPDATA%, because
+        # every other line in this workflow already names C:\vcpkg and the
+        # archive dir is passed to vcpkg explicitly below.
+        uses: actions/cache/restore@v4
+        with:
+          path: C:/vcpkg/archives
+          key: vcpkg-x64-windows-${{ hashFiles('scripts/ci-vcpkg-ports.txt') }}-${{ steps.vcpkg-baseline.outputs.rev }}
+          restore-keys: |
+            vcpkg-x64-windows-${{ hashFiles('scripts/ci-vcpkg-ports.txt') }}-
+            vcpkg-x64-windows-
+
       - name: Install vcpkg ports (Windows)
         if: runner.os == 'Windows'
         # `shell: pwsh` per the project rule. See the comment on
@@ -373,9 +419,26 @@ jobs:
           # tests fail with that error). Other tests (agent_memories,
           # session_plan, prompts_make_plan_context) cascade because
           # their setupDb() runs runMigrations() which trips on 058.
-          $portList = "curl:x64-windows", "openssl:x64-windows", "libpq:x64-windows", "sqlite3[fts5]:x64-windows"
+          # The port list is a FILE, `scripts/ci-vcpkg-ports.txt`, not a
+          # literal: the functional cells install the same four ports, and a
+          # copy that drifted between the two files would show up as a
+          # missing header in one cell only. It is also hashed into the
+          # binary-cache key restored above.
+          $portList = @(Get-Content -Path "scripts/ci-vcpkg-ports.txt" |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -ne "" -and -not $_.StartsWith("#") })
+          if ($portList.Count -eq 0) {
+            Write-Error "scripts/ci-vcpkg-ports.txt lists no ports -- refusing to build without them"
+            exit 1
+          }
           Write-Host ("Running: vcpkg install " + ($portList -join " "))
-          & C:\vcpkg\vcpkg.exe install --recurse $portList
+          # `--binarysource` is the whole point of the cache steps around
+          # this one: vcpkg keeps a content-addressed archive per port, so
+          # restoring C:/vcpkg/archives turns the 10-port build below into
+          # 10 extractions. Measured COLD on run 43567552418:
+          #   "Restored 0 package(s) ... in 136 us"  ->  "Total install time: 8.1 min"
+          # with openssl alone minutes of that.
+          & C:\vcpkg\vcpkg.exe install --recurse --binarysource="files,C:/vcpkg/archives,readwrite" $portList
           if ($LASTEXITCODE -ne 0) {
             Write-Error ("vcpkg install failed with exit code " + $LASTEXITCODE)
             exit 1
@@ -398,6 +461,24 @@ jobs:
               exit 1
             }
           }
+
+      - name: Save the vcpkg binary cache (Windows)
+        if: runner.os == 'Windows' && !cancelled() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        # Skipped when the exact key was already there -- the entry is
+        # immutable, so re-saving it is a no-op that costs an upload. Runs
+        # even if the install below fails: whatever archive vcpkg managed to
+        # build is still worth next run, and `!cancelled()` keeps a
+        # superseded run from writing.
+        #
+        # `continue-on-error` because four Windows jobs race to save the same
+        # key (three functional shards + the backend cell) and only one can
+        # win. Losing that race is a warning, and a cache must never be able
+        # to turn a green job red.
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: C:/vcpkg/archives
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Stage WebView2 + integrate vcpkg + install ripgrep (Windows)
         if: runner.os == 'Windows'
@@ -947,11 +1028,24 @@ jobs:
           # phase" behind — which the retry below cannot recover, because the
           # second attempt is just as cold (run 39001339808, and main's own
           # 38998531861). Serialising them costs a couple of minutes warm.
+          # HOW MANY TEST PROCESSES RUN AT ONCE. `zig build test` splits
+          # mod_tests into `-Dtest-shards` binaries — one sequential test
+          # runner each — and 2 is what build.zig DERIVES on this image
+          # (`min(8, cpus/2)` of a 4-vCPU runner), which leaves half the box
+          # idle for the whole run phase. That phase is the step: measured on
+          # run 43567552418, the two shard binaries COMPILED in 12 s and 14 s
+          # and then RAN for 1 min and 14 min, so shard count is the only
+          # lever over the 15-minute total. 4 = one test runner per vCPU.
+          #
+          # Windows stays at 1: that image has 2 vCPUs and `jobs_flag=-j1`
+          # below serialises the shards anyway, so a second shard would only
+          # add a second compile.
+          test_shards=4
           jobs_flag=""
-          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then jobs_flag="-j1"; fi
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then jobs_flag="-j1"; test_shards=1; fi
           for attempt in 1 2; do
             # shellcheck disable=SC2086  # $jobs_flag is a deliberate word list
-            zig build test $jobs_flag --summary all -Dno-webapp-rebuild 2>&1 \
+            zig build test $jobs_flag --summary all -Dno-webapp-rebuild -Dtest-shards="$test_shards" 2>&1 \
               | tee "$RUNNER_TEMP/zig-test/summary.log"
             status=$?
             if [[ "$status" -ne 0 ]] && grep -qE "unable to read results of configure phase|test runner failed to respond" "$RUNNER_TEMP/zig-test/summary.log"; then
