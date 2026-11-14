@@ -42,6 +42,7 @@ pub const execStatusPullRequest = @import("../tools/status_pull_request.zig").ex
 pub const execKanbanList = @import("../tools/kanban_list.zig").execKanbanList;
 pub const execKanbanMoveTask = @import("../tools/kanban_move_task.zig").execKanbanMoveTask;
 pub const execCreateKanbanTask = @import("../tools/create_kanban_task.zig").execCreateKanbanTask;
+pub const execManageProject = @import("../tools/manage_project.zig").execManageProject;
 pub const execSetDesignPage = @import("../tools/set_design_page.zig").execSetDesignPage;
 pub const execAddElement = @import("../tools/add_design_element.zig").execAddElement;
 pub const execUpdateElement = @import("../tools/update_design_element.zig").execUpdateElement;

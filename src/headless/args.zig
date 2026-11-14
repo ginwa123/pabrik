@@ -213,23 +213,38 @@ pub const DocumentsArgs = struct {
     icon: []const u8 = "",
 };
 
-/// The project-row verbs. `set-icon` writes the same column the `Change icon…`
-/// menu writes over HTTP; `list` is the read that proves it persisted.
+/// The project-row verbs. `create` / `edit` go through `project_model`, the
+/// module the `manage_project` agent tool calls, so the CLI exercises the same
+/// backend with no server; `list` is the read that proves a write persisted.
 pub const WorkspaceItemsOp = enum {
     list,
     set_icon,
     delete,
+    create,
+    edit,
 };
 
 pub const WorkspaceItemsArgs = struct {
     op: WorkspaceItemsOp,
-    /// `list`: which workspace's projects to print.
+    /// `list`, `create`, `edit`: whose projects.
     workspace_id: []const u8 = "",
-    /// `set-icon`: the project row being changed.
+    /// `set-icon`, `edit`: the project row being changed.
     item_id: []const u8 = "",
     /// `set-icon`: the glyph name. Empty clears the override — the same effect
     /// as `Reset to default`, which sends JSON null instead.
     icon: []const u8 = "",
+    /// `create`: `kanban` or `routine`.
+    kind: []const u8 = "",
+    name: []const u8 = "",
+    /// `create`, `edit`: the directory the project's chats run in.
+    path: []const u8 = "",
+    description: []const u8 = "",
+    instruction: []const u8 = "",
+    /// `create`, `edit`: routine 5-field cron expression; empty = manual only.
+    schedule: []const u8 = "",
+    cwd: []const u8 = "",
+    /// `create`, `edit`: "1" / "0". Empty on `edit` leaves it unchanged.
+    enabled: []const u8 = "",
 };
 
 /// The object-store verbs. One per `Storage` method, so an agent can exercise
@@ -297,6 +312,7 @@ pub const FailureKind = enum {
     workspace_items_unknown_op,
     workspace_items_requires_flag,
     compaction_requires_session,
+    workspace_items_invalid_value,
 };
 
 pub const Failure = struct {
@@ -354,9 +370,13 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
-    "  pabrik headless workspace-items <op> [flags]  Read, delete or re-icon a project row\n" ++
-    "      ops: list | set-icon | delete\n" ++
-    "      flags: --workspace <id> (list) --item <id> --icon <name> (set-icon; empty clears)\n" ++
+    "  pabrik headless workspace-items <op> [flags]  Read, create, change or delete a project row\n" ++
+    "      ops: list | set-icon | create | edit | delete\n" ++
+    "      flags: --workspace <id> (list, create, edit) --item <id> --icon <name> (set-icon; empty clears)\n" ++
+    "      create flags: --kind kanban|routine --name <n> [--path <p>] [--schedule <cron>]\n" ++
+    "             [--instruction <text>] [--description <text>] [--cwd <dir>] [--enabled 0|1]\n" ++
+    "      edit flags: --workspace <id> --item <id> [--name <n>] [--path <p>] [--schedule <cron>]\n" ++
+    "             [--instruction <text>] [--description <text>] [--cwd <dir>] [--enabled 0|1]\n" ++
     "  pabrik headless mcp-oauth <op> [flags]    Authorize a remote MCP server over OAuth 2.1\n" ++
     "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
     "      flags: --url <mcp-url> --workspace <id> --server <name> --redirect-uri <uri>\n" ++
@@ -989,6 +1009,8 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "list")) break :blk .list;
         if (std.mem.eql(u8, word, "set-icon")) break :blk .set_icon;
         if (std.mem.eql(u8, word, "delete")) break :blk .delete;
+        if (std.mem.eql(u8, word, "create")) break :blk .create;
+        if (std.mem.eql(u8, word, "edit")) break :blk .edit;
         return fail(.{ .kind = .workspace_items_unknown_op, .value = word });
     };
 
@@ -996,21 +1018,35 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
     var i: usize = 1;
     while (i < argv.len) {
         const flag = argv[i];
-        if (std.mem.eql(u8, flag, "--workspace")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.workspace_id = argv[i];
-        } else if (std.mem.eql(u8, flag, "--item")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.item_id = argv[i];
-        } else if (std.mem.eql(u8, flag, "--icon")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.icon = argv[i];
-        } else {
-            return fail(.{ .kind = .unknown_subcommand, .value = flag });
-        }
+        const slot: ?*[]const u8 = if (std.mem.eql(u8, flag, "--workspace"))
+            &got.workspace_id
+        else if (std.mem.eql(u8, flag, "--item"))
+            &got.item_id
+        else if (std.mem.eql(u8, flag, "--icon"))
+            &got.icon
+        else if (std.mem.eql(u8, flag, "--kind"))
+            &got.kind
+        else if (std.mem.eql(u8, flag, "--name"))
+            &got.name
+        else if (std.mem.eql(u8, flag, "--path"))
+            &got.path
+        else if (std.mem.eql(u8, flag, "--description"))
+            &got.description
+        else if (std.mem.eql(u8, flag, "--instruction"))
+            &got.instruction
+        else if (std.mem.eql(u8, flag, "--schedule"))
+            &got.schedule
+        else if (std.mem.eql(u8, flag, "--cwd"))
+            &got.cwd
+        else if (std.mem.eql(u8, flag, "--enabled"))
+            &got.enabled
+        else
+            null;
+
+        const target = slot orelse return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        i += 1;
+        if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+        target.* = argv[i];
         i += 1;
     }
 
@@ -1024,7 +1060,21 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
         .delete => {
             if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
         },
+        .create => {
+            if (got.workspace_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--workspace" });
+            if (got.kind.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--kind" });
+            if (got.name.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--name" });
+        },
+        .edit => {
+            if (got.workspace_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--workspace" });
+            if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
+        },
     }
+
+    if (got.enabled.len > 0 and
+        !std.mem.eql(u8, got.enabled, "0") and
+        !std.mem.eql(u8, got.enabled, "1"))
+        return fail(.{ .kind = .workspace_items_invalid_value, .value = "--enabled" });
 
     return .{ .workspace_items = got };
 }
@@ -1147,6 +1197,7 @@ pub fn reportFailure(f: Failure) void {
         .workspace_items_unknown_op => std.log.err("headless: unknown workspace-items op '{s}'", .{f.value}),
         .workspace_items_requires_flag => std.log.err("headless: workspace-items needs {s}", .{f.value}),
         .compaction_requires_session => std.log.err("headless: compaction requires a session id: pabrik headless compaction <id>", .{}),
+        .workspace_items_invalid_value => std.log.err("headless: workspace-items got an invalid value for {s}", .{f.value}),
     }
 }
 
@@ -1675,6 +1726,48 @@ test "parse: workspace-items delete reads the item from --item" {
 
 test "parse: workspace-items refuses a flag it does not own" {
     try expectFailure(&.{ "workspace-items", "list", "--workspace", "ws_1", "--session", "s_1" }, .unknown_subcommand);
+}
+
+test "parse: workspace-items create reads the kind, the name and every routine flag" {
+    const a = try parse(&.{
+        "workspace-items", "create",        "--workspace",   "ws_1",
+        "--kind",          "routine",       "--name",        "Nightly",
+        "--path",          "/tmp/nightly",  "--schedule",    "0 9 * * *",
+        "--instruction",   "read the logs", "--description", "nightly sweep",
+        "--cwd",           "/tmp/nightly",  "--enabled",     "0",
+    });
+    try testing.expectEqual(WorkspaceItemsOp.create, a.workspace_items.op);
+    try testing.expectEqualStrings("ws_1", a.workspace_items.workspace_id);
+    try testing.expectEqualStrings("routine", a.workspace_items.kind);
+    try testing.expectEqualStrings("Nightly", a.workspace_items.name);
+    try testing.expectEqualStrings("/tmp/nightly", a.workspace_items.path);
+    try testing.expectEqualStrings("0 9 * * *", a.workspace_items.schedule);
+    try testing.expectEqualStrings("read the logs", a.workspace_items.instruction);
+    try testing.expectEqualStrings("nightly sweep", a.workspace_items.description);
+    try testing.expectEqualStrings("/tmp/nightly", a.workspace_items.cwd);
+    try testing.expectEqualStrings("0", a.workspace_items.enabled);
+}
+
+test "parse: workspace-items edit needs the project it changes" {
+    const a = try parse(&.{
+        "workspace-items", "edit", "--workspace", "ws_1", "--item", "item_a", "--name", "Renamed",
+    });
+    try testing.expectEqual(WorkspaceItemsOp.edit, a.workspace_items.op);
+    try testing.expectEqualStrings("item_a", a.workspace_items.item_id);
+    try testing.expectEqualStrings("Renamed", a.workspace_items.name);
+    try testing.expectEqualStrings("", a.workspace_items.schedule);
+}
+
+test "parse: workspace-items create names each missing flag" {
+    try expectFailure(&.{ "workspace-items", "create" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "create", "--workspace", "ws_1" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "create", "--workspace", "ws_1", "--kind", "kanban" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "edit", "--item", "item_a" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "edit", "--workspace", "ws_1" }, .workspace_items_requires_flag);
+}
+
+test "parse: workspace-items rejects an --enabled that is neither 0 nor 1" {
+    try expectFailure(&.{ "workspace-items", "edit", "--workspace", "ws_1", "--item", "item_a", "--enabled", "2" }, .workspace_items_invalid_value);
 }
 
 test "the help text lists every flag the table gives this scope" {

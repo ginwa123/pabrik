@@ -77,6 +77,7 @@ const semantic_search_mod = pabrikcore.semantic_search;
 const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
 const delegate_agent_tool = pabrikcore.delegate_agent;
 const kanban_create_task_tool = pabrikcore.create_kanban_task;
+const manage_project_mod = pabrikcore.manage_project;
 const command_tool_mod = pabrikcore.command_tool;
 // `process` — the read/stop/list half of the detached `mode`s.
 const process_tool_mod = pabrikcore.process_tool;
@@ -154,6 +155,8 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         kanban_list_mod.kanban_list_tool,
         kanban_move_task_mod.kanban_move_task_tool,
         kanban_create_task_tool.create_kanban_task_tool,
+
+        manage_project_mod.manage_project_tool,
 
         // design only
         set_design_page_mod.set_design_page_tool,
@@ -277,6 +280,10 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "kanban_move_task", .exec = tools.execKanbanMoveTask, .tool_def = kanban_move_task_mod.kanban_move_task_tool },
         .{ .name = "create_kanban_task", .exec = tools.execCreateKanbanTask, .tool_def = kanban_create_task_tool.create_kanban_task_tool },
 
+        // === PROJECT TOOLS === create/edit a workspace item of item_type
+        // `kanban` or `routine`, scoped to the calling chat's workspace.
+        .{ .name = "manage_project", .exec = tools.execManageProject, .tool_def = manage_project_mod.manage_project_tool },
+
         // === DESIGN TOOLS === Three tools cover the v6 design mode LLM
         // surface: set_design_page — idempotent create/update for a page,
         // returns page + elements (no HTML bodies). add_element — creates a
@@ -354,6 +361,7 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     list_secrets_mod.list_secrets_tool.function.name,
     // Workspace-scoped documents (Migration 098): one tool, four actions.
     document_mod.document_markdown_tool.function.name,
+    manage_project_mod.manage_project_tool.function.name,
 
     // skill tools
     use_skill_mod.use_skill_tool.function.name,
