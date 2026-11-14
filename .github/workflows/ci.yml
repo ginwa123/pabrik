@@ -962,7 +962,7 @@ jobs:
       shard_total: 3
 
   functional-windows-1:
-    name: functional Windows X64 · shard 1/3
+    name: functional Windows X64 · shard 1/4
     needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
@@ -975,7 +975,7 @@ jobs:
       shard_total: 4
 
   functional-windows-2:
-    name: functional Windows X64 · shard 2/3
+    name: functional Windows X64 · shard 2/4
     needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
@@ -988,7 +988,7 @@ jobs:
       shard_total: 4
 
   functional-windows-3:
-    name: functional Windows X64 · shard 3/3
+    name: functional Windows X64 · shard 3/4
     needs: [changes, lint]
     if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
     uses: ./.github/workflows/ci-functional.yml
