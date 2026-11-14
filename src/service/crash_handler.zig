@@ -197,15 +197,23 @@ pub fn symbolicateStack(
     return allocator.dupe(u8, out) catch null;
 }
 
+/// Zig 0.16's `debug/SelfInfo/Windows.zig:67` reads a `base_address` field its
+/// own `Module` does not declare, so `getModuleSlide` does not compile for PE.
+const has_self_info_slide = switch (builtin.os.tag) {
+    .windows => false,
+    else => @TypeOf(std.debug.SelfInfo) != void,
+};
+
 /// The load bias (slide) of `address`'s image, or null when unavailable.
 /// Frames are runtime addresses; without the bias an ASLR'd PIE report is
 /// unresolvable, which is why release crashes used to be untraceable.
 pub fn moduleSlide(address: usize) ?usize {
-    const io = crash_io orelse return null;
-    if (@TypeOf(std.debug.SelfInfo) == void) return null;
-    var si: std.debug.SelfInfo = .init;
-    defer si.deinit(io);
-    return si.getModuleSlide(io, address) catch null;
+    if (comptime !has_self_info_slide) return null else {
+        const io = crash_io orelse return null;
+        var si: std.debug.SelfInfo = .init;
+        defer si.deinit(io);
+        return si.getModuleSlide(io, address) catch null;
+    }
 }
 
 pub fn resolveHint() []const u8 {
@@ -875,6 +883,13 @@ test "resolveHint names a tool that exists on this platform" {
 test "moduleSlide is null until the process hands the handler its Io" {
     // No `setCrashIo` in a test process: the report must degrade to absolute
     // addresses instead of dereferencing a missing Io.
+    try testing.expect(moduleSlide(0x1000) == null);
+}
+
+test "moduleSlide is null on a target with no self-info slide" {
+    // PE has none in Zig 0.16, so a Windows report keeps absolute addresses
+    // rather than failing to compile. Plain `return` counts as a pass.
+    if (comptime has_self_info_slide) return;
     try testing.expect(moduleSlide(0x1000) == null);
 }
 
