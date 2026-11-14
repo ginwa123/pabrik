@@ -33,8 +33,8 @@ MENU = '[data-testid="slash-command-menu"]'
 SKILL_PICKER = '[data-testid="skill-picker-list"]'
 SEND_BUTTON = "[data-testid='send-message-button']"
 
-#: The three commands the menu must offer, in order.
-COMMANDS = ["/skill-", "/tool-", "/files-"]
+#: The four commands the menu must offer, in order.
+COMMANDS = ["/skill-", "/tool-", "/files-", "/document-"]
 
 #: Sub-pixel layout: a menu flush with the pane edge is fine.
 SLACK_PX = 2
@@ -130,14 +130,14 @@ def _menu_geometry(page: Any) -> dict:
     return g
 
 
-def test_a_bare_slash_opens_the_menu_with_all_three_commands(ui_harness, page) -> None:
+def test_a_bare_slash_opens_the_menu_with_all_four_commands(ui_harness, page) -> None:
     _open_chat(ui_harness, page, "sess-slash-open")
     _type(page, "/")
     _wait_for_rows(page, COMMANDS)
 
     rows = _menu_rows(page)
     print(f"\n[slash-menu] rows: {rows}")
-    assert len(rows) == 3, f"a bare `/` must list all three commands, got {rows}"
+    assert len(rows) == 4, f"a bare `/` must list all four commands, got {rows}"
     for command in COMMANDS:
         assert any(command in row for row in rows), f"{command} is missing from {rows}"
 
@@ -150,7 +150,7 @@ def test_the_menu_stays_inside_the_window(ui_harness, page) -> None:
     g = _menu_geometry(page)
     print(f"\n[slash-menu] geometry: {g}")
 
-    assert g["rows"] == 3, f"the geometry sample needs the full menu: {g}"
+    assert g["rows"] == 4, f"the geometry sample needs the full menu: {g}"
     assert g["width"] > 0 and g["height"] > 0, f"the menu has no painted box: {g}"
     assert g["top"] >= -SLACK_PX, f"the menu runs off the top of the window: {g}"
     assert g["bottom"] <= g["viewportHeight"] + SLACK_PX, (
@@ -181,6 +181,11 @@ def test_typing_letters_narrows_the_menu(ui_harness, page) -> None:
     _wait_for_rows(page, ["/tool-"])
     rows = _menu_rows(page)
     assert len(rows) == 1 and "/tool-" in rows[0], f"`/t` must narrow to /tool-: {rows}"
+
+    _type(page, "/d")
+    _wait_for_rows(page, ["/document-"])
+    rows = _menu_rows(page)
+    assert len(rows) == 1 and "/document-" in rows[0], f"`/d` must narrow to /document-: {rows}"
 
 
 def test_a_prefix_that_matches_nothing_closes_the_menu(ui_harness, page) -> None:
