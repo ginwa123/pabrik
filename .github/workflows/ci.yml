@@ -692,7 +692,7 @@ jobs:
         # both engines. `PABRIK_DB_TESTS_REQUIRE_SERVER` keeps a reachable
         # server mandatory rather than letting the run skip itself green.
         #
-        # `--test-shards=4` for the same reason as `ci-backend.yml`'s test
+        # `-Dtest-shards=4` for the same reason as `ci-backend.yml`'s test
         # step: the default is `min(8, cpus/2)` = 2 on a 4-vCPU runner, and
         # this step is 13 of this job's 15 minutes because the two shard
         # binaries' run phases are serial within a shard. It is passed
@@ -702,7 +702,7 @@ jobs:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: |
           set -o pipefail
-          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --test-shards=4 --summary all 2>&1 | tee /tmp/test.log
+          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild -Dtest-shards=4 --summary all 2>&1 | tee /tmp/test.log
           bash scripts/check-zig-test-output-clean.sh --summary /tmp/test.log
 
       # The same two steps the Linux cell runs after `zig build test`. The
