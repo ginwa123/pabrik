@@ -28,9 +28,20 @@ const show = computed(
 <template>
   <SessionTabStrip
     v-if="show"
+    class="window-tab-strip"
     owner=""
     title="Pabrik"
     :show-sidebar-toggle="false"
     :show-close="false"
   />
 </template>
+
+<style scoped>
+/* A phone carries ONE bar: the mobile top bar already names the surface and owns the menu, so a
+   second strip over it would eat 40px of a 844px screen for a title nobody needs twice. */
+@media (max-width: 767px) {
+  .window-tab-strip {
+    display: none;
+  }
+}
+</style>

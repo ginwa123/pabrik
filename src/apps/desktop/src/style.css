@@ -1173,3 +1173,61 @@
 .tok-type {
   color: var(--color-blue);
 }
+
+/* ── Phone shell ───────────────────────────────────────────────────────
+   A phone shows one panel at a time: the sidebar leaves the flex row and
+   becomes a drawer drawn over the content (asideStyle in Sidebar.vue), so
+   <main> keeps the whole viewport width. The rules below are the geometry
+   that inline style cannot express, plus the touch sizes that must follow
+   the pointer rather than the width. */
+.mobile-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.mobile-top-bar {
+  height: 48px;
+  padding-left: max(var(--sb-gutter), env(safe-area-inset-left));
+  padding-right: max(var(--sb-gutter), env(safe-area-inset-right));
+  background-color: var(--semantic-content-bg);
+}
+
+.mobile-top-bar-title {
+  color: var(--semantic-text);
+  min-width: 0;
+}
+
+.mobile-nav-toggle,
+.mobile-sidebar-close {
+  width: 44px;
+  height: 44px;
+  color: var(--semantic-text-dim);
+}
+
+.mobile-nav-toggle:hover,
+.mobile-sidebar-close:hover {
+  color: var(--semantic-text);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --sb-row: 40px;
+    --sb-hit: 40px;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --sb-row: 44px;
+    --sb-hit: 44px;
+  }
+
+  #app-sidebar [data-testid='sidebar-settings-button'],
+  #app-sidebar [data-testid='sidebar-logout-button'] {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
