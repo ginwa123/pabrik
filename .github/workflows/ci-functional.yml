@@ -28,23 +28,17 @@
 #
 # NO `concurrency:` BLOCK — see the identical note in ci-backend.yml.
 #
-# BOTH SUITES, ONE JOB, TWO STEPS
-# -------------------------------
+# BOTH SUITES, ONE PYTEST INVOCATION
+# ---------------------------------
 # The API suite (tests/functional/) and the Playwright UI suite
-# (tests/functional_ui/) were separate JOBS once; that charged every shared
-# input twice per PR (a second venv, a second `playwright install chromium`
-# at ~150 MB, a second full `zig build install` walk for the same binary) and
-# produced two verdicts that could disagree. They became ONE
-# `zig build functional-test-all` process to pay that once.
-#
-# They are now TWO STEPS in that same job — `functional-test` then
-# `functional-test-ui` — and the reason is parallelism, not verdicts. The
-# combined step has no `-n`, so a job that had four cores ran one Playwright
-# worker; the UI suite can use `-Dfunc-ui-workers` and the API suite cannot
-# (its firecracker-guest tests collide when two run at once). Splitting the
-# steps keeps every shared input paid once, keeps one job and one verdict,
-# and lets the slow half use the machine. Sharding still does not undo that:
-# both steps get the same shard index and total.
+# (tests/functional_ui/) run in ONE `zig build functional-test-all`, in
+# ONE pytest process. They were separate jobs once; that charged every
+# shared input twice per PR (a second venv, a second `playwright install
+# chromium` at ~150 MB, a second full `zig build install` walk for the
+# same binary) and produced two verdicts that could disagree. One process
+# pays it once and answers one question. Sharding does not undo that: all
+# shards run the same single invocation, each with a different slice of
+# the collected items.
 #
 # THREE PLATFORMS, NOT ONE
 # ------------------------
@@ -670,33 +664,6 @@ jobs:
           # fetch-phase network errors (log matches the network pattern). A
           # real pytest failure is not retried: a flake that needs three
           # attempts to pass is a flake to fix, not to average out.
-          # TWO STEPS, NOT ONE, and the split is about WHO CAN BE PARALLEL.
-          # `zig build functional-test-all` is a single pytest process with no
-          # `-n`, so this job used the ONE core of four that a Playwright run
-          # actually occupies. `-Dfunc-ui-workers` exists and defaults to 1,
-          # and build.zig's own note on it says why: the firecracker-guest
-          # tests collide when two run at once, and those live in
-          # `tests/functional/`, not in the UI suite. So the API half stays
-          # SERIAL and only the Playwright half gets workers — the same job,
-          # the same venv, the same browser and the same binary either way, so
-          # the "one process pays the shared inputs once" argument for merging
-          # them still holds; what changes is that the slow half now uses the
-          # machine.
-          # MEASURED PER IMAGE, not guessed. Run 43616813211 (this change's
-          # first pass) set macOS to 3 on a 3-vCPU/7 GB image and ALL THREE
-          # macOS shards failed with `playwright._impl._errors` on the
-          # chatview tests — several workers' Vite servers, Chromiums and
-          # pabrik backends do not fit there. Linux (4 vCPU/16 GB) and
-          # Windows (2 vCPU) passed at 4 and 2. So macOS stays SERIAL: the
-          # worker count is a capacity question per runner, and the suite's
-          # own note puts a worker at ~1.2 GB.
-          case "${RUNNER_OS:-}" in
-            Linux)   func_workers=4 ;;
-            Windows) func_workers=2 ;;
-            macOS)   func_workers=1 ;;
-            *)       func_workers=1 ;;
-          esac
-          echo "→ functional-test: API suite serial, Playwright suite -n $func_workers"
           attempt=1
           max_attempts=3
           rc=1
@@ -706,21 +673,11 @@ jobs:
             # The shard is a BUILD flag, not an inherited variable (see the
             # `env:` block above): build.zig validates the pair and sets
             # PABRIK_FUNC_SHARD_TOTAL/INDEX on the pytest child itself.
-            zig build functional-test --summary all \
+            zig build functional-test-all --summary all \
               -Dfunc-shards="$PABRIK_FUNC_SHARD_TOTAL" \
               -Dfunc-shard-index="$PABRIK_FUNC_SHARD_INDEX" \
               2>&1 | tee /tmp/functional-test.log | tail -n 80
             rc=${PIPESTATUS[0]}
-            if [ "$rc" -eq 0 ]; then
-              # `tee -a`: the failure block below greps ONE log for both
-              # halves, so the second must append rather than replace.
-              zig build functional-test-ui --summary all \
-                -Dfunc-shards="$PABRIK_FUNC_SHARD_TOTAL" \
-                -Dfunc-shard-index="$PABRIK_FUNC_SHARD_INDEX" \
-                -Dfunc-ui-workers="$func_workers" \
-                2>&1 | tee -a /tmp/functional-test.log | tail -n 80
-              rc=${PIPESTATUS[0]}
-            fi
             set -e
             echo "→ functional-test: attempt $attempt exit code $rc"
             if [ "$rc" -eq 0 ]; then
