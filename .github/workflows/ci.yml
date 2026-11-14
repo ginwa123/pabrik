@@ -692,15 +692,16 @@ jobs:
         # both engines. `PABRIK_DB_TESTS_REQUIRE_SERVER` keeps a reachable
         # server mandatory rather than letting the run skip itself green.
         #
-        # NO `-Dtest-shards` HERE, DELIBERATELY, and the number is why.
-        # `ci-backend.yml` runs the same suite with 4 shards and drops from
-        # 15m12 to 1m55 (run 43590623745). The same flag here measured
-        # 13m13 -> 11m26 -> 26m03 across three runs: what this cell shares
-        # across its shards is not just a binary but ONE postgres server,
-        # and 4 concurrent shards each creating temp databases contend on
-        # it. The derived 2 is right for this job; the shard count that is
-        # wrong for a platform is wrong for a different reason than "it is
-        # too small".
+        # NO `-Dtest-shards` HERE, DELIBERATELY.
+        # The backend cells run this suite with 4 shards and the step drops
+        # from 15m12 to 1m55 (run 43590623745). The same flag here measured
+        # 26m03 for the step against a 13m13 baseline — and the next run of
+        # the UNCHANGED 2-shard config measured 27m02, so one run is not
+        # evidence either way and the flag was not kept on it.
+        #
+        # The reason to be suspicious of it is specific: what these shards
+        # share is not only a binary but ONE postgres server, and each test
+        # creates a temp database on it. Measure before re-adding.
         env:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: |
