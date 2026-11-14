@@ -871,13 +871,22 @@ test "loadBaseNote says so when the reader could not resolve a bias" {
     try testing.expect(std.mem.indexOf(u8, note, "load base: unknown") != null);
 }
 
-test "resolveHint names a tool that exists on this platform" {
+test "resolveHint tells the reader which column to feed" {
+    try testing.expect(std.mem.indexOf(u8, resolveHint(), "vm addr") != null);
+}
+
+test "resolveHint never names a tool from another platform family" {
+    // Compared per family, not against a copy of the table: a duplicated
+    // tool name is how the first version of this test passed on Linux and
+    // macOS and failed on Windows, where the tool is `llvm-addr2line`.
     const hint = resolveHint();
-    const expected: []const u8 = switch (@import("builtin").os.tag) {
-        .macos, .ios, .tvos, .watchos => "atos",
-        else => "addr2line",
-    };
-    try testing.expect(std.mem.startsWith(u8, hint, expected));
+    switch (builtin.os.tag) {
+        .macos, .ios, .tvos, .watchos => {
+            try testing.expect(std.mem.startsWith(u8, hint, "atos"));
+            try testing.expect(std.mem.indexOf(u8, hint, "addr2line") == null);
+        },
+        else => try testing.expect(std.mem.indexOf(u8, hint, "atos") == null),
+    }
 }
 
 test "moduleSlide is null until the process hands the handler its Io" {
