@@ -685,29 +685,17 @@ jobs:
           PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
         run: zig build test:db -Ddb_used=sqlite,postgres
 
-      - name: The whole suite, on the postgres backend
-        # BLOCKING. `zig build test` is the suite every other cell runs, and
-        # `-Ddb_used=sqlite,postgres` makes it run against this job's server:
-        # the fixtures, the migrations and the product SQL all have to hold on
-        # both engines. `PABRIK_DB_TESTS_REQUIRE_SERVER` keeps a reachable
-        # server mandatory rather than letting the run skip itself green.
-        #
-        # NO `-Dtest-shards` HERE, DELIBERATELY.
-        # The backend cells run this suite with 4 shards and the step drops
-        # from 15m12 to 1m55 (run 43590623745). The same flag here measured
-        # 26m03 for the step against a 13m13 baseline — and the next run of
-        # the UNCHANGED 2-shard config measured 27m02, so one run is not
-        # evidence either way and the flag was not kept on it.
-        #
-        # The reason to be suspicious of it is specific: what these shards
-        # share is not only a binary but ONE postgres server, and each test
-        # creates a temp database on it. Measure before re-adding.
-        env:
-          PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
-        run: |
-          set -o pipefail
-          zig build test -Ddb_used=sqlite,postgres -Dno-webapp-rebuild --summary all 2>&1 | tee /tmp/test.log
-          bash scripts/check-zig-test-output-clean.sh --summary /tmp/test.log
+      # NOTE — the whole suite is NOT a step here any more. It ran for
+      # 13m13 to 29m53 in this job and was the longest thing in the pipeline
+      # by a factor of two, and a bigger `-Dtest-shards` could not fix it from
+      # inside one job: 8 shards in this job measured 12m24 against 13m for 2,
+      # because eight single-threaded test binaries share four vCPUs (run
+      # 43601561237 — the per-shard times are in ci-unit-postgres.yml's
+      # header). It is now the `unit postgres · shards ...` jobs, which split
+      # the SAME partition across two VMs. What stays here is every step that
+      # is not the suite, so this job is the database-world check rather than
+      # the suite: it compiles the postgres backend, runs the backend-agnostic
+      # database tests on both engines, and boots the real binary.
 
       # The same two steps the Linux cell runs after `zig build test`. The
       # console is its own package and the daemon is Linux-only, so neither
@@ -762,6 +750,37 @@ jobs:
       # remaining `rowid`/`PRAGMA`/`changes()` fixes land, the full suite joins
       # this job as the step the Linux cell already has.
 
+
+  # ── 1d. The unit suite on the postgres backend, two VMs ─────────────
+  # The partition is the SAME `-Dtest-shards=8` the probe measured; the two
+  # jobs take disjoint halves of it. Eight shards in one job is worth nothing
+  # (12m24 against 13m for two); four shards on each of two 4-vCPU VMs is
+  # where that measurement pays.
+  #
+  # Both hang off `lint` like every other heavy job, and neither consumes an
+  # artifact from the other: they share only the partition, so a red slice
+  # carries no information about its sibling.
+  unit-postgres-1:
+    name: unit postgres · shards 1-4
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    uses: ./.github/workflows/ci-unit-postgres.yml
+    with:
+      # ZERO-based, four of eight. Disjoint from the call below; their union
+      # is every shard, which is the only correctness requirement.
+      shard_indices: "0 1 2 3"
+      label: 1-4
+      shard_total: 8
+
+  unit-postgres-2:
+    name: unit postgres · shards 5-8
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    uses: ./.github/workflows/ci-unit-postgres.yml
+    with:
+      shard_indices: "4 5 6 7"
+      label: 5-8
+      shard_total: 8
 
   # ── 2. Backend, one job per platform ────────────────────────────────
   # Three calls of the same reusable workflow instead of one 3-cell
@@ -953,7 +972,7 @@ jobs:
       target_zig: x86_64-windows-gnu
       # ZERO-based. Out of range raises rather than collecting nothing.
       shard_index: 0
-      shard_total: 3
+      shard_total: 4
 
   functional-windows-2:
     name: functional Windows X64 · shard 2/3
@@ -966,7 +985,7 @@ jobs:
       target_zig: x86_64-windows-gnu
       # ZERO-based. Out of range raises rather than collecting nothing.
       shard_index: 1
-      shard_total: 3
+      shard_total: 4
 
   functional-windows-3:
     name: functional Windows X64 · shard 3/3
@@ -979,7 +998,26 @@ jobs:
       target_zig: x86_64-windows-gnu
       # ZERO-based. Out of range raises rather than collecting nothing.
       shard_index: 2
-      shard_total: 3
+      shard_total: 4
+
+  functional-windows-4:
+    # Windows gets a FOURTH shard and the other two platforms keep three, and
+    # the number is why: measured on run 43598734628, a Windows shard is
+    # 11m19 against 8m05 (macOS) and 6m53 (Linux) for the same 1/3 of the
+    # suite — vcpkg, the DLL-path shims and a 2-vCPU image make every test
+    # more expensive there. At three shards that job would be the longest in
+    # the pipeline once the unit suite stops being it.
+    name: functional Windows X64 · shard 4/4
+    needs: [changes, lint]
+    if: ${{ needs.lint.result == 'success' && needs.changes.outputs.heavy == 'true' && !cancelled() }}
+    uses: ./.github/workflows/ci-functional.yml
+    with:
+      os: windows-2022
+      label: Windows X64
+      target_zig: x86_64-windows-gnu
+      # ZERO-based. Out of range raises rather than collecting nothing.
+      shard_index: 3
+      shard_total: 4
 
   # ── 4. Install, one job per platform ───────────────────────────────
   # Each job downloads the PREBUILT bins from the rolling `ci-latest`
@@ -1575,6 +1613,8 @@ jobs:
       - desktop-tests
       - zginlint
       - backend-postgres
+      - unit-postgres-1
+      - unit-postgres-2
       - backend-linux
       - backend-macos
       - backend-windows
@@ -1587,6 +1627,7 @@ jobs:
       - functional-windows-1
       - functional-windows-2
       - functional-windows-3
+      - functional-windows-4
       - install-linux
       - install-macos
       - install-windows
@@ -1615,6 +1656,8 @@ jobs:
             desktop-tests=${{ needs.desktop-tests.result }}
             zginlint=${{ needs.zginlint.result }}
             backend-postgres=${{ needs.backend-postgres.result }}
+            unit-postgres-1=${{ needs.unit-postgres-1.result }}
+            unit-postgres-2=${{ needs.unit-postgres-2.result }}
             backend-linux=${{ needs.backend-linux.result }}
             backend-macos=${{ needs.backend-macos.result }}
             backend-windows=${{ needs.backend-windows.result }}
@@ -1627,6 +1670,7 @@ jobs:
             functional-windows-1=${{ needs.functional-windows-1.result }}
             functional-windows-2=${{ needs.functional-windows-2.result }}
             functional-windows-3=${{ needs.functional-windows-3.result }}
+            functional-windows-4=${{ needs.functional-windows-4.result }}
             install-linux=${{ needs.install-linux.result }}
             install-macos=${{ needs.install-macos.result }}
             install-windows=${{ needs.install-windows.result }}
