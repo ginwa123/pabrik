@@ -532,17 +532,40 @@ pub const SystemFolder = struct {
         return false;
     }
 
-    /// Case-insensitive subsequence check (FileInput `matchesOutOfOrder`
-    /// semantics): every needle char appears in haystack in order, gaps
-    /// OK — so `tst` still matches `test`, `cmps` matches `components`.
-    pub fn matchesSubsequenceIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    fn foldSeparator(c: u8) u8 {
+        const lower = std.ascii.toLower(c);
+        return if (lower == '\\') '/' else lower;
+    }
+
+    fn joinedByte(prefix: []const u8, name: []const u8, i: usize) u8 {
+        return if (i < prefix.len) prefix[i] else name[i - prefix.len];
+    }
+
+    /// Case-insensitive substring test over `prefix ++ name` without joining
+    /// them: `prefix` is the directory part of the path the picker renders.
+    fn joinedContainsIgnoreCase(prefix: []const u8, name: []const u8, needle: []const u8) bool {
         if (needle.len == 0) return true;
+        const total = prefix.len + name.len;
+        if (needle.len > total) return false;
+        var start: usize = 0;
+        while (start + needle.len <= total) : (start += 1) {
+            var j: usize = 0;
+            while (j < needle.len) : (j += 1) {
+                if (foldSeparator(joinedByte(prefix, name, start + j)) != foldSeparator(needle[j])) break;
+            }
+            if (j == needle.len) return true;
+        }
+        return false;
+    }
+
+    fn joinedSubsequenceIgnoreCase(prefix: []const u8, name: []const u8, needle: []const u8) bool {
+        const total = prefix.len + name.len;
         var hi: usize = 0;
         for (needle) |nc| {
-            const lower_nc = std.ascii.toLower(nc);
+            const target = foldSeparator(nc);
             var found = false;
-            while (hi < haystack.len) : (hi += 1) {
-                if (std.ascii.toLower(haystack[hi]) == lower_nc) {
+            while (hi < total) : (hi += 1) {
+                if (foldSeparator(joinedByte(prefix, name, hi)) == target) {
                     hi += 1;
                     found = true;
                     break;
@@ -553,13 +576,15 @@ pub const SystemFolder = struct {
         return true;
     }
 
-    /// Match rank: 0 = case-insensitive substring (best), 1 =
-    /// subsequence-only. Null when the name does not match at all.
-    /// Empty query matches everything at rank 0 (top-N listing).
-    fn matchRank(name: []const u8, query: []const u8) ?u8 {
+    /// Match rank: 0 = the entry's own name contains the query (best), 1 =
+    /// the path the picker renders contains it, 2 = subsequence of that
+    /// path. Null when nothing matches. Empty query matches everything at
+    /// rank 0 (top-N listing).
+    fn matchRank(name: []const u8, path_prefix: []const u8, query: []const u8) ?u8 {
         if (query.len == 0) return 0;
         if (containsIgnoreCase(name, query)) return 0;
-        if (matchesSubsequenceIgnoreCase(name, query)) return 1;
+        if (joinedContainsIgnoreCase(path_prefix, name, query)) return 1;
+        if (joinedSubsequenceIgnoreCase(path_prefix, name, query)) return 2;
         return null;
     }
 
@@ -607,6 +632,7 @@ pub const SystemFolder = struct {
 
         const cap: usize = if (limit == 0) 50 else if (limit > 200) 200 else limit;
         const depth_cap: usize = if (max_depth == 0) 8 else max_depth;
+        const needle = std.mem.trimStart(u8, query, "/\\");
 
         var matches = std.ArrayList(SearchHit).empty;
         defer matches.deinit(allocator);
@@ -623,6 +649,9 @@ pub const SystemFolder = struct {
             /// Path inside the repository: `""` at its root, else `a/b/`. Null
             /// when no repository answers, so nothing is filtered.
             rel: ?[]u8,
+            /// Path below the search root as the picker renders it: `""` at
+            /// the root, else `a/b/`. Always owned.
+            disp: []u8,
             depth: usize,
         };
         const Candidate = struct {
@@ -638,6 +667,7 @@ pub const SystemFolder = struct {
             for (frontier.items) |frame| {
                 allocator.free(frame.abs);
                 if (frame.rel) |rel| allocator.free(rel);
+                allocator.free(frame.disp);
             }
             frontier.deinit(allocator);
         }
@@ -650,9 +680,15 @@ pub const SystemFolder = struct {
             }
         else
             null;
-        frontier.append(allocator, .{ .abs = root_abs, .rel = root_rel, .depth = 0 }) catch {
+        const root_disp = allocator.dupe(u8, "") catch {
             allocator.free(root_abs);
             if (root_rel) |rel| allocator.free(rel);
+            return SystemFolderError.OutOfMemory;
+        };
+        frontier.append(allocator, .{ .abs = root_abs, .rel = root_rel, .disp = root_disp, .depth = 0 }) catch {
+            allocator.free(root_abs);
+            if (root_rel) |rel| allocator.free(rel);
+            allocator.free(root_disp);
             return SystemFolderError.OutOfMemory;
         };
 
@@ -735,14 +771,20 @@ pub const SystemFolder = struct {
                         }
                     else
                         null;
-                    next.append(allocator, .{ .abs = dir_path, .rel = child_rel, .depth = child_depth }) catch {
+                    const child_disp = std.fmt.allocPrint(allocator, "{s}{s}/", .{ frame.disp, c.name }) catch {
                         allocator.free(dir_path);
                         if (child_rel) |rel| allocator.free(rel);
                         continue;
                     };
+                    next.append(allocator, .{ .abs = dir_path, .rel = child_rel, .disp = child_disp, .depth = child_depth }) catch {
+                        allocator.free(dir_path);
+                        if (child_rel) |rel| allocator.free(rel);
+                        allocator.free(child_disp);
+                        continue;
+                    };
                 }
 
-                const rank = matchRank(c.name, query) orelse continue;
+                const rank = matchRank(c.name, frame.disp, needle) orelse continue;
                 const entry_name = allocator.dupe(u8, c.name) catch continue;
                 const full_path = std.fs.path.join(allocator, &.{ frame.abs, c.name }) catch {
                     allocator.free(entry_name);
@@ -769,6 +811,7 @@ pub const SystemFolder = struct {
             for (frontier.items) |frame| {
                 allocator.free(frame.abs);
                 if (frame.rel) |rel| allocator.free(rel);
+                allocator.free(frame.disp);
             }
             frontier.deinit(allocator);
             frontier = next;
@@ -1813,6 +1856,56 @@ test "searchFiles: pure-subsequence query (no substring) still matches" {
         if (std.mem.eql(u8, e.name, "components")) found = true;
     }
     try testing.expect(found);
+}
+
+test "searchFiles: a path query finds the folder the picker shows" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "examples/calculator/main.zig", "x\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "src/components/Button.vue", "x\n");
+
+    // What the picker shows for this folder is `/examples/calculator`.
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "/examples/calculato", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    var found = false;
+    for (entries) |entry| {
+        if (std.mem.eql(u8, entry.name, "calculator") and entry.is_directory) found = true;
+    }
+    try testing.expect(found);
+}
+
+test "searchFiles: a path query lists what is inside the folder" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "examples/calculator/main.zig", "x\n");
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "src/components/Button.vue", "x\n");
+
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "src/components", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    var found = false;
+    for (entries) |entry| {
+        if (std.mem.eql(u8, entry.name, "Button.vue")) found = true;
+    }
+    try testing.expect(found);
+}
+
+test "searchFiles: a path query that names nothing finds nothing" {
+    const allocator = testing.allocator;
+    var tenv = try setupRootInTmp(allocator);
+    defer tenv.deinit(allocator);
+
+    try writeInRoot(tenv.tmp_dir.dir, testing.io, "examples/calculator/main.zig", "x\n");
+
+    const entries = try SystemFolder.searchFiles(allocator, testing.io, tenv.root_abs, "/examples/qqq", 50, 8);
+    defer freeSearchResults(allocator, entries);
+
+    try testing.expectEqual(@as(usize, 0), entries.len);
 }
 
 test "searchFiles: limit caps result count" {
