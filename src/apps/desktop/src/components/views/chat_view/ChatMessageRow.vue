@@ -56,9 +56,28 @@ const props = defineProps<{
   renderMessageHtml: (msg: Message) => string
 }>()
 
-/** Whether this row draws anything at all. In compact mode a turn's narration and thoughts are
- * folded into the run card, so the group that carried them has nothing left to show — and a row
- * that shows nothing must not draw its author badge either. */
+/** A user block whose every row is a compaction envelope: a system divider, never a human turn.
+ * `every` (not `messages[0]`) is what stops a mixed block from ever swallowing its own content. */
+const isCompactionDivider = computed(
+  (): boolean =>
+    props.group.role === 'user' &&
+    props.group.messages.length > 0 &&
+    props.group.messages.every((m) => props.isCompactionMessage(m)),
+)
+
+/** A human turn keeps the right-aligned bubble; the divider and every agent block do not. */
+const isUserBubble = computed(
+  (): boolean => props.group.role === 'user' && !isCompactionDivider.value,
+)
+
+/** The bubble, the markdown paragraph, or the divider's own bare surface — one class per role. */
+const contentClass = computed((): string => {
+  if (isUserBubble.value) return 'px-4 py-2.5 rounded-2xl whitespace-pre-wrap break-words'
+  if (isCompactionDivider.value) return 'compaction-divider'
+  return 'markdown-content'
+})
+
+/** Whether this row draws anything at all. A row that shows nothing must not draw its badge either. */
 const drawsContent = computed((): boolean => {
   if (props.group.role !== 'assistant') {
     return props.hasBubbleContent(props.group, props.groupIndex)
@@ -79,7 +98,7 @@ const drawsContent = computed((): boolean => {
   >
     <div
       class="flex"
-      :class="group.role === 'user' ? 'flex-row-reverse' : 'flex-row'"
+      :class="isUserBubble ? 'flex-row-reverse' : 'flex-row'"
     >
       <!-- Bubble / paragraph container.
            2026-08-23 paragraph-mode: the AI (assistant) side no
@@ -98,9 +117,7 @@ const drawsContent = computed((): boolean => {
            the whole chat on scrollToBottom. -->
       <div
         class="min-w-0"
-        :class="
-          group.role === 'user' ? 'max-w-[90%] w-fit ml-auto' : 'flex-1 w-full max-w-full'
-        "
+        :class="isUserBubble ? 'max-w-[90%] w-fit ml-auto' : 'flex-1 w-full max-w-full'"
       >
         <!-- A shared thread names its author. Set only when the thread has
              more than one agent, so a one-agent chat is unchanged. A row that
@@ -114,66 +131,60 @@ const drawsContent = computed((): boolean => {
           class="text-body leading-relaxed"
           role="button"
           tabindex="0"
-          :class="
-            group.role === 'user'
-              ? 'px-4 py-2.5 rounded-2xl whitespace-pre-wrap break-words'
-              : 'markdown-content'
-          "
+          :class="contentClass"
           :style="
-            group.role === 'user'
+            isUserBubble
               ? 'background-color: var(--color-blue-1); color: var(--semantic-text); border-bottom-right-radius: 6px;'
               : 'color: var(--semantic-text);'
           "
         >
           <!-- ── User ── -->
           <template v-if="group.role === 'user'">
-            <!-- Compaction envelope: render as a structured card
-                 instead of a wall of escaped XML. -->
-            <CompactionCard
-              v-if="isCompactionMessage(group.messages[0])"
-              :content="group.messages[0]!.content"
-            />
-            <!-- 2026-08-23 hidden-messages fix — v-for over ALL
-                 messages in the group. The old template rendered
-                 only group.messages[0], so consecutive user
-                 messages (queue-drain bursts, rapid sends) beyond
-                 the first were invisible: their text AND attached
-                 images never appeared. Each message renders its
-                 own images + text; empty-text messages with
-                 images render images only. -->
-            <template v-else>
-              <template
-                v-for="(userMsg, userMsgIdx) in group.messages"
-                :key="userMsg.id || `u-${userMsgIdx}`"
-              >
-                <div class="msg-item">
-                  <div class="msg-item-body">
-                <ChatAttachments
-                  v-if="
-                    (userMsg.image_urls && userMsg.image_urls.length > 0) ||
-                    (userMsg.video_urls && userMsg.video_urls.length > 0) ||
-                    (userMsg.file_attachments && userMsg.file_attachments.length > 0)
-                  "
-                  :image-urls="userMsg.image_urls"
-                  :video-urls="userMsg.video_urls"
-                  :file-attachments="userMsg.file_attachments"
-                  @open-image="openImagePreview"
-                />
-                <SkillInvocationCard
-                  v-if="hasSkillEnvelope(userMsg.content)"
-                  :content="userMsg.content || ''"
-                />
-                <span v-else-if="userMsg.content">{{ userMsg.content }}</span>
-                  </div>
-                  <MessageActions
-                    v-if="userMsg.id"
-                    :message-id="userMsg.id"
-                    :label="userMsg.content || ''"
-                    :is-dropped="userMsg.is_feed_to_llm === false"
-                    @changed="emit('changed')"
+            <!-- 2026-08-23 hidden-messages fix, and the fix for the turn
+                 that vanished after a compaction: ONE iteration per row.
+                 The old template drew the card for `group.messages[0]` and
+                 put every OTHER message of the block in a `v-else`, so any
+                 block that began with a compaction envelope — which is every
+                 block right after a compaction — drew the card and dropped
+                 the human's sentence. Empty-text messages with images
+                 render images only. -->
+            <template
+              v-for="(userMsg, userMsgIdx) in group.messages"
+              :key="userMsg.id || `u-${userMsgIdx}`"
+            >
+              <!-- Compaction envelope: a structured card instead of a
+                   wall of escaped JSON. -->
+              <CompactionCard
+                v-if="isCompactionMessage(userMsg)"
+                :content="userMsg.content"
+              />
+              <div v-else class="msg-item">
+                <div class="msg-item-body">
+                  <ChatAttachments
+                    v-if="
+                      (userMsg.image_urls && userMsg.image_urls.length > 0) ||
+                      (userMsg.video_urls && userMsg.video_urls.length > 0) ||
+                      (userMsg.file_attachments && userMsg.file_attachments.length > 0)
+                    "
+                    :image-urls="userMsg.image_urls"
+                    :video-urls="userMsg.video_urls"
+                    :file-attachments="userMsg.file_attachments"
+                    @open-image="openImagePreview"
                   />
+                  <SkillInvocationCard
+                    v-if="hasSkillEnvelope(userMsg.content)"
+                    :content="userMsg.content || ''"
+                  />
+                  <span v-else-if="userMsg.content">{{ userMsg.content }}</span>
                 </div>
-              </template>
+                <MessageActions
+                  v-if="userMsg.id"
+                  :message-id="userMsg.id"
+                  :label="userMsg.content || ''"
+                  :is-dropped="userMsg.is_feed_to_llm === false"
+                  @changed="emit('changed')"
+                />
+              </div>
             </template>
           </template>
 
@@ -385,6 +396,10 @@ const drawsContent = computed((): boolean => {
 .markdown-content {
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.compaction-divider {
+  min-width: 0;
 }
 
 .pill-jump-flash {

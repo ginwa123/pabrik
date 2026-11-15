@@ -44,10 +44,40 @@ describe('CompactionCard', () => {
     wrapper = null
   })
 
-  it('renders the card header with title and message count', () => {
+  it('renders the one-line header with the count, and keeps the full name as its accessible name', () => {
     wrapper = mount(CompactionCard, { props: { content: FULL_ENVELOPE } })
-    expect(wrapper.text()).toContain('Conversation Compaction')
-    expect(wrapper.text()).toContain('3 messages compacted')
+    // The header is the divider's label — the words a reader needs at a glance, and the clock.
+    expect(wrapper.text()).toContain('Compacted 3 messages')
+    expect(wrapper.text()).toContain('12:34')
+    // Nothing is lost for a screen reader: the card keeps its name.
+    expect(wrapper.find('[data-testid="compaction-toggle"]').attributes('aria-label')).toBe(
+      'Conversation Compaction',
+    )
+  })
+
+  it('starts closed, so the turn under it stays on the same screen', () => {
+    wrapper = mount(CompactionCard, { props: { content: FULL_ENVELOPE } })
+    expect(wrapper.find('[data-testid="compaction-card"]').attributes('data-open')).toBe('false')
+    expect(wrapper.find('[data-testid="compaction-toggle"]').attributes('aria-expanded')).toBe('false')
+    // Closed by `v-show`, not `v-if` — the sections are in the DOM, waiting for one click.
+    expect(wrapper.find('.compaction-body').isVisible()).toBe(false)
+  })
+
+  it('reveals every section when the header is clicked', async () => {
+    wrapper = mount(CompactionCard, { props: { content: FULL_ENVELOPE } })
+    await wrapper.find('[data-testid="compaction-toggle"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="compaction-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('.compaction-body').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="compaction-metadata"]').isVisible()).toBe(true)
+    expect(wrapper.findAll('[data-testid="compaction-entry"]')).toHaveLength(3)
+  })
+
+  it('states the roles of the dropped index once, instead of on every row', () => {
+    wrapper = mount(CompactionCard, { props: { content: FULL_ENVELOPE } })
+    const counts = wrapper.findAll('.role-count').map((node) => node.text())
+
+    expect(counts).toEqual(['assistant 1', 'tool 1', 'user 1'])
   })
 
   it('renders the metadata section with session_id, model, and timestamp', () => {
@@ -92,14 +122,16 @@ describe('CompactionCard', () => {
     wrapper = mount(CompactionCard, { props: { content: FULL_ENVELOPE } })
     // Summary <pre> not rendered until expanded
     expect(wrapper.find('[data-testid="compaction-summary-content"]').exists()).toBe(false)
-    // Toggle text shows the right hint
-    expect(wrapper.find('[data-testid="compaction-summary-toggle"]').text()).toContain('click to expand')
+    expect(wrapper.find('[data-testid="compaction-summary-toggle"]').attributes('aria-expanded')).toBe(
+      'false',
+    )
     // Click → expand
     await wrapper.find('[data-testid="compaction-summary-toggle"]').trigger('click')
     expect(wrapper.find('[data-testid="compaction-summary-content"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="compaction-summary-content"]').text()).toContain('GOAL: fix login')
-    // Hint flips
-    expect(wrapper.find('[data-testid="compaction-summary-toggle"]').text()).toContain('click to collapse')
+    expect(wrapper.find('[data-testid="compaction-summary-toggle"]').attributes('aria-expanded')).toBe(
+      'true',
+    )
   })
 
   it('handles a missing summary section gracefully (no toggle, no error)', () => {
@@ -143,15 +175,15 @@ describe('CompactionCard', () => {
     expect(wrapper.find('[data-testid="compaction-summary"]').exists()).toBe(false)
   })
 
-  it('uses singular "message compacted" when there is exactly one entry', () => {
+  it('uses the singular when exactly one message was compacted', () => {
     const oneEntry = `<compact_messages>
       <message_index>
         <entry><id>h1</id><role>user</role><preview>only one</preview></entry>
       </message_index>
     </compact_messages>`
     wrapper = mount(CompactionCard, { props: { content: oneEntry } })
-    expect(wrapper.text()).toContain('1 message compacted')
-    expect(wrapper.text()).not.toContain('1 messages compacted')
+    expect(wrapper.text()).toContain('Compacted 1 message')
+    expect(wrapper.text()).not.toContain('Compacted 1 messages')
   })
 
   it('renders all entries inline when total ≤ MAX_ENTRIES_VISIBLE (50)', () => {

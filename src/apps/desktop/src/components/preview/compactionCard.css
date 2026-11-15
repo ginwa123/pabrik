@@ -1,0 +1,396 @@
+/* CompactionCard.vue — the divider that replaces the roll-up envelope in the transcript.
+   Everything here is measured against the one line the card costs while closed. */
+/* One tone step off the transcript, no border: the card is a divider, and the row it lives in is
+   already the separation. Everything below is measured against the one line it costs when closed. */
+.compaction-card {
+  background-color: var(--semantic-card-bg);
+  border-radius: 10px;
+  margin: 4px 0;
+  font-family: inherit;
+  font-size: var(--text-dense);
+  color: var(--semantic-text);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.compaction-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.compaction-head:hover {
+  background-color: var(--semantic-wash, rgba(255, 255, 255, 0.04));
+}
+
+.compaction-head:focus-visible {
+  outline: 2px solid var(--color-violet);
+  outline-offset: 2px;
+}
+
+.compaction-icon {
+  flex-shrink: 0;
+  color: var(--semantic-text-dim);
+}
+
+.compaction-title {
+  font-weight: 600;
+  font-size: var(--text-dense);
+  white-space: nowrap;
+}
+
+.compaction-facts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--semantic-text-dim);
+}
+
+.compaction-facts .fact {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compaction-facts .fact-sep {
+  color: var(--color-nontext);
+}
+
+.compaction-chevron {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  color: var(--semantic-text-dim);
+  display: grid;
+  place-items: center;
+  transition: transform 140ms ease;
+}
+
+.compaction-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.compaction-card[data-open='true'] .compaction-chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compaction-chevron {
+    transition: none;
+  }
+}
+
+.compaction-body {
+  padding: 2px 12px 12px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.compaction-section-title {
+  margin: 0;
+  font-size: var(--text-dense);
+  font-weight: 600;
+  color: var(--semantic-text);
+}
+
+.section-note {
+  font-size: var(--text-meta);
+  color: var(--semantic-text-dim);
+}
+
+.compaction-plan,
+.compaction-workdir,
+.compaction-index,
+.compaction-summary {
+  margin-top: 14px;
+}
+
+.compaction-plan {
+  margin-top: 10px;
+}
+
+/* The frame owns the background and the padding, so the clamp inside it can be an exact number of
+   line boxes: `overflow` clips at the PADDING edge, so a padded clamp always leaks a slice of the
+   next line, which reads as a rendering bug. */
+.plan-frame {
+  padding: 9px 11px;
+  background-color: var(--color-bg);
+  border-radius: 6px;
+}
+
+.plan-content {
+  margin: 0;
+  font-family: inherit;
+  font-size: var(--text-dense);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--semantic-text-muted);
+  max-height: calc(8 * 1.55em);
+  overflow: hidden;
+}
+
+.plan-content.is-open {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* The clamp lands mid-line, so the toggle needs a gap or it reads as part of the last line. */
+.plan-toggle-row {
+  margin-top: 6px;
+}
+
+.omitted-note {
+  margin-top: 6px;
+}
+
+.workdir-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--text-meta);
+}
+
+.workdir-label {
+  color: var(--semantic-text-dim);
+}
+
+.workdir-path {
+  font-family: monospace;
+  font-size: var(--text-meta);
+  color: var(--semantic-text-muted);
+  word-break: break-all;
+}
+
+.workdir-path + .workdir-label::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--color-nontext);
+}
+
+.workdir-chip {
+  font-family: monospace;
+  font-size: var(--text-micro);
+  color: var(--semantic-text-muted);
+  background-color: var(--semantic-wash, rgba(255, 255, 255, 0.04));
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.workdir-chip.dirty {
+  color: var(--semantic-warning);
+}
+
+.role-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.role-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-micro);
+  color: var(--semantic-text-muted);
+  background-color: var(--color-bg);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.index-note {
+  margin-left: auto;
+}
+
+.role-dot,
+.role-badge {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--semantic-text-dim);
+}
+
+/* The badge keeps its text for assistive tech and its `entry-role` testid, but on screen it is the
+   dot the row is read by: 50 copies of a 64px word is the wall this redesign removes. */
+.role-badge {
+  font-size: 0;
+  line-height: 0;
+  overflow: hidden;
+  text-indent: -999px;
+}
+
+.role-user {
+  background-color: var(--semantic-success);
+}
+
+.role-assistant {
+  background-color: var(--semantic-accent);
+}
+
+.role-tool {
+  background-color: var(--semantic-warning);
+}
+
+.role-unknown {
+  background-color: var(--semantic-text-dim);
+}
+
+.compaction-index .section-heading {
+  margin-bottom: 6px;
+}
+
+.text-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-meta);
+  color: var(--semantic-link);
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.text-toggle:hover {
+  color: var(--semantic-link-hover);
+}
+
+.compaction-entries {
+  list-style: none;
+  padding: 3px 0;
+  margin: 0;
+  background-color: var(--color-bg);
+  border-radius: 6px;
+  /* Four rows and a sliver: enough to show the shape of what was rolled up, and short enough that
+     the message the reader is actually looking for stays on the same screen. */
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.compaction-entries.is-open {
+  max-height: 420px;
+}
+
+.compaction-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: var(--text-meta);
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.entry-id {
+  font-family: monospace;
+  font-size: var(--text-micro);
+  color: var(--semantic-text-dim);
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.entry-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--semantic-text-muted);
+}
+
+.entry-tool-call-id {
+  font-family: monospace;
+  font-size: var(--text-micro);
+  color: var(--semantic-text-dim);
+  flex-shrink: 0;
+}
+
+.summary-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-dense);
+  font-weight: 600;
+  color: var(--semantic-text-muted);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+}
+
+.summary-toggle:hover {
+  color: var(--semantic-text);
+}
+
+.summary-toggle-icon {
+  font-size: var(--text-micro);
+  width: 10px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--semantic-text-dim);
+}
+
+.summary-content {
+  margin: 8px 0 0 17px;
+  padding: 9px 11px;
+  background-color: var(--color-bg);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: var(--text-dense);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--semantic-text-muted);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Provenance, not content: one dim line at the bottom, the same three facts the boxed block
+   carried. */
+.compaction-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 14px;
+  padding-top: 9px;
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-micro);
+  color: var(--semantic-text-dim);
+}
+
+.metadata-value {
+  font-family: monospace;
+  font-size: var(--text-micro);
+  color: var(--semantic-text-dim);
+}

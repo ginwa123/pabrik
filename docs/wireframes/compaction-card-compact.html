@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compaction card — compact redesign · pabrik wireframe</title>
+<style>
+  :root {
+    --bg-page: #181616;
+    --bg-rail: #12120f;
+    --bg-panel: #1D1C19;
+    --bg-panel-2: #22211e;
+    --bg-sunken: #12120f;
+    --bg-user: #223249;
+    --border: #282727;
+    --border-light: #393836;
+    --fg: #c5c9c5;
+    --fg-muted: #a6a69c;
+    --fg-dim: #9d9d93;
+    --fg-faint: #7a8382;
+    --blue: #8ba4b0;
+    --green: #87a987;
+    --yellow: #c4b28a;
+    --red: #c4746e;
+    --violet: #8992a7;
+    --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --glyph: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg-page); }
+  body {
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.62;
+    color: var(--fg);
+    background: var(--bg-page);
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre, .glyph { font-family: var(--glyph); }
+
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 56px 28px 140px; }
+
+  h1 { font-size: 32px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.12; max-width: 22ch; }
+  .sub { margin-top: 14px; max-width: 62ch; font-size: 16px; color: var(--fg-muted); }
+  .stamp { margin-top: 16px; font-size: 12.5px; color: var(--fg-faint); max-width: 66ch; }
+
+  h2 { font-size: 21px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; }
+  h3 { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--fg); }
+
+  p { margin-top: 12px; max-width: 64ch; color: var(--fg-muted); }
+  p strong { color: var(--fg); font-weight: 600; }
+
+  section { margin-top: 64px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
+  .sec-note { font-size: 12.5px; color: var(--fg-faint); }
+
+  /* ── Evidence ─────────────────────────────────────────────── */
+  .evidence {
+    margin-top: 20px;
+    background: var(--bg-sunken);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--glyph);
+    font-size: 12px;
+    line-height: 1.75;
+    overflow-x: auto;
+    color: var(--fg-muted);
+    white-space: pre;
+  }
+  .evidence .hit { color: var(--red); }
+  .evidence .key { color: var(--blue); }
+
+  /* ── Transcript mock ──────────────────────────────────────── */
+  .screen {
+    margin-top: 20px;
+    background: var(--bg-page);
+    border-radius: 12px;
+    padding: 26px 22px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .column { max-width: 760px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 18px; }
+
+  .bubble-user {
+    align-self: flex-end;
+    max-width: 78%;
+    background: var(--bg-user);
+    color: var(--fg);
+    border-radius: 14px 14px 4px 14px;
+    padding: 9px 14px;
+    font-size: 14px;
+  }
+  .bubble-user.is-lost { opacity: 0.42; outline: 1px dashed var(--red); outline-offset: 3px; }
+  .bubble-agent { font-size: 14px; color: var(--fg-muted); }
+  .bubble-agent .who { display: block; font-size: 12px; color: var(--fg-faint); margin-bottom: 4px; }
+
+  .run-card {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-sunken);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    color: var(--fg-muted);
+  }
+  .run-card .sep { color: var(--fg-faint); }
+
+  /* ── The card, BEFORE ─────────────────────────────────────── */
+  .card-old {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+  }
+  .old-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .old-head .t { font-size: 14px; font-weight: 600; flex: 1; }
+  .old-head .n { font-size: 11.5px; color: var(--fg-faint); background: var(--bg-page); border-radius: 12px; padding: 3px 8px; }
+  .old-label { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .old-label span { font-weight: 400; font-size: 11.5px; color: var(--fg-faint); }
+  .old-pre {
+    background: var(--bg-sunken);
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 280px;
+    overflow: auto;
+    color: var(--fg-muted);
+  }
+  .old-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12.5px; margin: 8px 0; }
+  .old-dl dt { color: var(--fg-faint); }
+  .old-dl dd { font-family: var(--glyph); font-size: 11.5px; color: var(--fg-muted); }
+  .old-meta { display: flex; gap: 18px; background: var(--bg-sunken); border-radius: 4px; padding: 8px 10px; margin: 10px 0; }
+  .old-meta div { display: flex; flex-direction: column; gap: 2px; }
+  .old-meta .k { font-size: 10.5px; color: var(--fg-faint); }
+  .old-meta .v { font-family: var(--glyph); font-size: 11.5px; color: var(--fg-muted); }
+  .old-entries { background: var(--bg-sunken); border-radius: 4px; padding: 2px 0; max-height: 400px; overflow: auto; }
+  .old-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 11.5px; }
+  .old-badge { min-width: 64px; text-align: center; border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 600; background: var(--bg-panel-2); color: var(--fg-muted); }
+  .old-badge.r-user { background: rgba(135,169,135,0.14); color: var(--green); }
+  .old-badge.r-assistant { background: rgba(137,146,167,0.16); color: var(--violet); }
+  .old-badge.r-tool { background: rgba(196,178,138,0.14); color: var(--yellow); }
+  .old-id { font-family: var(--glyph); font-size: 10px; color: var(--fg-faint); min-width: 56px; }
+  .old-prev { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+  .old-tcid { font-family: var(--glyph); font-size: 10px; color: var(--fg-faint); }
+  .clip { position: relative; max-height: 620px; overflow: hidden; }
+  .clip::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0; height: 120px;
+    background: linear-gradient(to bottom, rgba(24,22,22,0), var(--bg-page));
+  }
+
+  /* ── The card, AFTER ──────────────────────────────────────── */
+  .cmp {
+    --chev: 0;
+    background: var(--bg-panel);
+    border-radius: 10px;
+    width: 100%;
+  }
+  .cmp[data-open="true"] { --chev: 180deg; }
+
+  .cmp-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 38px;
+    padding: 0 12px;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 10px;
+  }
+  .cmp-head:hover { background: rgba(255,255,255,0.035); }
+  .cmp-head:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+  .cmp-glyph { flex: none; width: 15px; height: 15px; color: var(--fg-faint); }
+  .cmp-title { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; color: var(--fg); white-space: nowrap; }
+  .cmp-facts { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; color: var(--fg-faint); min-width: 0; }
+  .cmp-facts .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--fg-faint); flex: none; }
+  .cmp-facts .fact { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmp-chev { flex: none; width: 12px; height: 12px; color: var(--fg-faint); transition: transform 140ms ease; }
+  .cmp[data-open="true"] .cmp-chev { transform: rotate(180deg); }
+
+  .cmp-body { padding: 2px 12px 12px; }
+  .cmp[data-open="false"] .cmp-body { display: none; }
+
+  .cmp-sec { margin-top: 14px; }
+  .cmp-sec:first-child { margin-top: 10px; }
+  .cmp-sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .cmp-sec-title { font-size: 12px; font-weight: 600; color: var(--fg); }
+  .cmp-sec-note { font-size: 11.5px; color: var(--fg-faint); margin-left: auto; }
+
+  .cmp-plan {
+    margin: 0;
+    padding: 9px 11px;
+    background: var(--bg-sunken);
+    border-radius: 6px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--fg-muted);
+    max-height: 168px;
+    overflow-y: auto;
+  }
+  .cmp-plan.is-open { max-height: none; }
+
+  .cmp-link {
+    background: none; border: 0; padding: 0; font: inherit; font-size: 11.5px;
+    color: var(--blue); cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  }
+  .cmp-link:hover { color: #a3d4d5; }
+
+  .cmp-where { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; color: var(--fg-muted); }
+  .cmp-path { font-family: var(--glyph); font-size: 11.5px; color: var(--fg-muted); }
+  .cmp-path .lead { color: var(--fg-faint); }
+  .cmp-chip {
+    font-family: var(--glyph); font-size: 11px; color: var(--fg-muted);
+    background: var(--bg-sunken); border-radius: 4px; padding: 1px 6px;
+  }
+  .cmp-chip.dirty { color: var(--yellow); }
+  .cmp-arrow { color: var(--fg-faint); }
+
+  .cmp-roles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .cmp-role {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--fg-muted);
+    background: var(--bg-sunken); border-radius: 10px; padding: 2px 8px;
+  }
+  .cmp-role .dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  .cmp-entries { list-style: none; background: var(--bg-sunken); border-radius: 6px; padding: 3px 0; max-height: 96px; overflow-y: auto; }
+  .cmp-entries.is-open { max-height: 420px; }
+  .cmp-row { display: flex; align-items: center; gap: 8px; padding: 3px 10px; font-size: 12px; min-width: 0; }
+  .cmp-row .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .cmp-row .dot.r-user { background: var(--green); }
+  .cmp-row .dot.r-assistant { background: var(--violet); }
+  .cmp-row .dot.r-tool { background: var(--yellow); }
+  .cmp-row .id { font-family: var(--glyph); font-size: 10px; color: var(--fg-faint); flex: none; min-width: 52px; }
+  .cmp-row .prev { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+  .cmp-row .tcid { font-family: var(--glyph); font-size: 10px; color: var(--fg-faint); flex: none; }
+
+  .cmp-omitted { font-size: 11.5px; color: var(--fg-faint); margin-top: 6px; }
+
+  .cmp-summary-toggle {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    background: none; border: 0; padding: 0; font: inherit; font-size: 12px;
+    color: var(--fg-muted); cursor: pointer; text-align: left;
+  }
+  .cmp-summary-toggle:hover { color: var(--fg); }
+  .cmp-summary-toggle .chev { font-size: 9px; color: var(--fg-faint); width: 10px; }
+  .cmp-summary {
+    margin: 8px 0 0 17px; padding: 9px 11px; background: var(--bg-sunken); border-radius: 6px;
+    font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; color: var(--fg-muted);
+    max-height: 220px; overflow-y: auto;
+  }
+
+  .cmp-foot { margin-top: 14px; padding-top: 9px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--fg-faint); }
+  .cmp-foot .v { font-family: var(--glyph); }
+
+  /* ── Annotations ──────────────────────────────────────────── */
+  .callout {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: rgba(196,116,110,0.07);
+    border-radius: 8px; padding: 11px 14px; margin-top: 16px;
+    font-size: 13px; color: var(--fg-muted);
+  }
+  .callout .mark { flex: none; font-family: var(--glyph); font-size: 12px; color: var(--red); }
+  .callout b { color: var(--fg); font-weight: 600; }
+  .callout.good { background: rgba(135,169,135,0.07); }
+  .callout.good .mark { color: var(--green); }
+
+  /* ── Table ────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; }
+  th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--fg-faint); padding: 0 14px 8px 0; }
+  td { padding: 9px 14px 9px 0; vertical-align: top; color: var(--fg-muted); border-top: 1px solid var(--border); }
+  td:first-child { color: var(--fg); font-weight: 600; white-space: nowrap; }
+  td .px { font-family: var(--glyph); font-size: 11.5px; color: var(--fg-faint); }
+
+  /* ── Numbers ──────────────────────────────────────────────── */
+  .numbers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .num { background: var(--bg-panel); border-radius: 10px; padding: 14px 16px; }
+  .num .k { font-size: 11.5px; color: var(--fg-faint); }
+  .num .v { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; margin-top: 2px; }
+  .num .v small { font-size: 13px; font-weight: 500; color: var(--fg-faint); letter-spacing: 0; }
+  .num.good .v { color: var(--green); }
+  .num.bad .v { color: var(--red); }
+
+  /* ── Checks ───────────────────────────────────────────────── */
+  ul.checks { list-style: none; margin-top: 14px; display: grid; gap: 9px; }
+  ul.checks li { display: flex; gap: 10px; font-size: 13px; color: var(--fg-muted); }
+  ul.checks .ok { color: var(--green); font-family: var(--glyph); font-size: 12px; flex: none; }
+  ul.checks .no { color: var(--red); font-family: var(--glyph); font-size: 12px; flex: none; }
+  ul.checks code { font-size: 11.5px; color: var(--fg); }
+
+  .rule { height: 1px; background: var(--border); margin-top: 64px; }
+
+  @media (max-width: 720px) {
+    .wrap { padding: 36px 18px 100px; }
+    h1 { font-size: 25px; }
+    .numbers { grid-template-columns: 1fr; }
+    .old-meta { flex-wrap: wrap; gap: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cmp-chev { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Compaction card, made compact</h1>
+    <p class="sub">The “Conversation Compaction” card is 1,140&nbsp;px of transcript that says “50 messages were
+      rolled up”. Planning for a smaller card, and the fix for the message that never appears under it.</p>
+    <p class="stamp">Wireframe for task_1794761808908_1 · the transcript surface is
+      <code>ChatMessageRow.vue</code> + <code>CompactionCard.vue</code> · dark theme, Kanagawa Dragon tokens
+      (the surface keeps the app’s own borders, code faces and badges — it is an app screen, not a landing page).</p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <h2>The bug, from the real database</h2>
+      <span class="sec-note">session task_1794721542834_8 · read straight out of <code>agent.db</code></span>
+    </div>
+    <p>The compaction envelope is written to <code>llm_history</code> as a <code>role=user</code> row, so the
+      message you send straight after it is the <em>next</em> user row. The transcript groups consecutive
+      same-role rows into one block, and that block draws the card <b>instead of</b> its messages.</p>
+    <pre class="evidence">rowid   role    content                                            feed
+<span class="key">650572</span>  user    <span class="hit">{"compact_messages": { … 50 entries … }}</span>      1   ← the card
+<span class="hit">650573</span>  user    <span class="hit">"props data type don…"</span>                              1   ← your message, same block
+650778  user    "continue"                                             1</pre>
+    <div class="callout">
+      <span class="mark">why</span>
+      <span><b>One block, one renderer.</b> <code>messageGroups</code> merges the two user rows; <code>ChatMessageRow</code>
+        then checks <code>isCompactionMessage(group.messages[0])</code> — true — and draws the card inside a
+        <code>v-if</code>, with every other message of the block in the <code>v-else</code>. Your message is in the
+        DOM’s data and in the model’s context, and on no pixel of the screen. The same merge is why the turn gets
+        no jump-pill on the right rail.</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Before</h2>
+      <span class="sec-note">as it renders today — the card is inside the blue user bubble</span>
+    </div>
+    <div class="screen">
+      <div class="column">
+        <div class="bubble-user is-lost">continue</div>
+        <div class="bubble-agent">
+          <span class="who">deepseek v4.1 flash</span>
+          The compacted history is in place. Picking the work back up at <code>dispatch.zig</code>.
+        </div>
+        <div class="clip">
+          <div class="bubble-user" style="align-self: stretch; max-width: 100%; padding: 12px;">
+            <div class="card-old">
+              <div class="old-head">
+                <span class="t">Conversation Compaction</span>
+                <span class="n">50 messages compacted</span>
+              </div>
+              <div class="old-label">Task plan carried forward <span>Updated 2026-11-15 12:26:04</span></div>
+              <div class="old-pre">## Goal
+Give glinlandui an adb-style control surface for *running* Zig apps: the app hosts a
+devtool service; `glinlandui-inspect` attaches by name and issues `tree`, `json`,
+`pick`, `do &lt;action&gt;`, `quit` — the same actions the headless CLI performs.
+
+## Constraints &amp; Decisions
+- Transport is a **unix socket** (`$XDG_RUNTIME_DIR/glinlandui-&lt;name&gt;.sock`, else `/tmp`) plus
+  a **pipe** — not a TCP port: per-user, no port allocation, and one wake fd the window can poll.
+- The service is only up when the app asks: `serve()` returns null unless `GLIN_DEVTOOLS=1`.
+- Requests are served **in the frame loop**: begin → fires a waiting action before the click
+  registry is cleared, `end` serialises the reply after `resolve`.</div>
+              <div class="old-label" style="margin-top:12px">Working directory <span>main · 52685fc</span></div>
+              <dl class="old-dl">
+                <dt>Session cwd</dt><dd>/home/ginwa/glinlandui</dd>
+                <dt>Active</dt><dd>/home/ginwa/glinlandui</dd>
+              </dl>
+              <div class="old-meta">
+                <div><span class="k">Session</span><span class="v">task_1794721542834_8</span></div>
+                <div><span class="k">Model</span><span class="v">deepseek-v4.1-flash</span></div>
+                <div><span class="k">At</span><span class="v">2026-11-15T13:30:57.614Z</span></div>
+              </div>
+              <div class="old-label">Dropped messages</div>
+              <div class="old-entries">
+                <div class="old-row"><span class="old-badge r-tool">tool</span><span class="old-id">adhoc_16</span><span class="old-prev">{"path":"/home/ginwa/glinlandui/src/core/glyphs.zig","content":"…"</span><span class="old-tcid">call_00_pspevdg5ooyqfph6ry4q3rzu</span></div>
+                <div class="old-row"><span class="old-badge r-tool">tool</span><span class="old-id">adhoc_17</span><span class="old-prev">{"_raw":"/home/ginwa/glinlandui/src/core/render_software.zig:109</span><span class="old-tcid">call_01_18y16kj9m8w2qswfltw54fnu</span></div>
+                <div class="old-row"><span class="old-badge r-assistant">assistant</span><span class="old-id">adhoc_18</span><span class="old-prev"></span></div>
+                <div class="old-row"><span class="old-badge r-tool">tool</span><span class="old-id">adhoc_19</span><span class="old-prev">{"_raw":"/home/ginwa/glinlandui/src/core/semantics.zig:113:pub fn beg</span><span class="old-tcid">call_00_azo1sq24vq05mcsqq4ujc09b</span></div>
+                <div class="old-row"><span class="old-badge r-tool">tool</span><span class="old-id">adhoc_20</span><span class="old-prev">{"_raw":"/home/ginwa/glinlandui/src/core/semantics.zig:105:var nodes:</span><span class="old-tcid">call_01_pxapm0ak2f4lg1qhqxu6elz</span></div>
+                <div class="old-row"><span class="old-badge r-assistant">assistant</span><span class="old-id">adhoc_21</span><span class="old-prev"></span></div>
+                <div class="old-row"><span class="old-badge r-tool">tool</span><span class="old-id">adhoc_22</span><span class="old-prev">{"_raw":"/home/ginwa/glinlandui/src/core/frame.zig:448:pub fn initClay(a</span><span class="old-tcid">call_00_fv525tt1946b888upvxisc0o</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="run-card"><span>123 tool calls</span><span class="sep">|</span><span>33 write 2m 7s</span><span class="sep">+</span></div>
+      </div>
+    </div>
+    <div class="callout">
+      <span class="mark">1,140 px</span>
+      <span><b>Nothing on this screen is your message.</b> The blue frame is the user bubble wrapping the whole
+        card; the “continue” bubble at the top of the block is struck through because it is the one the card
+        replaced. Sending a message after a compaction lands inside that same bubble and is never drawn.</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>After — collapsed, the default</h2>
+      <span class="sec-note">click the header</span>
+    </div>
+    <p>The card becomes a <strong>divider you can ignore</strong>: one line, 38&nbsp;px, no bubble chrome, and it
+      carries the three facts worth having at a glance — how much was rolled up, which branch you are on, and when.
+      Your message sits right under it, visible on the same screen.</p>
+    <div class="screen">
+      <div class="column">
+        <div class="bubble-agent">
+          <span class="who">deepseek v4.1 flash</span>
+          The compacted history is in place. Picking the work back up at <code>dispatch.zig</code>.
+        </div>
+
+        <div class="cmp" data-open="false" id="card-a">
+          <button class="cmp-head" type="button" aria-expanded="false" onclick="toggleCard('card-a', this)">
+            <svg class="cmp-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 3.5 8 7l4-3.5"/><path d="M4 12.5 8 9l4 3.5"/>
+            </svg>
+            <span class="cmp-title">Compacted 50 messages</span>
+            <span class="cmp-facts">
+              <span class="fact">main</span>
+              <span class="dot"></span>
+              <span class="fact">13:30</span>
+            </span>
+            <svg class="cmp-chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+          </button>
+          <div class="cmp-body">
+            <div class="cmp-sec">
+              <div class="cmp-sec-head">
+                <h3 class="cmp-sec-title">Carried forward</h3>
+                <span class="cmp-sec-note">plan updated 12:26</span>
+              </div>
+              <pre class="cmp-plan">## Goal
+Give glinlandui an adb-style control surface for *running* Zig apps: the app hosts a devtool
+service; `glinlandui-inspect` attaches by name and issues `tree`, `json`, `pick`, `do &lt;action&gt;`,
+`quit` — the same actions the headless CLI performs. **Done and verified live.**
+
+## Constraints &amp; Decisions
+- Transport is a **unix socket** (`$XDG_RUNTIME_DIR/glinlandui-&lt;name&gt;.sock`, else `/tmp`) plus a
+  **pipe** — not a TCP port: per-user, no port allocation, and one wake fd the window can poll.
+- The service is only up when the app asks: `serve()` returns null unless `GLIN_DEVTOOLS=1`.
+- Requests are served **in the frame loop**: begin → fires a waiting action before the click
+  registry is cleared, `end` serialises the reply after `resolve`. The socket thread only moves
+  bytes.
+- `src/core/**` stays OS-blind: the transport is a platform seam beside `clipboard` / `open`.
+- Removing the blocking `wl_display_dispatch` was required for waking an idle app.
+
+## Steps
+- [x] 1. `core/devtools/service.zig`: `tree` / `json` / `pick` / `do` / `quit`, per-frame state
+  machine, atomic request/reply slots. Tests in-process. Commit `4a50ecf`.
+- [x] 2. `cli.performOn(host, action, arg)` + `cli.targetOf` shared by `--do` and the service.
+- [ ] 3. `inspect tree` prints the clay node tree with stable paths.</pre>
+              <div style="margin-top:6px"><button class="cmp-link" type="button" onclick="togglePlan()">Show the whole plan</button></div>
+            </div>
+
+            <div class="cmp-sec">
+              <div class="cmp-sec-head"><h3 class="cmp-sec-title">Where</h3></div>
+              <div class="cmp-where">
+                <span class="cmp-path"><span class="lead">session</span> /home/ginwa/glinlandui</span>
+                <span class="cmp-arrow">·</span>
+                <span class="cmp-chip">main</span>
+                <span class="cmp-chip">52685fc</span>
+              </div>
+            </div>
+
+            <div class="cmp-sec">
+              <div class="cmp-sec-head">
+                <h3 class="cmp-sec-title">Dropped</h3>
+                <span class="cmp-sec-note">full history still readable with <code>read_workspace_session</code></span>
+              </div>
+              <div class="cmp-roles">
+                <span class="cmp-role"><span class="dot" style="background:var(--yellow)"></span>tool 31</span>
+                <span class="cmp-role"><span class="dot" style="background:var(--violet)"></span>assistant 16</span>
+                <span class="cmp-role"><span class="dot" style="background:var(--green)"></span>user 3</span>
+              </div>
+              <ul class="cmp-entries">
+                <li class="cmp-row"><span class="dot r-tool"></span><span class="id">adhoc_16</span><span class="prev">{"path":"/home/ginwa/glinlandui/src/core/glyphs.zig","content":"…"} </span><span class="tcid">call_00_pspev</span></li>
+                <li class="cmp-row"><span class="dot r-tool"></span><span class="id">adhoc_17</span><span class="prev">{"_raw":"/home/ginwa/glinlandui/src/core/render_software.zig:109:clear_rgb</span><span class="tcid">call_01_18y16</span></li>
+                <li class="cmp-row"><span class="dot r-assistant"></span><span class="id">adhoc_18</span><span class="prev">Clay’s `clear_rgb` writes the paint buffer directly.</span><span class="tcid"></span></li>
+                <li class="cmp-row"><span class="dot r-tool"></span><span class="id">adhoc_19</span><span class="prev">{"_raw":"/home/ginwa/glinlandui/src/core/semantics.zig:113:pub fn beginFrame"}</span><span class="tcid">call_00_azo1s</span></li>
+                <li class="cmp-row"><span class="dot r-tool"></span><span class="id">adhoc_20</span><span class="prev">{"_raw":"/home/ginwa/glinlandui/src/core/semantics.zig:105:var nodes:"}</span><span class="tcid">call_01_pxapm</span></li>
+              </ul>
+              <p class="cmp-omitted">1 older message rolled up but not listed.</p>
+            </div>
+
+            <div class="cmp-sec">
+              <button class="cmp-summary-toggle" type="button" aria-expanded="false" onclick="toggleSummary(this)">
+                <span class="chev">▶</span>
+                <span>Compactor’s summary</span>
+              </button>
+              <pre class="cmp-summary" style="display:none">GOAL: give glinlandui an adb-style control surface for running Zig apps.
+DONE: service.zig + cli.performOn, wired through the frame loop, tests in-process.
+NEXT ACTION: `inspect tree` prints the clay node tree with stable paths.</pre>
+            </div>
+
+            <div class="cmp-foot">
+              <span>session <span class="v">task_1794721542834_8</span></span>
+              <span>model <span class="v">deepseek-v4.1-flash</span></span>
+              <span>at <span class="v">2026-11-15T13:30:57.614Z</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bubble-user">props data type don't match — check the clay enum</div>
+        <div class="run-card"><span>3 tool calls</span><span class="sep">|</span><span>1 write 11s</span><span class="sep">+</span></div>
+      </div>
+    </div>
+    <div class="callout good">
+      <span class="mark">38 px</span>
+      <span><b>The message you just sent is on the same screen as the compaction.</b> The card is a divider
+        between the old history and the new turn — its own row, full width, no blue bubble, no rail pill.</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>After — expanded</h2>
+      <span class="sec-note">open the card above; this is the same card, measured</span>
+    </div>
+    <p>Opening it gives one density decision per section instead of five: the plan is clamped to
+      <strong>168&nbsp;px</strong> with its own scroll, the working directory collapses to <em>one line</em>
+      (and stops printing the same path twice), the dropped index becomes 22&nbsp;px rows capped at
+      <strong>96&nbsp;px</strong> with role counts above it, and the provenance line moves to a quiet footer.</p>
+    <div class="numbers">
+      <div class="num bad"><div class="k">Card height, today</div><div class="v">1,140<small> px</small></div></div>
+      <div class="num good"><div class="k">Collapsed (default)</div><div class="v">38<small> px</small></div></div>
+      <div class="num good"><div class="k">Expanded here, measured</div><div class="v">604<small> px</small></div></div>
+    </div>
+    <div class="callout">
+      <span class="mark">why</span>
+      <span>38 and 604 are measured in this file (<code>getBoundingClientRect</code>, 1200&nbsp;px viewport);
+        1,140 is read off the reporter’s screenshot, where the index held 16 of 50 entries. The bounds that
+        produce them are the card’s own CSS caps: <code>.cmp-plan</code> <code>max-height: 168px</code>,
+        <code>.cmp-entries</code> <code>max-height: 96px</code>, every other section one line.</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Anatomy — what moved</h2></div>
+    <table>
+      <thead>
+        <tr><th style="width:150px">Section</th><th style="width:290px">Today</th><th>After</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Whole card</td>
+          <td>Always fully open, ~1,140&nbsp;px, inside the user bubble</td>
+          <td>Closed by default at 38&nbsp;px; the header is the toggle (<code>aria-expanded</code>);
+            rendered as its own full-width row, outside the bubble</td>
+        </tr>
+        <tr>
+          <td>Header</td>
+          <td>“Conversation Compaction” + a “50 messages compacted” pill</td>
+          <td>One sentence of the useful fact — “Compacted 50 messages” — with branch and time on the
+            right; the count pill is gone</td>
+        </tr>
+        <tr>
+          <td>Task plan</td>
+          <td><span class="px">max-height 280px</span>, always open</td>
+          <td><span class="px">max-height 168px</span> + “Show the whole plan”; label “Carried forward”</td>
+        </tr>
+        <tr>
+          <td>Working dir</td>
+          <td>Two-column <code>&lt;dl&gt;</code>, 4 rows, prints <code>session cwd</code> and
+            <code>Active</code> as the same path</td>
+          <td>One line: <code>session …</code> + branch/head chips + dirty count; the duplicate path
+            and the <code>Active</code> row are dropped</td>
+        </tr>
+        <tr>
+          <td>Metadata</td>
+          <td>Boxed 3-column block of label/value pairs</td>
+          <td>One dim footer line at 11&nbsp;px — same <code>data-testid</code>, a third of the height</td>
+        </tr>
+        <tr>
+          <td>Dropped messages</td>
+          <td><span class="px">max-height 400px</span>, 6&nbsp;px rows, a 64&nbsp;px role badge on every row</td>
+          <td><span class="px">max-height 96px</span>, 22&nbsp;px rows, a 6&nbsp;px role dot; role counts
+            (<code>tool 31 · assistant 16 · user 3</code>) stated once above the list instead of 50 times</td>
+        </tr>
+        <tr>
+          <td>Summary</td>
+          <td>Toggle labelled “(click to expand)”</td>
+          <td>Same toggle, the instruction dropped — a chevron already says it</td>
+        </tr>
+        <tr>
+          <td>Border</td>
+          <td><code>1px solid</code> on the card, inside a blue bubble that already separates it</td>
+          <td>One tone step (<code>#1D1C19</code> on <code>#181616</code>), no border, 10&nbsp;px radius</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>What changes in the code</h2></div>
+    <table>
+      <thead><tr><th style="width:250px">File</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>useChatMessagePresentation.ts</td>
+          <td>A compaction envelope starts and ends its own group, so it can never absorb the user turn
+            after it — and that turn gets its rail pill back</td>
+        </tr>
+        <tr>
+          <td>ChatMessageRow.vue</td>
+          <td>The card draws per message inside the <code>v-for</code>, not as a <code>v-else</code> that
+            replaces the whole block; a compaction row is a full-width divider with no bubble chrome</td>
+        </tr>
+        <tr>
+          <td>CompactionCard.vue</td>
+          <td>Collapsed-by-default header, plan clamp, one-line directory, 96&nbsp;px index, footer
+            provenance — all existing <code>data-testid</code>s and both envelope formats kept</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Checks</h2></div>
+    <ul class="checks">
+      <li><span class="ok">pass</span><span>Every <code>data-testid</code> the two existing specs read is still in
+        the tree: <code>compaction-card</code>, <code>-count</code>, <code>-plan</code>, <code>-plan-content</code>,
+        <code>-workdir</code> (+ <code>-session</code>, <code>-worktree</code>, <code>-active</code>),
+        <code>-metadata</code>, <code>-index</code>, <code>-entry</code>, <code>entry-role</code>,
+        <code>entry-tool-call-id</code>, <code>-summary</code>, <code>-summary-toggle</code>,
+        <code>-summary-content</code>, <code>-show-more</code>, <code>-omitted</code>.</span></li>
+      <li><span class="ok">pass</span><span>The collapsed body is hidden with <code>v-show</code>, not a
+        <code>v-if</code> — the DOM keeps the rows a keyboard user is about to reveal, and the specs that count
+        entries still count them.</span></li>
+      <li><span class="ok">pass</span><span>Type scale only: 11 / 12 / 12.5 / 13&nbsp;px, two weights. No
+        uppercase, no letter-spaced labels, no new colour — the role dots reuse the semantic tokens the badges
+        already had.</span></li>
+      <li><span class="ok">pass</span><span>Focus is visible on the header and the toggles
+        (<code>:focus-visible</code>, 2&nbsp;px violet outline); the header is a real
+        <code>&lt;button aria-expanded&gt;</code>.</span></li>
+      <li><span class="ok">pass</span><span>Contrast: dim text on the card is <code>#9d9d93</code> on
+        <code>#1D1C19</code> ≥ 4.5:1; the 11&nbsp;px footer is <code>#7a8382</code> at 3.6:1 — decorative
+        provenance, duplicated by the visible row ids.</span></li>
+      <li><span class="no">gap</span><span>The 1,140&nbsp;px “before” figure is read off the reporter’s
+        screenshot; the exact height of the shipped component will be recorded from the real transcript in the
+        PR body, next to the after-shot.</span></li>
+    </ul>
+  </section>
+
+  <div class="rule"></div>
+</div>
+
+<script>
+  function toggleCard(id, button) {
+    var card = document.getElementById(id)
+    var open = card.getAttribute('data-open') === 'true'
+    card.setAttribute('data-open', open ? 'false' : 'true')
+    button.setAttribute('aria-expanded', open ? 'false' : 'true')
+  }
+
+  function togglePlan() {
+    var plan = document.querySelector('#card-a .cmp-plan')
+    var open = plan.classList.toggle('is-open')
+    plan.style.maxHeight = open ? 'none' : ''
+    event.target.textContent = open ? 'Show less' : 'Show the whole plan'
+  }
+
+  function toggleSummary(button) {
+    var body = button.parentNode.querySelector('.cmp-summary')
+    var open = body.style.display !== 'none'
+    body.style.display = open ? 'none' : 'block'
+    button.setAttribute('aria-expanded', open ? 'false' : 'true')
+    button.querySelector('.chev').textContent = open ? '▶' : '▼'
+  }
+</script>
+</body>
+</html>

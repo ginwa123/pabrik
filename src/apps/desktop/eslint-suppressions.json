@@ -1784,9 +1784,6 @@
     },
     "local/no-try-catch": {
       "count": 1
-    },
-    "max-lines": {
-      "count": 1
     }
   },
   "src/components/preview/Glob.vue": {
