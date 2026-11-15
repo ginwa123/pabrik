@@ -1,124 +1,173 @@
 <template>
-  <div class="compaction-card" data-testid="compaction-card">
-    <header class="compaction-header">
-      <UiIcon name="box" class="compaction-icon" size-class="w-4.5 h-4.5" />
-      <span class="compaction-title">Conversation Compaction</span>
-      <span class="compaction-count" data-testid="compaction-count">
-        {{ entries.length }} message{{ entries.length === 1 ? '' : 's' }} compacted
+  <div
+    class="compaction-card"
+    data-testid="compaction-card"
+    :data-open="expanded ? 'true' : 'false'"
+  >
+    <button
+      class="compaction-head"
+      data-testid="compaction-toggle"
+      type="button"
+      aria-label="Conversation Compaction"
+      :aria-expanded="expanded ? 'true' : 'false'"
+      @click="toggleExpanded"
+    >
+      <UiIcon name="box" class="compaction-icon" size-class="w-4 h-4" />
+      <span class="compaction-title">
+        Compacted
+        <span data-testid="compaction-count">
+          {{ entries.length }} message{{ entries.length === 1 ? '' : 's' }}
+        </span>
       </span>
-    </header>
+      <span class="compaction-facts">
+        <span v-if="workDir?.branch" class="fact">{{ workDir.branch }}</span>
+        <span v-if="workDir?.branch && clock" class="fact-sep">·</span>
+        <span v-if="clock" class="fact">{{ clock }}</span>
+      </span>
+      <span class="compaction-chevron" aria-hidden="true">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M2.5 4.5 6 8l3.5-3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </span>
+    </button>
 
-    <section v-if="plan" class="compaction-plan" data-testid="compaction-plan">
-      <div class="section-heading">
-        <h4 class="compaction-section-title">Task plan carried forward</h4>
-        <span v-if="plan.updated_at" class="section-note">Updated {{ plan.updated_at }}</span>
-      </div>
-      <pre class="plan-content" data-testid="compaction-plan-content">{{ plan.markdown }}</pre>
-    </section>
-
-    <section v-if="workDir" class="compaction-workdir" data-testid="compaction-workdir">
-      <div class="section-heading">
-        <h4 class="compaction-section-title">Working directory</h4>
-        <span v-if="workDir.branch" class="section-note">
-          {{ workDir.branch }}{{ workDir.head ? ` · ${workDir.head}` : '' }}
-        </span>
-      </div>
-      <dl class="workdir-list">
-        <template v-if="workDir.git_worktree_cwd">
-          <dt>Worktree</dt>
-          <dd data-testid="compaction-workdir-worktree">{{ workDir.git_worktree_cwd }}</dd>
-        </template>
-        <template v-if="workDir.session_cwd">
-          <dt>Session cwd</dt>
-          <dd data-testid="compaction-workdir-session">{{ workDir.session_cwd }}</dd>
-        </template>
-        <template v-if="workDir.active_dir">
-          <dt>Active</dt>
-          <dd data-testid="compaction-workdir-active">{{ workDir.active_dir }}</dd>
-        </template>
-        <template v-if="dirtySummary">
-          <dt>Changes</dt>
-          <dd>{{ dirtySummary }}</dd>
-        </template>
-      </dl>
-    </section>
-
-    <section v-if="hasMetadata" class="compaction-metadata" data-testid="compaction-metadata">
-      <div v-if="metadata.session_id" class="metadata-item">
-        <span class="metadata-label">Session</span>
-        <code class="metadata-value">{{ metadata.session_id }}</code>
-      </div>
-      <div v-if="metadata.model" class="metadata-item">
-        <span class="metadata-label">Model</span>
-        <code class="metadata-value">{{ metadata.model }}</code>
-      </div>
-      <div v-if="metadata.compacted_at" class="metadata-item">
-        <span class="metadata-label">At</span>
-        <code class="metadata-value">{{ metadata.compacted_at }}</code>
-      </div>
-    </section>
-
-    <section class="compaction-index" data-testid="compaction-index">
-      <div class="compaction-index-header">
-        <h4 class="compaction-section-title">Dropped messages</h4>
-        <button
-          v-if="entries.length > MAX_ENTRIES_VISIBLE"
-          class="show-more-btn"
-          data-testid="compaction-show-more"
-          type="button"
-          @click="toggleShowAll"
-        >
-          {{ showAll ? 'Show fewer' : `Show all ${entries.length}` }}
-        </button>
-      </div>
-      <p v-if="omittedEntries > 0" class="section-note" data-testid="compaction-omitted">
-        {{ omittedEntries }} older message{{ omittedEntries === 1 ? '' : 's' }} rolled up but not
-        listed; the full history is still in the session and readable with
-        <code>read_workspace_session</code>.
-      </p>
-      <ul class="compaction-entries">
-        <li
-          v-for="(entry, idx) in visibleEntries"
-          :key="entry.id || `entry-${idx}`"
-          :class="['compaction-entry', `entry-role-${entry.role}`]"
-          data-testid="compaction-entry"
-        >
-          <span :class="['role-badge', `role-${entry.role}`]" data-testid="entry-role">
-            {{ entry.role || 'unknown' }}
-          </span>
-          <code v-if="entry.id" class="entry-id" :title="entry.id">{{ entry.id }}</code>
-          <span class="entry-preview" :title="entry.preview">{{ entry.preview }}</span>
-          <code
-            v-if="entry.tool_call_id"
-            class="entry-tool-call-id"
-            :title="`Tool call id: ${entry.tool_call_id}`"
-            data-testid="entry-tool-call-id"
+    <div v-show="expanded" class="compaction-body">
+      <section v-if="plan" class="compaction-plan" data-testid="compaction-plan">
+        <div class="section-heading">
+          <h4 class="compaction-section-title">Carried forward</h4>
+          <span v-if="plan.updated_at" class="section-note"
+            >plan updated {{ plan.updated_at }}</span
           >
-            {{ entry.tool_call_id }}
-          </code>
-        </li>
-      </ul>
-    </section>
+        </div>
+        <div class="plan-frame">
+          <pre
+            class="plan-content"
+            :class="{ 'is-open': planOpen }"
+            data-testid="compaction-plan-content"
+            >{{ plan.markdown }}</pre>
+        </div>
+        <div v-if="planIsLong" class="plan-toggle-row">
+          <button
+            class="text-toggle"
+            data-testid="compaction-plan-toggle"
+            type="button"
+            @click="togglePlan"
+          >
+            {{ planOpen ? 'Show less' : 'Show the whole plan' }}
+          </button>
+        </div>
+      </section>
 
-    <section v-if="summary" class="compaction-summary" data-testid="compaction-summary">
-      <button
-        class="summary-toggle"
-        data-testid="compaction-summary-toggle"
-        type="button"
-        @click="toggleSummary"
+      <section
+        v-if="workdirRows.length > 0"
+        class="compaction-workdir"
+        data-testid="compaction-workdir"
       >
-        <span class="summary-toggle-icon">{{ summaryExpanded ? '▼' : '▶' }}</span>
-        <span>Compactor's summary</span>
-        <span class="summary-toggle-hint">
-          {{ summaryExpanded ? '(click to collapse)' : '(click to expand)' }}
+        <div class="section-heading">
+          <h4 class="compaction-section-title">Where</h4>
+        </div>
+        <div class="workdir-line">
+          <template v-for="row in workdirRows" :key="row.testid">
+            <span class="workdir-label">{{ row.label }}</span>
+            <span class="workdir-path" :data-testid="row.testid">{{ row.value }}</span>
+          </template>
+          <span v-if="workDir?.head" class="workdir-chip">{{ workDir.head }}</span>
+          <span
+            v-if="dirtySummary"
+            class="workdir-chip dirty"
+            data-testid="compaction-workdir-dirty"
+          >
+            {{ dirtySummary }}
+          </span>
+        </div>
+      </section>
+
+      <section class="compaction-index" data-testid="compaction-index">
+        <div class="section-heading">
+          <h4 class="compaction-section-title">Dropped</h4>
+          <button
+            v-if="entries.length > MAX_ENTRIES_VISIBLE"
+            class="text-toggle"
+            data-testid="compaction-show-more"
+            type="button"
+            @click="toggleShowAll"
+          >
+            {{ showAll ? 'Show fewer' : `Show all ${entries.length}` }}
+          </button>
+        </div>
+        <div v-if="roleCounts.length > 0" class="role-counts">
+          <span v-for="count in roleCounts" :key="count.role" class="role-count">
+            <span :class="['role-dot', `role-${count.role}`]" aria-hidden="true"></span>
+            {{ count.role }} {{ count.count }}
+          </span>
+          <span class="section-note index-note">
+            full history readable with <code>read_workspace_session</code>
+          </span>
+        </div>
+        <ul class="compaction-entries" :class="{ 'is-open': showAll }">
+          <li
+            v-for="(entry, idx) in visibleEntries"
+            :key="entry.id || `entry-${idx}`"
+            :class="['compaction-entry', `entry-role-${entry.role}`]"
+            data-testid="compaction-entry"
+          >
+            <span
+              :class="['role-badge', `role-${entry.role}`]"
+              :aria-label="entry.role || 'unknown'"
+              data-testid="entry-role"
+            >
+              {{ entry.role || 'unknown' }}
+            </span>
+            <code v-if="entry.id" class="entry-id" :title="entry.id">{{ entry.id }}</code>
+            <span class="entry-preview" :title="entry.preview">{{ entry.preview }}</span>
+            <code
+              v-if="entry.tool_call_id"
+              class="entry-tool-call-id"
+              :title="`Tool call id: ${entry.tool_call_id}`"
+              data-testid="entry-tool-call-id"
+            >
+              {{ entry.tool_call_id }}
+            </code>
+          </li>
+        </ul>
+        <p v-if="omittedEntries > 0" class="section-note omitted-note" data-testid="compaction-omitted">
+          {{ omittedEntries }} older message{{ omittedEntries === 1 ? '' : 's' }} rolled up but not
+          listed.
+        </p>
+      </section>
+
+      <section v-if="summary" class="compaction-summary" data-testid="compaction-summary">
+        <button
+          class="summary-toggle"
+          data-testid="compaction-summary-toggle"
+          type="button"
+          :aria-expanded="summaryExpanded ? 'true' : 'false'"
+          @click="toggleSummary"
+        >
+          <span class="summary-toggle-icon" aria-hidden="true">{{
+            summaryExpanded ? '▼' : '▶'
+          }}</span>
+          <span>Compactor's summary</span>
+        </button>
+        <pre
+          v-if="summaryExpanded"
+          class="summary-content"
+          data-testid="compaction-summary-content"
+          >{{ summary }}</pre>
+      </section>
+
+      <footer v-if="hasMetadata" class="compaction-metadata" data-testid="compaction-metadata">
+        <span v-if="metadata.session_id" class="metadata-item">
+          session <code class="metadata-value">{{ metadata.session_id }}</code>
         </span>
-      </button>
-      <pre
-        v-if="summaryExpanded"
-        class="summary-content"
-        data-testid="compaction-summary-content"
-        >{{ summary }}</pre>
-    </section>
+        <span v-if="metadata.model" class="metadata-item">
+          model <code class="metadata-value">{{ metadata.model }}</code>
+        </span>
+        <span v-if="metadata.compacted_at" class="metadata-item">
+          at <code class="metadata-value">{{ metadata.compacted_at }}</code>
+        </span>
+      </footer>
+    </div>
   </div>
 </template>
 
@@ -126,9 +175,9 @@
 import { ref, computed } from 'vue'
 import UiIcon from '../ui/UiIcon.vue'
 
-/** CompactionCard — renders the handoff envelope `compactMessageInMemoryNew` writes to the DB.
- * Envelopes written since the JSON format change carry the task plan and the working directory ahead
- * of the dropped-message index; earlier XML envelopes still render, without those two sections. */
+/** CompactionCard — the handoff envelope `compactMessageInMemoryNew` writes to the DB, drawn as a
+ * one-line divider that opens: JSON envelopes carry the plan and the working directory, older XML
+ * ones do not. Closed it costs 38px; the body stays in the DOM (`v-show`) so one click reveals it. */
 const props = defineProps<{
   content: string
 }>()
@@ -162,6 +211,12 @@ interface CompactionWorkingDirectory {
   dirty_total?: number
 }
 
+interface WorkdirRow {
+  label: string
+  value: string
+  testid: string
+}
+
 type EnvelopeParse =
   | { kind: 'not_envelope' }
   | { kind: 'malformed' }
@@ -171,6 +226,8 @@ type EnvelopeParse =
 // compaction renders as a scrollable list rather than a 359-row wall. The "Show all" toggle remains
 // for accessibility (keyboard-only users can expand without scrolling).
 const MAX_ENTRIES_VISIBLE = 50
+// A plan longer than this gets a "Show the whole plan" toggle; below it the clamp never bites.
+const PLAN_FOLD_LINES = 12
 
 const metadata = ref<CompactionMetadata>({})
 const entries = ref<CompactionEntry[]>([])
@@ -179,6 +236,8 @@ const plan = ref<CompactionPlan | null>(null)
 const workDir = ref<CompactionWorkingDirectory | null>(null)
 const omittedEntries = ref(0)
 
+const expanded = ref(false)
+const planOpen = ref(false)
 const showAll = ref(false)
 const summaryExpanded = ref(false)
 
@@ -195,12 +254,63 @@ const visibleEntries = computed(() => {
   return entries.value.slice(0, MAX_ENTRIES_VISIBLE)
 })
 
+/** `tool 31 · assistant 16 · user 3` — the mix stated once, instead of a 64px badge on every row. */
+const roleCounts = computed((): { role: string; count: number }[] => {
+  const byRole = new Map<string, number>()
+  for (const entry of entries.value) {
+    const role = entry.role || 'unknown'
+    byRole.set(role, (byRole.get(role) ?? 0) + 1)
+  }
+  return [...byRole.entries()]
+    .map(([role, count]) => ({ role, count }))
+    .sort((a, b) => b.count - a.count || a.role.localeCompare(b.role))
+})
+
+/** One row per path that is actually different. A session that never bound a worktree used to print
+ * the same directory three times (session cwd, active, worktree); the reader needs the difference,
+ * not the repetition. */
+const workdirRows = computed((): WorkdirRow[] => {
+  const dir = workDir.value
+  if (!dir) return []
+  const rows: WorkdirRow[] = []
+  const shown = new Set<string>()
+  const push = (label: string, value: string | undefined, testid: string): void => {
+    if (!value || shown.has(value)) return
+    shown.add(value)
+    rows.push({ label, value, testid })
+  }
+  push('session', dir.session_cwd, 'compaction-workdir-session')
+  push('worktree', dir.git_worktree_cwd, 'compaction-workdir-worktree')
+  push('active', dir.active_dir, 'compaction-workdir-active')
+  return rows
+})
+
 const dirtySummary = computed(() => {
   const total = workDir.value?.dirty_total
   if (typeof total !== 'number' || total <= 0) return ''
   return total === 1 ? '1 uncommitted file' : `${total} uncommitted files`
 })
 
+/** `13:30` out of either stamp the backend writes (`2026-11-15T13:30:57.614Z` or
+ * `2025-01-15 12:34:56`). The header has room for the clock, not the date. */
+const clock = computed((): string => {
+  const stamp = metadata.value.compacted_at
+  if (!stamp) return ''
+  const match = /(\d{1,2}:\d{2})/.exec(stamp)
+  return match?.[1] ?? ''
+})
+
+const planIsLong = computed((): boolean => {
+  const markdown = plan.value?.markdown ?? ''
+  return markdown.split('\n').length > PLAN_FOLD_LINES
+})
+
+const toggleExpanded = () => {
+  expanded.value = !expanded.value
+}
+const togglePlan = () => {
+  planOpen.value = !planOpen.value
+}
 const toggleShowAll = () => {
   showAll.value = !showAll.value
 }
@@ -357,296 +467,4 @@ if (parsedEnvelope.kind === 'ok') {
 // `malformed`: recognised as an envelope but unreadable, so the card renders its empty state.
 </script>
 
-<style scoped>
-.compaction-card {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 12px;
-  margin: 8px 0;
-  background-color: var(--semantic-card-bg);
-  font-family: inherit;
-  font-size: var(--text-dense);
-  color: var(--semantic-text);
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-.compaction-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.compaction-icon {
-  font-size: var(--text-title-sm);
-  line-height: 1;
-}
-
-.compaction-title {
-  flex: 1;
-  font-weight: 600;
-  font-size: var(--text-body);
-}
-
-.compaction-count {
-  font-size: var(--text-meta);
-  color: var(--semantic-text-dim);
-  background-color: var(--color-bg);
-  padding: 3px 8px;
-  border-radius: 12px;
-  white-space: nowrap;
-}
-
-.section-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.section-note {
-  font-size: var(--text-meta);
-  color: var(--semantic-text-dim);
-}
-
-.compaction-plan {
-  margin-bottom: 12px;
-}
-
-.plan-content {
-  margin: 0;
-  padding: 10px;
-  background-color: var(--color-bg);
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: var(--text-dense);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.compaction-workdir {
-  margin-bottom: 12px;
-}
-
-.workdir-list {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 10px;
-  margin: 0;
-  font-size: var(--text-dense);
-}
-
-.workdir-list dt {
-  color: var(--semantic-text-dim);
-}
-
-.workdir-list dd {
-  margin: 0;
-  font-family: monospace;
-  word-break: break-all;
-}
-
-.compaction-metadata {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  background-color: var(--color-bg);
-  border-radius: 4px;
-}
-
-.metadata-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.metadata-label {
-  font-size: var(--text-meta);
-  color: var(--semantic-text-dim);
-}
-
-.metadata-value {
-  font-family: monospace;
-  font-size: var(--text-dense);
-  color: var(--semantic-text);
-  word-break: break-all;
-}
-
-.compaction-section-title {
-  margin: 0;
-  font-size: var(--text-body);
-  font-weight: 600;
-  color: var(--semantic-text);
-}
-
-.compaction-index-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.show-more-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--text-meta);
-  color: var(--color-accent, var(--color-violet));
-  padding: 0;
-  text-decoration: underline;
-}
-
-.show-more-btn:hover {
-  opacity: 0.8;
-}
-
-.compaction-entries {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  background-color: var(--color-bg);
-  border-radius: 4px;
-  /* `overflow-y: auto` keeps a long entry list inside the card instead of
-     pushing the chat viewport down by hundreds of pixels. `max-height` caps
-     the visual size — with MAX_ENTRIES_VISIBLE = 50 the common case shows
-     everything inline, and larger compactions scroll within the card. */
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.compaction-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  font-size: var(--text-dense);
-  min-width: 0;
-}
-
-.compaction-entry + .compaction-entry {
-  margin-top: 1px;
-}
-
-.role-badge {
-  font-size: var(--text-micro);
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background-color: var(--semantic-card-bg);
-  color: var(--semantic-text);
-  min-width: 64px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.role-user {
-  background-color: var(--tint-success);
-  color: var(--semantic-success);
-}
-
-.role-assistant {
-  background-color: var(--tint-accent);
-  color: var(--semantic-accent);
-}
-
-.role-tool {
-  background-color: var(--tint-warning);
-  color: var(--semantic-warning);
-}
-
-.role-unknown {
-  background-color: var(--semantic-card-bg);
-  color: var(--semantic-text-dim);
-}
-
-.entry-id {
-  font-family: monospace;
-  font-size: var(--text-micro);
-  color: var(--semantic-text-dim);
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.entry-preview {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--semantic-text);
-}
-
-.entry-tool-call-id {
-  font-family: monospace;
-  font-size: var(--text-micro);
-  background-color: var(--semantic-card-bg);
-  padding: 1px 5px;
-  border-radius: 3px;
-  color: var(--semantic-text-dim);
-  flex-shrink: 0;
-}
-
-.compaction-summary {
-  margin-top: 12px;
-}
-
-.summary-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--text-dense);
-  font-weight: 600;
-  color: var(--semantic-text);
-  padding: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-}
-
-.summary-toggle:hover {
-  color: var(--color-accent, var(--color-violet));
-}
-
-.summary-toggle-icon {
-  font-size: var(--text-micro);
-  width: 12px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.summary-toggle-hint {
-  font-size: var(--text-micro);
-  font-weight: 400;
-  color: var(--semantic-text-dim);
-  margin-left: auto;
-}
-
-.summary-content {
-  margin: 8px 0 0 18px;
-  padding: 10px;
-  background-color: var(--color-bg);
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: var(--text-dense);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  max-height: 320px;
-  overflow-y: auto;
-}
-</style>
+<style scoped src="./compactionCard.css"></style>

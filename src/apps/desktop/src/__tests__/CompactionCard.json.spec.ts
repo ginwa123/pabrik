@@ -41,18 +41,18 @@ describe('CompactionCard, JSON envelopes', () => {
 
     const plan = wrapper.find('[data-testid="compaction-plan"]')
     expect(plan.exists()).toBe(true)
-    expect(plan.text()).toContain('Task plan carried forward')
+    expect(plan.text()).toContain('Carried forward')
     expect(plan.text()).toContain('2026-10-16 11:59:00')
     expect(wrapper.find('[data-testid="compaction-plan-content"]').text()).toContain('- [ ] ship')
   })
 
-  it('names the session cwd and the bound worktree as separate paths', () => {
+  it('names the session cwd, the bound worktree and a different active dir', () => {
     wrapper = mount(CompactionCard, {
       props: {
         content: envelope({
           metadata: METADATA,
           working_directory: {
-            active_dir: '/repo/.worktrees/fix-login',
+            active_dir: '/repo/src/core',
             session_cwd: '/repo',
             git_worktree_cwd: '/repo/.worktrees/fix-login',
             branch: 'worktree/fix-login',
@@ -71,11 +71,28 @@ describe('CompactionCard, JSON envelopes', () => {
     expect(wrapper.find('[data-testid="compaction-workdir-worktree"]').text()).toBe(
       '/repo/.worktrees/fix-login',
     )
-    expect(wrapper.find('[data-testid="compaction-workdir-active"]').text()).toBe(
-      '/repo/.worktrees/fix-login',
-    )
-    expect(dir.text()).toContain('worktree/fix-login')
+    expect(wrapper.find('[data-testid="compaction-workdir-active"]').text()).toBe('/repo/src/core')
+    // The branch rides on the one-line header, so it is readable while the card is closed.
+    expect(wrapper.find('[data-testid="compaction-toggle"]').text()).toContain('worktree/fix-login')
     expect(dir.text()).toContain('2 uncommitted files')
+  })
+
+  it('does not print the same directory twice when no worktree is bound', () => {
+    // The reported card read `Session cwd /home/ginwa/glinlandui` and `Active
+    // /home/ginwa/glinlandui` on consecutive lines — two rows, one path.
+    wrapper = mount(CompactionCard, {
+      props: {
+        content: envelope({
+          metadata: METADATA,
+          working_directory: { session_cwd: '/repo', active_dir: '/repo', is_git_repo: false },
+          message_index: ENTRIES,
+        }),
+      },
+    })
+
+    expect(wrapper.findAll('[data-testid="compaction-workdir-session"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="compaction-workdir-active"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="compaction-workdir-worktree"]').exists()).toBe(false)
   })
 
   it('reports one uncommitted file in the singular', () => {
@@ -119,7 +136,7 @@ describe('CompactionCard, JSON envelopes', () => {
     expect(rows[0]?.text()).toContain('fix the login bug')
     expect(rows[1]?.classes()).toContain('entry-role-tool')
     expect(rows[1]?.text()).toContain('tc_7')
-    expect(wrapper.text()).toContain('2 messages compacted')
+    expect(wrapper.text()).toContain('Compacted 2 messages')
   })
 
   it('shows no plan section and no working-directory section when the envelope carries neither', () => {

@@ -177,7 +177,19 @@ export function useChatMessagePresentation(deps: ChatMessagePresentationDeps) {
         msg.role !== 'assistant' ||
         (lastGroup?.messages[0]?.agent_name ?? '') === (msg.agent_name ?? '')
 
-      if (lastGroup && lastGroup.role === role && sameAuthor) {
+      // A compaction envelope is a system artifact stored as a `role: user` row, so it is never
+      // part of a human turn: it opens its own block and closes the one before it. Folded into the
+      // turn after it, the block drew the card INSTEAD of that turn's message.
+      const compaction = isCompactionMessage(msg)
+      const previousWasCompaction = !!lastGroup && isCompactionMessage(lastGroup.messages[0])
+
+      if (
+        lastGroup &&
+        !compaction &&
+        !previousWasCompaction &&
+        lastGroup.role === role &&
+        sameAuthor
+      ) {
         lastGroup.messages.push(msg)
         if (msg.timestamp > lastGroup.timestamp) {
           lastGroup.timestamp = msg.timestamp
