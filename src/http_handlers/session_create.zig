@@ -8,6 +8,8 @@ const auth_common = @import("auth_common.zig");
 const ai_workflow = pabrikcore.ai_mod;
 const sqlite_db_mod = pabrikcore.sqlite;
 const slash_skill_expand = @import("../modules/agent/loop/slash_skill_expand.zig");
+const slash_document_expand = @import("../modules/agent/loop/slash_document_expand.zig");
+const documents_store = @import("../modules/agent/loop/documents_store.zig");
 const workspace_scope = @import("../modules/agent/loop/workspace_scope.zig");
 const runtime_mode = @import("../runtime_mode.zig");
 const vmd_policy = @import("../vmd/policy.zig");
@@ -365,6 +367,28 @@ pub fn useCase(alloc: std.mem.Allocator, io: std.Io, di: *pabrikcore.App, parsed
             }
             // `alloc` is the per-request arena: the rewritten message and
             // the unknown names live until teardown, so nothing to free.
+        }
+    }
+
+    // Slash-command documents: `/document-<id>` tokens resolve the same way,
+    // appending the documents' bodies as a trailing `<slash_documents>` block.
+    if (queue_message.len > 0) {
+        const store = documents_store.Store{ .db = di.db, .storage = di.objectStore() };
+        const expanded = slash_document_expand.expandSlashDocuments(alloc, store, session_id, queue_message) catch |err| blk: {
+            std.log.warn(
+                "session_create: slash-document expansion failed (non-fatal, keeping original message): {s}",
+                .{@errorName(err)},
+            );
+            break :blk null;
+        };
+        if (expanded) |result| {
+            queue_message = result.message;
+            if (result.unknown.len > 0) {
+                std.log.info(
+                    "session_create: {d} unknown slash-document token(s) left literal in the text",
+                    .{result.unknown.len},
+                );
+            }
         }
     }
 

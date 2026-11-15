@@ -243,6 +243,8 @@ pub const agent_memories = @import("modules/agent/loop/agent_memories.zig");
 pub const documents_store = @import("modules/agent/loop/documents_store.zig");
 /// Turning a document into a downloadable file, and a set of them into a zip.
 pub const documents_export = @import("modules/agent/loop/documents_export.zig");
+/// Send-time expansion of `/document-<id>` tokens into a `<slash_documents>` block.
+pub const slash_document_expand = @import("modules/agent/loop/slash_document_expand.zig");
 /// The object-store seam document bodies move behind: an interface plus a
 /// filesystem backend and an in-memory one.
 pub const storage = @import("modules/storage/mod.zig");

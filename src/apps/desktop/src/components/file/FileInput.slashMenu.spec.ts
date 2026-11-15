@@ -73,18 +73,19 @@ describe('FileInput — slash command menu', () => {
     vi.restoreAllMocks()
   })
 
-  it("a bare '/' lists the skill, tool and file commands", async () => {
+  it("a bare '/' lists the skill, tool, file and document commands", async () => {
     seedWorkspace()
     const wrapper = await mountInput()
     await typeInTextarea(wrapper.find('textarea'), '/')
 
     expect(wrapper.find(MENU).exists()).toBe(true)
     const rows = menuRows(wrapper)
-    expect(rows).toHaveLength(3)
+    expect(rows).toHaveLength(4)
     expect(rows.map((r) => r.text())).toEqual([
       expect.stringContaining('/skill-'),
       expect.stringContaining('/tool-'),
       expect.stringContaining('/files-'),
+      expect.stringContaining('/document-'),
     ])
   })
 
@@ -130,7 +131,7 @@ describe('FileInput — slash command menu', () => {
     await typeInTextarea(wrapper.find('textarea'), 'please run /')
 
     expect(wrapper.find(MENU).exists()).toBe(true)
-    expect(menuRows(wrapper)).toHaveLength(3)
+    expect(menuRows(wrapper)).toHaveLength(4)
   })
 
   it('Enter on the first row completes /skill- and opens the skill picker', async () => {
