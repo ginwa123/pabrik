@@ -573,3 +573,10 @@
     display: none;
   }
 }
+
+@media (max-width: 767px) {
+  .composer-dock {
+    padding: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+}

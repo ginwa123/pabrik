@@ -15,6 +15,11 @@ export const useNavigationStore = defineStore('navigation', () => {
   const sidebarCollapsed = ref(loadSidebarCollapsed())
   const sidebarWidth = ref(loadSidebarWidth())
 
+  // Phone drawer. Deliberately NOT persisted: a reload must never land the reader in a drawer
+  // they did not open, and the desktop collapse flag above must not be reused for it — a phone
+  // that collapsed the rail would collapse the desktop sidebar too.
+  const mobileNavOpen = ref(false)
+
   // Active chat state
   const activeChatId = ref('')
   const activeChatName = ref('')
@@ -75,6 +80,18 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   function toggleSidebar() {
     setSidebarCollapsed(!sidebarCollapsed.value)
+  }
+
+  function openMobileNav() {
+    mobileNavOpen.value = true
+  }
+
+  function closeMobileNav() {
+    mobileNavOpen.value = false
+  }
+
+  function toggleMobileNav() {
+    mobileNavOpen.value = !mobileNavOpen.value
   }
 
   function setSidebarWidth(width: number) {
@@ -176,6 +193,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     // State
     sidebarCollapsed,
     sidebarWidth,
+    mobileNavOpen,
     activeChatId,
     activeChatName,
     activeTaskId,
@@ -186,6 +204,9 @@ export const useNavigationStore = defineStore('navigation', () => {
     // Actions
     setSidebarCollapsed,
     toggleSidebar,
+    openMobileNav,
+    closeMobileNav,
+    toggleMobileNav,
     setSidebarWidth,
     setChatsSortDirection,
     setActiveChat,

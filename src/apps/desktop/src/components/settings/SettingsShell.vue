@@ -22,6 +22,7 @@ import { WORKSPACE_AGENT_SECTIONS } from '../../helpers/configSource'
 import { resolveWorkspaceId } from '../../helpers/workspaceScope'
 import UiIcon from '../ui/UiIcon.vue'
 import type { UiIconName } from '../ui/icons'
+import { useResponsiveLayout } from '../../composables/useResponsiveLayout'
 
 export type SettingsScope = 'user' | 'workspace'
 
@@ -79,7 +80,11 @@ const props = defineProps<{
   scope: SettingsScope
   /** Route workspace id. Empty in user scope. */
   workspaceId: string
+  mobile?: boolean
 }>()
+
+const { isMobile: viewportIsMobile } = useResponsiveLayout()
+const mobile = computed(() => props.mobile === true || viewportIsMobile.value)
 
 const router = (() => {
   try {
@@ -160,16 +165,10 @@ function notify(message: string, type: 'success' | 'error'): void {
     style="background-color: var(--semantic-content-bg)"
     data-testid="settings-shell"
     :data-scope="props.scope"
+    :data-layout="mobile ? 'mobile' : 'desktop'"
   >
     <!-- Settings Sidebar -->
-    <div
-      class="h-full flex flex-col shrink-0"
-      style="
-        width: 240px;
-        background-color: var(--semantic-sidebar-bg);
-        border-right: 1px solid var(--color-border);
-      "
-    >
+    <div class="settings-nav-rail h-full flex flex-col shrink-0">
       <!-- Settings Header -->
       <div
         class="h-14 flex items-center px-4 shrink-0"
@@ -282,8 +281,8 @@ function notify(message: string, type: 'success' | 'error'): void {
     </div>
 
     <!-- Settings Content -->
-    <main class="flex-1 flex flex-col overflow-hidden">
-      <div class="flex-1 overflow-y-auto p-6">
+    <main class="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div class="settings-pane flex-1 overflow-y-auto p-6">
         <slot :section="section" :notify="notify" />
       </div>
     </main>
@@ -303,3 +302,55 @@ function notify(message: string, type: 'success' | 'error'): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.settings-nav-rail {
+  width: 240px;
+  background-color: var(--semantic-sidebar-bg);
+  border-right: 1px solid var(--color-border);
+}
+
+/* A phone has no 240px to spare beside the panel: the rail becomes a row of section tabs that
+   scrolls sideways, and the panel takes the full width underneath it. `data-layout` carries the
+   decision (spec'd in vitest); these rules are only the geometry. */
+[data-layout='mobile'] {
+  flex-direction: column;
+}
+
+[data-layout='mobile'] .settings-nav-rail {
+  width: 100%;
+  height: auto;
+  flex: 0 0 auto;
+  border-right: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+[data-layout='mobile'] .settings-nav-rail nav {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+[data-layout='mobile'] .settings-nav-rail nav > p {
+  display: none;
+}
+
+[data-layout='mobile'] .settings-nav-rail nav > button {
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin-bottom: 0;
+}
+
+[data-layout='mobile'] [data-testid='settings-back'] {
+  width: 44px;
+  height: 44px;
+}
+
+[data-layout='mobile'] .settings-pane {
+  padding: 12px;
+}
+</style>

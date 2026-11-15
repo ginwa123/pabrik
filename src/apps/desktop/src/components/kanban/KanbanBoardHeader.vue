@@ -30,7 +30,7 @@ const {
 
 <template>
       <header
-        class="flex items-center gap-3 px-3 py-2 shrink-0"
+        class="kanban-board-header flex items-center gap-3 px-3 py-2 shrink-0"
         style="border-bottom: 1px solid var(--color-border)"
       >
         <h3

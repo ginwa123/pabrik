@@ -57,6 +57,7 @@ import AppStandardTaskChatBranch from './appLayout/AppStandardTaskChatBranch.vue
 import AppStandaloneChatBranch from './appLayout/AppStandaloneChatBranch.vue'
 import AppWorkspacePreview from './appLayout/AppWorkspacePreview.vue'
 import AppLayoutChrome from './appLayout/AppLayoutChrome.vue'
+import MobileShell from './appLayout/MobileShell.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -292,9 +293,10 @@ defineExpose({
     <Sidebar
       ref="sidebarRef" @navigate="handleNavigate" @select-workspace="handleSelectWorkspace"
       :collapsed="sidebarCollapsed" :width="sidebarWidth" @toggle-collapse="toggleSidebar"
-      @resize="handleSidebarResize"
+      @resize="handleSidebarResize" @close-mobile-nav="navigationStore.closeMobileNav()"
     />
-    <main class="flex-1 flex flex-col overflow-hidden relative">
+    <main class="flex-1 flex flex-col overflow-hidden relative min-w-0">
+      <MobileShell />
       <!-- The window's own row, above the page that renders it. A chat surface draws its own. -->
       <WindowTabStrip :view="currentView" :chat-surface-active="chatSurfaceActive" />
 
