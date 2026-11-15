@@ -24,16 +24,14 @@ A stale entry here is a red build that names the one file to edit.
 
 from __future__ import annotations
 
-# Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the
-# wire order of `GET /api/agents/:agent_id/tools`.
-#
-# `document_markdown` is ONE tool with four actions (`create` / `edit` /
-# `search` / `delete`); the four per-action names it replaced are gone from
-# the registry entirely.
+# Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the wire
+# order of `GET /api/agents/:agent_id/tools`. Documents are three tools: `document`
+# reads; `document_markdown` and `document_html` write, and the html one stays opt-in.
 DEFAULT_AGENT_TOOLS: list[str] = [
     "add_skill",
     "command",
     "delegate_agent",
+    "document",
     "document_markdown",
     "edit_skill",
     "get_plan",

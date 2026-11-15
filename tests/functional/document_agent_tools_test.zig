@@ -1,5 +1,5 @@
-// Functional coverage for the `document_markdown` agent tool — one tool with
-// four actions (`create` / `edit` / `search` / `delete`).
+// Functional coverage for the document agent tools — `document` reads and
+// searches, `document_markdown` writes (create / edit / delete).
 
 const std = @import("std");
 const testing = std.testing;
@@ -9,17 +9,19 @@ const gpa = testing.allocator;
 const io = testing.io;
 
 const DOCUMENT_MARKDOWN = "document_markdown";
+const DOCUMENT_READER = "document";
 
 // ============================================================================
 // Expected tool list — mirrors tests/functional/default_tools.py
 // ============================================================================
 
-/// Mirrors `DEFAULT_AGENT_TOOLS` — 35 names, sorted ASC, matching the wire
+/// Mirrors `DEFAULT_AGENT_TOOLS` — 36 names, sorted ASC, matching the wire
 /// order of `GET /api/agents/:agent_id/tools`.
 const DEFAULT_AGENT_TOOLS = [_][]const u8{
     "add_skill",
     "command",
     "delegate_agent",
+    "document",
     "document_markdown",
     "edit_skill",
     "get_plan",
@@ -69,6 +71,7 @@ const DEFAULT_AGENT_TOOLS_WITHOUT_DOCUMENTS = [_][]const u8{
     "add_skill",
     "command",
     "delegate_agent",
+    "document",
     "edit_skill",
     "get_plan",
     "glob",
@@ -293,7 +296,7 @@ fn expectExactSet(names: []const []u8, want: []const []const u8) !void {
 // ============================================================================
 
 // REGISTRY — the tool exists, is dispatchable, and describes itself.
-test "registry_lists_document_markdown" {
+test "registry_lists_both_document_tools" {
     try harness.requirePabrikBin(io, gpa);
 
     var h = try Harness.boot(io, gpa, .{});
@@ -313,6 +316,7 @@ test "registry_lists_document_markdown" {
     };
 
     var desc: ?[]const u8 = null;
+    var reader_desc: ?[]const u8 = null;
     for (tools.items) |row| {
         const obj = switch (row) {
             .object => |o| o,
@@ -327,6 +331,7 @@ test "registry_lists_document_markdown" {
             else => continue,
         };
         if (std.mem.eql(u8, name, DOCUMENT_MARKDOWN)) desc = d;
+        if (std.mem.eql(u8, name, DOCUMENT_READER)) reader_desc = d;
     }
     if (desc == null) {
         std.debug.print("{s} missing from registry\n", .{DOCUMENT_MARKDOWN});
@@ -341,9 +346,9 @@ test "registry_lists_document_markdown" {
         return error.TestUnexpectedResult;
     }
 
-    // One tool covers four operations, so the description has to name all
-    // four — otherwise the model never discovers `search` or `delete`.
-    for ([_][]const u8{ "create", "edit", "search", "delete" }) |action| {
+    // The description has to name every action, or the model never
+    // discovers `delete`.
+    for ([_][]const u8{ "create", "edit", "delete" }) |action| {
         if (std.mem.indexOf(u8, desc.?, action) == null) {
             std.debug.print("{s} must name the `{s}` action; got \"{s}\"\n", .{ DOCUMENT_MARKDOWN, action, desc.? });
             return error.TestUnexpectedResult;
@@ -355,6 +360,19 @@ test "registry_lists_document_markdown" {
     if (std.mem.indexOf(u8, desc.?, "IRREVERSIBLE") == null) {
         std.debug.print("{s} must lead with the irreversibility of `delete`; got \"{s}\"\n", .{ DOCUMENT_MARKDOWN, desc.? });
         return error.TestUnexpectedResult;
+    }
+
+    // The reader is a SEPARATE tool now, so its own description is where the
+    // model has to find `read` and `search`.
+    const reader = reader_desc orelse {
+        std.debug.print("{s} missing from the registry — the writer's read half is unreachable\n", .{DOCUMENT_READER});
+        return error.TestUnexpectedResult;
+    };
+    for ([_][]const u8{ "read", "search" }) |action| {
+        if (std.mem.indexOf(u8, reader, action) == null) {
+            std.debug.print("{s} must name the `{s}` action; got \"{s}\"\n", .{ DOCUMENT_READER, action, reader });
+            return error.TestUnexpectedResult;
+        }
     }
 }
 

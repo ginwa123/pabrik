@@ -35,8 +35,9 @@ const BUILTIN_DEFAULT_TOOLS: readonly string[] = [
   // `spawn_sub_agent`: handing work to another session is core agent behaviour.
   'run_session',
   // Workspace-scoped documents (Migration 098). Default-on: writing a note the user asked for is a
-  // core agent behaviour, and the tool refuses cleanly outside a workspace-linked session, so
-  // enabling it by default costs nothing.
+  // core agent behaviour, and the tools refuse cleanly outside a workspace-linked session, so
+  // enabling them by default costs nothing. `document` is the read/search half.
+  'document',
   'document_markdown',
   'manage_project',
   'use_skill',
@@ -95,6 +96,7 @@ const GROUP_BY_TOOL: Record<string, string> = {
   read_workspace_session: 'Memory & sessions',
   run_session: 'Memory & sessions',
   view_session: 'Memory & sessions',
+  document: 'Documents',
   document_markdown: 'Documents',
   search_skills: 'Skills',
   use_skill: 'Skills',

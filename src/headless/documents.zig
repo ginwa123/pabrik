@@ -15,6 +15,7 @@ const documents_export = pabrikcore.documents_export;
 const workspace_scope = pabrikcore.workspace_scope;
 const agent = pabrikcore.agent;
 const document_tool = pabrikcore.document_tool;
+const document_view_tool = pabrikcore.document_view_tool;
 const document_html_tool = pabrikcore.document_html_tool;
 
 const FolderDto = struct {
@@ -140,7 +141,7 @@ pub fn run(
     a: args.DocumentsArgs,
 ) ![]u8 {
     switch (a.op) {
-        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_read => return runToolOp(allocator, backend, a),
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_delete => return runToolOp(allocator, backend, a),
         .doc_get => return documentBodyJson(allocator, backend, a),
         else => {},
     }
@@ -161,13 +162,14 @@ fn runToolOp(
     const action: []const u8 = switch (a.op) {
         .doc_add, .doc_html_add => "create",
         .doc_edit, .doc_html_edit => "edit",
-        .doc_delete => "delete",
+        .doc_delete, .doc_html_delete => "delete",
         .doc_search => "search",
-        .doc_read, .doc_html_read => "read",
+        .doc_read => "read",
         else => unreachable,
     };
     const tool_name: []const u8 = switch (a.op) {
-        .doc_html_add, .doc_html_edit, .doc_html_read => document_html_tool.TOOL_NAME,
+        .doc_html_add, .doc_html_edit, .doc_html_delete => document_html_tool.TOOL_NAME,
+        .doc_search, .doc_read => document_view_tool.TOOL_NAME,
         else => document_tool.TOOL_NAME,
     };
     const arguments = switch (a.op) {
@@ -187,7 +189,7 @@ fn runToolOp(
             .document_id = a.document_id.?,
             .content = a.content,
         }, .{}),
-        .doc_delete => try std.json.Stringify.valueAlloc(allocator, .{
+        .doc_delete, .doc_html_delete => try std.json.Stringify.valueAlloc(allocator, .{
             .action = action,
             .document_id = a.document_id.?,
         }, .{}),
@@ -196,7 +198,7 @@ fn runToolOp(
             .query = a.query,
             .limit = if (a.limit == 0) null else @as(i64, @intCast(a.limit)),
         }, .{ .emit_null_optional_fields = false }),
-        .doc_read, .doc_html_read => try std.json.Stringify.valueAlloc(allocator, .{
+        .doc_read => try std.json.Stringify.valueAlloc(allocator, .{
             .action = action,
             .document_id = a.document_id.?,
             .offset = if (a.offset == 0) null else @as(i64, @intCast(a.offset)),
@@ -364,7 +366,7 @@ pub fn runWithDb(
 
         // These need the process singleton (the tool dispatch resolves the
         // object store from it), so they only run through `run`.
-        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_read => return error.RequiresBackend,
+        .doc_add, .doc_edit, .doc_delete, .doc_search, .doc_get, .doc_read, .doc_html_add, .doc_html_edit, .doc_html_delete => return error.RequiresBackend,
 
         .export_file => return exportJson(allocator, io, store, a),
 
