@@ -29,6 +29,7 @@ pub const routines = struct {
 };
 pub const startup = @import("startup.zig");
 pub const kanban_model = @import("kanban_model.zig");
+pub const project_model = @import("project_model.zig");
 pub const kanban_deps = @import("kanban_deps.zig");
 pub const design_io = @import("design_io.zig");
 pub const design_model = @import("design_model.zig");

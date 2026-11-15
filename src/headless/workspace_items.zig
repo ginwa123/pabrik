@@ -11,6 +11,8 @@ const boot_mod = @import("boot.zig");
 const workspace_items = pabrikcore.workspace_items;
 const database = pabrikcore.database;
 const workspace_items_delete = pabrikcore.http_handlers.workspace_items_delete;
+const project_model = pabrikcore.ai_mod.project_model;
+const tools_equipped = @import("../modules/agent/tools/tools_equipped.zig");
 
 /// One project row, as the CLI prints it. Deliberately a subset of the HTTP
 /// wire shape: a caller scripting against this needs the identity and the
@@ -28,6 +30,48 @@ const ListDto = struct {
     items: []const ItemDto,
     count: usize,
 };
+
+const ProjectDto = struct {
+    id: []const u8,
+    workspace_id: []const u8,
+    item_type: []const u8,
+    name: []const u8,
+    path: ?[]const u8,
+    position: i64,
+    description: []const u8,
+    instruction: []const u8,
+    schedule: []const u8,
+    cwd: []const u8,
+    enabled: bool,
+    next_run_at: []const u8,
+    warning: []const u8 = "",
+};
+
+fn projectDto(project: project_model.Project) ProjectDto {
+    return .{
+        .id = project.id,
+        .workspace_id = project.workspace_id,
+        .item_type = project.item_type,
+        .name = project.name,
+        .path = project.path,
+        .position = project.position,
+        .description = project.description,
+        .instruction = project.instruction,
+        .schedule = project.schedule,
+        .cwd = project.cwd,
+        .enabled = project.enabled,
+        .next_run_at = project.next_run_at,
+    };
+}
+
+fn setIfGiven(value: []const u8) ?[]const u8 {
+    return if (value.len == 0) null else value;
+}
+
+fn enabledIfGiven(value: []const u8) ?bool {
+    if (value.len == 0) return null;
+    return std.mem.eql(u8, value, "1");
+}
 
 fn itemDto(row: workspace_items.WorkspaceItemInfo) ItemDto {
     return .{
@@ -93,6 +137,51 @@ pub fn runWithDb(
         .delete => {
             const deleted = try workspace_items_delete.useCase(allocator, io, db, a.item_id);
             return std.json.Stringify.valueAlloc(allocator, .{ .id = deleted.id, .deleted = true }, .{});
+        },
+
+        .create => {
+            const kind = project_model.ProjectKind.parse(std.mem.trim(u8, a.kind, " \t\n\r")) orelse
+                return error.UnknownProjectKind;
+            const project = try project_model.createProject(allocator, db, .{
+                .workspace_id = a.workspace_id,
+                .kind = kind,
+                .name = a.name,
+                .path = a.path,
+                .description = a.description,
+                .instruction = a.instruction,
+                .schedule = a.schedule,
+                .cwd = a.cwd,
+                .enabled = enabledIfGiven(a.enabled) orelse true,
+            });
+            defer project.deinit(allocator);
+            var dto = projectDto(project);
+            if (kind == .kanban) {
+                tools_equipped.seedDefaultKanbanTools(allocator, .{ .db = db }, project.id, null) catch |err| {
+                    dto.warning = try std.fmt.allocPrint(
+                        allocator,
+                        "the board was created but its agent tool allowlist could not be seeded: {s}",
+                        .{@errorName(err)},
+                    );
+                };
+            }
+            defer if (dto.warning.len > 0) allocator.free(dto.warning);
+            return std.json.Stringify.valueAlloc(allocator, dto, .{});
+        },
+
+        .edit => {
+            const project = try project_model.editProject(allocator, db, .{
+                .workspace_id = a.workspace_id,
+                .item_id = a.item_id,
+                .name = setIfGiven(a.name),
+                .path = setIfGiven(a.path),
+                .description = setIfGiven(a.description),
+                .instruction = setIfGiven(a.instruction),
+                .schedule = setIfGiven(a.schedule),
+                .cwd = setIfGiven(a.cwd),
+                .enabled = enabledIfGiven(a.enabled),
+            });
+            defer project.deinit(allocator);
+            return std.json.Stringify.valueAlloc(allocator, projectDto(project), .{});
         },
     }
 }
@@ -283,4 +372,234 @@ test "headless workspace-items: delete on a missing project reports it, and dele
     const parsed = try parseJson(alloc, list_json);
     defer parsed.deinit();
     try testing.expectEqual(@as(usize, 2), parsed.value.object.get("items").?.array.items.len);
+}
+fn setupProjectDb() !TestCtx {
+    const alloc = testing.allocator;
+    var threaded = std.Io.Threaded.init(alloc, .{});
+    errdefer threaded.deinit();
+    var db: database.Db = .{};
+    errdefer db.deinit();
+    try test_db.openMemory(&db, threaded.io());
+    try db.exec(alloc,
+        \\CREATE TABLE workspace_items (
+        \\    id TEXT PRIMARY KEY,
+        \\    workspace_id TEXT NOT NULL,
+        \\    item_type TEXT NOT NULL,
+        \\    name TEXT,
+        \\    path TEXT,
+        \\    position INTEGER NOT NULL DEFAULT 0,
+        \\    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \\    is_default INTEGER NOT NULL DEFAULT 0
+        \\)
+    , &[_][]const u8{});
+    try db.exec(
+        alloc,
+        "CREATE TABLE workspace_item_tasks (id TEXT PRIMARY KEY, task_type TEXT NOT NULL DEFAULT 'standard')",
+        &[_][]const u8{},
+    );
+    try migration.Migration051AddKanban.up(&db, alloc);
+    try migration.Migration053AddKanbanColumnDescription.up(&db, alloc);
+    try migration.Migration111AddKanbanTaskDependencies.up(&db, alloc);
+    try migration.Migration084ReplaceRoutinesWithWorkspaceRoutines.up(&db, alloc);
+    try migration.Migration116UnifyAgentConfigTables.up(&db, alloc);
+    try migration.Migration139AddRoutineCwd.up(&db, alloc);
+    return .{ .db = db, .threaded = threaded };
+}
+
+test "headless workspace-items: create kanban persists a board with its three default columns" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const json = try runWithDb(alloc, testing.io, &ctx.db, .{
+        .op = .create,
+        .workspace_id = "ws_1",
+        .kind = "kanban",
+        .name = "Release board",
+        .path = "/tmp/release",
+    });
+    defer alloc.free(json);
+
+    const parsed = try parseJson(alloc, json);
+    defer parsed.deinit();
+    const object = parsed.value.object;
+    try testing.expectEqualStrings("kanban", object.get("item_type").?.string);
+    try testing.expectEqualStrings("Release board", object.get("name").?.string);
+    try testing.expectEqualStrings("/tmp/release", object.get("path").?.string);
+    try testing.expect(object.get("enabled").?.bool);
+
+    var rows = try ctx.db.query(
+        alloc,
+        "SELECT COUNT(*) FROM kanban_columns WHERE workspace_item_id = ?",
+        &.{object.get("id").?.string},
+    );
+    defer rows.deinit();
+    const row = (try rows.next()) orelse return error.NoRow;
+    defer row.deinit(alloc);
+    try testing.expectEqualStrings("3", row.values[0]);
+
+    var tool_rows = try ctx.db.query(
+        alloc,
+        "SELECT COUNT(*) FROM agent_config_tools WHERE config_id = ?",
+        &.{object.get("id").?.string},
+    );
+    defer tool_rows.deinit();
+    const tool_row = (try tool_rows.next()) orelse return error.NoRow;
+    defer tool_row.deinit(alloc);
+    const tool_count = try std.fmt.parseInt(usize, tool_row.values[0], 10);
+    try testing.expect(tool_count > 0);
+}
+
+test "headless workspace-items: create routine persists the cron schedule and its next fire time" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const json = try runWithDb(alloc, testing.io, &ctx.db, .{
+        .op = .create,
+        .workspace_id = "ws_1",
+        .kind = "routine",
+        .name = "Nightly sweep",
+        .path = "/tmp/nightly",
+        .schedule = "0 9 * * *",
+        .instruction = "read the logs and report",
+    });
+    defer alloc.free(json);
+
+    const parsed = try parseJson(alloc, json);
+    defer parsed.deinit();
+    const object = parsed.value.object;
+    try testing.expectEqualStrings("routine", object.get("item_type").?.string);
+    try testing.expectEqualStrings("0 9 * * *", object.get("schedule").?.string);
+    try testing.expectEqualStrings("/tmp/nightly", object.get("cwd").?.string);
+    try testing.expect(object.get("next_run_at").?.string.len > 0);
+}
+
+test "headless workspace-items: create --enabled 0 makes a manual-only routine" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const json = try runWithDb(alloc, testing.io, &ctx.db, .{
+        .op = .create,
+        .workspace_id = "ws_1",
+        .kind = "routine",
+        .name = "Manual only",
+        .path = "/tmp",
+        .schedule = "0 9 * * *",
+        .enabled = "0",
+    });
+    defer alloc.free(json);
+
+    const parsed = try parseJson(alloc, json);
+    defer parsed.deinit();
+    const object = parsed.value.object;
+    try testing.expect(!object.get("enabled").?.bool);
+    try testing.expectEqualStrings("", object.get("next_run_at").?.string);
+}
+
+test "headless workspace-items: create with an unknown --kind is an error, not a silent default" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.UnknownProjectKind,
+        runWithDb(alloc, testing.io, &ctx.db, .{
+            .op = .create,
+            .workspace_id = "ws_1",
+            .kind = "folder",
+            .name = "Nope",
+        }),
+    );
+}
+
+test "headless workspace-items: create a routine with no --path is an error" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    try testing.expectError(
+        error.PathRequired,
+        runWithDb(alloc, testing.io, &ctx.db, .{
+            .op = .create,
+            .workspace_id = "ws_1",
+            .kind = "routine",
+            .name = "No path",
+        }),
+    );
+}
+
+test "headless workspace-items: edit renames the project and keeps its schedule" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created_json = try runWithDb(alloc, testing.io, &ctx.db, .{
+        .op = .create,
+        .workspace_id = "ws_1",
+        .kind = "routine",
+        .name = "Nightly",
+        .path = "/tmp",
+        .schedule = "0 9 * * *",
+    });
+    defer alloc.free(created_json);
+
+    const created = try parseJson(alloc, created_json);
+    defer created.deinit();
+    const item_id = try alloc.dupe(u8, created.value.object.get("id").?.string);
+    defer alloc.free(item_id);
+
+    const edited_json = try runWithDb(alloc, testing.io, &ctx.db, .{
+        .op = .edit,
+        .workspace_id = "ws_1",
+        .item_id = item_id,
+        .name = "Nightly sweep",
+        .schedule = "30 3 * * 1",
+    });
+    defer alloc.free(edited_json);
+
+    const edited = try parseJson(alloc, edited_json);
+    defer edited.deinit();
+    const object = edited.value.object;
+    try testing.expectEqualStrings("Nightly sweep", object.get("name").?.string);
+    try testing.expectEqualStrings("30 3 * * 1", object.get("schedule").?.string);
+    try testing.expect(object.get("next_run_at").?.string.len > 0);
+}
+
+test "headless workspace-items: edit a project in another workspace is an error" {
+    const alloc = testing.allocator;
+    var ctx = try setupProjectDb();
+    defer ctx.threaded.deinit();
+    defer ctx.db.deinit();
+
+    const created_json = try runWithDb(alloc, testing.io, &ctx.db, .{
+        .op = .create,
+        .workspace_id = "ws_1",
+        .kind = "kanban",
+        .name = "Mine",
+    });
+    defer alloc.free(created_json);
+
+    const created = try parseJson(alloc, created_json);
+    defer created.deinit();
+    const item_id = try alloc.dupe(u8, created.value.object.get("id").?.string);
+    defer alloc.free(item_id);
+
+    try testing.expectError(
+        error.ProjectNotFound,
+        runWithDb(alloc, testing.io, &ctx.db, .{
+            .op = .edit,
+            .workspace_id = "ws_2",
+            .item_id = item_id,
+            .name = "Hijacked",
+        }),
+    );
 }

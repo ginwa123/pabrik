@@ -20,9 +20,10 @@ export const DEFAULT_CHAT_TOOLS = [
   // sub-agent-safe. Seeded here so plain chat, design mode, and routine sessions (which all use
   // this request body) get it; agent/kanban modes seed it via backend DEFAULT_AGENT_TOOLS.
   'used_tools',
-  // Workspace-scoped documents (Migration 095). One tool, four actions; it resolves its own
-  // workspace server-side from the calling session, so a plain chat is as safe as a project task:
-  // outside a workspace-linked session it refuses rather than guessing a scope.
+  // Workspace-scoped documents (Migration 095): `document` reads and searches, `document_markdown`
+  // writes. Both resolve their own workspace from the calling session and refuse outside one, so a
+  // plain chat is as safe as a project task.
+  'document',
   'document_markdown',
 ].join(',')
 

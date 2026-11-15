@@ -1,0 +1,148 @@
+# The unit suite, on the postgres backend, ONE SLICE PER CALL.
+#
+# WHY THIS IS A WORKFLOW AND NOT A STEP IN ci.yml's `backend (postgres)`
+# ---------------------------------------------------------------------
+# That cell ran the same `zig build test` for 13-29 minutes and it was the
+# longest job in the pipeline by a factor of two. The measurement that says
+# a bigger shard count cannot fix it from inside one job (run 43601561237,
+# `-Dtest-shards=8`, step wall clock 12m24):
+#
+#   shard 1/8 (1 test)      21s     shard 5/8 (930 tests)   2m
+#   shard 2/8 (731)          2m     shard 6/8 (930)         7m
+#   shard 3/8 (931)          2m     shard 7/8 (1029)        2m
+#   shard 4/8 (931)          2m     shard 8/8 (1029)        1m
+#
+# Sum of the test runs is ~18m and the slowest single shard is 7m, yet the
+# step still took 12m24 — because those eight test binaries are eight
+# single-threaded processes sharing four vCPUs, so every shard is inflated
+# by the contention. Eight shards in ONE job is therefore worth nothing
+# (12m24 against 13m with two), while the same eight shards spread over
+# two jobs put four processes on four cores each and roughly halve the
+# wall clock.
+#
+# CALLERS split the INDEX RANGE, never the count: job 1 runs shards 0-3 and
+# job 2 runs 4-7 of the same `shard_total`. Two disjoint sets whose union is
+# every shard is the whole correctness argument — a future test that moves
+# between shards rebalances the two jobs, it cannot drop a test.
+name: unit postgres (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      shard_indices:
+        description: >-
+          Space-separated ZERO-based shard indices this call runs, e.g.
+          "0 1 2 3". Must be disjoint from every sibling call's, and their
+          union must be every index below `shard_total`.
+        required: true
+        type: string
+      label:
+        description: Human slice name, rendered in the check name.
+        required: true
+        type: string
+      shard_total:
+        description: >-
+          The `-Dtest-shards` value the whole platform agrees on. Every call
+          for this platform must pass the SAME number, or two jobs compile
+          different partitions and the union is not the suite.
+        required: true
+        type: number
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  unit:
+    # NO `name:` — the caller names each slice ("unit postgres · shards 1-4"),
+    # same convention as ci-backend.yml and ci-functional.yml.
+    runs-on: ubuntu-24.04
+    # A quarter of the suite, cold package cache included. The slowest single
+    # shard measured was 7m; four of them on their own four cores is minutes,
+    # so this ceiling only releases a genuinely wedged runner.
+    timeout-minutes: 40
+    services:
+      postgres:
+        # Pinned, not `postgres:latest`: the same image the cell uses, so a
+        # migration that passes here cannot be a different server's dialect.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pabrik
+          POSTGRES_PASSWORD: pabrik
+          POSTGRES_DB: pabrik
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pabrik -d pabrik"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_TEST_CONNINFO: host=127.0.0.1 port=5432 user=pabrik password=pabrik dbname=pabrik
+      # Turns "no server reachable" from a SKIP into a FAILURE. Every DB test
+      # can skip itself when tempDbAvailable() says there is no instance, so
+      # without this a green slice could mean "skipped everything" — and a
+      # skipped suite is the one failure mode that looks like success.
+      PABRIK_DB_TESTS_REQUIRE_SERVER: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Zig ${{ env.ZIG_VERSION }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Cache the Zig package cache
+        # The SAME key and prefix as the `backend (postgres)` cell, so these
+        # slices restore what that cell (and every earlier run) already
+        # unpacked instead of each fetching kabelweb/ruangsql four times.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/zig
+          key: v1-zig-global-ubuntu-24.04-postgres-${{ hashFiles('build.zig.zon') }}
+          restore-keys: |
+            v1-zig-global-ubuntu-24.04-
+
+      - name: Install system dependencies
+        # libpq + the GTK/webview stack + the shared list, the same script the
+        # cell calls: the suite links the same binary the cell builds.
+        run: bash scripts/ci-install-linux-deps.sh
+
+      - name: Unit suite, shards ${{ inputs.shard_indices }}
+        # `test:shard:<i>` instead of `test`. That is deliberate and it is the
+        # one place this is narrower than the cell: `test` also depends on the
+        # db/helpers/vm/vmd steps, which the `backend (postgres)` cell still
+        # runs itself (`test:db` on both engines, `test:vmd`, the boot smoke),
+        # and which the three platform cells run in full. What ONLY this job
+        # can prove is the 6430-test suite against a real server, and that is
+        # exactly what the shard steps are.
+        shell: bash
+        run: |
+          set -euo pipefail
+          steps=""
+          for i in ${{ inputs.shard_indices }}; do
+            steps="$steps test:shard:$i"
+          done
+          echo "→ unit postgres ${{ inputs.label }}: shards ${{ inputs.shard_indices }} of ${{ inputs.shard_total }}"
+          # shellcheck disable=SC2086  # $steps is a deliberate word list
+          zig build $steps \
+            -Ddb_used=sqlite,postgres \
+            -Dno-webapp-rebuild \
+            -Dtest-shards=${{ inputs.shard_total }} \
+            --summary all 2>&1 | tee /tmp/test.log
+          bash scripts/check-zig-test-output-clean.sh --summary /tmp/test.log
+
+      - name: Upload the slice log (on failure)
+        # The step above is one long summary block per shard; on a red run the
+        # console tail is the part nobody can read.
+        if: failure() || cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: unit-postgres-${{ inputs.label }}-log
+          path: /tmp/test.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -535,7 +535,7 @@ const handleColumnDrop = (event: DragEvent) => {
     :data-column-id="column.id"
     :data-kanban-column="column.id"
     style="
-      width: 280px;
+      width: min(280px, 86vw);
       background-color: var(--semantic-sidebar-bg);
       border: 1px solid var(--color-border);
     "

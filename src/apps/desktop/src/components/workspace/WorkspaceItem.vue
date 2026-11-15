@@ -523,7 +523,7 @@ const handlePinnedDrop = (event: DragEvent) => {
           @click="handleClick($event)"
           @auxclick="onItemRowAuxClick"
           @contextmenu.prevent="onItemRowContextMenu"
-          class="relative flex-1 flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense text-left transition-colors duration-150"
+          class="relative flex-1 min-w-0 flex items-center px-[var(--sb-gutter)] h-[var(--sb-row)] rounded-lg text-dense text-left transition-colors duration-150"
           :style="
             isCurrentMainView
               ? 'background: var(--semantic-active-bg); color: var(--semantic-active-text); box-shadow: inset 2px 0 0 0 var(--color-violet);'

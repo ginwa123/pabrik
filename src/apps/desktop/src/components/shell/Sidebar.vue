@@ -31,6 +31,7 @@ import type { WorkspaceItem } from '../../stores/workspaces'
 import { buildAppUrl, buildProjectSettingsUrl, buildTaskAppUrl, parseAppPath } from '../../helpers/appUrl'
 import { parseItemIdWithChat } from '../../helpers/buildItemIdWithChat'
 import { useCurrentMainView } from '../../composables/useCurrentMainView'
+import { useResponsiveLayout } from '../../composables/useResponsiveLayout'
 import { openInNewTab } from '../../helpers/openInNewTab'
 import { useProjectsResize } from './useProjectsResize'
 
@@ -44,6 +45,8 @@ const navigationStore = useNavigationStore()
 const props = defineProps<{
   collapsed?: boolean
   width?: number
+  mobile?: boolean
+  mobileOpen?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -64,6 +67,7 @@ const emit = defineEmits<{
   ]
   'toggle-collapse': []
   resize: [width: number]
+  closeMobileNav: []
   // Header dropdown switch — AppLayout pushes
   // ?view=workspace&workspaceId=X (history entry, not replace).
   selectWorkspace: [workspaceId: string]
@@ -105,8 +109,45 @@ const invitationsStore = useInvitationsStore()
 const sidebarStore = useSidebarStore()
 
 // State
-const isCollapsed = computed(() => props.collapsed ?? false)
+// Vue casts an absent Boolean prop to `false`, never `undefined`, so the viewport is OR-ed in
+// rather than fallen back to: `mobile: true` forces the drawer, absence defers to the media query.
+const { isMobile: viewportIsMobile } = useResponsiveLayout()
+const mobile = computed(() => props.mobile === true || viewportIsMobile.value)
+const mobileOpen = computed(() => props.mobileOpen === true || navigationStore.mobileNavOpen)
+const isCollapsed = computed(() => (mobile.value ? false : (props.collapsed ?? false)))
 const sidebarWidth = computed(() => props.width ?? 280)
+
+/** A phone has one panel, not two: the sidebar leaves the flex row, parks off the left edge and
+ * slides over the content, so <main> keeps the whole viewport width. */
+function drawerStyle(open: boolean): Record<string, string> {
+  return {
+    position: 'fixed',
+    top: '0',
+    bottom: '0',
+    left: '0',
+    width: '88vw',
+    maxWidth: '320px',
+    transform: open ? 'translateX(0)' : 'translateX(-100%)',
+    transition: 'transform 180ms ease-out',
+    zIndex: '60',
+    backgroundColor: 'var(--semantic-sidebar-bg)',
+    borderRight: '1px solid var(--color-border)',
+  }
+}
+
+function columnStyle(width: string): Record<string, string> {
+  return {
+    width,
+    backgroundColor: 'var(--semantic-sidebar-bg)',
+    borderRight: '1px solid var(--color-border)',
+  }
+}
+
+const asideStyle = computed<Record<string, string>>(() =>
+  mobile.value
+    ? drawerStyle(mobileOpen.value)
+    : columnStyle(isCollapsed.value ? '64px' : sidebarWidth.value + 'px'),
+)
 
 // Dialog states
 const showAddWorkspaceModal = ref(false)
@@ -1038,16 +1079,16 @@ defineExpose({
 
 <template>
   <aside
+    id="app-sidebar"
     class="h-full flex flex-col relative transition-all duration-200 ease-out select-none"
-    :style="{
-      width: isCollapsed ? '64px' : sidebarWidth + 'px',
-      backgroundColor: 'var(--semantic-sidebar-bg)',
-      borderRight: '1px solid var(--color-border)',
-    }"
+    :style="asideStyle"
+    :inert="mobile && !mobileOpen ? true : undefined"
+    :aria-hidden="mobile && !mobileOpen ? 'true' : undefined"
+    data-testid="app-sidebar"
   >
     <!-- Resize Handle -->
     <div
-      v-if="!isCollapsed"
+      v-if="!isCollapsed && !mobile"
       class="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize z-10 opacity-0 hover:opacity-100 transition-opacity"
       style="background: var(--color-violet)"
       @mousedown="startResize"
@@ -1065,6 +1106,7 @@ defineExpose({
          which means `top-16` would leave the chevron sitting ON TOP of
          the New Chat row, swallowing its clicks. -->
     <button
+      v-if="!mobile"
       @click="toggleCollapse"
       data-testid="sidebar-collapse-toggle"
       class="absolute -right-2.5 top-24 z-20 w-5 h-5 rounded flex items-center justify-center transition-colors duration-150"
@@ -1155,6 +1197,27 @@ defineExpose({
           {{ loggingOut ? '…' : 'Logout' }}
         </button>
       </div>
+      <button
+        v-if="mobile"
+        type="button"
+        class="mobile-sidebar-close flex items-center justify-center shrink-0 rounded-md transition-colors duration-150"
+        data-testid="sidebar-mobile-close"
+        aria-label="Close navigation"
+        @click="emit('closeMobileNav')"
+      >
+        <svg
+          class="w-4 h-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M6 6l12 12" />
+          <path d="M18 6L6 18" />
+        </svg>
+      </button>
     </div>
 
     <!-- New Chat. Sits between the header and the content, above ChatsList,

@@ -2,6 +2,7 @@ const std = @import("std");
 const pabrikcore = @import("pabrikcore");
 const database = pabrikcore.database;
 const secrets_store = pabrikcore.secrets_store;
+const secrets_at_rest = pabrikcore.secrets_at_rest;
 const helpers = @import("helpers");
 
 pub const StoreError = error{
@@ -491,14 +492,18 @@ pub fn nowSeconds() i64 {
 const testing = std.testing;
 const test_db = pabrikcore.test_db;
 
+const test_sealing_key = [_]u8{0x2b} ** secrets_at_rest.KEY_LEN;
+
 const TestCtx = struct {
     db: database.Db = .{},
     threaded: std.Io.Threaded,
+    previous_key: ?[secrets_at_rest.KEY_LEN]u8 = null,
 
     fn open() !TestCtx {
         var threaded = std.Io.Threaded.init(testing.allocator, .{});
         errdefer threaded.deinit();
-        var ctx = TestCtx{ .threaded = threaded };
+        var ctx = TestCtx{ .threaded = threaded, .previous_key = secrets_at_rest.getKey() };
+        secrets_at_rest.setKey(test_sealing_key);
         try test_db.openMemory(&ctx.db, ctx.threaded.io());
         try pabrikcore.migrations_mod.migration.Migration146AddMcpOAuth.up(&ctx.db, testing.allocator);
         try ctx.db.exec(testing.allocator,
@@ -518,6 +523,7 @@ const TestCtx = struct {
     fn deinit(self: *TestCtx) void {
         self.db.deinit();
         self.threaded.deinit();
+        secrets_at_rest.setKey(self.previous_key);
     }
 };
 

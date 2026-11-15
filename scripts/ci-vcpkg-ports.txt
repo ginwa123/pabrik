@@ -1,0 +1,15 @@
+# The vcpkg ports every Windows cell installs, one per line.
+#
+# Read by the "Install vcpkg ports (Windows)" step in BOTH
+# `.github/workflows/ci-backend.yml` and `.github/workflows/ci-functional.yml`,
+# so the two cells cannot install different sets — and it is hashed into the
+# key of the vcpkg binary cache those steps restore, so adding a port here
+# invalidates that cache instead of restoring an archive set that lacks it.
+#
+# `sqlite3[fts5]` is not decorative: without the fts5 feature, Migrations 058
+# and 070 (messages_fts, agent_memories_fts) fail with `no such module: fts5`
+# at migration.up() time and take ~184 tests down with them.
+curl:x64-windows
+openssl:x64-windows
+libpq:x64-windows
+sqlite3[fts5]:x64-windows

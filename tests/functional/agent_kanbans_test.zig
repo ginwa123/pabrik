@@ -29,6 +29,7 @@ const EXPECTED_KANBAN_SEEDED_TOOLS = [_][]const u8{
     "list_secrets",
     "list_web_search_providers",
     "load_memory",
+    "manage_project",
     "present_files",
     "process",
     "read_file",

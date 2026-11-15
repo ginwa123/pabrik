@@ -144,19 +144,19 @@ pub const DocumentsOp = enum {
     doc_edit,
     /// `document_markdown` with `action: "delete"`, through the same dispatch.
     doc_delete,
-    /// `document_markdown` with `action: "search"`, through the same dispatch.
+    /// `document` with `action: "search"`, through the same dispatch.
     doc_search,
-    /// `document_markdown` with `action: "read"`, through the same dispatch.
-    /// Returns a bounded slice of the body, so a 4 MiB document is readable
-    /// without paying for all of it.
+    /// `document` with `action: "read"`, through the same dispatch. Returns a
+    /// bounded slice of the body, so a 4 MiB document is readable without
+    /// paying for all of it.
     doc_read,
     /// `document_html` with `action: "create"`, through the real agent tool
     /// dispatch, so the HTML page's round trip is exercised with no server.
     doc_html_add,
     /// `document_html` with `action: "edit"`, through the same dispatch.
     doc_html_edit,
-    /// `document_html` with `action: "read"`, through the same dispatch.
-    doc_html_read,
+    /// `document_html` with `action: "delete"`, through the same dispatch.
+    doc_html_delete,
     /// Read one document back, body included.
     doc_get,
     /// Expand the `/document-<id>` tokens in a message exactly as a send does,
@@ -201,7 +201,7 @@ pub const DocumentsArgs = struct {
     session: []const u8 = "",
     /// `backfill`: stop after this many rows. 0 means no cap.
     limit: usize = 0,
-    /// `doc-read` / `doc-html-read`: the byte offset the slice starts at.
+    /// `doc-read`: the byte offset the slice starts at.
     offset: usize = 0,
     /// `backfill`: report what would move without writing anything.
     dry_run: bool = false,
@@ -218,23 +218,38 @@ pub const DocumentsArgs = struct {
     icon: []const u8 = "",
 };
 
-/// The project-row verbs. `set-icon` writes the same column the `Change icon…`
-/// menu writes over HTTP; `list` is the read that proves it persisted.
+/// The project-row verbs. `create` / `edit` go through `project_model`, the
+/// module the `manage_project` agent tool calls, so the CLI exercises the same
+/// backend with no server; `list` is the read that proves a write persisted.
 pub const WorkspaceItemsOp = enum {
     list,
     set_icon,
     delete,
+    create,
+    edit,
 };
 
 pub const WorkspaceItemsArgs = struct {
     op: WorkspaceItemsOp,
-    /// `list`: which workspace's projects to print.
+    /// `list`, `create`, `edit`: whose projects.
     workspace_id: []const u8 = "",
-    /// `set-icon`: the project row being changed.
+    /// `set-icon`, `edit`: the project row being changed.
     item_id: []const u8 = "",
     /// `set-icon`: the glyph name. Empty clears the override — the same effect
     /// as `Reset to default`, which sends JSON null instead.
     icon: []const u8 = "",
+    /// `create`: `kanban` or `routine`.
+    kind: []const u8 = "",
+    name: []const u8 = "",
+    /// `create`, `edit`: the directory the project's chats run in.
+    path: []const u8 = "",
+    description: []const u8 = "",
+    instruction: []const u8 = "",
+    /// `create`, `edit`: routine 5-field cron expression; empty = manual only.
+    schedule: []const u8 = "",
+    cwd: []const u8 = "",
+    /// `create`, `edit`: "1" / "0". Empty on `edit` leaves it unchanged.
+    enabled: []const u8 = "",
 };
 
 /// The object-store verbs. One per `Storage` method, so an agent can exercise
@@ -302,6 +317,7 @@ pub const FailureKind = enum {
     workspace_items_unknown_op,
     workspace_items_requires_flag,
     compaction_requires_session,
+    workspace_items_invalid_value,
 };
 
 pub const Failure = struct {
@@ -336,15 +352,15 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless compaction <id> [flags]  Compact ONE session via the agent tool path\n" ++
     "      flags: --force (run even when this workspace switched agent auto-compaction off)\n" ++
     "  pabrik headless documents <op> [flags]    Read or change document folders\n" ++
-    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-read | expand | export | backfill | set-icon\n" ++
+    "      ops: list | search | folder-create | folder-move | folder-rename | folder-delete | doc-create | doc-move | doc-add | doc-edit | doc-delete | doc-search | doc-read | doc-get | doc-html-add | doc-html-edit | doc-html-delete | expand | export | backfill | set-icon\n" ++
     "      flags: --workspace <id> --name <n> --parent <id> --folder <id> --document <id> --title <t>\n" ++
     "      doc-create flags: --content <body> --format markdown|office|html\n" ++
     "      search flags: --query <text>\n" ++
     "      export flags: --document <id> | --documents <id,id,...> --out <path>\n" ++
-    "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get, doc-html-add, doc-html-edit, doc-html-read)\n" ++
+    "      agent-tool flags: --session <id> --title <t> --content <markdown> --query <text> --limit <n> (doc-add, doc-edit, doc-delete, doc-search, doc-get, doc-html-add, doc-html-edit, doc-html-delete)\n" ++
     "      in-place patch flags: --old-text <t> --new-text <t> --replace-all (doc-edit, doc-html-edit)\n" ++
     "      expand flags: --session <id> --message <text> (prints the text the model receives)\n" ++
-    "      bounded read flags: --offset <bytes> --limit <bytes> (doc-read, doc-html-read; default 20000, max 200000)\n" ++
+    "      bounded read flags: --offset <bytes> --limit <bytes> (doc-read; default 20000, max 200000)\n" ++
     "      backfill flags: --limit <n> --dry-run\n" ++
     "      set-icon flags: --workspace <id> --document <id> | --folder <id> --icon <name> (empty clears)\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
@@ -360,9 +376,13 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "  pabrik headless memories <op> [flags]     Read or change a workspace's saved memories\n" ++
     "      ops: list | get | save | delete\n" ++
     "      flags: --workspace <id> --id <mem_id> --content <text> --tags a,b --query <text> --limit <n> --offset <n>\n" ++
-    "  pabrik headless workspace-items <op> [flags]  Read, delete or re-icon a project row\n" ++
-    "      ops: list | set-icon | delete\n" ++
-    "      flags: --workspace <id> (list) --item <id> --icon <name> (set-icon; empty clears)\n" ++
+    "  pabrik headless workspace-items <op> [flags]  Read, create, change or delete a project row\n" ++
+    "      ops: list | set-icon | create | edit | delete\n" ++
+    "      flags: --workspace <id> (list, create, edit) --item <id> --icon <name> (set-icon; empty clears)\n" ++
+    "      create flags: --kind kanban|routine --name <n> [--path <p>] [--schedule <cron>]\n" ++
+    "             [--instruction <text>] [--description <text>] [--cwd <dir>] [--enabled 0|1]\n" ++
+    "      edit flags: --workspace <id> --item <id> [--name <n>] [--path <p>] [--schedule <cron>]\n" ++
+    "             [--instruction <text>] [--description <text>] [--cwd <dir>] [--enabled 0|1]\n" ++
     "  pabrik headless mcp-oauth <op> [flags]    Authorize a remote MCP server over OAuth 2.1\n" ++
     "      ops: discover | authorize-url | exchange | status | refresh | logout\n" ++
     "      flags: --url <mcp-url> --workspace <id> --server <name> --redirect-uri <uri>\n" ++
@@ -654,7 +674,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "doc-read")) break :blk .doc_read;
         if (std.mem.eql(u8, word, "doc-html-add")) break :blk .doc_html_add;
         if (std.mem.eql(u8, word, "doc-html-edit")) break :blk .doc_html_edit;
-        if (std.mem.eql(u8, word, "doc-html-read")) break :blk .doc_html_read;
+        if (std.mem.eql(u8, word, "doc-html-delete")) break :blk .doc_html_delete;
         if (std.mem.eql(u8, word, "doc-get")) break :blk .doc_get;
         if (std.mem.eql(u8, word, "expand")) break :blk .expand;
         if (std.mem.eql(u8, word, "export")) break :blk .export_file;
@@ -752,7 +772,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
     }
 
     const tool_op = op == .doc_add or op == .doc_edit or op == .doc_delete or op == .doc_search or op == .doc_get or
-        op == .doc_read or op == .doc_html_add or op == .doc_html_edit or op == .doc_html_read;
+        op == .doc_read or op == .doc_html_add or op == .doc_html_edit or op == .doc_html_delete;
     const session_op = tool_op or op == .expand;
     if (session_op) {
         if (got.session.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--session" });
@@ -781,7 +801,7 @@ fn parseDocuments(argv: []const []const u8) ParseError!Outcome {
         .doc_create, .doc_add, .doc_html_add => {
             if (got.title.len == 0) return fail(.{ .kind = .documents_requires_flag, .value = "--title" });
         },
-        .doc_move, .doc_edit, .doc_delete, .doc_get, .doc_read, .doc_html_edit, .doc_html_read => {
+        .doc_move, .doc_edit, .doc_delete, .doc_get, .doc_read, .doc_html_edit, .doc_html_delete => {
             if (got.document_id == null) return fail(.{ .kind = .documents_requires_flag, .value = "--document" });
         },
         .doc_search => {},
@@ -1004,6 +1024,8 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
         if (std.mem.eql(u8, word, "list")) break :blk .list;
         if (std.mem.eql(u8, word, "set-icon")) break :blk .set_icon;
         if (std.mem.eql(u8, word, "delete")) break :blk .delete;
+        if (std.mem.eql(u8, word, "create")) break :blk .create;
+        if (std.mem.eql(u8, word, "edit")) break :blk .edit;
         return fail(.{ .kind = .workspace_items_unknown_op, .value = word });
     };
 
@@ -1011,21 +1033,35 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
     var i: usize = 1;
     while (i < argv.len) {
         const flag = argv[i];
-        if (std.mem.eql(u8, flag, "--workspace")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.workspace_id = argv[i];
-        } else if (std.mem.eql(u8, flag, "--item")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.item_id = argv[i];
-        } else if (std.mem.eql(u8, flag, "--icon")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.icon = argv[i];
-        } else {
-            return fail(.{ .kind = .unknown_subcommand, .value = flag });
-        }
+        const slot: ?*[]const u8 = if (std.mem.eql(u8, flag, "--workspace"))
+            &got.workspace_id
+        else if (std.mem.eql(u8, flag, "--item"))
+            &got.item_id
+        else if (std.mem.eql(u8, flag, "--icon"))
+            &got.icon
+        else if (std.mem.eql(u8, flag, "--kind"))
+            &got.kind
+        else if (std.mem.eql(u8, flag, "--name"))
+            &got.name
+        else if (std.mem.eql(u8, flag, "--path"))
+            &got.path
+        else if (std.mem.eql(u8, flag, "--description"))
+            &got.description
+        else if (std.mem.eql(u8, flag, "--instruction"))
+            &got.instruction
+        else if (std.mem.eql(u8, flag, "--schedule"))
+            &got.schedule
+        else if (std.mem.eql(u8, flag, "--cwd"))
+            &got.cwd
+        else if (std.mem.eql(u8, flag, "--enabled"))
+            &got.enabled
+        else
+            null;
+
+        const target = slot orelse return fail(.{ .kind = .unknown_subcommand, .value = flag });
+        i += 1;
+        if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
+        target.* = argv[i];
         i += 1;
     }
 
@@ -1039,7 +1075,21 @@ fn parseWorkspaceItems(argv: []const []const u8) ParseError!Outcome {
         .delete => {
             if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
         },
+        .create => {
+            if (got.workspace_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--workspace" });
+            if (got.kind.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--kind" });
+            if (got.name.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--name" });
+        },
+        .edit => {
+            if (got.workspace_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--workspace" });
+            if (got.item_id.len == 0) return fail(.{ .kind = .workspace_items_requires_flag, .value = "--item" });
+        },
     }
+
+    if (got.enabled.len > 0 and
+        !std.mem.eql(u8, got.enabled, "0") and
+        !std.mem.eql(u8, got.enabled, "1"))
+        return fail(.{ .kind = .workspace_items_invalid_value, .value = "--enabled" });
 
     return .{ .workspace_items = got };
 }
@@ -1162,6 +1212,7 @@ pub fn reportFailure(f: Failure) void {
         .workspace_items_unknown_op => std.log.err("headless: unknown workspace-items op '{s}'", .{f.value}),
         .workspace_items_requires_flag => std.log.err("headless: workspace-items needs {s}", .{f.value}),
         .compaction_requires_session => std.log.err("headless: compaction requires a session id: pabrik headless compaction <id>", .{}),
+        .workspace_items_invalid_value => std.log.err("headless: workspace-items got an invalid value for {s}", .{f.value}),
     }
 }
 
@@ -1364,9 +1415,9 @@ test "parse: documents doc-html-add takes a session, a title and a page" {
     try testing.expectEqualStrings("<p>hi</p>", a.documents.content);
 }
 
-test "parse: documents doc-html-edit and doc-html-read need a document id" {
+test "parse: documents doc-html-edit and doc-html-delete need a document id" {
     try expectFailure(&.{ "documents", "doc-html-edit", "--session", "task_1" }, .documents_requires_flag);
-    try expectFailure(&.{ "documents", "doc-html-read", "--session", "task_1" }, .documents_requires_flag);
+    try expectFailure(&.{ "documents", "doc-html-delete", "--session", "task_1" }, .documents_requires_flag);
 
     const edit = try parse(&.{
         "documents", "doc-html-edit", "--session", "task_1", "--document", "doc_a", "--content", "<p>x</p>",
@@ -1374,8 +1425,8 @@ test "parse: documents doc-html-edit and doc-html-read need a document id" {
     try testing.expectEqual(DocumentsOp.doc_html_edit, edit.documents.op);
     try testing.expectEqualStrings("doc_a", edit.documents.document_id.?);
 
-    const read = try parse(&.{ "documents", "doc-html-read", "--session", "task_1", "--document", "doc_a" });
-    try testing.expectEqual(DocumentsOp.doc_html_read, read.documents.op);
+    const del = try parse(&.{ "documents", "doc-html-delete", "--session", "task_1", "--document", "doc_a" });
+    try testing.expectEqual(DocumentsOp.doc_html_delete, del.documents.op);
 }
 
 test "parse: documents doc-html-edit takes an in-place patch instead of a whole body" {
@@ -1703,6 +1754,48 @@ test "parse: workspace-items delete reads the item from --item" {
 
 test "parse: workspace-items refuses a flag it does not own" {
     try expectFailure(&.{ "workspace-items", "list", "--workspace", "ws_1", "--session", "s_1" }, .unknown_subcommand);
+}
+
+test "parse: workspace-items create reads the kind, the name and every routine flag" {
+    const a = try parse(&.{
+        "workspace-items", "create",        "--workspace",   "ws_1",
+        "--kind",          "routine",       "--name",        "Nightly",
+        "--path",          "/tmp/nightly",  "--schedule",    "0 9 * * *",
+        "--instruction",   "read the logs", "--description", "nightly sweep",
+        "--cwd",           "/tmp/nightly",  "--enabled",     "0",
+    });
+    try testing.expectEqual(WorkspaceItemsOp.create, a.workspace_items.op);
+    try testing.expectEqualStrings("ws_1", a.workspace_items.workspace_id);
+    try testing.expectEqualStrings("routine", a.workspace_items.kind);
+    try testing.expectEqualStrings("Nightly", a.workspace_items.name);
+    try testing.expectEqualStrings("/tmp/nightly", a.workspace_items.path);
+    try testing.expectEqualStrings("0 9 * * *", a.workspace_items.schedule);
+    try testing.expectEqualStrings("read the logs", a.workspace_items.instruction);
+    try testing.expectEqualStrings("nightly sweep", a.workspace_items.description);
+    try testing.expectEqualStrings("/tmp/nightly", a.workspace_items.cwd);
+    try testing.expectEqualStrings("0", a.workspace_items.enabled);
+}
+
+test "parse: workspace-items edit needs the project it changes" {
+    const a = try parse(&.{
+        "workspace-items", "edit", "--workspace", "ws_1", "--item", "item_a", "--name", "Renamed",
+    });
+    try testing.expectEqual(WorkspaceItemsOp.edit, a.workspace_items.op);
+    try testing.expectEqualStrings("item_a", a.workspace_items.item_id);
+    try testing.expectEqualStrings("Renamed", a.workspace_items.name);
+    try testing.expectEqualStrings("", a.workspace_items.schedule);
+}
+
+test "parse: workspace-items create names each missing flag" {
+    try expectFailure(&.{ "workspace-items", "create" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "create", "--workspace", "ws_1" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "create", "--workspace", "ws_1", "--kind", "kanban" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "edit", "--item", "item_a" }, .workspace_items_requires_flag);
+    try expectFailure(&.{ "workspace-items", "edit", "--workspace", "ws_1" }, .workspace_items_requires_flag);
+}
+
+test "parse: workspace-items rejects an --enabled that is neither 0 nor 1" {
+    try expectFailure(&.{ "workspace-items", "edit", "--workspace", "ws_1", "--item", "item_a", "--enabled", "2" }, .workspace_items_invalid_value);
 }
 
 test "the help text lists every flag the table gives this scope" {

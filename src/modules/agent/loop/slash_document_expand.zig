@@ -17,7 +17,7 @@ pub const TOKEN_PREFIX = "document-";
 
 /// Longest body inlined per document — a body may hold 4 MiB, which is a context
 /// bomb. `bytes`/`shown_bytes` on the element say what was cut, and the model
-/// pages the rest with `document_markdown`.
+/// pages the rest with `document` (`action: "read"`, `offset` / `limit`).
 pub const MAX_BODY_BYTES: usize = 8 * 1024;
 
 /// Documents one message may reference. Each costs up to `MAX_BODY_BYTES`, so

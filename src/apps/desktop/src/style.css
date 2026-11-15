@@ -1173,3 +1173,99 @@
 .tok-type {
   color: var(--color-blue);
 }
+
+/* ── Phone shell ───────────────────────────────────────────────────────
+   A phone shows one panel at a time: the sidebar leaves the flex row and
+   becomes a drawer drawn over the content (asideStyle in Sidebar.vue), so
+   <main> keeps the whole viewport width. The rules below are the geometry
+   that inline style cannot express, plus the touch sizes that must follow
+   the pointer rather than the width. */
+.mobile-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.mobile-top-bar {
+  height: 48px;
+  padding-left: max(var(--sb-gutter), env(safe-area-inset-left));
+  padding-right: max(var(--sb-gutter), env(safe-area-inset-right));
+  background-color: var(--semantic-content-bg);
+}
+
+.mobile-top-bar-title {
+  color: var(--semantic-text);
+  min-width: 0;
+}
+
+.mobile-nav-toggle,
+.mobile-sidebar-close {
+  width: 44px;
+  height: 44px;
+  color: var(--semantic-text-dim);
+}
+
+.mobile-nav-toggle:hover,
+.mobile-sidebar-close:hover {
+  color: var(--semantic-text);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --sb-row: 40px;
+    --sb-hit: 40px;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --sb-row: 44px;
+    --sb-hit: 44px;
+  }
+
+  #app-sidebar [data-testid='sidebar-settings-button'],
+  #app-sidebar [data-testid='sidebar-logout-button'] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* The controls a thumb reaches for most often and that the row/hit tokens do NOT cover:
+     the workspace switcher (a 18px text line before this), New Chat (40px), the three
+     section headers that fold a list away (27px) and the workspace rows in the switcher
+     popup (34px). */
+  #app-sidebar [data-testid='workspace-switcher-trigger'],
+  #app-sidebar [data-testid='sidebar-new-chat-button'],
+  #app-sidebar [data-testid$='-section-header'],
+  #app-sidebar [data-testid^='workspace-switcher-option-'] {
+    min-height: 44px;
+  }
+
+  /* Rename / delete inside a switcher row are 22x26 glyphs. The glyph keeps its size and the BOX
+     grows: a thumb aiming at a workspace name should not delete one by mistake either. */
+  #app-sidebar [data-testid^='workspace-switcher-rename-'],
+  #app-sidebar [data-testid^='workspace-switcher-delete-'],
+  #app-sidebar [data-testid='workspace-switcher-add-workspace'] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 44px;
+  }
+
+  /* The board header carried 690px of content in a 390px box: title + a 192px search + the
+     view toggle + Add task. The overflow made <main> scrollable, and focusing the "New task"
+     name field then scrolled it — which dragged the whole detail overlay 33px off the left
+     edge. Wrapping the row removes the overflow, so nothing can scroll. */
+  .kanban-board-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .kanban-board-header .kanban-search {
+    width: 100%;
+  }
+}

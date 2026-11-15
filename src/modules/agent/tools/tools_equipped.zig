@@ -22,6 +22,7 @@ const run_session_mod = pabrikcore.run_session;
 // `view_session` — read ONE session's detail (cwd, worktree, task, running state).
 const view_session_mod = pabrikcore.view_session;
 const document_mod = pabrikcore.document_tool;
+const document_view_mod = pabrikcore.document_view_tool;
 const document_html_mod = pabrikcore.document_html_tool;
 const use_skill_mod = pabrikcore.skill_tools;
 const remove_skill_mod = pabrikcore.skill_tools;
@@ -77,6 +78,7 @@ const semantic_search_mod = pabrikcore.semantic_search;
 const spawn_sub_agent_tool = pabrikcore.spawn_sub_agent;
 const delegate_agent_tool = pabrikcore.delegate_agent;
 const kanban_create_task_tool = pabrikcore.create_kanban_task;
+const manage_project_mod = pabrikcore.manage_project;
 const command_tool_mod = pabrikcore.command_tool;
 // `process` — the read/stop/list half of the detached `mode`s.
 const process_tool_mod = pabrikcore.process_tool;
@@ -124,8 +126,10 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         // no parameters and returns NAMES only — the value is substituted at
         // dispatch and never reaches a tool result.
         list_secrets_mod.list_secrets_tool,
-        // Workspace-scoped documents (Migration 098): one tool, four actions.
+        // Workspace-scoped documents (Migration 098): a writer per format, and
+        // one format-agnostic reader.
         document_mod.document_markdown_tool,
+        document_view_mod.document_tool,
         document_html_mod.document_html_tool,
         use_skill_mod.use_skill_tool,
         remove_skill_mod.remove_skill_tool,
@@ -154,6 +158,8 @@ pub fn equips(allocator: std.mem.Allocator) []const AgentTool {
         kanban_list_mod.kanban_list_tool,
         kanban_move_task_mod.kanban_move_task_tool,
         kanban_create_task_tool.create_kanban_task_tool,
+
+        manage_project_mod.manage_project_tool,
 
         // design only
         set_design_page_mod.set_design_page_tool,
@@ -253,8 +259,10 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         // name reaches the model and dispatch misses with `error.UnknownTool`
         // — which the UI renders as a tool that is still running.
         .{ .name = "list_secrets", .exec = tools.execListSecrets, .tool_def = list_secrets_mod.list_secrets_tool },
-        // Workspace-scoped documents (Migration 098): one tool, four actions.
+        // Workspace-scoped documents (Migration 098): a writer per format, and
+        // one format-agnostic reader.
         .{ .name = "document_markdown", .exec = tools.execDocumentMarkdown, .tool_def = document_mod.document_markdown_tool },
+        .{ .name = "document", .exec = tools.execDocumentView, .tool_def = document_view_mod.document_tool },
         .{ .name = "document_html", .exec = tools.execDocumentHtml, .tool_def = document_html_mod.document_html_tool },
 
         // === FILE OPERATIONS ===
@@ -276,6 +284,10 @@ pub fn UNIFIED_TOOL_REGISTRY() []const ToolInfo {
         .{ .name = "kanban_list", .exec = tools.execKanbanList, .tool_def = kanban_list_mod.kanban_list_tool },
         .{ .name = "kanban_move_task", .exec = tools.execKanbanMoveTask, .tool_def = kanban_move_task_mod.kanban_move_task_tool },
         .{ .name = "create_kanban_task", .exec = tools.execCreateKanbanTask, .tool_def = kanban_create_task_tool.create_kanban_task_tool },
+
+        // === PROJECT TOOLS === create/edit a workspace item of item_type
+        // `kanban` or `routine`, scoped to the calling chat's workspace.
+        .{ .name = "manage_project", .exec = tools.execManageProject, .tool_def = manage_project_mod.manage_project_tool },
 
         // === DESIGN TOOLS === Three tools cover the v6 design mode LLM
         // surface: set_design_page — idempotent create/update for a page,
@@ -352,8 +364,12 @@ pub const DEFAULT_AGENT_TOOLS: []const []const u8 = &.{
     view_session_mod.view_session_tool.function.name,
     // Credential discovery.
     list_secrets_mod.list_secrets_tool.function.name,
-    // Workspace-scoped documents (Migration 098): one tool, four actions.
+    // Workspace-scoped documents (Migration 098): the writer, and the reader it
+    // is useless without — an agent that can create a document but not read or
+    // find one again has been made worse.
     document_mod.document_markdown_tool.function.name,
+    document_view_mod.document_tool.function.name,
+    manage_project_mod.manage_project_tool.function.name,
 
     // skill tools
     use_skill_mod.use_skill_tool.function.name,

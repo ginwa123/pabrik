@@ -100,12 +100,15 @@ pub const run_session = @import("modules/agent/tools/run_session.zig");
 pub const view_session = @import("modules/agent/tools/view_session.zig");
 // Workspace credential discovery: names only, never a value.
 pub const list_secrets = @import("modules/agent/tools/list_secrets.zig");
-/// `document_markdown` agent tool (Migration 098): one tool, four actions.
+/// `document_markdown` agent tool (Migration 098): create, edit and delete.
 /// It resolves its own workspace from the calling session, so the schema
 /// deliberately carries no `workspace_id` parameter.
 pub const document_tool = @import("modules/agent/tools/document.zig");
-/// `document_html` agent tool: create, edit and read HTML documents. Search
-/// and delete stay in `document_markdown`, which covers every format.
+/// `document` agent tool: read one document's body at a byte position, and
+/// search the workspace's documents. Format-agnostic — the read/search half of
+/// the document tools, whatever the writer.
+pub const document_view_tool = @import("modules/agent/tools/document_view.zig");
+/// `document_html` agent tool: create, edit and delete HTML documents.
 pub const document_html_tool = @import("modules/agent/tools/document_html.zig");
 
 // `modules/http/HttpClient.zig` was removed — the project uses the
@@ -140,6 +143,7 @@ pub const pr_cli = @import("modules/agent/tools/pr_cli.zig");
 pub const kanban_list = @import("modules/agent/tools/kanban_list.zig");
 pub const kanban_move_task = @import("modules/agent/tools/kanban_move_task.zig");
 pub const create_kanban_task = @import("modules/agent/tools/create_kanban_task.zig");
+pub const manage_project = @import("modules/agent/tools/manage_project.zig");
 pub const set_design_page = @import("modules/agent/tools/set_design_page.zig");
 pub const add_design_element = @import("modules/agent/tools/add_design_element.zig");
 pub const update_design_element = @import("modules/agent/tools/update_design_element.zig");

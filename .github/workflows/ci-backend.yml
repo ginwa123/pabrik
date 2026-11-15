@@ -6,13 +6,17 @@
 # `functional-test` had `needs: backend` — which waits for the WHOLE
 # matrix. So the Linux functional suite could not start until macOS AND
 # Windows had finished, even though it uses neither of their artifacts.
-# A matrix has no per-cell dependency edge; a workflow call does. ci.yml
-# now calls this file three times (`backend-linux`, `backend-macos`,
-# `backend-windows`) and each call's own `needs:` is a real edge, so
-# `functional (Linux X64, shard 1/3)` starts the moment `backend-linux`
-# goes green.
+# A matrix has no per-cell edge; a workflow call does. ci.yml now calls
+# this file three times (`backend-linux`, `backend-macos`,
+# `backend-windows`), so a red Linux cell stops only the jobs that need
+# Linux — and the nine functional shards need NO cell at all, because they
+# rebuild from the same SHA rather than consuming an artifact.
 #
-# The caller owns the graph; this file owns one cell's steps. Adding a
+# The caller owns the graph; this file owns one cell, as TWO jobs that run
+# side by side: `test` (the suite and the cheap gates) and `ship` (build the
+# shipped bytes, verify them, stage and publish). They share the SHA, this
+# file's inputs and the setup composite, and nothing else — so the cell's
+# wall clock is the longer half instead of the sum. Adding a
 # platform is one `uses:` block in ci.yml, not an entry in a matrix whose
 # `exclude` list can silently fail open (it did once — CI run 31838283325
 # ran 5 cells instead of 3).
@@ -103,7 +107,7 @@ env:
   # node-linker=hoisted so node_modules is laid out flat.
 
 jobs:
-  build:
+  test:
     # Images are PINNED, not `-latest`, so a GitHub image bump cannot change
     # the build underneath a green pipeline. The three values live as
     # `with:` blocks in ci.yml's `uses:` calls:
@@ -119,13 +123,13 @@ jobs:
     # hardcodes x86_64-macos in build.zig and would produce a binary the
     # arm64 runner rejects with "Bad CPU type in executable".
     #
-    # The publish step (softprops/action-gh-release@v2) creates/updates the
-    # release named by `inputs.release_tag` -- the rolling `ci-latest` release
-    # on a main push, a VERSIONED release on a `v*` tag push -- and needs
-    # write access to contents either way.
-    # The workflow default is `contents: read`; this job-level block
-    # overrides it here AND in the caller, because a called workflow can
-    # only ever be granted what the caller already holds.
+    # `contents: write` is carried by BOTH halves, and only `ship` spends it:
+    # the publish steps are all in that job. It stays here too because the
+    # grant is cheap and a job-level block that disagrees between the two
+    # halves is exactly the kind of asymmetry that gets "fixed" wrongly later.
+    # The workflow default is `contents: read`; the block overrides it here
+    # AND in the caller, because a called workflow can only ever be granted
+    # what the caller already holds.
     # NO `name:` here on purpose. A job that calls a reusable workflow
     # renders as `<caller job name> / <this job's name>`, and ci.yml
     # already names each cell ("backend (Linux X64)"). Setting
@@ -144,738 +148,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Node.js 24
-        # pnpm migration (2026-08-28): the UIHarness now spawns `pnpm run dev`
-        # to start the Vite dev server during Playwright tests. The harness
-        # resolves pnpm via shutil.which('pnpm') / shutil.which('pnpm.cmd'),
-        # so a literal `pnpm` on PATH is what we need. Pinned to Node 24
-        # to match the dev box.
-        uses: actions/setup-node@v4
+      - name: Cell setup (toolchains, system deps, vcpkg ports, caches)
+        # The SAME composite both halves run; see
+        # .github/actions/backend-setup/action.yml.
+        uses: ./.github/actions/backend-setup
         with:
-          node-version: '24'
-
-      - name: Install pnpm 11
-        # pnpm/action-setup is the canonical way to install pnpm on a
-        # GitHub-hosted runner. It downloads the pnpm binary directly
-        # (faster than corepack's per-job shim build) and is maintained
-        # by the pnpm team. Version pinned to 11.x to match the dev box
-        # and the workspace's existing toolchain. workspace .npmrc lives
-        # in the repo root, NOT in $HOME, so this action does not need
-        # any config_file input.
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - name: Install Zig ${{ env.ZIG_VERSION }}
-        uses: mlugg/setup-zig@v2
-        with:
-          version: ${{ env.ZIG_VERSION }}
-
-      - name: Setup Python 3.12
-        if: runner.os == 'Windows'
-        # Windows-only because the probe in build.zig looks for `python`
-        # (not `python3`) on Windows. setup-python puts a real, pinned
-        # interpreter on PATH ahead of whatever the image ships. Linux and
-        # macOS get a working `python3` from their base images. Version
-        # matches the one the functional jobs pin, so a cached venv is
-        # never paired with a different interpreter.
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        # A GitHub-hosted runner is a FRESH VM per job, so every job has to
-        # install its own system packages. On the old self-hosted box the
-        # packages lived on the host and one cell's install covered every
-        # other job that landed on the same machine; that is not true here,
-        # which is why the backend cell and both functional jobs each call
-        # the shared script rather than sharing the work.
-        #
-        # The list lives in scripts/ci-install-linux-deps.sh precisely
-        # because it used to be copy-pasted into three places — and when it
-        # drifted, it drifted in all three at once.
-        run: bash scripts/ci-install-linux-deps.sh
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        # Resource optimization: NO `brew update` (formula DB refresh).
-        # `brew install` is already idempotent (skips packages already at
-        # the requested version), but `brew update` re-downloads the
-        # entire homebrew/core and homebrew/bottle formulae manifests on
-        # every CI run (~30 MB and several seconds of network I/O).
-        # HOMEBREW_NO_AUTO_UPDATE=1 makes brew skip the auto-update check
-        # on every command. If a formula needs a version bump, bump it
-        # explicitly in this `brew install` line.
-        #
-        # pkg-config is needed by the "Show toolchain versions" diagnostic
-        # step. It is NOT a dependency of the actual build (build.zig uses
-        # the vendored sqlite3 amalgamation and links ssl/crypto only on
-        # Linux), but the diagnostic step below invokes
-        # `pkg-config --modversion sqlite3/openssl` for parity with Linux.
-        # The macOS runner image does not ship pkg-config either, so it is
-        # installed here like on Linux.
-        #
-        # openssl@3 + curl are keg-only; export paths explicitly so
-        # pkg-config and the Zig build can find them. These lines are
-        # idempotent (--prefix returns the same value whether or not the
-        # package was just installed). The Zig build's system-deps probe
-        # (src/modules/kabelweb/build.zig) looks at exactly
-        # these keg-only paths under /opt/homebrew/opt/<name>/ — see the
-        # "system-deps-first" plan. With both openssl@3 AND curl installed,
-        # the probe returns use_system=true and the build skips the
-        # ~5-10 min `bash build-vendor-curl.sh` cross-compile that
-        # previously failed on the Mac runner with
-        # "fatal error: SystemConfiguration/SCDynamicStoreCopySpecific.h
-        # file not found" (the macOS SDK isn't available to zig cc on a
-        # Mac runner that doesn't have Xcode CLI tools).
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-        run: |
-          # Mirrors scripts/ci-install-linux-deps.sh, minus the packages
-          # that have no macOS equivalent. The macOS-specific subset:
-          #   - base-devel         → Xcode CLI tools (pre-installed on
-          #                          the runner image)
-          #   - openssl@3          → libssl + libcrypto (keg-only;
-          #                          CPPFLAGS/LDFLAGS exported below)
-          #   - curl               → libcurl (keg-only; probe picks it up)
-          #   - sqlite3            → vendored amalgamation via build.zig
-          #                          (fetched at runtime; system sqlite is
-          #                          NOT used on macOS)
-          #   - postgresql-libs    → NOT installed: the `databases`
-          #                          package's macOS branch doesn't link
-          #                          libpq (probe returns libpq=false;
-          #                          same as CI run 31828424315). Adding
-          #                          it here would be a wasted keg.
-          #   - ripgrep            → src/modules/agent/tools/search.zig
-          #                          spawns `rg`; without it every
-          #                          search_test.zig test fails with
-          #                          error.FileNotFound (CI run
-          #                          31719585425 was the Linux catch).
-          #   - pkgconf            → pkg-config (for the "Show toolchain
-          #                          versions" diagnostic step's
-          #                          `pkg-config --modversion` calls).
-          #   - webkit2gtk-4.1/gtk3/libsoup3 → Linux-only (GTK stack).
-          #                          macOS uses Cocoa + WebKit.framework
-          #                          (built-in), no brew install needed.
-          #   - unzip              → BSD unzip is pre-installed on
-          #                          macOS; no action needed.
-          brew install pkg-config openssl@3 curl coreutils ripgrep
-          echo "LDFLAGS=-L$(brew --prefix openssl@3)/lib" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I$(brew --prefix openssl@3)/include" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
-          # coreutils provides `timeout`, `stat -c%s`, and other GNU
-          # utilities not in stock macOS. The "Smoke test: desktop binary"
-          # step calls `timeout 10 ./zig-out/bin/pabrik-desktop --smoke-test`
-          # which fails with exit 127 ("command not found") on stock macOS
-          # without coreutils installed. brew installs the binaries as
-          # `gtimeout`, but the gnubin directory provides them as `timeout`
-          # (and `stat` as GNU `stat` with the `-c%s` flag). The verify
-          # steps below use `stat -c%s` for both platforms; exporting PATH
-          # is what makes that true.
-          echo "PATH=$(brew --prefix coreutils)/libexec/gnubin:$PATH" >> $GITHUB_ENV
-
-      - name: Set up MSVC environment (Windows)
-        if: runner.os == 'Windows'
-        # The windows-2022 image already has VS 2022 with the C++
-        # workload. This action's only job is to export that environment
-        # (cl.exe / link.exe / INCLUDE / LIB) to $GITHUB_PATH and
-        # $GITHUB_ENV so every LATER step sees it — each `run:` block is
-        # a brand-new process, so Set-Item on Env: would not survive.
-        #
-        # This replaces a hand-rolled `vswhere` + `cmd /c "call vcvars64
-        # .bat && set"` + parse-and-forward loop. That loop passed
-        # actionlint, passed review, and then failed on its first real
-        # run (CI 36459257214, 2026-09-28) with:
-        #   Add-Content: Cannot bind argument to parameter 'Path'
-        #   because it is null.            [at `Add-Content -Path $env:GITHUB_ENV`]
-        # Hand-rolling GitHub's environment plumbing was the mistake;
-        # a maintained action is the right level of abstraction for it.
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Bootstrap vcpkg (Windows)
-        if: runner.os == 'Windows'
-        # `shell: pwsh` per the project rule (bash = mac/linux, pwsh =
-        # windows). The image ships vcpkg already bootstrapped at
-        # C:\vcpkg, so this is normally a no-op; the clone-and-bootstrap
-        # path exists for an image that ever stops shipping it.
-        shell: pwsh
-        run: |
-          if (Test-Path "C:\vcpkg\vcpkg.exe") {
-            Write-Host "ok vcpkg already bootstrapped at C:\vcpkg"
-          } else {
-            Write-Host "vcpkg missing from the image - bootstrapping from source..."
-            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-            C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-          }
-
-          # Fail here, loudly, rather than letting the next step discover a
-          # missing cl.exe as a confusing Zig link error. This is the
-          # check that says the step above actually worked.
-          if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
-            Write-Error "cl.exe is not on PATH -- ilammy/msvc-dev-cmd did not run"
-            exit 1
-          }
-          Write-Host "ok MSVC toolchain on PATH"
-          $global:LASTEXITCODE = 0
-      - name: Install vcpkg ports (Windows)
-        if: runner.os == 'Windows'
-        # `shell: pwsh` per the project rule. See the comment on
-        # `Install vcpkg + MSVC build tools (Windows)` for the
-        # why-pwsh-rationale.
-        shell: pwsh
-        # Step 2 of 3. After the previous step wrote PATH/INCLUDE/LIB/etc.
-        # to $GITHUB_ENV, this fresh pwsh process starts with MSVC already
-        # on PATH - `Get-Command cl` below finds it directly.
-        #
-        # All 4 ports go in ONE `vcpkg install` invocation rather than
-        # parallel Start-Job blocks: vcpkg takes an exclusive lock on
-        # .vcpkg-running.lock, so concurrent installs fail with
-        # "calling try_take_exclusive_file_lock failed with 16".
-        run: |
-          $useMSVC = [bool](Get-Command cl -ErrorAction SilentlyContinue)
-          Write-Host ("useMSVC: " + $useMSVC)
-          if (-not $useMSVC) {
-            Write-Warning "cl.exe not found on PATH - MSVC env did not carry over from the previous step. Falling back to per-job vcvars64.bat sourcing."
-          }
-
-          # Pin the host triplet to x64-windows BEFORE the install.
-          # build.zig hardcodes the vcpkg sysroot at
-          # C:\vcpkg\installed\x64-windows, so anything else would build
-          # the ports into a directory the Zig build never looks in. It
-          # also stops vcpkg from auto-detecting an arm64 host and trying
-          # to rebuild its own host helpers with a cross-toolchain
-          # (which fails with "Unable to find a valid toolchain for
-          # requested target architecture arm64").
-          $env:VCPKG_DEFAULT_HOST_TRIPLET = "x64-windows"
-          Write-Host ("vcpkg host triplet pinned to " + $env:VCPKG_DEFAULT_HOST_TRIPLET)
-
-          # Install all 4 ports in a SINGLE vcpkg invocation
-          # (`vcpkg install port1:triplet port2:triplet ... --recurse`).
-          # Running them in parallel via 4× Start-Job is incompatible
-          # with vcpkg's shared .vcpkg-running.lock — only one process
-          # can hold the lock at a time, and the other 3 fail with
-          # "calling try_take_exclusive_file_lock failed with 16"
-          # (CI run 31936399742 reproduced this with all 4 jobs
-          # completing and useMSVC=True). The single-command path is
-          # also ~30% faster end-to-end because vcpkg shares the
-          # download cache across the 4 ports.
-          #
-          # vcpkg exit code: 0 = all OK, 1 = build failure, 2 =
-          # dependency resolution failure. We map any non-zero to
-          # exit 1 so the step fails loudly.
-          # sqlite3 needs explicit `fts5` feature — the vcpkg default
-          # features don't include it. Without FTS5, Migration 058 +
-          # Migration 070 (which create messages_fts / agent_memories_fts
-          # FTS5 virtual tables) fail with `no such module: fts5` at
-          # migration.up() time (observed on CI run 32323478653 — 184
-          # tests fail with that error). Other tests (agent_memories,
-          # session_plan, prompts_make_plan_context) cascade because
-          # their setupDb() runs runMigrations() which trips on 058.
-          $portList = "curl:x64-windows", "openssl:x64-windows", "libpq:x64-windows", "sqlite3[fts5]:x64-windows"
-          Write-Host ("Running: vcpkg install " + ($portList -join " "))
-          & C:\vcpkg\vcpkg.exe install --recurse $portList
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error ("vcpkg install failed with exit code " + $LASTEXITCODE)
-            exit 1
-          }
-          Write-Host "vcpkg install OK"
-
-          # Verify each port's install location before the build runs.
-          # Iterate over a hashtable with a plain foreach loop, no pipe.
-          $expected = @{
-            "curl"    = "C:\vcpkg\installed\x64-windows\include\curl\curl.h"
-            "openssl" = "C:\vcpkg\installed\x64-windows\include\openssl\ssl.h"
-            "libpq"   = "C:\vcpkg\installed\x64-windows\include\libpq-fe.h"
-            "sqlite3" = "C:\vcpkg\installed\x64-windows\include\sqlite3.h"
-          }
-          foreach ($port in $expected.Keys) {
-            if (Test-Path $expected[$port]) {
-              Write-Host ("ok " + $port + " at " + $expected[$port])
-            } else {
-              Write-Error ("vcpkg port " + $port + " missing at " + $expected[$port])
-              exit 1
-            }
-          }
-
-      - name: Stage WebView2 + integrate vcpkg + install ripgrep (Windows)
-        if: runner.os == 'Windows'
-        # `shell: pwsh` per the project rule. See the comment on
-        # `Install vcpkg + MSVC build tools (Windows)` for the
-        # why-pwsh-rationale.
-        shell: pwsh
-        # Step 3 of 3. Three independent concerns, each kept simple:
-        #   1. WebView2 NuGet download + staging
-        #   2. vcpkg integrate install (single command, idempotent)
-        #   3. ripgrep, which the image already ships
-        run: |
-          # WebView2 NuGet. The .h and .dll get extracted into
-          # `src/apps/desktop_app/platform/windows/` for pabrik-desktop
-          # to include at build time. The pabrik.exe service binary
-          # does not need WebView2.
-          #
-          # We download the .nupkg directly from nuget.org's v3
-          # flatcontainer API and unzip it. The .nupkg is just a
-          # renamed ZIP — no nuget.exe needed. The runner does NOT
-          # ship nuget.exe on PATH (CI run 31938453096 reproduced
-          # "nuget : The term 'nuget' is not recognized" before
-          # this fix).
-          #
-          # The flatcontainer URL is lower-case-id only — case
-          # matters (CI run 31940477865 reproduced "BlobNotFound:
-          # The specified blob does not exist" when we used the
-          # mixed-case NuGet display name "Microsoft.Web.WebView2"
-          # against the v2 endpoint). The v3 endpoint is:
-          #   https://api.nuget.org/v3-flatcontainer/<lower-id>/<version>/<lower-id>.<version>.nupkg
-          $nugetVersion = "1.0.2651.64"
-          $webview2Pkg = "microsoft.web.webview2"
-          $webview2Src = Join-Path $env:USERPROFILE ".nuget\packages\$webview2Pkg\$nugetVersion"
-          $webview2Dst = "src\apps\desktop_app\platform\windows"
-          $webview2Header = Join-Path $webview2Src "build\native\include\WebView2.h"
-          if (Test-Path $webview2Header) {
-            Write-Host ("WebView2 NuGet " + $nugetVersion + " already cached")
-          } else {
-            Write-Host ("Fetching WebView2 NuGet " + $nugetVersion + "...")
-            $nupkgName = ($webview2Pkg + "." + $nugetVersion + ".nupkg")
-            $nupkgPath = Join-Path $env:TEMP $nupkgName
-            $nupkgUrl = ("https://api.nuget.org/v3-flatcontainer/" + $webview2Pkg + "/" + $nugetVersion + "/" + $nupkgName)
-            Invoke-WebRequest -Uri $nupkgUrl -OutFile $nupkgPath -UseBasicParsing -TimeoutSec 180
-            New-Item -Path $webview2Src -ItemType Directory -Force | Out-Null
-            # A .nupkg is just a renamed ZIP, but PowerShell's
-            # Expand-Archive sniffs the .nupkg extension and refuses
-            # to extract it ('.nupkg is not a supported archive file
-            # format'). Use [System.IO.Compression.ZipFile]::Extract
-            # ToDirectory which doesn't care about extensions; the
-            # System.IO.Compression.FileSystem assembly makes the
-            # ZipFile type available in PS 5.1 out of the box.
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($nupkgPath, $webview2Src)
-            Remove-Item $nupkgPath -Force -ErrorAction SilentlyContinue
-          }
-          # Ensure the destination directory exists. PR #354's
-          # webview/webview swap deleted src/apps/desktop_app/platform/windows/
-          # (the .h files are no longer there at build-time), but the
-          # Windows webview2MissingPrereq check in build.zig still
-          # expects WebView2.h + EventToken.h + WebView2Loader.h/.lib at
-          # this path. Create the directory on demand so the
-          # Copy-Item calls below land somewhere real. The files
-          # themselves are gitignored (they're build inputs from a
-          # NuGet download, not project sources).
-          New-Item -Path $webview2Dst -ItemType Directory -Force | Out-Null
-          Copy-Item -Force (Join-Path $webview2Src "build\native\include\WebView2.h") (Join-Path $webview2Dst "WebView2.h")
-          # EventToken.h is `#include`d by WebView2.h itself
-          # (line 1700 of build/native/include/WebView2.h). build.zig's
-          # webview2MissingPrereq check lists it as a required staging
-          # file alongside WebView2.h — without it, the compile fails
-          # with `fatal error: 'EventToken.h' file not found` deep
-          # inside Microsoft's headers (original 2026-08-22 CI trace).
-          #
-          # EventToken.h is NOT shipped by the WebView2 NuGet in 1.0.2651.64
-          # (only build/native/include/{WebView2.h, WebView2EnvironmentOptions.h}
-          # are present). It's a WinRT base header that lives in the Windows
-          # SDK at `<kitroot>\Include\<ver>\winrt\EventToken.h`. Older WebView2
-          # NuGet revs (~1.0.1418) did ship it next to WebView2.h, so try the
-          # NuGet path first and fall back to the SDK winrt dir resolved from
-          # $env:INCLUDE (set by vcvars64.bat / VS dev shells) or the canonical
-          # Windows Kits probe. CI run 33061112059 (after PR #359's New-Item
-          # fix) reproduced `Cannot find path '...\build\native\include\EventToken.h'`
-          # — confirming the NuGet no longer carries it on 1.0.2651.64.
-          $eventTokenSource = $null
-          if (Test-Path (Join-Path $webview2Src "build\native\include\EventToken.h")) {
-            $eventTokenSource = Join-Path $webview2Src "build\native\include\EventToken.h"
-          } else {
-            # Resolve the Windows SDK winrt include dir. $env:INCLUDE is the
-            # authoritative source when running under vcvars64 / VS dev shells;
-            # otherwise probe the canonical Windows Kits install paths and
-            # pick the highest-version subdir that has a winrt\EventToken.h.
-            $winrtDirs = @()
-            if ($env:INCLUDE) {
-              $winrtDirs += ($env:INCLUDE -split ';' | Where-Object {
-                ($_ -ne '') -and ((Split-Path $_ -Leaf) -eq 'winrt') -and (Test-Path (Join-Path $_ 'EventToken.h'))
-              })
-            }
-            if ($winrtDirs.Count -eq 0) {
-              $kitRoot = 'C:\Program Files (x86)\Windows Kits\10\Include'
-              if (-not (Test-Path $kitRoot)) { $kitRoot = 'C:\Program Files\Windows Kits\10\Include' }
-              if (Test-Path $kitRoot) {
-                $versions = Get-ChildItem -Path $kitRoot -Directory -ErrorAction SilentlyContinue |
-                  Where-Object { Test-Path (Join-Path (Join-Path $kitRoot $_.Name) 'winrt\EventToken.h') } |
-                  Sort-Object Name -Descending
-                if ($versions.Count -gt 0) {
-                  $winrtDirs += Join-Path (Join-Path $kitRoot $versions[0].Name) 'winrt'
-                }
-              }
-            }
-            if ($winrtDirs.Count -gt 0) {
-              $eventTokenSource = Join-Path $winrtDirs[0] 'EventToken.h'
-            }
-          }
-          if ($eventTokenSource) {
-            Copy-Item -Force $eventTokenSource (Join-Path $webview2Dst "EventToken.h")
-          } else {
-            Write-Warning "EventToken.h not found in NuGet or Windows SDK winrt; zig cc will likely fail with 'EventToken.h file not found'"
-          }
-          # WebView2Loader.h was renamed/removed in 1.0.2651.64 — the
-          # loader inline is now consolidated inside WebView2.h
-          # itself. The .dll + .lib still exist for runtime + static
-          # link. The destination WebView2Loader.h is preserved as a
-          # thin shim that #includes "WebView2.h" so any consumer
-          # that references it (legacy callers, docs, comment
-          # breadcrumbs in CI scripts) keeps compiling.
-          "#pragma once`r`n#include `"WebView2.h`"" | Out-File -FilePath (Join-Path $webview2Dst "WebView2Loader.h") -Encoding ASCII
-          # 1.0.2651.64 ships WebView2Loader.dll under both
-          # build/native/x64/ AND runtimes/win-x64/native/. They
-          # hash-equal (same upstream payload); pick either.
-          # Use build/native/x64/ as the primary; fall back to
-          # runtimes/ if not present (older .nupkg revs).
-          $wv2DllSource = Join-Path $webview2Src "build\native\x64\WebView2Loader.dll"
-          if (-not (Test-Path $wv2DllSource)) {
-            $wv2DllSource = Join-Path $webview2Src "runtimes\win-x64\native\WebView2Loader.dll"
-          }
-          if (-not (Test-Path $wv2DllSource)) {
-            Write-Error ("WebView2Loader.dll not found in NuGet " + $nugetVersion + " at build/native/x64/ nor runtimes/win-x64/native/ -- NuGet layout changed, update staging paths")
-            exit 1
-          }
-          Copy-Item -Force $wv2DllSource (Join-Path $webview2Dst "WebView2Loader.dll")
-          if (-not (Test-Path (Join-Path $webview2Dst "WebView2Loader.dll"))) {
-            Write-Error "WebView2Loader.dll staging copy failed -- destination missing after Copy-Item"
-            exit 1
-          }
-          if (Test-Path (Join-Path $webview2Src "build\native\x64\WebView2Loader.dll.lib")) {
-            Copy-Item -Force (Join-Path $webview2Src "build\native\x64\WebView2Loader.dll.lib") (Join-Path $webview2Dst "WebView2Loader.lib")
-          } elseif (Test-Path (Join-Path $webview2Src "build\native\lib\x64\WebView2Loader.dll.lib")) {
-            Copy-Item -Force (Join-Path $webview2Src "build\native\lib\x64\WebView2Loader.dll.lib") (Join-Path $webview2Dst "WebView2Loader.lib")
-          } elseif (Test-Path (Join-Path $webview2Src "build\native\WebView2Loader.dll.lib")) {
-            Copy-Item -Force (Join-Path $webview2Src "build\native\WebView2Loader.dll.lib") (Join-Path $webview2Dst "WebView2Loader.lib")
-          }
-          Write-Host ("ok WebView2 staged at " + $webview2Dst)
-
-          # vcpkg integrate install registers C:\vcpkg\lib with MSVC's
-          # LIB env var globally. Idempotent.
-          C:\vcpkg\vcpkg.exe integrate install
-          Write-Host "ok vcpkg integrated with MSVC"
-
-          # ripgrep for src/modules/agent/tools/search.zig, which SPAWNS
-          # `rg`. Without it every search_test.zig case fails with
-          # error.FileNotFound.
-          #
-          # The image does NOT ship ripgrep, and it has no `winget`
-          # either (the old self-hosted Windows box did — its fallback
-          # path assumed winget and died with "The term 'winget' is not
-          # recognized"). Chocolatey IS provisioned on windows-2022, the
-          # runner user is an administrator, and C:\ProgramData\chocolatey\bin
-          # is already on PATH — so `choco install` is the package manager
-          # that actually exists here. `rg` is then re-resolved rather
-          # than assumed, because choco's shim only lands on PATH for
-          # processes started after this one.
-          $rg = Get-Command rg -ErrorAction SilentlyContinue
-          if ($rg) {
-            Write-Host ("ok ripgrep already at " + $rg.Source)
-          } else {
-            Write-Host "ripgrep missing from the image - installing via chocolatey..."
-            choco install ripgrep -y --no-progress
-            $chocoBin = "C:\ProgramData\chocolatey\bin"
-            if (Test-Path $chocoBin) {
-              $env:PATH = $chocoBin + ";" + $env:PATH
-              Add-Content -Path $env:GITHUB_PATH -Value $chocoBin
-            }
-            $rg = Get-Command rg -ErrorAction SilentlyContinue
-            if (-not $rg) {
-              Write-Error "ripgrep still not on PATH after choco install -- search_test.zig will fail"
-              exit 1
-            }
-            Write-Host ("ok ripgrep installed at " + $rg.Source)
-          }
-
-      - name: Show toolchain versions
-        shell: bash
-        # All `pkg-config` queries are wrapped in `|| echo "<not installed>"`
-        # because the macOS build uses the vendored sqlite3 amalgamation and
-        # does NOT link system openssl (build.zig's macOS branch in
-        # createPlatformExe / mod branch is a no-op for ssl/crypto/system-
-        # sqlite3). So on macOS these queries will legitimately return
-        # "not installed" — the diagnostic step should report that and let
-        # the build proceed, NOT fail.
-        #
-        # After worktree/system-deps-first: the `kabelweb` and
-        # `databases` packages probe the host system and prefer system
-        # libs over vendor when present. The Linux native build on the
-        # the Ubuntu cell should show all 4 libs as "installed" —
-        # the probe will then skip the vendor fetch steps entirely
-        # (saves ~30 min on a fresh checkout).
-        #
-        # Windows: pkg-config isn't on PATH after vcpkg-integrated install
-        # (vcpkg ships its own .pc files under installed\x64-windows\lib\pkgconfig
-        # but doesn't drop pkg-config.exe on PATH). The toolchain versions
-        # diagnostic is informational — fall back to "not installed" so
-        # Windows doesn't fail the build step.
-        if: runner.os != 'Windows'
-        run: |
-          zig version
-          cc --version | head -n 1
-          pkg-config --modversion sqlite3 2>/dev/null || echo "sqlite3.pc: not installed (vendored amalgamation is used on macOS)"
-          pkg-config --modversion openssl  2>/dev/null || echo "openssl.pc:  not installed (not linked on macOS)"
-          pkg-config --modversion libpq   2>/dev/null || echo "libpq.pc:    not installed (not linked on macOS)"
-          pkg-config --modversion libcurl 2>/dev/null || echo "libcurl.pc:  not installed (vendored archive is used on macOS)"
-
-      - name: Show toolchain versions (Windows)
-        shell: pwsh
-        if: runner.os == 'Windows'
-        # PowerShell-native diagnostic. Verifies the 4 port headers exist
-        # at C:\vcpkg\installed\x64-windows\include\*.h AND that Zig 0.16
-        # and MSVC's cl.exe are on PATH (after the vcvars64.bat step above).
-        # Each line that fails exits the step with code 1 — the build then
-        # fails with a clear "vcpkg port X missing" message rather than
-        # a confusing Zig link error.
-        run: |
-          $zig = Get-Command zig -ErrorAction SilentlyContinue
-          if (-not $zig) {
-            Write-Error "zig not on PATH"
-            exit 1
-          }
-          & zig version
-
-          $cl = Get-Command cl -ErrorAction SilentlyContinue
-          $link = Get-Command link -ErrorAction SilentlyContinue
-          if ($cl -and $link) {
-            & cl 2>&1 | Select-Object -First 1
-            & link 2>&1 | Select-Object -First 1
-          } else {
-            Write-Warning "MSVC cl.exe / link.exe not on PATH"
-          }
-
-          # Verify the 4 vcpkg port headers exist. Flat Test-Path
-          # statements, no hashtable iteration: this used to trip a
-          # brace-counter desync in PowerShell 5.1 on the old
-          # self-hosted Windows box, and the plain form reads the same
-          # either way. Also: do NOT interpolate paths with
-          # `\"$r\\include\\openssl\\ssl.h\"`-style syntax — the `$r` token
-          # followed by `\\include\\` is parsed as an attempt to invoke a
-          # cmdlet named like the rest of the literal. The safe forms:
-          # pass Join-Path's output as a -Path argument, OR use forward
-          # slashes in the literal, which NTFS accepts.
-          if (Test-Path "C:/vcpkg/installed/x64-windows/include/sqlite3.h") {
-            Write-Host "  ok sqlite3 (C:/vcpkg/installed/x64-windows/include/sqlite3.h)"
-          } else {
-            Write-Error "sqlite3 header missing — vcpkg install sqlite3:x64-windows --recurse"
-            exit 1
-          }
-          if (Test-Path "C:/vcpkg/installed/x64-windows/include/openssl/ssl.h") {
-            Write-Host "  ok openssl (C:/vcpkg/installed/x64-windows/include/openssl/ssl.h)"
-          } else {
-            Write-Error "openssl header missing — vcpkg install openssl:x64-windows --recurse"
-            exit 1
-          }
-          if (Test-Path "C:/vcpkg/installed/x64-windows/include/libpq-fe.h") {
-            Write-Host "  ok libpq (C:/vcpkg/installed/x64-windows/include/libpq-fe.h)"
-          } else {
-            Write-Error "libpq header missing — vcpkg install libpq:x64-windows --recurse"
-            exit 1
-          }
-          if (Test-Path "C:/vcpkg/installed/x64-windows/include/curl/curl.h") {
-            Write-Host "  ok libcurl (C:/vcpkg/installed/x64-windows/include/curl/curl.h)"
-          } else {
-            Write-Error "libcurl header missing — vcpkg install curl:x64-windows --recurse"
-            exit 1
-          }
-
-          # WebView2 — only needed for pabrik-desktop. Same flat
-          # Test-Path pattern: no foreach, no hashtable iteration.
-          $wv2 = "src\apps\desktop_app\platform\windows"
-          if (Test-Path "$wv2\WebView2.h") {
-            Write-Host "  ok $wv2\WebView2.h"
-          } else {
-            Write-Warning "$wv2\WebView2.h missing"
-          }
-          if (Test-Path "$wv2\EventToken.h") {
-            Write-Host "  ok $wv2\EventToken.h"
-          } else {
-            Write-Warning "$wv2\EventToken.h missing"
-          }
-          if (Test-Path "$wv2\WebView2Loader.h") {
-            Write-Host "  ok $wv2\WebView2Loader.h"
-          } else {
-            Write-Warning "$wv2\WebView2Loader.h missing"
-          }
-          if (Test-Path "$wv2\WebView2Loader.dll") {
-            Write-Host "  ok $wv2\WebView2Loader.dll"
-          } else {
-            Write-Warning "$wv2\WebView2Loader.dll missing"
-          }
-          if (Test-Path "$wv2\WebView2Loader.lib") {
-            Write-Host "  ok $wv2\WebView2Loader.lib"
-          } else {
-            Write-Warning "$wv2\WebView2Loader.lib missing"
-          }
-          # The GitHub Actions runner's .ps1 trailer is:
-          #   if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) {
-          #     exit $LASTEXITCODE
-          #   }
-          # `& cl` and `& link` earlier in this step ran with no
-          # arguments (we just want the usage banner), so both
-          # commands exit 1. Their $LASTEXITCODE stays sticky at 1
-          # through the rest of the script even though every Test-Path
-          # check below prints `ok`. The trailer then exits 1 and the
-          # build fails.
-          # Reset $LASTEXITCODE before the trailer runs:
-          $global:LASTEXITCODE = 0
-
-      # Note: the sqlite3 amalgamation fetch is now handled by
-      # build.zig's `vendor_sqlite3_step` (wired into `test_step` and
-      # every `install:*` step) — no separate CI step needed. The fetch
-      # runs automatically on a fresh checkout (when the vendor dir is
-      # missing); on subsequent runs the script's idempotent skip makes
-      # it a no-op.
-
-      # PERF + CONSISTENCY (2026-08-28 — pnpm migration): setup-bun
-      # (removed 2026-08-25) and the npm-keyed node_modules cache are
-      # both gone. The backend's only webapp need is the Vite dev
-      # server for functional-test-ui, served by the "Install pnpm +
-      # webapp dependencies" step above, which keys off pnpm-lock.yaml
-      # (the canonical lockfile) and uses pnpm install --frozen-lockfile.
-      # Duplicating that with a second bun/npm-based mechanism meant
-      # two caches racing to populate the same
-      # src/apps/desktop/node_modules.
-
-      - name: Cache pnpm store
-        # Every backend cell runs a full `pnpm install`: Linux and macOS
-        # through the webapp-rebuild chain inside `zig build
-        # pabrik-desktop`, Windows through the "Build webapp dist" step.
-        # The three self-hosted cells shared one $HOME, so whichever cell
-        # ran first warmed the store for the others for free. Each
-        # GitHub-hosted job gets a fresh $HOME, so without this step the
-        # largest download in the pipeline is cold on every single run.
-        #
-        # The store dir is forced via npm_config_store_dir because pnpm's
-        # default differs by platform (~/.local/share/pnpm/store on Linux,
-        # ~/Library/pnpm/store on macOS) and actions/cache paths do not
-        # expand shell variables. If pnpm ever stopped honouring the env
-        # var the effect is a cold store, not a broken build.
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/pnpm-store
-          key: v1-pnpm-${{ inputs.os }}-${{ hashFiles('src/apps/desktop/pnpm-lock.yaml') }}
-          restore-keys: |
-            v1-pnpm-${{ inputs.os }}-
-
-      - name: Cache Zig build artifacts
-        uses: actions/cache@v4
-        with:
-          # The second path is the module-owned vendor dir (each module
-          # carries its own; the root-level `vendor/` was removed in PR
-          # #211's self-contained-package refactor). `src/modules/...`
-          # paths are the ones build.zig's `addObjectFile` and
-          # `addIncludePath` calls read from. (kabelweb's vendor dir is
-          # gone — external URL dependency now.) It is a separate line
-          # rather than a `#` note inside the block below: in a YAML
-          # literal scalar `#` is not a comment, it is just a character,
-          # so a `#` line here would silently become a glob pattern that
-          # matches nothing.
-          path: |
-            .zig-cache
-            src/modules/databases/vendor
-          # PERF (2026-08-25): `zig-out` (~90 MB pabrik + ~34 MB
-          # pabrik-desktop per cell) and
-          # `src/apps/desktop_app/embedded/webapp_assets.zig` were
-          # dropped from this cache. zig-out is pure build OUTPUT — the
-          # install step regenerates it from .zig-cache in seconds;
-          # caching it cost ~124 MB of archive I/O (upload AND download)
-          # on every run. webapp_assets.zig is regenerated on EVERY build
-          # by design (fresh-assets policy, see build.zig's webapp-rebuild
-          # workflow) so caching it was dead weight.
-          #
-          # Cache key includes `build.zig` so a build.zig change invalidates
-          # the cache.
-          #
-          # KEY: scoped by RUNNER IMAGE (`inputs.os`), not `runner.os`.
-          # `.zig-cache` holds compiled object files, which are host state,
-          # not just source state. `runner.os` evaluates to the bare string
-          # "Linux"/"macOS"/"Windows" on BOTH self-hosted and GitHub-hosted
-          # runners, so an `runner.os` key would have let the first
-          # GitHub-hosted run restore the Arch box's .zig-cache and mix two
-          # distros' object hashes into one directory — a failure mode that
-          # shows up as random corrupt-cache errors rather than anything
-          # pointing at the cache. Keying on the image label also means an
-          # image bump (ubuntu-24.04 -> ubuntu-26.04) invalidates on its own.
-          # v3->v4 for the same reason: the v3 entries are Arch-built and
-          # must stay reachable-but-unused rather than silently reused.
-          key: v4-zig-${{ inputs.os }}-${{ inputs.target_zig }}-${{ hashFiles('build.zig', 'build.zig.zon', 'src/modules/databases/scripts/fetch-vendor-sqlite3.sh') }}
-          # No restore-keys: when build.zig changes, the exact key won't
-          # match and no cache is restored. This prevents a stale build.exe
-          # (from an older build.zig) from being used.
-
-      - name: Drop the zig build-runner tmp dir
-        # `.zig-cache/tmp` holds the per-step configure results the parent
-        # build runner hands to a child. It is inside the cache restored just
-        # above, so those entries belong to a different run: a child can find
-        # one gone or hashed for inputs this run never built, and dies with
-        #   unable to read results of configure phase from '.zig-cache\tmp\<hash>': FileNotFound
-        # (windows-latest 2026-10-17, three cells; the same commit passed that
-        # job earlier the same day, so the state is the variable, not the code).
-        # Nothing here is cacheable: it is rewritten in milliseconds.
-        shell: bash
-        run: rm -rf .zig-cache/tmp
-
-      - name: Resolve the Zig global cache dir
-        id: zig-global-dir
-        # The path is asked of zig rather than hardcoded because it is
-        # NOT the same everywhere: `~/.cache/zig` on Linux,
-        # `~/Library/Caches/zig` on macOS, `%LOCALAPPDATA%\zig` on Windows.
-        # `actions/cache`'s `path:` does not expand shell variables, so the
-        # answer has to come back as a step output. Windows needs
-        # `cygpath -u` because zig reports backslashes there and a
-        # backslash in a YAML `path:` is an escape character, not a
-        # separator.
-        shell: bash
-        run: |
-          set -euo pipefail
-          # ZON, NOT JSON. `zig env` prints
-          #     .{
-          #         .global_cache_dir = "/home/runner/.cache/zig",
-          #         ...
-          #     .}
-          # -- a leading dot on every key and `=` instead of `:`. The
-          # first version of this step parsed it as JSON, matched nothing,
-          # and failed every backend and functional job in the pipeline on
-          # a line that looks like it should work. The pattern is anchored
-          # to the start of the line and tolerant of both the trailing
-          # comma and its absence, because `global_cache_dir` is not the
-          # last key in every zig version's output.
-          raw="$(zig env | sed -n 's/^[[:space:]]*\.global_cache_dir[[:space:]]*=[[:space:]]*"\(.*\)".*$/\1/p')"
-          if [ -z "$raw" ]; then
-            echo "::error::zig env did not report global_cache_dir — cannot cache it"
-            exit 1
-          fi
-          case "$raw" in
-            [A-Za-z]:*) resolved="$(cygpath -u "$raw")" ;;
-            *)          resolved="$raw" ;;
-          esac
-          echo "path=$resolved" >> "$GITHUB_OUTPUT"
-          echo "zig global cache: $resolved"
-
-      - name: Cache the Zig global cache (fetched package sources)
-        # The OTHER zig cache. `.zig-cache` above holds this build's object
-        # files; the global cache holds the package SOURCES that
-        # `build.zig.zon` pulls from github.com (kabelweb, ruangsql). It
-        # was cold on every single run, and being cold is what produces the
-        # `NameServerFailure` / `invalid HTTP response` aborts at CONFIG
-        # time — the flake class the functional job still retries around,
-        # defensively, because a warm cache is not a guarantee.
-        #
-        # Keyed on `build.zig.zon` only, not on build.zig: a build.zig edit
-        # does not change which sources exist. Unlike the cache above this
-        # one DOES have a restore-keys prefix, because the global cache is
-        # content-addressed and hash-verified — restoring an older copy
-        # cannot produce a corrupt build, it just means the new tarball is
-        # downloaded and added to it.
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.zig-global-dir.outputs.path }}
-          key: v1-zig-global-${{ inputs.os }}-${{ hashFiles('build.zig.zon') }}
-          restore-keys: |
-            v1-zig-global-${{ inputs.os }}-
-
+          os: ${{ inputs.os }}
+          target_zig: ${{ inputs.target_zig }}
+          zig_version: ${{ env.ZIG_VERSION }}
       - name: Test (zig build test only — no pabrik-desktop install)
         # Cold-cache ceiling for the whole compile-and-run pass. A
         # from-scratch Windows cell has to build the vcpkg ports and the full
@@ -947,11 +227,24 @@ jobs:
           # phase" behind — which the retry below cannot recover, because the
           # second attempt is just as cold (run 39001339808, and main's own
           # 38998531861). Serialising them costs a couple of minutes warm.
+          # HOW MANY TEST PROCESSES RUN AT ONCE. `zig build test` splits
+          # mod_tests into `-Dtest-shards` binaries — one sequential test
+          # runner each — and 2 is what build.zig DERIVES on this image
+          # (`min(8, cpus/2)` of a 4-vCPU runner), which leaves half the box
+          # idle for the whole run phase. That phase is the step: measured on
+          # run 43567552418, the two shard binaries COMPILED in 12 s and 14 s
+          # and then RAN for 1 min and 14 min, so shard count is the only
+          # lever over the 15-minute total. 4 = one test runner per vCPU.
+          #
+          # Windows stays at 1: that image has 2 vCPUs and `jobs_flag=-j1`
+          # below serialises the shards anyway, so a second shard would only
+          # add a second compile.
+          test_shards=4
           jobs_flag=""
-          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then jobs_flag="-j1"; fi
+          if [[ "${RUNNER_OS:-}" == "Windows" ]]; then jobs_flag="-j1"; test_shards=1; fi
           for attempt in 1 2; do
             # shellcheck disable=SC2086  # $jobs_flag is a deliberate word list
-            zig build test $jobs_flag --summary all -Dno-webapp-rebuild 2>&1 \
+            zig build test $jobs_flag --summary all -Dno-webapp-rebuild -Dtest-shards="$test_shards" 2>&1 \
               | tee "$RUNNER_TEMP/zig-test/summary.log"
             status=$?
             if [[ "$status" -ne 0 ]] && grep -qE "unable to read results of configure phase|test runner failed to respond" "$RUNNER_TEMP/zig-test/summary.log"; then
@@ -1086,6 +379,33 @@ jobs:
         run: |
           zig build check:storage-cross --summary all
 
+  ship:
+    # The other half of the cell: build the SHIPPED bytes, verify them, stage
+    # and publish. It shares nothing with `test` but the SHA and the setup, so
+    # the two run side by side — that is the whole point, and it is what
+    # turned a 12m34 Windows cell into two ~7m jobs.
+    #
+    # It is NOT `needs: build` and it is NOT skipped on PRs. A PR cannot
+    # publish (every publish step is gated on push/workflow_dispatch), but it
+    # must still prove that the ReleaseFast binaries build, strip, pass their
+    # two smoke tests and package — the shipped bytes are the thing a green
+    # PR promises.
+    runs-on: ${{ inputs.os }}
+    permissions:
+      contents: write
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cell setup (toolchains, system deps, vcpkg ports, caches)
+        # The SAME composite both halves run; see
+        # .github/actions/backend-setup/action.yml.
+        uses: ./.github/actions/backend-setup
+        with:
+          os: ${{ inputs.os }}
+          target_zig: ${{ inputs.target_zig }}
+          zig_version: ${{ env.ZIG_VERSION }}
       - name: Clean stale webapp html staging
         # build.zig copies src/apps/desktop/dist → zig-out/bin/html with
         # addInstallDirectory, which never deletes: every rebuild's hashed
