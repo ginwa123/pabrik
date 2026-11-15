@@ -328,3 +328,93 @@ comptime {
     _ = BODY_V1;
     _ = BODY_V2;
 }
+
+// The `document` tool's half of the CLI: read a body at a byte position,
+// find a row by search, and prove the writer's delete takes the row away.
+test "the document tool reads a slice at a byte offset, searches, and reads an html page" {
+    try harness.requirePabrikBin(io, gpa);
+
+    var h = try Harness.boot(io, gpa, .{});
+    defer h.deinit(io) catch |err| {
+        std.debug.print("teardown: {s}\n", .{@errorName(err)});
+    };
+
+    const ws = try createWorkspace(&h, "doc-viewer-ws");
+    defer gpa.free(ws);
+    const kanban = try createKanban(&h, ws, "doc-viewer-board");
+    defer gpa.free(kanban);
+    const session = try createTask(&h, ws, kanban, "read the document");
+    defer gpa.free(session);
+
+    var add = try documents(&h, &.{
+        "doc-add", "--session", session, "--title", "Release plan", "--content", BODY_V1,
+    }, true);
+    defer add.deinit();
+    const added = try toolData(&add);
+    const doc_id = try gpa.dupe(u8, try stringField(&added, "id"));
+    defer gpa.free(doc_id);
+
+    // First 20 bytes, with the offset that continues it.
+    var first = try documents(&h, &.{
+        "doc-read", "--session", session, "--document", doc_id, "--limit", "20",
+    }, true);
+    defer first.deinit();
+    const first_data = try toolData(&first);
+    try testing.expectEqualStrings(BODY_V1[0..20], try stringField(&first_data, "content"));
+    try testing.expectEqual(@as(i64, @intCast(BODY_V1.len)), first_data.object.get("content_bytes").?.integer);
+    try testing.expectEqual(@as(i64, 20), first_data.object.get("next_offset").?.integer);
+    try testing.expectEqual(@as(i64, 0), first_data.object.get("offset").?.integer);
+
+    // Resuming at that offset reaches the end, and says so.
+    var rest = try documents(&h, &.{
+        "doc-read", "--session", session, "--document", doc_id, "--offset", "20", "--limit", "200000",
+    }, true);
+    defer rest.deinit();
+    const rest_data = try toolData(&rest);
+    try testing.expectEqualStrings(BODY_V1[20..], try stringField(&rest_data, "content"));
+    try testing.expect(rest_data.object.get("next_offset").? == .null);
+
+    // Search is how a caller without an id gets one.
+    var found = try documents(&h, &.{
+        "doc-search", "--session", session, "--query", "object store",
+    }, true);
+    defer found.deinit();
+    const found_data = try toolData(&found);
+    try testing.expectEqual(@as(i64, 1), found_data.object.get("total").?.integer);
+    const rows = found_data.object.get("documents").?.array.items;
+    try testing.expectEqual(@as(usize, 1), rows.len);
+    try testing.expectEqualStrings(doc_id, try stringField(&rows[0], "id"));
+
+    // One reader, every format: the html tool's page source reads through the
+    // same action.
+    var add_html = try documents(&h, &.{
+        "doc-html-add", "--session", session, "--title", "Page", "--content", "<!doctype html><html><body><p>page</p></body></html>",
+    }, true);
+    defer add_html.deinit();
+    const added_html = try toolData(&add_html);
+    const html_id = try gpa.dupe(u8, try stringField(&added_html, "id"));
+    defer gpa.free(html_id);
+
+    var html_read = try documents(&h, &.{
+        "doc-read", "--session", session, "--document", html_id, "--limit", "15",
+    }, true);
+    defer html_read.deinit();
+    const html_data = try toolData(&html_read);
+    try testing.expectEqualStrings("<!doctype html>", try stringField(&html_data, "content"));
+    try testing.expectEqualStrings("html", try stringField(&html_data, "format"));
+
+    // `document_html` deletes a page; the reader then reports it gone.
+    var deleted = try documents(&h, &.{
+        "doc-html-delete", "--session", session, "--document", html_id,
+    }, true);
+    defer deleted.deinit();
+    const deleted_data = try toolData(&deleted);
+    try testing.expectEqualStrings(html_id, try stringField(&deleted_data, "id"));
+    try testing.expect(deleted_data.object.get("deleted").?.bool);
+
+    var gone = try documents(&h, &.{
+        "doc-read", "--session", session, "--document", html_id,
+    }, false);
+    defer gone.deinit();
+    try testing.expect(gone.result.exit_code != 0);
+}

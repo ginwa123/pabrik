@@ -1,5 +1,5 @@
 //! `document_html` — the agent tool that authors HTML documents in its own
-//! workspace. Three actions: `create`, `edit`, `read`.
+//! workspace. Three actions: `create`, `edit`, `delete`.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -21,15 +21,11 @@ pub const DocumentHtmlInput = struct {
     old_text: ?[]const u8 = null,
     new_text: ?[]const u8 = null,
     replace_all: ?bool = null,
-    /// `read`: byte offset to start the slice at.
-    offset: ?i64 = null,
-    /// `read`: maximum bytes to return.
-    limit: ?i64 = null,
 };
 
 pub const document_html_tool_system_prompt =
     \\## HTML Document Tool — Behavior
-    \\`document_html` authors HTML documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `read`.
+    \\`document_html` WRITES HTML documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `delete`. Reading and searching are the `document` tool's.
     \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. A `document_id` from another workspace reports "not found", exactly as a nonexistent id does.
     \\- `create` needs `title`, which must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug. `content` is the page source and may be empty.
     \\- `content` is a COMPLETE HTML page: `<!doctype html>`, `<html>`, `<head>` and `<body>`. The page renders in a sandboxed iframe with no access to the app, so it must carry its own styles and scripts inline — a relative `<link>` or `<script src>` has nothing to resolve against.
@@ -37,8 +33,8 @@ pub const document_html_tool_system_prompt =
     \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` nor `old_text` is rejected. `content` is the WHOLE new page, not a diff.
     \\- `edit` with `old_text` + `new_text` patches the page IN PLACE — the cheap path for a large page, because you send only the changed text. `old_text` must match EXACTLY ONCE; a miss or an ambiguous match is refused and nothing is written, so include enough surrounding markup to be unique, or set `replace_all: true`. `new_text: ""` deletes the match. `content` and `old_text` are mutually exclusive.
     \\- `edit` refuses a document that is not an HTML document. A markdown or office document is `document_markdown`'s to change; this tool will not overwrite it.
-    \\- `read` returns the page source as a bounded SLICE: `limit` bytes (default 20000, max 200000) starting at `offset` (default 0). The result carries `content_bytes` (the whole page's length), `offset`, `next_offset` and `truncated` — pass `next_offset` as the next `offset` to continue, and stop when `next_offset` is null. Read a slice, not the whole page: a 4 MiB page is 200 pages, and you rarely need more than the part you are about to change.
-    \\- To SEARCH or DELETE documents of any format, use `document_markdown`. This tool does not duplicate those actions.
+    \\- To READ a page, or to find one, use the `document` tool — the same format-agnostic read and search as every other document. This tool does not duplicate them.
+    \\- `delete` is IRREVERSIBLE. There is no trash, no undo, and no archive. Once the row is gone the page source is unrecoverable — not through this tool, and not from the sidebar. Delete only what the user asked you to delete: "find the page about X" is not permission to remove X. To revise a page instead of removing it, use `action: "edit"`.
     \\- A human can also create and edit HTML documents from the UI; both paths write the same table, so a document you write appears in their sidebar immediately.
     \\
 ;
@@ -48,14 +44,14 @@ pub const document_html_tool = AgentTool{
     .function = .{
         .name = TOOL_NAME,
         .description =
-        \\Create, edit and read HTML documents in YOUR workspace — a landing page draft, a report, a self-contained demo, any page worth re-opening. `action` selects the operation: `create` (title + page source), `edit` (document_id + the fields to change), `read` (document_id).
+        \\Create, edit and delete HTML documents in YOUR workspace — a landing page draft, a report, a self-contained demo, any page worth re-opening. `action` selects the operation: `create` (title + page source), `edit` (document_id + the fields to change), `delete` (document_id, IRREVERSIBLE).
         \\
         \\- SCOPE is automatic: your session's workspace is resolved before the call, so there is no `workspace_id` argument — one supplied is ignored.
         \\- `content` is a COMPLETE HTML page. It renders in a sandboxed iframe with no access to the app, so styles and scripts must be inline.
         \\- The page is previewed at Desktop, Tablet (768px), Mobile (390px) and any custom width the user types. Write it responsively: a `<meta name="viewport">` tag, fluid layout, and a breakpoint so it reads at 390px as well as at desktop width.
         \\- `edit` is a PATCH: omitted fields keep their current value, `content` is the COMPLETE new page (not a diff), and `content: ""` clears it. It refuses a document that is not HTML.
-        \\- `read` returns the full page source. Use it before an `edit`.
-        \\- To search or delete documents, use `document_markdown`.
+        \\- To READ a page or find its id, use the `document` tool — never invent a `document_id`.
+        \\- `delete` is irreversible; revise with `action: "edit"` instead.
         ,
         .parameters = .{
             .type = "object",
@@ -63,12 +59,12 @@ pub const document_html_tool = AgentTool{
                 .{
                     .name = "action",
                     .type = "string",
-                    .description = "'create', 'edit' or 'read'. Any other value is refused.",
+                    .description = "'create', 'edit' or 'delete'. Any other value is refused.",
                 },
                 .{
                     .name = "document_id",
                     .type = "string",
-                    .description = "`edit` and `read`: the id from a `create` result or a `document_markdown` search row. A row in another workspace reports 'not found'.",
+                    .description = "`edit` and `delete`: the id from a `create` result or a `document` search row. A row in another workspace reports 'not found'.",
                 },
                 .{
                     .name = "title",
@@ -94,16 +90,6 @@ pub const document_html_tool = AgentTool{
                     .name = "replace_all",
                     .type = "boolean",
                     .description = "`edit`: replace EVERY occurrence of `old_text` instead of requiring exactly one. Default false.",
-                },
-                .{
-                    .name = "offset",
-                    .type = "number",
-                    .description = "`read`: the BYTE offset to start the slice at (default 0). Pass the previous read's `next_offset` to continue.",
-                },
-                .{
-                    .name = "limit",
-                    .type = "number",
-                    .description = "`read`: maximum BYTES of the page to return (default 20000, max 200000). The result reports the whole body's `content_bytes` and a `next_offset` — page with it instead of raising this.",
                 },
             },
             .required = &.{"action"},
@@ -169,16 +155,14 @@ pub fn executeEditHtml(
     }, documents_store.FORMAT_HTML);
 }
 
-pub fn executeReadHtml(
+pub fn executeDeleteHtml(
     allocator: std.mem.Allocator,
     store: documents_store.Store,
     caller_session_id: []const u8,
     input: DocumentHtmlInput,
 ) ![]const u8 {
-    return document_mod.executeReadDocument(allocator, store, caller_session_id, .{
+    return document_mod.executeDeleteDocument(allocator, store, caller_session_id, .{
         .document_id = input.document_id,
-        .offset = input.offset,
-        .limit = input.limit,
     });
 }
 
@@ -225,23 +209,15 @@ pub fn execDocumentHtml(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecResul
         defer ctx.allocator.free(inner);
         return finishMutation(ctx, tc, inner, "updated");
     }
-    if (std.mem.eql(u8, input.action, "read")) {
-        const inner = executeReadHtml(ctx.allocator, store, ctx.session_id, input) catch |err| return execFailure(ctx, tc, err);
+    if (std.mem.eql(u8, input.action, "delete")) {
+        const inner = executeDeleteHtml(ctx.allocator, store, ctx.session_id, input) catch |err| return execFailure(ctx, tc, err);
         defer ctx.allocator.free(inner);
-        if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
-            defer probe.deinit();
-            if (probe.value.@"error") |err_msg| {
-                const output = try wrapToolOutput(ctx.allocator, TOOL_NAME, tc.function.arguments, false, err_msg, inner);
-                return ToolExecResult{ .output = output, .output_allocated = true };
-            }
-        }
-        const output = try wrapToolOutput(ctx.allocator, TOOL_NAME, tc.function.arguments, true, null, inner);
-        return ToolExecResult{ .output = output, .output_allocated = true };
+        return finishMutation(ctx, tc, inner, "deleted");
     }
 
     const msg = try std.fmt.allocPrint(
         ctx.allocator,
-        "action must be one of create, edit, read (got \"{s}\")",
+        "action must be one of create, edit, delete (got \"{s}\") — to read or search a document, use the `document` tool",
         .{input.action},
     );
     defer ctx.allocator.free(msg);
@@ -349,10 +325,6 @@ const Parsed = struct {
     title: []const u8 = "",
     content: []const u8 = "",
     format: []const u8 = "",
-    content_bytes: usize = 0,
-    offset: usize = 0,
-    next_offset: ?usize = null,
-    truncated: bool = false,
     err: ?[]const u8 = null,
 
     fn deinit(self: *Parsed) void {
@@ -373,10 +345,6 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
         title: []const u8 = "",
         content: []const u8 = "",
         format: []const u8 = "",
-        content_bytes: usize = 0,
-        offset: usize = 0,
-        next_offset: ?usize = null,
-        truncated: bool = false,
         @"error": ?[]const u8 = null,
     };
     const p = try std.json.parseFromSlice(Wire, allocator, raw, .{
@@ -391,10 +359,6 @@ fn parseJson(allocator: std.mem.Allocator, raw: []const u8) !Parsed {
         .title = try allocator.dupe(u8, p.value.title),
         .content = try allocator.dupe(u8, p.value.content),
         .format = try allocator.dupe(u8, p.value.format),
-        .content_bytes = p.value.content_bytes,
-        .offset = p.value.offset,
-        .next_offset = p.value.next_offset,
-        .truncated = p.value.truncated,
         .err = if (p.value.@"error") |e| try allocator.dupe(u8, e) else null,
     };
 }
@@ -549,54 +513,53 @@ test "document_html edit: old_text on a markdown document is refused and leaves 
     try testing.expectEqualStrings("# keep me", row.content);
 }
 
-test "document_html read: returns the full page source" {
+test "document_html delete: removes the page and names what it removed" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
 
-    const page = "<!doctype html><html><body><p>read me</p></body></html>";
-    const created = try executeCreateHtml(alloc, ctx.store(), "s1", .{ .title = "Page", .content = page });
+    const created = try executeCreateHtml(alloc, ctx.store(), "s1", .{ .title = "Page", .content = "<p>doomed</p>" });
     defer alloc.free(created);
     var c = try parseJson(alloc, created);
     defer c.deinit();
 
-    const out = try executeReadHtml(alloc, ctx.store(), "s1", .{ .document_id = c.id });
+    const out = try executeDeleteHtml(alloc, ctx.store(), "s1", .{ .document_id = c.id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
 
     try testing.expect(p.err == null);
-    try testing.expectEqualStrings(page, p.content);
-    try testing.expectEqualStrings("html", p.format);
+    try testing.expectEqualStrings(c.id, p.id);
+    try testing.expectEqualStrings("Page", p.title);
+
+    const rows = try documents_store.listDocuments(alloc, &ctx.db, "ws_1");
+    defer documents_store.freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 0), rows.len);
 }
 
-test "document_html read: returns a bounded slice of the page, not the whole thing" {
+test "document_html delete: a blank document_id is refused and nothing is removed" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
 
-    const page = "<!doctype html><html><body><h1>Hello</h1></body></html>";
-    const created = try executeCreateHtml(alloc, ctx.store(), "s1", .{ .title = "Page", .content = page });
+    const created = try executeCreateHtml(alloc, ctx.store(), "s1", .{ .title = "Page", .content = "<p>kept</p>" });
     defer alloc.free(created);
     var c = try parseJson(alloc, created);
     defer c.deinit();
 
-    const out = try executeReadHtml(alloc, ctx.store(), "s1", .{
-        .document_id = c.id,
-        .limit = 15,
-    });
+    const out = try executeDeleteHtml(alloc, ctx.store(), "s1", .{ .document_id = "   " });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
 
-    try testing.expect(p.err == null);
-    try testing.expectEqualStrings("<!doctype html>", p.content);
-    try testing.expectEqual(page.len, p.content_bytes);
-    try testing.expectEqual(@as(?usize, 15), p.next_offset);
-    try testing.expect(p.truncated);
+    try testing.expect(p.err != null);
+
+    const rows = try documents_store.listDocuments(alloc, &ctx.db, "ws_1");
+    defer documents_store.freeDocumentRows(alloc, rows);
+    try testing.expectEqual(@as(usize, 1), rows.len);
 }
 
-test "document_html read: another workspace's document reports not found" {
+test "document_html delete: another workspace's page reports not found and stays" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
     defer ctx.deinit();
@@ -606,11 +569,14 @@ test "document_html read: another workspace's document reports not found" {
     var c = try parseJson(alloc, created);
     defer c.deinit();
 
-    const out = try executeReadHtml(alloc, ctx.store(), "s2", .{ .document_id = c.id });
+    const out = try executeDeleteHtml(alloc, ctx.store(), "s2", .{ .document_id = c.id });
     defer alloc.free(out);
     var p = try parseJson(alloc, out);
     defer p.deinit();
 
     try testing.expect(p.err != null);
-    try testing.expectEqualStrings("", p.content);
+
+    const row = try ctx.store().getDocument(alloc, "ws_1", c.id);
+    defer documents_store.freeDocumentRow(alloc, row);
+    try testing.expectEqualStrings("<p>secret</p>", row.content);
 }

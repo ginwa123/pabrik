@@ -1,6 +1,6 @@
-//! `document_markdown` — the agent tool that reads and writes its own
-//! workspace's document store (Migration 098). One tool, four actions:
-//! `create`, `edit`, `search`, `delete`.
+//! `document_markdown` — the agent tool that WRITES its own workspace's
+//! document store (Migration 098). Three actions: `create`, `edit`, `delete`;
+//! read/search are in `document_view.zig`, and `document_html` reuses these.
 
 const std = @import("std");
 const schemas = @import("schemas.zig");
@@ -24,8 +24,8 @@ pub const TOOL_NAME = "document_markdown";
 // =====================================================================
 
 /// Args for `document_markdown`. `action` selects which fields matter:
-/// `create` reads title/content/format, `edit` reads document_id/title/
-/// content, `search` reads query/literal/limit/offset/include_content.
+/// `create` reads title/content/format, `edit` reads
+/// document_id/title/content/old_text/new_text/replace_all, `delete` reads document_id.
 pub const DocumentMarkdownInput = struct {
     action: []const u8 = "",
     document_id: []const u8 = "",
@@ -34,12 +34,6 @@ pub const DocumentMarkdownInput = struct {
     /// `markdown` (the default) or `office`. An office body is a Univer
     /// snapshot: one JSON object holding the workbook's sheets and cells.
     format: []const u8 = "",
-    query: ?[]const u8 = null,
-    literal: ?bool = null,
-    limit: ?i64 = null,
-    offset: ?i64 = null,
-    /// Opt-in full bodies.
-    include_content: ?bool = null,
     /// `edit`: exact text to find in the current body. When set, `content` is
     /// refused and the body is patched in place instead of replaced.
     old_text: ?[]const u8 = null,
@@ -55,17 +49,14 @@ pub const DocumentMarkdownInput = struct {
 
 pub const document_markdown_tool_system_prompt =
     \\## Document Tool — Behavior
-    \\`document_markdown` is the ONE tool for documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `read`, `search`, `delete`.
-    \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. You can only read and write the workspace your session belongs to; a `document_id` from another workspace reports "not found", exactly as a nonexistent id does, so you cannot probe or enumerate another workspace.
-    \\- `search` first when you do not have an id. It is how you get a `document_id` — never invent one, and do not ask the user to paste an id you can look up yourself.
+    \\`document_markdown` WRITES documents in YOUR workspace. `action` picks the operation: `create`, `edit`, `delete`. Reading and searching are the `document` tool's.
+    \\- Scope is automatic. There is no `workspace_id` argument — passing one is ignored. You can only write the workspace your session belongs to; a `document_id` from another workspace reports "not found", exactly as a nonexistent id does, so you cannot probe or enumerate another workspace.
+    \\- To READ a document or FIND one, use the `document` tool. It is the only way to get a `document_id` — never invent one, and do not ask the user to paste an id you can look up yourself.
     \\- `create` needs `title`, which must be non-blank. It is the label shown in the sidebar's Documents list, so make it a human-readable name, not a slug. `content` is the markdown body and may be empty, so you can create a heading-only stub and fill it in with `edit`.
     \\- `format` is `markdown` (the default) or `office`. For `office`, `content` is a Univer snapshot: one JSON object with `sheets`, each sheet holding a `cellData` map of row index → column index → `{"v": value}`. A spreadsheet the user opens in the grid must be a valid snapshot, so build it from that shape rather than inventing keys.
     \\- `edit` is a PATCH: an OMITTED field keeps its current value, `content: ""` genuinely clears the body, and supplying neither `title` nor `content` nor `old_text` is rejected. `content` is the WHOLE new body, not a diff.
     \\- `edit` with `old_text` + `new_text` patches the body IN PLACE — the cheap path for a large document, because you send only the changed text. `old_text` must match EXACTLY ONCE; a miss or an ambiguous match is refused and nothing is written, so include enough surrounding text to be unique, or set `replace_all: true`. `new_text: ""` deletes the match. `content` and `old_text` are mutually exclusive.
     \\- An `office` document's body is a Univer snapshot JSON. Replacing it with prose destroys the spreadsheet, so only write one when you can produce a valid snapshot; otherwise leave the document to the user's grid.
-    \\- `read` returns ONE document's body as a bounded SLICE: `limit` bytes (default 20000, max 200000) starting at `offset` (default 0). The result carries `content_bytes` (the whole body's length), `offset`, `next_offset` and `truncated` — pass `next_offset` as the next `offset` to continue, and stop when `next_offset` is null. Read a slice, not the whole document: a 4 MiB body is 200 pages, and you rarely need more than the part you are about to change.
-    \\- `search` takes `query`, a case-insensitive REGEX matched against each document's TITLE AND CONTENT. One pattern reaches a phrase that several words would: `release|launch`, `^Q3`, `\bTODO\b`. Set `literal: true` when the query is literal text (e.g. `*.md`, `fn(`) — otherwise its metacharacters are interpreted. An invalid pattern is not a failure: it is matched as a literal substring and the result carries `pattern_warning`. Read it instead of retrying blindly. Omitting `query` lists your documents, newest-updated first — the right first call when you do not know what you are looking for.
-    \\- Results are PAGED: `limit` (default 20, max 100) caps how many rows you get back, `total` is the real match count, `offset` continues the listing, and `hint` names the exact next offset. Every row carries a short `excerpt` around the hit plus `content_length` (bytes) — enough to tell documents apart without dumping megabytes of markdown into your context. A document whose body lives in the object store is searched through its PREVIEW (the first 512 bytes); a row whose `content_length` is much larger than its excerpt may hold the match further in, so open it with `include_content: true`.
     \\- `delete` is IRREVERSIBLE. There is no trash, no undo, and no archive. Once the row is gone the body is unrecoverable — not through this tool, and not from the sidebar. Delete only what the user asked you to delete: "find the doc about X" is not permission to remove X, and a document the user has since revised is still their work. To revise a document instead of removing it, use `action: "edit"`.
     \\- A human can also create and edit documents from the UI; both paths write the same table, so a document you write appears in their sidebar immediately.
     \\
@@ -76,10 +67,10 @@ pub const document_markdown_tool = AgentTool{
     .function = .{
         .name = TOOL_NAME,
         .description =
-        \\Read and write documents in YOUR workspace — a plan, a spec, meeting notes, a research summary, any artifact worth re-reading later. `action` selects the operation: `create` (title + content), `edit` (document_id + the fields to change), `search` (query, paged), `delete` (document_id, IRREVERSIBLE).
+        \\Create, edit and delete documents in YOUR workspace — a plan, a spec, meeting notes, a research summary, any artifact worth re-reading later. `action` selects the operation: `create` (title + content), `edit` (document_id + the fields to change), `delete` (document_id, IRREVERSIBLE).
         \\
         \\- SCOPE is automatic: your session's workspace is resolved before the call, so there is no `workspace_id` argument — one supplied is ignored. A `document_id` in another workspace reports "not found", exactly as a nonexistent id does.
-        \\- `search` is how you get a `document_id` — never invent one. Omit `query` to list the newest documents first.
+        \\- To READ a document or find its id, use the `document` tool — never invent a `document_id`.
         \\- `edit` is a PATCH: omitted fields keep their current value, `content` is the COMPLETE new body (not a diff), and `content: ""` clears it.
         \\- `delete` is irreversible; revise with `action: "edit"` instead.
         ,
@@ -89,12 +80,12 @@ pub const document_markdown_tool = AgentTool{
                 .{
                     .name = "action",
                     .type = "string",
-                    .description = "'create', 'edit', 'read', 'search' or 'delete'. Any other value is refused.",
+                    .description = "'create', 'edit' or 'delete'. Any other value is refused.",
                 },
                 .{
                     .name = "document_id",
                     .type = "string",
-                    .description = "`edit` and `delete`: the id from a `create` result or a `search` row. A row in another workspace reports 'not found'.",
+                    .description = "`edit` and `delete`: the id from a `create` result or a `document` search row. A row in another workspace reports 'not found'.",
                 },
                 .{
                     .name = "title",
@@ -125,31 +116,6 @@ pub const document_markdown_tool = AgentTool{
                     .name = "format",
                     .type = "string",
                     .description = "`create`: 'markdown' (default) or 'office'. An office body is a Univer snapshot: {\"sheets\": {<id>: {\"cellData\": {<row>: {<col>: {\"v\": value}}}}}}. Any other value is refused.",
-                },
-                .{
-                    .name = "query",
-                    .type = "string",
-                    .description = "`search`: regex, matched case-insensitively against each document's title AND content. Supported: literals, '.', '[...]', '\\d \\w \\s \\b', '*', '+', '?', '{m,n}' ranges, '( )' groups, '|', '^', '$'. A metacharacter-free query is a plain substring search. An invalid pattern is matched as a literal substring and reported in `pattern_warning`. Omit to list the newest documents first.",
-                },
-                .{
-                    .name = "literal",
-                    .type = "boolean",
-                    .description = "`search`: treat `query` as a literal string — '.', '*', '[', '(' are matched verbatim. Set this for code- or glob-shaped queries ('*.md', 'fn('). Default false (regex mode).",
-                },
-                .{
-                    .name = "limit",
-                    .type = "number",
-                    .description = "`search`: maximum matches in THIS response (default 20, max 100). `read`: maximum BYTES of the body to return (default 20000, max 200000). The result always reports the true `total` / `content_bytes` — raise limit, or page with `offset`, only when you need more.",
-                },
-                .{
-                    .name = "offset",
-                    .type = "number",
-                    .description = "`search`: skip the first N matches (default 0). `read`: the BYTE offset to start the slice at (default 0) — pass the previous read's `next_offset` to continue. The previous page's `hint` / `next_offset` names the value that continues it.",
-                },
-                .{
-                    .name = "include_content",
-                    .type = "boolean",
-                    .description = "`search`: include each match's FULL body as `content`. Off by default — rows carry a bounded `excerpt` instead. Turn it on only when the next action is `edit`, which replaces the whole body.",
                 },
             },
             .required = &.{"action"},
@@ -186,71 +152,6 @@ pub const DeleteDocumentSuccess = struct {
     deleted: bool,
 };
 
-/// Bytes a `read` returns when the caller names no `limit`. A 4 MiB body is
-/// 200 pages at this size, which is the point: the model asks for the slice it
-/// needs instead of paying for the whole document.
-pub const DEFAULT_READ_LIMIT: usize = 20_000;
-
-/// Hard cap on one `read`. Above this the caller pages.
-pub const MAX_READ_LIMIT: usize = 200_000;
-
-/// Success payload for `read`. `content` is a SLICE of the body, and
-/// `next_offset` is how the caller continues — null means the end.
-pub const DocumentReadSuccess = struct {
-    id: []const u8,
-    workspace_id: []const u8,
-    title: []const u8,
-    format: []const u8,
-    updated_at: []const u8,
-    content: []const u8,
-    /// The WHOLE body's length, so the caller can size the document without
-    /// reading it.
-    content_bytes: usize,
-    offset: usize,
-    next_offset: ?usize,
-    truncated: bool,
-};
-
-const BodySlice = struct {
-    content: []const u8,
-    offset: usize,
-    next_offset: ?usize,
-};
-
-/// `body[offset..]` cut to at most `limit` bytes, on a UTF-8 boundary so a
-/// multi-byte character is never split across two pages.
-pub fn sliceBody(body: []const u8, offset: usize, limit: usize) BodySlice {
-    const start = @min(offset, body.len);
-    var end = @min(start + limit, body.len);
-    while (end > start and end < body.len and (body[end] & 0xC0) == 0x80) end -= 1;
-    return .{
-        .content = body[start..end],
-        .offset = start,
-        .next_offset = if (end < body.len) end else null,
-    };
-}
-
-fn readSuccessJSON(
-    allocator: std.mem.Allocator,
-    row: documents_store.DocumentRow,
-    offset: usize,
-    limit: usize,
-) ![]u8 {
-    const slice = sliceBody(row.content, offset, limit);
-    return std.json.Stringify.valueAlloc(allocator, DocumentReadSuccess{
-        .id = row.id,
-        .workspace_id = row.workspace_id,
-        .title = row.title,
-        .format = row.format,
-        .updated_at = row.updated_at,
-        .content = slice.content,
-        .content_bytes = row.content.len,
-        .offset = slice.offset,
-        .next_offset = slice.next_offset,
-        .truncated = slice.next_offset != null,
-    }, .{});
-}
-
 fn successJSON(allocator: std.mem.Allocator, row: documents_store.DocumentRow) ![]u8 {
     return std.json.Stringify.valueAlloc(allocator, DocumentToolSuccess{
         .id = row.id,
@@ -262,7 +163,7 @@ fn successJSON(allocator: std.mem.Allocator, row: documents_store.DocumentRow) !
     }, .{});
 }
 
-fn errorJSON(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
+pub fn errorJSON(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     const clean = try sanitizeControlChars(allocator, msg);
     defer allocator.free(clean);
     return std.json.Stringify.valueAlloc(allocator, DocumentToolError{
@@ -271,7 +172,7 @@ fn errorJSON(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 }
 
 /// Resolve the calling session's workspace.
-fn resolveScope(
+pub fn resolveScope(
     allocator: std.mem.Allocator,
     db: *database.Db,
     caller_session_id: []const u8,
@@ -284,7 +185,7 @@ fn resolveScope(
 }
 
 /// The tool-level refusal for an unresolvable scope.
-fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u8) ![]u8 {
+pub fn scopeErrorJSON(allocator: std.mem.Allocator, caller_session_id: []const u8) ![]u8 {
     if (caller_session_id.len == 0) {
         return errorJSON(
             allocator,
@@ -419,7 +320,7 @@ fn formatMismatchMessage() []const u8 {
     return "That document is not an HTML document. Use `document_markdown` to edit it.";
 }
 
-fn readErrorMessage(err: anyerror) []const u8 {
+pub fn readErrorMessage(err: anyerror) []const u8 {
     return switch (err) {
         error.IdsRequired => "workspace_id and document_id required",
         error.NotFound => "No document with that id in your workspace. It may not exist, or it may belong to another workspace.",
@@ -541,58 +442,6 @@ pub fn executeDeleteDocument(
         .title = existing.title,
         .deleted = true,
     }, .{});
-}
-
-/// Execute the `read` action: one document, body included, cut to a bounded
-/// slice. Returns an inner JSON string the exec wrapper embeds. Caller owns
-/// the returned slice and must free it.
-pub fn executeReadDocument(
-    allocator: std.mem.Allocator,
-    store: documents_store.Store,
-    caller_session_id: []const u8,
-    input: DocumentMarkdownInput,
-) ![]const u8 {
-    if (std.mem.trim(u8, input.document_id, " \t\n\r").len == 0) {
-        return errorJSON(allocator, "document_id is required. Use the id returned by a `create` action or a `search` row.");
-    }
-
-    const limit: usize = blk: {
-        const raw = input.limit orelse @as(i64, @intCast(DEFAULT_READ_LIMIT));
-        if (raw < 1) {
-            const msg = try std.fmt.allocPrint(allocator, "limit must be at least 1 (got {d})", .{raw});
-            defer allocator.free(msg);
-            return errorJSON(allocator, msg);
-        }
-        if (raw > @as(i64, @intCast(MAX_READ_LIMIT))) {
-            const msg = try std.fmt.allocPrint(
-                allocator,
-                "limit must be at most {d} bytes (got {d}) — page with `offset` instead",
-                .{ MAX_READ_LIMIT, raw },
-            );
-            defer allocator.free(msg);
-            return errorJSON(allocator, msg);
-        }
-        break :blk @intCast(raw);
-    };
-    const offset: usize = blk: {
-        const raw = input.offset orelse 0;
-        if (raw < 0) {
-            const msg = try std.fmt.allocPrint(allocator, "offset must not be negative (got {d})", .{raw});
-            defer allocator.free(msg);
-            return errorJSON(allocator, msg);
-        }
-        break :blk @intCast(raw);
-    };
-
-    const workspace_id = (try resolveScope(allocator, store.db, caller_session_id)) orelse
-        return scopeErrorJSON(allocator, caller_session_id);
-    defer allocator.free(workspace_id);
-
-    const row = store.getDocument(allocator, workspace_id, input.document_id) catch |err| {
-        return errorJSON(allocator, readErrorMessage(err));
-    };
-    defer documents_store.freeDocumentRow(allocator, row);
-    return readSuccessJSON(allocator, row, offset, limit);
 }
 
 const TestCtx = struct {
@@ -1112,96 +961,6 @@ test "document_markdown edit: old_text with no new_text is refused rather than d
     try testing.expectEqualStrings("keep me", row.content);
 }
 
-test "document_markdown read: returns a bounded slice and the offset that continues it" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.deinit();
-
-    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "0123456789");
-    defer alloc.free(id);
-
-    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
-        .document_id = id,
-        .offset = 2,
-        .limit = 4,
-    });
-    defer alloc.free(out);
-    var p = try parseJson(alloc, out);
-    defer p.deinit();
-
-    try testing.expect(p.err == null);
-    try testing.expectEqualStrings("2345", p.content);
-    // The whole body's length, so the caller can size the document without
-    // reading the rest of it.
-    try testing.expectEqual(@as(usize, 10), p.content_bytes);
-    try testing.expectEqual(@as(usize, 2), p.offset);
-    try testing.expectEqual(@as(?usize, 6), p.next_offset);
-    try testing.expect(p.truncated);
-}
-
-test "document_markdown read: the last page reports no next_offset" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.deinit();
-
-    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "0123456789");
-    defer alloc.free(id);
-
-    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
-        .document_id = id,
-        .offset = 8,
-        .limit = 100,
-    });
-    defer alloc.free(out);
-    var p = try parseJson(alloc, out);
-    defer p.deinit();
-
-    try testing.expectEqualStrings("89", p.content);
-    try testing.expectEqual(@as(?usize, null), p.next_offset);
-    try testing.expect(!p.truncated);
-}
-
-test "document_markdown read: a slice never splits a multi-byte character" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.deinit();
-
-    // "a" is 1 byte, "é" is 2. A 2-byte limit lands inside the é.
-    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "aébc");
-    defer alloc.free(id);
-
-    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
-        .document_id = id,
-        .limit = 2,
-    });
-    defer alloc.free(out);
-    var p = try parseJson(alloc, out);
-    defer p.deinit();
-
-    try testing.expectEqualStrings("a", p.content);
-    try testing.expectEqual(@as(?usize, 1), p.next_offset);
-}
-
-test "document_markdown read: a limit above the cap is refused, not silently clamped" {
-    const alloc = testing.allocator;
-    var ctx = try setupDb();
-    defer ctx.deinit();
-
-    const id = try seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "body");
-    defer alloc.free(id);
-
-    const out = try executeReadDocument(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", .{
-        .document_id = id,
-        .limit = @as(i64, @intCast(MAX_READ_LIMIT)) + 1,
-    });
-    defer alloc.free(out);
-    var p = try parseJson(alloc, out);
-    defer p.deinit();
-
-    try testing.expect(p.err != null);
-    try testing.expect(std.mem.indexOf(u8, p.err.?, "offset") != null);
-}
-
 test "document_markdown edit: workspace B cannot edit workspace A's document, and the error is identical to a missing one" {
     const alloc = testing.allocator;
     var ctx = try setupDb();
@@ -1354,7 +1113,7 @@ test "schema contract: the input struct has no workspace_id slot to fill" {
 test "schema contract: the tool ships a behavioral system prompt naming every action" {
     try testing.expect(document_markdown_tool.function.system_prompt.len > 0);
     try testing.expectEqualStrings(TOOL_NAME, document_markdown_tool.function.name);
-    for ([_][]const u8{ "create", "edit", "search", "delete" }) |action| {
+    for ([_][]const u8{ "create", "edit", "delete" }) |action| {
         try testing.expect(std.mem.indexOf(u8, document_markdown_tool.function.system_prompt, action) != null);
     }
 }
@@ -1369,13 +1128,11 @@ test "schema contract: action is the only required argument" {
 
 const exec_pabrikcore = @import("pabrikcore");
 const tools = @import("../loop/tools.zig");
-const documents_search = @import("../loop/documents_search.zig");
 const ToolExecContext = tools.ToolExecContext;
 const ToolExecResult = tools.ToolExecResult;
 const agent = exec_pabrikcore.agent;
 const document_mod = exec_pabrikcore.document_tool;
 const exec_documents_store = exec_pabrikcore.documents_store;
-const exec_workspace_scope = exec_pabrikcore.workspace_scope;
 const document_events = exec_pabrikcore.document_events;
 const wrapToolOutput = tools.wrapToolOutput;
 const error_explain = @import("tools_error_explain.zig");
@@ -1406,13 +1163,11 @@ pub fn execDocumentMarkdown(ctx: ToolExecContext, tc: agent.ToolCall) !ToolExecR
     const input = parsed.value;
     if (std.mem.eql(u8, input.action, "create")) return runCreate(ctx, tc, input);
     if (std.mem.eql(u8, input.action, "edit")) return runEdit(ctx, tc, input);
-    if (std.mem.eql(u8, input.action, "read")) return runRead(ctx, tc, input);
-    if (std.mem.eql(u8, input.action, "search")) return runSearch(ctx, tc, input);
     if (std.mem.eql(u8, input.action, "delete")) return runDelete(ctx, tc, input);
 
     const msg = try std.fmt.allocPrint(
         ctx.allocator,
-        "action must be one of create, edit, read, search, delete (got \"{s}\")",
+        "action must be one of create, edit, delete (got \"{s}\") — to read or search a document, use the `document` tool",
         .{input.action},
     );
     defer ctx.allocator.free(msg);
@@ -1440,26 +1195,6 @@ fn runEdit(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.Documen
     ) catch |err| return execFailure(ctx, tc, err);
     defer ctx.allocator.free(inner);
     return finishMutation(ctx, tc, inner, "updated");
-}
-
-fn runRead(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
-    const inner = document_mod.executeReadDocument(
-        ctx.allocator,
-        .{ .db = ctx.db, .storage = ctx.storage },
-        ctx.session_id,
-        input,
-    ) catch |err| return execFailure(ctx, tc, err);
-    defer ctx.allocator.free(inner);
-
-    if (std.json.parseFromSlice(InnerResultProbe, ctx.allocator, inner, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch null) |probe| {
-        defer probe.deinit();
-        if (probe.value.@"error") |err_msg| {
-            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, inner);
-            return ToolExecResult{ .output = output, .output_allocated = true };
-        }
-    }
-    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, true, null, inner);
-    return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
 fn runDelete(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
@@ -1499,146 +1234,6 @@ fn finishMutation(ctx: ToolExecContext, tc: agent.ToolCall, inner: []const u8, a
     return ToolExecResult{ .output = output, .output_allocated = true };
 }
 
-fn runSearch(ctx: ToolExecContext, tc: agent.ToolCall, input: document_mod.DocumentMarkdownInput) !ToolExecResult {
-    // Paging bounds are rejected, never silently clamped: the model pages by
-    // offset from the `total` it was shown, so a quiet clamp makes its next
-    // call land on the wrong page.
-    const limit: usize = blk: {
-        const raw = input.limit orelse @as(i64, @intCast(documents_search.DEFAULT_SEARCH_LIMIT));
-        if (raw < 1) {
-            const msg = try std.fmt.allocPrint(ctx.allocator, document_mod.TOOL_NAME ++ ": limit must be at least 1 (got {d})", .{raw});
-            defer ctx.allocator.free(msg);
-            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
-            return .{ .output = output, .output_allocated = true };
-        }
-        if (raw > @as(i64, @intCast(documents_search.MAX_SEARCH_LIMIT))) {
-            const msg = try std.fmt.allocPrint(
-                ctx.allocator,
-                document_mod.TOOL_NAME ++ ": limit must be at most {d} (got {d})",
-                .{ documents_search.MAX_SEARCH_LIMIT, raw },
-            );
-            defer ctx.allocator.free(msg);
-            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
-            return .{ .output = output, .output_allocated = true };
-        }
-        break :blk @intCast(raw);
-    };
-    const offset: usize = blk: {
-        const raw = input.offset orelse 0;
-        if (raw < 0) {
-            const msg = try std.fmt.allocPrint(ctx.allocator, document_mod.TOOL_NAME ++ ": offset must not be negative (got {d})", .{raw});
-            defer ctx.allocator.free(msg);
-            const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, msg, "");
-            return .{ .output = output, .output_allocated = true };
-        }
-        break :blk @intCast(raw);
-    };
-
-    // Same fail-closed scope resolution `executeAddDocument` uses.
-    if (ctx.session_id.len == 0) {
-        const output = try wrapToolOutput(
-            ctx.allocator,
-            document_mod.TOOL_NAME,
-            tc.function.arguments,
-            false,
-            "Missing caller session — cannot resolve which workspace to search.",
-            "",
-        );
-        return .{ .output = output, .output_allocated = true };
-    }
-    const workspace_id = exec_workspace_scope.resolveWorkspaceId(ctx.allocator, ctx.db, ctx.session_id) catch null;
-    if (workspace_id == null) {
-        const output = try wrapToolOutput(
-            ctx.allocator,
-            document_mod.TOOL_NAME,
-            tc.function.arguments,
-            false,
-            "This session is not linked to any workspace, so there are no documents to search. " ++
-                "Run from a workspace chat (a project task or a workspace-scoped chat).",
-            "",
-        );
-        return .{ .output = output, .output_allocated = true };
-    }
-    defer ctx.allocator.free(workspace_id.?);
-
-    const query = input.query orelse "";
-    const literal = input.literal orelse false;
-
-    // The SQL narrowing runs FIRST and only when it is provably a superset of
-    // the regex's matches — see `documents_search.literalPrefilter`.
-    const rows = exec_documents_store.searchDocuments(
-        ctx.allocator,
-        ctx.db,
-        workspace_id.?,
-        documents_search.literalPrefilter(query, literal),
-    ) catch |err| {
-        const err_msg = try error_explain.explain(ctx.allocator, err, null);
-        defer ctx.allocator.free(err_msg);
-        const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, false, err_msg, "");
-        return .{ .output = output, .output_allocated = true };
-    };
-    defer exec_documents_store.freeDocumentRows(ctx.allocator, rows);
-
-    const outcome = try documents_search.matchQuery(ctx.allocator, rows, query, .{ .literal = literal });
-    defer ctx.allocator.free(outcome.hits);
-
-    const page = documents_search.pageSlice(outcome.hits, offset, limit);
-    const include_content = input.include_content orelse false;
-
-    // `include_content` is the "I am about to edit" path. The body is not a
-    // column any more, so fetch it for the PAGE only — never for every match.
-    var hydrated: std.ArrayList(documents_search.Hit) = .empty;
-    defer hydrated.deinit(ctx.allocator);
-    var bodies: std.ArrayList([]u8) = .empty;
-    defer {
-        for (bodies.items) |b| ctx.allocator.free(b);
-        bodies.deinit(ctx.allocator);
-    }
-    var page_final: []const documents_search.Hit = page;
-    if (include_content) {
-        for (page) |hit| {
-            var copy = hit;
-            if (hit.content.len == 0) {
-                if (ctx.storage) |s| {
-                    if (contentKeyOf(rows, hit.id)) |key| {
-                        if (s.get(ctx.allocator, key)) |body| {
-                            if (bodies.append(ctx.allocator, body)) |_| {
-                                copy.content = body;
-                            } else |_| {
-                                ctx.allocator.free(body);
-                            }
-                        } else |_| {}
-                    }
-                }
-            }
-            hydrated.append(ctx.allocator, copy) catch {};
-        }
-        page_final = hydrated.items;
-    }
-
-    const inner = try documents_search.renderSearchResult(ctx.allocator, page_final, .{
-        .total = outcome.hits.len,
-        .offset = offset,
-        .limit = limit,
-        .query = query,
-        .mode = outcome.mode,
-        .warning = outcome.warning,
-        .include_content = include_content,
-    });
-    defer ctx.allocator.free(inner);
-
-    const output = try wrapToolOutput(ctx.allocator, document_mod.TOOL_NAME, tc.function.arguments, true, null, inner);
-    return ToolExecResult{ .output = output, .output_allocated = true };
-}
-
-/// The object key for `id`, or null when the row has none.
-fn contentKeyOf(rows: []const exec_documents_store.DocumentRow, id: []const u8) ?[]const u8 {
-    for (rows) |row| {
-        if (std.mem.eql(u8, row.id, id)) return row.content_key;
-    }
-    return null;
-}
-
 // ─── Tests ──────────────────────────────────────────────────────────────
 
 const exec_sqlite = exec_pabrikcore.sqlite;
@@ -1651,14 +1246,14 @@ const exec_TestCtx = struct {
     threaded: std.Io.Threaded,
     objects: @import("pabrikcore").storage.memory.MemoryStorage,
 
-    fn deinit(self: *exec_TestCtx) void {
+    pub fn deinit(self: *exec_TestCtx) void {
         self.objects.deinit();
         self.db.deinit();
         self.threaded.deinit();
     }
 };
 
-fn exec_setupDb() !exec_TestCtx {
+pub fn exec_setupDb() !exec_TestCtx {
     var threaded = std.Io.Threaded.init(exec_testing.allocator, .{});
     errdefer threaded.deinit();
     const io = threaded.io();
@@ -1703,7 +1298,7 @@ fn exec_setupDb() !exec_TestCtx {
     };
 }
 
-fn makeTestCtx(
+pub fn makeTestCtx(
     allocator: std.mem.Allocator,
     db: *database.Db,
     storage: ?@import("pabrikcore").storage.storage.Storage,
@@ -1729,7 +1324,7 @@ fn makeTestCtx(
     };
 }
 
-fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
+pub fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
     return .{
         .id = "call_1",
         .type = "function",
@@ -1737,9 +1332,9 @@ fn fakeToolCall(name: []const u8, args: []const u8) agent.ToolCall {
     };
 }
 
-/// Drive `document_markdown` the way the model would: `action` is prepended
-/// to `body`, whose surrounding braces are optional.
-fn callTool(ctx: ToolExecContext, action: []const u8, body: []const u8) !ToolExecResult {
+/// Drive a document tool the way the model would: `action` is prepended to
+/// `body`, whose surrounding braces are optional.
+pub fn callToolAs(exec: anytype, tool_name: []const u8, ctx: ToolExecContext, action: []const u8, body: []const u8) !ToolExecResult {
     const trimmed = std.mem.trim(u8, body, " \t\n\r");
     const inner = if (trimmed.len >= 2 and trimmed[0] == '{' and trimmed[trimmed.len - 1] == '}')
         trimmed[1 .. trimmed.len - 1]
@@ -1750,12 +1345,16 @@ fn callTool(ctx: ToolExecContext, action: []const u8, body: []const u8) !ToolExe
     else
         try std.fmt.allocPrint(ctx.allocator, "{{\"action\":\"{s}\",{s}}}", .{ action, inner });
     defer ctx.allocator.free(args);
-    return execDocumentMarkdown(ctx, fakeToolCall(TOOL_NAME, args));
+    return exec(ctx, fakeToolCall(tool_name, args));
+}
+
+pub fn callTool(ctx: ToolExecContext, action: []const u8, body: []const u8) !ToolExecResult {
+    return callToolAs(execDocumentMarkdown, TOOL_NAME, ctx, action, body);
 }
 
 /// Flattened, OWNED view of a tool envelope. Two things this deliberately
 /// does not do: - Return `p.value` after `deinit()`.
-const Envelope = struct {
+pub const Envelope = struct {
     allocator: std.mem.Allocator,
     raw: []const u8 = "",
     tool: []const u8 = "",
@@ -1780,7 +1379,7 @@ const Envelope = struct {
     contents: []const ?[]const u8 = &.{},
     content_lengths: []const usize = &.{},
 
-    fn deinit(self: *Envelope) void {
+    pub fn deinit(self: *Envelope) void {
         const a = self.allocator;
         a.free(self.raw);
         a.free(self.tool);
@@ -1810,7 +1409,7 @@ fn freeOptSlices(a: std.mem.Allocator, items: []const ?[]const u8) void {
     a.free(items);
 }
 
-fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
+pub fn parseEnvelope(allocator: std.mem.Allocator, raw: []const u8) !Envelope {
     // The envelope nests the tool payload under `data` (see
     // `wrapToolOutput`), so BOTH the write fields (add/edit/delete) and the
     // search fields (count/total/documents) live one level down.
@@ -2216,423 +1815,34 @@ test "document_markdown delete: an unresolvable session surfaces success=false" 
     try exec_testing.expect(env.err != null);
 }
 
-// ─── search ───────────────────────────────────────────────────
-
-/// Create a document in ws_1 through the real tool path and return its id.
-fn exec_seedDoc(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) ![]u8 {
-    const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = title, .content = content }, .{});
-    defer alloc.free(args);
-    const create = try callTool(makeTestCtx(alloc, store.db, store.storage, "s1"), "create", args);
-    defer alloc.free(create.output);
-    var env = try parseEnvelope(alloc, create.output);
-    defer env.deinit();
-    if (!env.success) return error.SeedFailed;
-    return alloc.dupe(u8, env.id);
-}
-
-/// Seed a document whose id the test does not need to keep.
-fn seedAnon(alloc: std.mem.Allocator, store: documents_store.Store, title: []const u8, content: []const u8) !void {
-    const id = try exec_seedDoc(alloc, store, title, content);
-    alloc.free(id);
-}
-
-fn searchTool(alloc: std.mem.Allocator, store: documents_store.Store, session: []const u8, args: []const u8) !Envelope {
-    const res = try callTool(makeTestCtx(alloc, store.db, store.storage, session), "search", args);
-    // `parseEnvelope` dupes everything it needs, so the raw output can go.
-    defer alloc.free(res.output);
-    return parseEnvelope(alloc, res.output);
-}
-
-test "document_markdown search: no arguments lists the workspace newest-first in mode=all" {
+// The read/search half moved to the `document` tool. A model that still calls
+// the old actions must be told where they went, not left to guess.
+test "document_markdown refuses the retired read action and points at the document tool" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    const a = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Alpha", "first body");
-    defer alloc.free(a);
-    const b = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Beta", "second body");
-    defer alloc.free(b);
+    const result = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "read", "{\"document_id\":\"doc_anything\"}");
+    defer alloc.free(result.output);
 
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
-    defer env.deinit();
-
-    try exec_testing.expectEqualStrings(TOOL_NAME, env.tool);
-    try exec_testing.expect(env.success);
-    try exec_testing.expectEqual(@as(usize, 2), env.total);
-    try exec_testing.expectEqual(@as(usize, 2), env.count);
-    try exec_testing.expectEqualStrings("all", env.pattern_mode);
-    try exec_testing.expect(!env.truncated);
-    try exec_testing.expect(env.next_offset == null);
-    // Every row carries what the model needs to make the next call.
-    try exec_testing.expectEqual(@as(usize, 2), env.ids.len);
-    try exec_testing.expectEqualStrings("Beta", env.titles[0]); // newest first
-    try exec_testing.expect(std.mem.indexOf(u8, env.excerpts[0], "second body") != null);
-}
-
-test "document_markdown search: a regex query reaches title OR body" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Release plan v2", "# plan\n\n- ship 095\n");
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Meeting notes", "We agreed to LAUNCH in October.\n");
-
-    // Title hit only.
-    var by_title = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release\"}");
-    defer by_title.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), by_title.total);
-    try exec_testing.expectEqualStrings("Release plan v2", by_title.titles[0]);
-    try exec_testing.expectEqualStrings("regex", by_title.pattern_mode);
-
-    // Body hit, different case on both sides.
-    var by_body = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"LAUNCH\"}");
-    defer by_body.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), by_body.total);
-    try exec_testing.expectEqualStrings("Meeting notes", by_body.titles[0]);
-    // The excerpt is centred on the hit, so the body text is visible.
-    try exec_testing.expect(std.mem.indexOf(u8, by_body.excerpts[0], "LAUNCH") != null);
-
-    // One alternation reaches both.
-    var alt = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release|launch\"}");
-    defer alt.deinit();
-    try exec_testing.expectEqual(@as(usize, 2), alt.total);
-}
-
-test "document_markdown search: a metacharacter query is NOT narrowed by the SQL prefilter" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    // `release.` as a regex is "release" + any one character, so "releaseX"
-    // matches while the literal substring "release." does not occur.
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Zebra", "releaseX the thing\n");
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\"}");
-    defer env.deinit();
-
-    try exec_testing.expectEqual(@as(usize, 1), env.total);
-    try exec_testing.expectEqualStrings("Zebra", env.titles[0]);
-
-    // And the same query with literal:true genuinely matches nothing — the
-    // flag, not the prefilter, is what makes the two answers differ.
-    var lit = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"release.\",\"literal\":true}");
-    defer lit.deinit();
-    try exec_testing.expectEqualStrings("literal", lit.pattern_mode);
-    try exec_testing.expectEqual(@as(usize, 0), lit.total);
-}
-
-test "document_markdown search: an anchored query still matches, so ^ is not prefiltered either" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Q3 plan", "later");
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Backlog Q3 items", "earlier");
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"^Q3\"}");
-    defer env.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), env.total);
-    try exec_testing.expectEqualStrings("Q3 plan", env.titles[0]);
-}
-
-test "document_markdown search: a LIKE prefilter needle containing % or _ is matched verbatim" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    // SQLite's LIKE would treat `%` as "any run" and `_` as "any char".
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Percent test", "100%% done\n");
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Underscore test", "snake_case naming\n");
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Decoy", "nothing special\n");
-
-    var pct = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"%\",\"literal\":true}");
-    defer pct.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), pct.total);
-    try exec_testing.expectEqualStrings("Percent test", pct.titles[0]);
-
-    var us = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"_\",\"literal\":true}");
-    defer us.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), us.total);
-    try exec_testing.expectEqualStrings("Underscore test", us.titles[0]);
-}
-
-test "document_markdown search: an invalid pattern is a warning, not a failed tool call" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Notes", "release checklist\n");
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"releas(\"}");
-    defer env.deinit();
-
-    // success=true: the search RAN. It just ran in fallback mode, and said
-    // so. Reporting this as an error would teach the model to give up on a
-    // query that had an obvious literal reading.
-    try exec_testing.expect(env.success);
-    try exec_testing.expectEqualStrings("literal_fallback", env.pattern_mode);
-    try exec_testing.expect(env.pattern_warning != null);
-    try exec_testing.expect(std.mem.indexOf(u8, env.pattern_warning.?, "literal:true") != null);
-}
-
-test "document_markdown search: include_content is opt-in and off by default" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Plan", "the FULLBODY marker text\n");
-
-    var without = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\"}");
-    defer without.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), without.total);
-    try exec_testing.expect(without.contents[0] == null);
-    try exec_testing.expect(std.mem.indexOf(u8, without.raw, "\"content\":\"the FULLBODY") == null);
-    // The excerpt still shows the hit.
-    try exec_testing.expect(std.mem.indexOf(u8, without.excerpts[0], "FULLBODY") != null);
-
-    var with = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"FULLBODY\",\"include_content\":true}");
-    defer with.deinit();
-    try exec_testing.expectEqualStrings("the FULLBODY marker text\n", with.contents[0].?);
-    try exec_testing.expectEqual(@as(usize, 25), with.content_lengths[0]);
-}
-
-test "document_markdown search: paging reports total, truncated, next_offset and the offset in the hint" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    for ([_][]const u8{ "D1", "D2", "D3", "D4", "D5" }) |t| {
-        try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, t, "shared body");
-    }
-
-    var page1 = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2}");
-    defer page1.deinit();
-    try exec_testing.expectEqual(@as(usize, 5), page1.total);
-    try exec_testing.expectEqual(@as(usize, 2), page1.count);
-    try exec_testing.expect(page1.truncated);
-    try exec_testing.expectEqual(@as(usize, 2), page1.next_offset.?);
-    try exec_testing.expect(std.mem.indexOf(u8, page1.hint, "offset=2") != null);
-
-    var page2 = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":2}");
-    defer page2.deinit();
-    try exec_testing.expectEqual(@as(usize, 2), page2.count);
-    // next_offset is offset + count, i.e. where page 3 STARTS — not the
-    // offset page 2 started at.
-    try exec_testing.expectEqual(@as(usize, 4), page2.next_offset.?);
-    // Page 2 must not repeat page 1's rows.
-    for (page1.ids) |id| {
-        for (page2.ids) |id2| try exec_testing.expect(!std.mem.eql(u8, id, id2));
-    }
-
-    var last = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"shared\",\"limit\":2,\"offset\":4}");
-    defer last.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), last.count);
-    try exec_testing.expect(!last.truncated);
-    try exec_testing.expect(last.next_offset == null);
-    try exec_testing.expect(std.mem.indexOf(u8, last.hint, "action: \"edit\"") != null);
-}
-
-test "document_markdown search: an offset past the end is an empty page, not an error" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Only one", "body");
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":500}");
-    defer env.deinit();
-    try exec_testing.expect(env.success);
-    try exec_testing.expectEqual(@as(usize, 0), env.count);
-    try exec_testing.expectEqual(@as(usize, 1), env.total);
-}
-
-test "document_markdown search: out-of-range paging is rejected, never silently clamped" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    var zero = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":0}");
-    defer zero.deinit();
-    try exec_testing.expect(!zero.success);
-    try exec_testing.expect(std.mem.indexOf(u8, zero.err.?, "at least 1") != null);
-
-    var huge = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"limit\":100000}");
-    defer huge.deinit();
-    try exec_testing.expect(!huge.success);
-    try exec_testing.expect(std.mem.indexOf(u8, huge.err.?, "at most 100") != null);
-
-    var negative = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"offset\":-1}");
-    defer negative.deinit();
-    try exec_testing.expect(!negative.success);
-    try exec_testing.expect(std.mem.indexOf(u8, negative.err.?, "negative") != null);
-}
-
-test "document_markdown search: malformed JSON arguments become a parse failure, not a crash" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{not json");
+    var env = try parseEnvelope(alloc, result.output);
     defer env.deinit();
     try exec_testing.expect(!env.success);
-    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "JSON") != null);
-    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "SyntaxError") == null);
+    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "document") != null);
 }
 
-test "document_markdown search: a workspace never sees another workspace's documents" {
+test "document_markdown refuses the retired search action and points at the document tool" {
     const alloc = exec_testing.allocator;
     var ctx = try exec_setupDb();
     defer ctx.deinit();
 
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "WS1 secret", "sharedword in ws_1\n");
+    const result = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "search", "{\"query\":\"anything\"}");
+    defer alloc.free(result.output);
 
-    const args = try std.json.Stringify.valueAlloc(alloc, .{ .title = "WS2 note", .content = "sharedword in ws_2" }, .{});
-    defer alloc.free(args);
-    const create = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s2"), "create", args);
-    defer alloc.free(create.output);
-    var created = try parseEnvelope(alloc, create.output);
-    defer created.deinit();
-    try exec_testing.expectEqualStrings("ws_2", created.workspace_id);
-
-    // The shared query matches exactly one row per workspace, and each
-    // search returns only its own — no ids, no titles, no excerpts leaking.
-    var mine = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"sharedword\"}");
-    defer mine.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), mine.total);
-    try exec_testing.expectEqualStrings("WS1 secret", mine.titles[0]);
-    try exec_testing.expect(std.mem.indexOf(u8, mine.raw, "WS2 note") == null);
-    try exec_testing.expect(std.mem.indexOf(u8, mine.raw, created.id) == null);
-    try exec_testing.expect(std.mem.indexOf(u8, mine.raw, "ws_2") == null);
-
-    var theirs = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s2", "{\"query\":\"sharedword\"}");
-    defer theirs.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), theirs.total);
-    try exec_testing.expectEqualStrings("WS2 note", theirs.titles[0]);
-    try exec_testing.expect(std.mem.indexOf(u8, theirs.raw, "WS1 secret") == null);
-}
-
-test "document_markdown search: an unresolvable session is a refusal, NOT an empty result set" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    // "no documents matched" and "you have no workspace" are different facts
-    // and the model has to be able to tell them apart — a silent empty
-    // page would read as "your notes are gone".
-    var orphan = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s_orphan", "{}");
-    defer orphan.deinit();
-    try exec_testing.expect(!orphan.success);
-    try exec_testing.expect(orphan.err != null);
-    try exec_testing.expect(std.mem.indexOf(u8, orphan.err.?, "workspace") != null);
-
-    var empty = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{}");
-    defer empty.deinit();
-    try exec_testing.expect(empty.success);
-    try exec_testing.expectEqual(@as(usize, 0), empty.total);
-    try exec_testing.expectEqualStrings("all", empty.pattern_mode);
-}
-
-test "document_markdown search: a hallucinated workspace_id is ignored, not honoured" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Mine", "findme\n");
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\",\"workspace_id\":\"ws_2\"}");
+    var env = try parseEnvelope(alloc, result.output);
     defer env.deinit();
-    try exec_testing.expect(env.success);
-    try exec_testing.expectEqual(@as(usize, 1), env.total);
-    try exec_testing.expectEqualStrings("Mine", env.titles[0]);
-}
-
-test "document_markdown search: an empty document body is searchable by title, not by content" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Stub", "");
-
-    var by_title = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"Stub\"}");
-    defer by_title.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), by_title.total);
-    try exec_testing.expectEqual(@as(usize, 0), by_title.content_lengths[0]);
-    // An empty body yields an empty excerpt, not a crash and not the title
-    // silently standing in for it.
-    try exec_testing.expectEqualStrings("Stub", by_title.excerpts[0]);
-
-    var none = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"hippopotamus\"}");
-    defer none.deinit();
-    try exec_testing.expectEqual(@as(usize, 0), none.total);
-}
-
-test "document_markdown search: a body hit in a large document yields a bounded excerpt" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    // 8 KiB of padding AFTER the needle: without a window the result would
-    // carry 8 KiB of markdown into the context for a one-line answer. The
-    // needle sits inside the preview, which is what search reads.
-    const filler = "y" ** 8192;
-    const body = try std.fmt.allocPrint(alloc, "NEEDLE{s}", .{filler});
-    defer alloc.free(body);
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Huge", body);
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"NEEDLE\"}");
-    defer env.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), env.total);
-    try exec_testing.expectEqual(@as(usize, 8192 + 6), env.content_lengths[0]);
-    try exec_testing.expect(std.mem.indexOf(u8, env.excerpts[0], "NEEDLE") != null);
-    try exec_testing.expect(env.excerpts[0].len <= documents_search.EXCERPT_MAX_BYTES + 8);
-}
-
-test "document_markdown search: a multi-byte body still produces valid JSON" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    // The excerpt window can land mid-codepoint. A split produces an invalid
-    // UTF-8 sequence, which surfaces as a stringify failure — i.e. the whole
-    // search tool call errors for a query that found a real match.
-    const body = "日本語のテキスト" ** 400;
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Ünïcödé", body);
-
-    var env = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"テキスト\"}");
-    defer env.deinit();
-    try exec_testing.expect(env.success);
-    try exec_testing.expectEqual(@as(usize, 1), env.total);
-    try exec_testing.expect(std.unicode.utf8ValidateSlice(env.excerpts[0]));
-    try exec_testing.expect(std.mem.indexOf(u8, env.excerpts[0], "テキスト") != null);
-}
-
-test "document_markdown search: deleting what a search returned makes the next search stop finding it" {
-    const alloc = exec_testing.allocator;
-    var ctx = try exec_setupDb();
-    defer ctx.deinit();
-
-    const id = try exec_seedDoc(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Ephemeral", "findme marker\n");
-    defer alloc.free(id);
-    try seedAnon(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "Keep", "unrelated\n");
-
-    var before = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
-    defer before.deinit();
-    try exec_testing.expectEqual(@as(usize, 1), before.total);
-
-    // The round trip the tool is actually for: search → take the id → delete.
-    const args = try std.fmt.allocPrint(alloc, "{{\"document_id\":\"{s}\"}}", .{before.ids[0]});
-    defer alloc.free(args);
-    const del = try callTool(makeTestCtx(alloc, &ctx.db, ctx.objects.asStorage(), "s1"), "delete", args);
-    defer alloc.free(del.output);
-    var env = try parseEnvelope(alloc, del.output);
-    defer env.deinit();
-    try exec_testing.expect(env.success);
-    try exec_testing.expectEqualStrings(id, env.id);
-
-    var after = try searchTool(alloc, .{ .db = &ctx.db, .storage = ctx.objects.asStorage() }, "s1", "{\"query\":\"findme\"}");
-    defer after.deinit();
-    try exec_testing.expect(after.success);
-    try exec_testing.expectEqual(@as(usize, 0), after.total);
+    try exec_testing.expect(!env.success);
+    try exec_testing.expect(std.mem.indexOf(u8, env.err.?, "document") != null);
 }
 
 // ─── Registration + default seeding ───────────────────────────────────────
