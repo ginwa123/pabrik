@@ -51,4 +51,12 @@ describe('phone tap targets in the sidebar', () => {
     expect(missing).toEqual([])
     expect(block).toContain('min-height: 44px')
   })
+
+  it('lets the board header wrap, so the page cannot be scrolled sideways', () => {
+    // The header carried 690px of content in a 390px box; focusing a form field in the task
+    // detail then scrolled <main> and dragged that overlay off the left edge.
+    expect(block).toContain('.kanban-board-header')
+    expect(block).toContain('flex-wrap: wrap')
+    expect(block).toContain('.kanban-search')
+  })
 })

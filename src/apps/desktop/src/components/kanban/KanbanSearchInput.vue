@@ -57,7 +57,7 @@ const onKeyDown = (e: KeyboardEvent) => {
       @keydown="onKeyDown"
       type="text"
       placeholder="Search tasks…"
-      class="w-48 pl-7 pr-7 py-1 rounded text-dense outline-none focus:ring-1"
+      class="kanban-search w-48 pl-7 pr-7 py-1 rounded text-dense outline-none focus:ring-1"
       style="
         background-color: var(--semantic-card-bg);
         border: 1px solid var(--color-border);

@@ -1255,4 +1255,17 @@
     min-width: 32px;
     min-height: 44px;
   }
+
+  /* The board header carried 690px of content in a 390px box: title + a 192px search + the
+     view toggle + Add task. The overflow made <main> scrollable, and focusing the "New task"
+     name field then scrolled it — which dragged the whole detail overlay 33px off the left
+     edge. Wrapping the row removes the overflow, so nothing can scroll. */
+  .kanban-board-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .kanban-board-header .kanban-search {
+    width: 100%;
+  }
 }
