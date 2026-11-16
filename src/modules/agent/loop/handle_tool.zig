@@ -618,6 +618,9 @@ fn parseAgentFromResult(result: []const u8) ?[]const u8 {
 /// Longest `last_activity_description` written by `touchWorkerActivity`.
 const worker_activity_desc_max = 120;
 
+const worker_activity_prefix = "Tool call: ";
+const worker_activity_ellipsis = "…";
+
 /// Stamp `worker.last_activity_nano` + a short "what is it doing" label for the worker running `session_id`, and emit the SSE `worker_updated` event.
 fn touchWorkerActivity(
     allocator: std.mem.Allocator,
@@ -639,31 +642,39 @@ fn touchWorkerActivity(
     try llm_history.updateWorkerActivityWithDescription(allocator, db, session_id, desc);
 }
 
+/// Longest prefix of `s` that is at most `limit` bytes and ends on a UTF-8 character boundary, so a cut never writes a partial codepoint.
+fn clipToCharBoundary(s: []const u8, limit: usize) usize {
+    var end = @min(limit, s.len);
+    while (end > 0 and end < s.len and (s[end] & 0xC0) == 0x80) end -= 1;
+    return end;
+}
+
 /// `Tool call: <name>` + a truncated leading slice of `arguments`.
 fn buildWorkerActivityDescription(
     allocator: std.mem.Allocator,
     tool_name: []const u8,
     arguments: []const u8,
 ) ![]u8 {
-    const prefix = "Tool call: ";
     const trimmed = std.mem.trim(u8, arguments, " \t\r\n");
-    if (trimmed.len == 0) {
-        return std.fmt.allocPrint(allocator, "{s}{s}", .{ prefix, tool_name });
+    const name_room = worker_activity_desc_max -| (worker_activity_prefix.len + 1 + worker_activity_ellipsis.len);
+    const name_end = clipToCharBoundary(tool_name, name_room);
+
+    var label: std.ArrayList(u8) = .empty;
+    defer label.deinit(allocator);
+    try label.appendSlice(allocator, worker_activity_prefix);
+    try label.appendSlice(allocator, tool_name[0..name_end]);
+
+    var cut = name_end < tool_name.len;
+    if (!cut and trimmed.len != 0) {
+        try label.append(allocator, ' ');
+        const args_room = worker_activity_desc_max -| (label.items.len + worker_activity_ellipsis.len);
+        const args_end = clipToCharBoundary(trimmed, args_room);
+        try label.appendSlice(allocator, trimmed[0..args_end]);
+        cut = args_end < trimmed.len;
     }
 
-    // Leave room for the prefix, the tool name, the separating space and the ellipsis.
-    const ellipsis_bytes = 3;
-    const budget = worker_activity_desc_max - prefix.len - tool_name.len - 1 - ellipsis_bytes;
-    if (budget <= 0) {
-        return std.fmt.allocPrint(allocator, "{s}{s}", .{ prefix, tool_name });
-    }
-
-    const take = @min(trimmed.len, budget);
-    // Back off to a char boundary so the slice stays valid UTF-8.
-    var end = take;
-    while (end > 0 and end < trimmed.len and (trimmed[end] & 0xC0) == 0x80) end -= 1;
-    const ellipsis: []const u8 = if (end < trimmed.len) "…" else "";
-    return std.fmt.allocPrint(allocator, "{s}{s} {s}{s}", .{ prefix, tool_name, trimmed[0..end], ellipsis });
+    if (!cut) return label.toOwnedSlice(allocator);
+    return std.fmt.allocPrint(allocator, "{s}{s}", .{ label.items, worker_activity_ellipsis });
 }
 
 /// What `handle_tool` reports back to the workflow loop.
@@ -2556,6 +2567,60 @@ test "buildWorkerActivityDescription leaves a short argument untouched" {
 
     try std.testing.expectEqualStrings("Tool call: search {\"q\":\"worker\"}", desc);
     try std.testing.expect(!std.mem.endsWith(u8, desc, "…"));
+}
+
+test "buildWorkerActivityDescription caps a tool name longer than the whole label" {
+    const allocator = std.testing.allocator;
+
+    const name = try allocator.alloc(u8, 34_000);
+    defer allocator.free(name);
+    @memset(name, 'n');
+
+    const desc = try buildWorkerActivityDescription(allocator, name, "{\"command\":\"ls -la\"}");
+    defer allocator.free(desc);
+
+    try std.testing.expect(desc.len <= worker_activity_desc_max);
+    try std.testing.expect(std.mem.startsWith(u8, desc, "Tool call: "));
+    try std.testing.expect(std.mem.endsWith(u8, desc, "…"));
+    try std.testing.expect(std.unicode.utf8ValidateSlice(desc));
+}
+
+test "buildWorkerActivityDescription caps a tool name that leaves no room for the arguments" {
+    const allocator = std.testing.allocator;
+
+    const name = try allocator.alloc(u8, 110);
+    defer allocator.free(name);
+    @memset(name, 'n');
+
+    const desc = try buildWorkerActivityDescription(allocator, name, "{\"command\":\"ls -la\"}");
+    defer allocator.free(desc);
+
+    try std.testing.expect(desc.len <= worker_activity_desc_max);
+    try std.testing.expect(std.mem.startsWith(u8, desc, "Tool call: "));
+    try std.testing.expect(std.mem.endsWith(u8, desc, "…"));
+    try std.testing.expect(std.unicode.utf8ValidateSlice(desc));
+}
+
+test "touchWorkerActivity stores a capped description for a tool name the model invented" {
+    const allocator = std.testing.allocator;
+    var s = try workerActivityDb(allocator);
+    defer s.db.deinit();
+    defer s.threaded.deinit();
+
+    try s.db.exec(allocator, "INSERT INTO worker (id, session_id, last_activity_nano, last_activity_description) VALUES ('s1', 's1', 0, '')", &.{});
+
+    const name = try allocator.alloc(u8, 34_000);
+    defer allocator.free(name);
+    @memset(name, 'n');
+
+    try touchWorkerActivity(allocator, &s.db, "s1", name, "{\"command\":\"ls -la\"}");
+
+    const got = try workerActivityRow(allocator, &s.db, "s1");
+    defer allocator.free(got.desc);
+
+    try std.testing.expect(got.desc.len <= worker_activity_desc_max);
+    try std.testing.expect(std.mem.startsWith(u8, got.desc, "Tool call: "));
+    try std.testing.expect(got.activity > 0);
 }
 
 // Stop reaches a running command — end to end, through the real row

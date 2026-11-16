@@ -18,12 +18,10 @@ const failure = ref<string | null>(null)
 const loading = ref(true)
 
 let editor: OfficeEditor | null = null
-/** The kind this editor actually mounted. The view stores the snapshot under
- *  this kind, so the envelope can never claim a kind the snapshot is not. */
+/** The kind this editor actually mounted. */
 let mountedKind: OfficeKind | null = null
 let unsubscribe: (() => void) | null = null
-/** Set when the component unmounts before the async mount resolves, so the
- *  editor that arrives late is disposed instead of leaking a live Univer. */
+/** Set when the component unmounts before the async mount resolves, so the editor that arrives late is disposed instead of leaking a live Univer. */
 let unmounted = false
 
 onMounted(async () => {
